@@ -53,7 +53,7 @@ export function competencyValues(prof: Proficiency): Record<CompetencyId, number
   const out = {} as Record<CompetencyId, number | null>;
   for (const c of COMPETENCIES) {
     const vals = Object.entries(prof)
-      .filter(([k]) => skillById(k as SkillId).competency === c.id)
+      .filter(([k]) => skillById(k as SkillId)?.competency === c.id) // unknown ids (old data) are skipped
       .map(([, v]) => v as number);
     out[c.id] = vals.length ? +(vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(2) : null;
   }

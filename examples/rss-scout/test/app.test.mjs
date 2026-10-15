@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
-import { source } from './helpers.mjs';
+import { source, loadScripts } from './helpers.mjs';
 
 const FEED = '<rss version="2.0"><channel><title>Routed</title><item><title>x</title></item></channel></rss>';
 const MINIFLUX = 'https://reader.example.com';
@@ -157,4 +157,30 @@ test('index.html declares a CSP that its own markup satisfies', () => {
   // No inline script, inline style block or style attribute that the policy would block.
   assert.equal(/<script(?![^>]*\ssrc=)[^>]*>/i.test(html), false);
   assert.equal(/<style\b|\sstyle=/i.test(html), false);
+});
+
+test('a stray keystroke in the RSSHub address keeps the saved instance key', async () => {
+  const secure = { 'rss-scout.hub-auth.v1': { base: 'https://rsshub.app', key: 'saved-key' } };
+  const { window, $ } = await boot({ secure });
+  $('edit-hub').click();
+  assert.equal($('hub-key').value, 'saved-key');
+  const type = value => { $('rsshub-base').value = value; $('rsshub-base').dispatchEvent(new window.Event('input')); };
+  type('https://rsshub.appx');
+  assert.equal($('hub-key').value, '');
+  type('https://rsshub.app');
+  assert.equal($('hub-key').value, 'saved-key');
+  $('hub-form').dispatchEvent(new window.Event('submit', { cancelable: true }));
+  await settle(window);
+  assert.deepEqual(secure['rss-scout.hub-auth.v1'], { base: 'https://rsshub.app', key: 'saved-key' });
+});
+
+test('a rule cache missing one half says so in the summary', async () => {
+  const rules = loadScripts(['core.js', 'rules.js']).RSSScoutRules;
+  const sourceKey = rules.sourceKey({ hubBase: 'https://rsshub.app', ruleMode: 'auto', ruleUrl: '', usePrivateRules: true,
+    privateRuleUrl: 'https://raw.githubusercontent.com/gkeyes/ToolBox-Android/refs/heads/main/examples/rss-scout/private-rules.json' });
+  const cache = { sourceKey, rules: [{ host: 'example.com', source: '/', target: '/x' }], at: 1, skipped: 0, source: 'GitHub 官方构建' };
+  const partial = await boot({ storage: { 'rss-scout.radar.v2': { ...cache, partial: 'private' } } });
+  assert.match(partial.$('hub-summary').textContent, /1 个匹配项（缺私人规则，下次探测时重试）/);
+  const complete = await boot({ storage: { 'rss-scout.radar.v2': { ...cache, partial: '' } } });
+  assert.match(complete.$('hub-summary').textContent, /1 个匹配项$/);
 });

@@ -9,7 +9,7 @@ import {hydrateApp} from '../src/store/persistence';
 import {useByok} from '../src/lib/byok';
 import {SCENARIOS,THEORIES,CASES} from '../src/data/corpus';
 import {SKILLS,CONTEXTS} from '../src/data/taxonomy';
-import {buildSession} from '../src/lib/session-utils';
+import {buildSession,competencyValues} from '../src/lib/session-utils';
 import {parseRoleplay} from '../src/lib/client-api';
 import {workSnapshot} from '../platform/perf';
 import type {ByokConfig} from '../src/lib/byok';
@@ -48,6 +48,7 @@ test('native ordinary storage and secure credentials stay separate',async()=>{co
 test('storage error is visible, retains pending data and is retryable',async()=>{const m=mockNative('');let fail=true;const write=m.api.storage.set;m.api.storage.set=async(k,v)=>{if(fail)throw new Error('disk write failed');await write(k,v);};appStorage.setItem('record','new');await assert.rejects(flushStorage(),/尚未保存/);assert.ok(storageFailure());fail=false;await flushStorage();assert.equal(m.ordinary.get('record'),'new');assert.equal(storageFailure(),null);});
 test('backup validates a real corpus session, restores it and excludes the key',async()=>{mockNative('');const scene=SCENARIOS[0],session=buildSession(scene,'arena','zh');useApp.setState({profile:{name:'测试用户',bio:'',goals:scene.skills,contexts:[scene.context],lang:'zh',createdAt:Date.now()},sessions:[session]});useByok.getState().set(config);const text=backupText();assert.ok(!text.includes(config.apiKey));const parsed=validateBackup(text);assert.equal(parsed.sessions[0].scenario.id,scene.id);await restoreBackup(parsed);assert.equal(useApp.getState().sessions[0].id,session.id);assert.equal(useByok.getState().apiKey,config.apiKey);});
 test('malformed and prototype-bearing backups do not mutate existing records',()=>{const before=JSON.stringify(useApp.getState().sessions);assert.throws(()=>validateBackup('{"schemaVersion":1}'));assert.throws(()=>validateBackup('{"__proto__":{}}'));assert.equal(JSON.stringify(useApp.getState().sessions),before);});
+test('a backup with an unknown skill id restores without it, and Growth values skip unknown ids',()=>{mockNative('');const scene=SCENARIOS[0],known=scene.skills[0];useApp.setState({profile:{name:'测试用户',bio:'',goals:scene.skills,contexts:[scene.context],lang:'zh',createdAt:Date.now()},sessions:[],proficiency:{[known]:3,'retired-skill':4}});const parsed=validateBackup(backupText());assert.deepEqual(parsed.proficiency,{[known]:3});const values=competencyValues({[known]:3,'retired-skill':4} as never);assert.equal(values[SKILLS.find(s=>s.id===known)!.competency],3);});
 test('original role metadata and NPC IDs survive transport adaptation',()=>{const raw='@@meta\n{"objectives":[false],"ended":false,"stance":25}\n@@npc\n我需要再考虑一下。';const parsed=parseRoleplay(raw,['npc']);assert.equal(parsed.utterances[0].characterId,'npc');assert.match(parsed.utterances[0].text,/再考虑/);assert.equal(parsed.meta?.stance,25);});
 test('one NPC checkpoint updates multiple fixed message IDs without duplicate lines',()=>{
   mockNative('');

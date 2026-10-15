@@ -500,9 +500,12 @@
   $("interval").addEventListener("change", (event) => {
     if (runtimeClosing) return;
     const work = (async () => {
+      const previous = state.intervalMs;
       state.intervalMs = Number(event.target.value);
       if (state.auto) {
-        await runAction("更新后台间隔", () => toolbox().background.setTimer(TIMER_KEY, state.intervalMs));
+        const updated = await runAction("更新后台间隔", async () => { await toolbox().background.setTimer(TIMER_KEY, state.intervalMs); return true; });
+        // The timer still runs at the old interval; show and keep that one instead of the rejected choice.
+        if (updated !== true) { state.intervalMs = previous; render(); return; }
       }
       await persist();
       render();

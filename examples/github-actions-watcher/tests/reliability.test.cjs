@@ -14,7 +14,7 @@ const run = (id = 17, status = 'in_progress', attempt = 1) => ({
 });
 const response = (body, headers = {}) => ({ status: 200, body: JSON.stringify(body), headers });
 
-function harness(request) {
+function harness(request, extraStubs = {}) {
   const calls = [], posts = [], lives = [], timers = [], writes = [], secureWrites = [];
   const element = () => ({
     value: '', hidden: false, dataset: {}, style: {}, disabled: false,
@@ -41,7 +41,7 @@ function harness(request) {
   };
   let clockPaints = 0;
   const hook = { boot: false, stubs: {
-    renderDashboard() {}, renderDashboardClock() { clockPaints += 1; }, renderAll() {}, showToast() {},
+    renderDashboard() {}, renderDashboardClock() { clockPaints += 1; }, renderAll() {}, showToast() {}, ...extraStubs,
   } };
   const window = { ToolBox: toolbox, GitHubWatcherModel: model, GitHubWatcherReliability: reliability, __TOOLBOX_TEST__: hook, addEventListener() {} };
   const context = vm.createContext({ window, document, URL, Intl, Date, console, setTimeout, clearTimeout, setInterval, clearInterval });
@@ -414,5 +414,42 @@ test('a failing discovery page rotates out and the next full poll reads the fron
     assert.deepEqual(kinds.slice(0, 3), ['front', 'workflow', 'front']);
     assert.equal(h.calls.filter((o) => o.url.includes('/workflows/9/runs')).length, 1);
     assert.notEqual(h.state.warning, 'not_found');
+  } finally { h.close(); }
+});
+
+test('a repository link typed without https:// reads the real owner, and dotted owners are refused', () => {
+  for (const input of ['github.com/foo/bar', 'www.github.com/foo/bar', 'GitHub.com/foo/bar.git', 'https://github.com/foo/bar', 'foo/bar']) {
+    const parsed = model.parseRepositoryLink(input);
+    assert.deepEqual([parsed.owner, parsed.repo], ['foo', 'bar'], input);
+  }
+  assert.equal(model.parseRepositoryLink('foo/bar.js').repo, 'bar.js');
+  assert.throws(() => model.parseRepositoryLink('github.com'), /owner\/repo/);
+  assert.throws(() => model.parseRepositoryLink('example.com/foo/bar'), /owner/);
+});
+
+test('reading a different repository drops the previous watch setup', async () => {
+  const h = harness((options) => {
+    if (/\/repos\/other\/project$/.test(options.url)) return response({ full_name: 'other/project', default_branch: 'trunk' });
+    if (options.url.includes('/actions/workflows')) return response({ workflows: [{ id: 5, name: 'Build', path: '.github/workflows/build.yml', state: 'active' }] });
+    if (options.url.includes('/branches')) return response([{ name: 'trunk' }]);
+    return response({ workflow_runs: [] });
+  });
+  try {
+    h.state.monitoring = false;
+    h.node('repo-input').value = 'https://github.com/other/project';
+    await h.readRepository();
+    assert.equal(h.state.repository.fullName, 'other/project');
+    assert.equal(h.state.config, null);
+  } finally { h.close(); }
+});
+
+test('a failed final save while stopping still leaves the watch screen', async () => {
+  let renders = 0;
+  const h = harness(undefined, { renderAll() { renders += 1; } });
+  try {
+    h.toolbox.storage.set = async () => { throw Object.assign(new Error('disk full'), { code: 'STORAGE_ERROR' }); };
+    await h.stopWatching();
+    assert.equal(h.state.monitoring, false);
+    assert.ok(renders > 0, 'screen re-rendered after the failed save');
   } finally { h.close(); }
 });

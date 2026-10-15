@@ -626,6 +626,20 @@ async function chooseOcr() {
 async function flushDraft() {
   await store?.idle();
   if (page === "editor" && editor?.snapshot && editor.isDirty()) await draftSlot.write({ savedAt: new Date().toISOString(), draft: editor.snapshot() });
+  else if (page === "editor") await draftSlot?.clear();
+}
+
+// The host flushes only on an orderly close; also keep the draft when the page is hidden, so a background kill does not lose it.
+// A hide while a write is pending queues one more write after it, so edits made between the two hides are saved too.
+let hideFlush = null;
+let hideAgain = false;
+function flushOnHide() {
+  if (!draftSlot) return;
+  if (hideFlush) { hideAgain = true; return; }
+  hideFlush = flushDraft().catch(() => {}).finally(() => {
+    hideFlush = null;
+    if (hideAgain) { hideAgain = false; flushOnHide(); }
+  });
 }
 
 async function offerDraft() {
@@ -646,12 +660,17 @@ async function start() {
     await api.ready();
     store = createStore(api.storage); draftSlot ??= createDraftSlot(api.storage, DRAFT_KEY); archive = await store.load(); index = buildIndex(archive.records);
     setTheme(archive.settings.theme); buildNavigation(); navigate("overview");
-    if (!flushRegistered && typeof api.runtime?.registerFlushHandler === "function") { api.runtime.registerFlushHandler(flushDraft); flushRegistered = true; }
+    if (!flushRegistered && typeof api.runtime?.registerFlushHandler === "function") {
+      api.runtime.registerFlushHandler(flushDraft); flushRegistered = true;
+      try { api.runtime.onStateChanged?.((state) => { if (state && state.foreground === false) flushOnHide(); }); } catch {}
+    }
     await offerDraft();
   } catch (e) {
     main.setAttribute("aria-busy", "false"); main.replaceChildren(emptyState("暂时无法打开档案", errorText(e), button("重新读取", start, "button outline")));
   }
 }
 
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") flushOnHide(); });
+window.addEventListener("pagehide", flushOnHide);
 window.addEventListener("beforeunload", (event) => { if (editor?.isDirty()) { event.preventDefault(); event.returnValue = ""; } });
 start();
