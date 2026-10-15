@@ -4,7 +4,7 @@
   // Ledger money is integer cents. DOM content originating from users is escaped.
   const KEY = 'ledger.v1';
   const runtime = window.ZZRuntime;
-  const VERSION = '1.6.1';
+  const VERSION = '1.6.2';
   const MAX_CENTS = 100000000000;
   const $ = s => document.querySelector(s);
   const $$ = s => [...document.querySelectorAll(s)];
@@ -171,10 +171,11 @@
     try{if(el.showPopover&&!el.matches(':popover-open'))el.showPopover();}catch(_){}
     placeToast(el);el.classList.add('show');toastTimer=setTimeout(hide,ms||(action||warn?5200:3000));
   }
-  // On 我的家 (phone) the notice sits under the title; with a sheet open it goes just above the sheet so it covers none of it.
-  function placeToast(el){
+  // On a phone, with a sheet open the notice goes just above the sheet (any page) so it covers none of it.
+  // Re-run when a sheet opens or closes under a notice that is already showing.
+  function placeToast(el=$('#toast')){
     el.style.top='';el.style.bottom='';
-    if(ui.page!=='home'||!$('#sheet').open||!matchMedia('(max-width:700px)').matches)return;
+    if(!$('#sheet').open||!matchMedia('(max-width:700px)').matches)return;
     const sheetTop=$('#sheet').getBoundingClientRect().top,safe=parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--toolbox-safe-area-top'))||0;
     el.style.bottom='auto';el.style.top=Math.max(safe+8,sheetTop-el.offsetHeight-12)+'px';
   }
@@ -194,6 +195,7 @@
     clearTimeout(draftTimer);
     $('#sheet-title').textContent=title;$('#sheet-body').innerHTML=html;
     if(!$('#sheet').open)$('#sheet').showModal();
+    if($('#toast').classList.contains('show'))placeToast();
     $('#sheet-body').scrollTop=0;
     draftSnapshot=formSnapshot();activeDraftId=$('#sheet form[data-form]')?uid('d'):'';activeDraftOriginal=null;activeDraftWritten=false;activeDraftBase=draftBase();activeDraftReview=false;
     $('#draft-status').textContent='';
@@ -209,7 +211,7 @@
     }
     if(window.ZZCalendar?.isOpen)window.ZZCalendar.close();
     if($('#picker').open)$('#picker').close();
-    if($('#sheet').open)$('#sheet').close();
+    if($('#sheet').open){$('#sheet').close();if($('#toast').classList.contains('show'))placeToast();}
   }
 
   function done(message,after){
@@ -780,9 +782,10 @@
   function closeTop(){
     if($('#guard').open){if(!draftBusy){cancelWait();pendingNavigation=null;closeGuard();}return true;}
     // 「选外观」 sits above the form in its own dialog; it closes first (still true while it slides away).
-    if($('#look-dialog').open){homeState.mod?.closeTopSheet();return true;}
+    if($('#look-dialog').open){cancelWait();homeState.mod?.closeTopSheet();return true;}
     if(window.ZZCalendar?.isOpen){window.ZZCalendar.close();return true;}
-    if($('#picker').open){$('#picker').close();return true;}
+    // Cancel first: the picker's close event can arrive a task later, after the save it waits on.
+    if($('#picker').open){cancelWait();$('#picker').close();return true;}
     if($('#sheet').open){closeDialog();return true;}
     if(actionWaiting){cancelWait();return true;}
     return ui.page==='home'&&Boolean(homeState.mod?.back());
@@ -796,6 +799,8 @@
   window.addEventListener('pagehide',()=>{flushCalc();if(isFormDirty())saveDraftNow().catch(()=>{});});
   runtime.onFlush(async()=>{
     let failure=null;flushCalc();const calcWrite=calcSaving;
+    // A 我的家 save in flight would make the draft save skip: wait for it (within the host's 2 s window).
+    for(let n=0;n<30&&busy&&isFormDirty();n++)await new Promise(r=>setTimeout(r,50));
     if(isFormDirty())await saveDraftNow({resume:true}).catch(error=>{failure=error;});
     // An unchanged form that is a saved draft (e.g. reopened from the list) reopens next time too.
     else if($('#sheet').open&&activeDraftId&&storedDraftIds.has(activeDraftId)){closing=true;const id=activeDraftId;await mutateDrafts(list=>list.map(x=>x.id===id?{...x,resume:true}:x)).catch(error=>{failure=error;});}
@@ -998,7 +1003,8 @@
     // Unmark in memory first: the restored form's original (put back by 放弃本次修改) must not carry it.
     drafts=unmarkResume(drafts);mutateDrafts(unmarkResume).catch(()=>{});
     restoreDraft(d.id);
-    if($('#sheet').open)toast('已恢复上次没保存的内容');
+    // Only when the form itself came back (not e.g. the 「草稿关联的项目已删除」 notice).
+    if($('#sheet form[data-form]'))toast('已恢复上次没保存的内容');
   }
 
   // validate() is exposed for the unit tests; the 3D module talks to the ledger only through homeApi.
