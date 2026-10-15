@@ -73,7 +73,7 @@ Worker 获取执行身份 claim 后立即进入覆盖授权、通知准备、请
 | WebView 初始化 | 按宿主 APK debuggable 标志设置调试状态、默认 / stateless ServiceWorker 进程内一次；专用 Profile 使用其自身 ServiceWorkerController，按 Profile 生命周期初始化，删除后撤销初始化记录 |
 | 生命周期 | 每个 WebView 使用 onPause / onResume；不调用全局 pauseTimers。前后台保持原有 WebView / FGS 模型 |
 | 浏览器规则 | 候选规则索引和预处理，保留异常规则优先、IDN 归一化与过滤结果；没有增加全量扫描 fallback |
-| WebRTC 封锁 | document-start 脚本在每个框架删除 RTCPeerConnection 等接口；父框架经 contentWindow/contentDocument 取子框架时先锁，所有插入 DOM 的调用在返回前锁住新子框架（window[i]、frames[i]、具名访问）。已知并接受的残留：插入过程中同步触发的页面回调（自定义元素 connectedCallback / 构造器、about:blank 框架同步触发的 load）早于锁定执行，document-start 脚本没有「框架创建时」的钩子。只有刻意绕过封锁的工具才会走到这里，而工具是用户自己安装的包；包装这些回调会改变页面可见的函数身份，也堵不住其他同步路径，因此不处理（独立审计 SEC-X1） |
+| WebRTC 封锁 | document-start 脚本在每个框架删除 RTCPeerConnection 等接口；父框架经 contentWindow/contentDocument 取子框架时先锁，所有插入 DOM 的调用在返回前锁住新子框架（window[i]、frames[i]、具名访问）。已知并接受的残留：经少见 DOM API 的同 task 插入（table 的 caption/tHead/tFoot setter、select.add、options.add、select.options[i] = 赋值），新框架在同一 task 内、MutationObserver 执行前可经 window[i] 取得；插入过程中同步触发的页面回调（自定义元素 connectedCallback / 构造器、about:blank 框架同步触发的 load）也早于锁定执行，document-start 脚本没有「框架创建时」的钩子。只有刻意绕过封锁的工具才会走到这里，而工具是用户自己安装的包；逐一包装这些 API 和回调没有尽头，还会改变页面可见的函数身份，因此不处理（独立审计 SEC-X1） |
 
 ## 5. 六个工具的当前逻辑
 
