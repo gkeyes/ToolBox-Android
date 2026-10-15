@@ -25,6 +25,7 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isRoot
 import androidx.compose.ui.test.onFirst
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.printToString
@@ -80,6 +81,8 @@ import io.toolbox.host.update.ToolUpdateRow
 import io.toolbox.host.update.UpdateChannel
 import io.toolbox.host.update.UpdateContent
 import io.toolbox.host.update.UpdateUiState
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
@@ -337,7 +340,7 @@ class LayoutScreenshotTest(private val fontScale: Float) {
 
     @Test fun runtimePage() = render("runtime") { RuntimeShellPreviewContent("健康记录与用药提醒") }
 
-    @Test fun browserBars() = render("browser") {
+    @Test fun browserBars() = render("browser", interact = ::assertWholeDomainShown) {
         val context = LocalContext.current
         val scope = rememberCoroutineScope()
         val state = androidx.compose.runtime.remember {
@@ -352,6 +355,16 @@ class LayoutScreenshotTest(private val fontScale: Float) {
             Box(Modifier.statusBarsPadding().padding(start = 16.dp, top = 8.dp)) { BrowserCloseButton(NoBrowserActions) }
             Box(Modifier.navigationBarsPadding()) { BrowserBottomBar(state, filters, NoBrowserActions) }
         }
+    }
+
+    /** DES-21: at 320dp, at both font scales, the capsule shows the whole registrable domain. */
+    private fun assertWholeDomainShown() {
+        val node = compose.onNodeWithTag("browser_address_host", useUnmergedTree = true).fetchSemanticsNode()
+        val layouts = mutableListOf<TextLayoutResult>()
+        node.config[SemanticsActions.GetTextLayoutResult].action?.invoke(layouts)
+        val layout = layouts.single()
+        assertEquals("example.com", layout.layoutInput.text.text)
+        assertFalse("domain is cut at font $fontScale", layout.isLineEllipsized(0) || layout.hasVisualOverflow)
     }
 
     private object NoBrowserActions : BrowserScreenActions {

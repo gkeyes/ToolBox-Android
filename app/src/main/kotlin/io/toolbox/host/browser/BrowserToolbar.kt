@@ -8,6 +8,8 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.text.BasicText
+import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -18,6 +20,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -181,22 +185,30 @@ private fun BrowserAddressCapsule(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.Center,
         ) {
-            ToolBoxIcon(
-                if (unencrypted) ToolBoxIconKey.Globe else ToolBoxIconKey.Lock,
-                if (unencrypted) "HTTP 页面" else "HTTPS 页面",
-                modifier = Modifier.size(14.dp),
-                tint = hostColor,
-            )
-            Spacer(Modifier.width(4.dp))
-            ToolBoxText(
+            // On narrow phones the lock gives its room to the domain; an HTTP page keeps its warning globe.
+            val narrow = LocalConfiguration.current.screenWidthDp < 360
+            if (unencrypted || !narrow) {
+                ToolBoxIcon(
+                    if (unencrypted) ToolBoxIconKey.Globe else ToolBoxIconKey.Lock,
+                    if (unencrypted) "HTTP 页面" else "HTTPS 页面",
+                    modifier = Modifier.size(14.dp),
+                    tint = hostColor,
+                )
+                Spacer(Modifier.width(4.dp))
+            }
+            // The domain shrinks to fit rather than being cut, down to a floor that ignores the system
+            // font scale so "example.com" stays whole at 320dp; tapping shows the full address. Anything
+            // still too long is cut from the start, so the end of the domain is what stays visible.
+            val minHostSize = with(LocalDensity.current) { 10.dp.toSp() }
+            BasicText(
                 (if (state.interaction.unresponsive) "未响应 · " else "") +
                     // Checked first: a lookup before the list loads would latch OkHttp's failure for the process.
                     if (BrowserPublicSuffix.ready) browserDisplayHost(uri.host.orEmpty()) else uri.host.orEmpty(),
-                modifier = Modifier.weight(1f, fill = false),
+                modifier = Modifier.weight(1f, fill = false).testTag("browser_address_host"),
                 maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
+                overflow = TextOverflow.StartEllipsis,
+                autoSize = TextAutoSize.StepBased(minFontSize = minHostSize, maxFontSize = 15.sp, stepSize = 0.5.sp),
                 style = ToolBoxThemeTokens.textStyles.body.copy(
-                    fontSize = 15.sp,
                     lineHeight = 20.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = hostColor,

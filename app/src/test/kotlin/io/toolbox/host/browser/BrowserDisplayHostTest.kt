@@ -15,21 +15,21 @@ class BrowserDisplayHostTest {
     }
     private fun show(host: String) = browserDisplayHost(host, psl)
 
-    @Test fun shortensFromTheLeftToTheRegistrableDomain() {
+    @Test fun showsOnlyTheRegistrableDomain() {
         assertEquals("newsmth.net", show("www.newsmth.net"))
         assertEquals("newsmth.net", show("m.newsmth.net"))
-        assertEquals("…example.com", show("a.b.example.com"))
-        assertEquals("…example.com", show("news.example.com"))
+        assertEquals("example.com", show("a.b.example.com"))
+        assertEquals("example.com", show("news.example.com"))
         assertEquals("example.com", show("example.com"))
         assertEquals("example.co.uk", show("www.example.co.uk"))
-        assertEquals("…example.com.cn", show("news.example.com.cn"))
+        assertEquals("example.com.cn", show("news.example.com.cn"))
         assertEquals("evil.github.io", show("evil.github.io"))
     }
 
     @Test fun keepsTheRegistrantOnMultiLabelSuffixes() {
-        assertEquals("…attacker.s3.amazonaws.com", show("signin.attacker.s3.amazonaws.com"))
+        assertEquals("attacker.s3.amazonaws.com", show("signin.attacker.s3.amazonaws.com"))
         assertEquals("attacker.s3.amazonaws.com", show("attacker.s3.amazonaws.com"))
-        assertEquals("…attacker.s3.amazonaws.com", show("a.signin.attacker.s3.amazonaws.com"))
+        assertEquals("attacker.s3.amazonaws.com", show("a.signin.attacker.s3.amazonaws.com"))
     }
 
     @Test fun doesNotShortenWithoutAnAnswerFromTheList() {
