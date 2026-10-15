@@ -27,7 +27,7 @@ const TARGETS = [
   { selector: ".action-buttons .reader-topbar-row .nextflux-close-button", inset: 2 },
   // Standalone glass buttons (design/glass-buttons.css). Inside sheets and
   // dialogs a url() filter drops the blur in Chromium, so they stay frosted there.
-  { selector: ".button:is(.button--primary, .button--secondary, .button--tertiary, .button--danger):not(.nf-set-row)", outside: ".nextflux-modal-surface, .toolbox-link-dialog, .dropdown__popover, .popover" },
+  { selector: ".button:is(.button--primary, .button--secondary, .button--tertiary, .button--danger):not(.nf-set-row)", outside: ".nextflux-modal-surface, .toolbox-link-dialog, .dropdown__popover, .popover, .reader-speech-slot, .reader-dock, .article-list-actions" },
 ];
 
 export function lensSupported(win = window) {

@@ -103,19 +103,36 @@
   --button-fg: #FFFFFF;
   color: #FFFFFF;
 }
+/* Inside a glass capsule or bar the bar is the glass: a filled button there
+   (the speech bar's play button) keeps its plain fill and only reacts. */
+:is(.reader-speech-slot, .reader-dock, .article-list-actions) .button:is(.button--primary, .button--secondary, .button--tertiary, .button--danger) {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  box-shadow: none;
+}
+:is(.reader-speech-slot, .reader-dock, .article-list-actions) .button.button--primary { --nf-btn-glass: var(--accent); }
+:is(.reader-speech-slot, .reader-dock, .article-list-actions) .button.button--danger { --nf-btn-glass: var(--nf-btn-danger); }
+:is(.reader-speech-slot, .reader-dock, .article-list-actions) .button:is(.button--secondary, .button--tertiary) { --nf-btn-glass: transparent; }
+
+/* Native controls outside HeroUI grow too instead of losing their feedback. */
+:is(.ds-press, .nf-auth-reveal):active:not(:disabled, [aria-disabled="true"]) {
+  transform: scale(var(--nf-press-grow));
+  filter: brightness(1.08);
+}
 /* ---------------------------------------------------------------- segmented and switches */
 /* The selected pill is glass and lifts while a segment is held. */
+/* Adds the lift to the pill's own movement (components.css sets the timing). */
 .tabs__indicator {
-  transition: scale var(--nf-press-out), box-shadow 240ms ease-out;
+  transition-property: left, right, top, width, height, inset, translate, transform, scale, box-shadow;
 }
 .article-list-tabs .tabs__indicator,
 .nf-segmented .tabs__indicator {
   background: color-mix(in srgb, var(--nf-seg-pill) 82%, transparent);
   box-shadow: var(--nf-btn-rim);
 }
-.tabs__list:has(.tabs__tab:active, .tabs__tab[data-pressed="true"], .tabs__tab[data-nf-pressed="true"]) .tabs__indicator {
+/* Selection commits on press, so the pill under a held segment is its own. */
+.tabs__list:has(.tabs__tab[aria-selected="true"]:is(:active, [data-pressed="true"], [data-nf-pressed="true"])) .tabs__indicator {
   scale: 1.1;
-  transition: scale var(--nf-press-in), box-shadow 80ms linear;
 }
 /* The switch knob turns into a clear glass lens while it is held. */
 .switch .switch__thumb,
@@ -142,6 +159,15 @@
   .button:is(.button--secondary, .button--tertiary):not(.nf-set-row) { --nf-btn-glass: color-mix(in srgb, var(--ds-on-surface) 8%, var(--surface)); }
   .button.button--primary:not(.nf-set-row) { --nf-btn-glass: var(--accent); }
   .button.button--danger:not(.nf-set-row) { --nf-btn-glass: var(--nf-btn-danger); }
+  .article-list-tabs .tabs__indicator,
+  .nf-segmented .tabs__indicator { background: #FFFFFF; }
+  .dark :is(.article-list-tabs, .nf-segmented) .tabs__indicator,
+  [data-theme="dark"] :is(.article-list-tabs, .nf-segmented) .tabs__indicator { background: #636366; }
+  .switch:not([data-disabled="true"], [aria-disabled="true"]):is(:active, [data-pressed="true"], [data-nf-pressed="true"]) .switch__thumb {
+    background: #FFFFFF;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
 }
 @media (prefers-reduced-motion: reduce) {
   .button:not(.nf-set-row):is(:active, [data-pressed="true"], [data-nf-pressed="true"]),
