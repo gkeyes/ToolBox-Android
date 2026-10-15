@@ -258,6 +258,10 @@ internal fun DeveloperHelpContent(
     val density = LocalDensity.current
     var searchHeightPx by remember { mutableIntStateOf(0) }
     val direction = LocalLayoutDirection.current
+    // A new query reshapes the list: start it from the top, not wherever the old anchor clamps to.
+    LaunchedEffect(query) {
+        if (listState.firstVisibleItemIndex > 0) listState.scrollToItem(0)
+    }
     Box(modifier) {
         ToolBoxPinnedSearchField(
             value = query,
