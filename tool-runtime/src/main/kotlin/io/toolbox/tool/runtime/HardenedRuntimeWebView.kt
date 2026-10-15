@@ -132,13 +132,15 @@ object HardenedRuntimeWebView {
                 )
             }
             // Every tool WebView, both isolation modes: CSP and request interception never see WebRTC traffic.
+            // "*" also reaches opaque-origin frames (sandboxed srcdoc/about:blank iframes), which an
+            // origin rule never matches. The script carries no bridge, so running it anywhere is safe.
             check(WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
                 "WebRTC hardening is unavailable"
             }
             WebViewCompat.addDocumentStartJavaScript(
                 createdWebView,
                 RuntimeHardeningScripts.webRtc(context),
-                setOf(runtime.origin.removeSuffix("/")),
+                RuntimeHardeningScripts.WEBRTC_ORIGIN_RULES,
             )
             hardenSettings(createdWebView, creationPermit.isolationMode)
             if (creationPermit.isolationMode == RuntimeIsolationMode.DEDICATED_PROFILE) {
@@ -530,6 +532,8 @@ private class RuntimeWebChromeClient(
 /** Document-start hardening shared by every tool WebView; the asset is read once per process. */
 internal object RuntimeHardeningScripts {
     private const val WEBRTC_ASSET = "toolbox-runtime/webrtc-hardening.js"
+    /** Every frame, including opaque-origin ones that no origin rule can name. */
+    val WEBRTC_ORIGIN_RULES: Set<String> = setOf("*")
     @Volatile private var webRtcCached: String? = null
 
     fun webRtc(context: Context): String = webRtcCached ?: context.assets.open(WEBRTC_ASSET)
