@@ -109,6 +109,13 @@ html .toolbox-link-dialog .toolbox-link-primary {
    4.5:1 (注销 was 3.0:1, 保存 4.2:1 on the translucent fills). */
 html .nextflux-modal-surface .button.button--primary:not(.nf-set-row) { --nf-btn-glass: color-mix(in srgb, var(--accent) 80%, black); }
 html .nextflux-modal-surface .button.button--danger:not(.nf-set-row) { --nf-btn-glass: color-mix(in srgb, var(--nf-btn-danger) 80%, black); }
+/* Disabled, they turn into the grey tonal button with secondary text instead
+   of fading to half opacity (搜索 before a query was white at 2.6:1). */
+html .nextflux-modal-surface .button:is(.button--primary, .button--danger):not(.nf-set-row):is(:disabled, [aria-disabled="true"]) {
+  --nf-btn-glass: color-mix(in srgb, var(--ds-on-surface, currentColor) 8%, transparent);
+  color: var(--nf-panel-secondary);
+  opacity: 1;
+}
 
 /* ------------------------------------------------------- open and close */
 /* The link dialog, the toasts and the title-filter toast carry their own
@@ -117,6 +124,10 @@ html .nextflux-modal-surface .button.button--danger:not(.nf-set-row) { --nf-btn-
 html .toolbox-link-dialog[open] { animation-name: nf-link-in; }
 @keyframes nf-link-in { from { transform: translateY(10px) scale(0.98); } }
 html [data-sonner-toaster] [data-sonner-toast].nextflux-toast[data-mounted="false"][data-visible="true"]:not([data-removed="true"]) { opacity: 1; }
+/* Several toasts at once: Sonner mounts each one as visible and pushes the
+   oldest past the limit a moment later, so the rule above has already shown
+   it. A toast leaving the limit hides at once instead of fading for 400ms. */
+html [data-sonner-toaster] [data-sonner-toast].nextflux-toast[data-visible="false"] { transition-property: transform, height, box-shadow; }
 html .nf-title-filter-toast { animation-name: nf-title-filter-toast-pop; }
 @keyframes nf-title-filter-toast-pop { from { scale: 0.94; } }
 /* Sheets: the backdrop transitions its colour, never its opacity. */
