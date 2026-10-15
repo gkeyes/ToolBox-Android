@@ -29,6 +29,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.unit.dp
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 
 /**
@@ -189,7 +190,10 @@ fun Modifier.toolBoxGlassPress(
         label = "toolbox glass press",
     )
     return graphicsLayer {
-        val s = 1f + 0.08f * progress.value
+        // About 8%, but never more than GlassPressMaxGrow wider in all: a full-width button or card
+        // growing 8% would reach into the panel's side margins.
+        val grow = minOf(0.08f, GlassPressMaxGrow.toPx() / size.width.coerceAtLeast(1f))
+        val s = 1f + grow * progress.value
         scaleX = s
         scaleY = s
     }.drawWithContent {
@@ -208,6 +212,9 @@ fun Modifier.toolBoxGlassPress(
         }
     }
 }
+
+/** The most a pressed glass control grows in width, so wide controls stay inside their margins. */
+private val GlassPressMaxGrow = 12.dp
 
 /** Glow of a bare (borderless) control under the finger: an accent wash on light pages, white on dark. */
 @Composable

@@ -33,22 +33,28 @@ internal class WindowBackdrop(
     val luminance: Float = grid.average().toFloat()
 
     /**
-     * Mean luminance of the page under [rect] (window pixels): a dialog over the white article
-     * of a page with a dark header sees white, not the page's mean.
+     * Darkest and brightest cells under [rect]: text can land on any part of the panel, so a dark
+     * panel over a half-white page must stay legible over the white half, not over the mean.
      */
-    fun luminanceIn(rect: Rect): Float {
+    fun luminanceRangeIn(rect: Rect): ClosedFloatingPointRange<Float> {
+        val cells = cellsIn(rect) ?: return luminance..luminance
+        return cells.min()..cells.max()
+    }
+
+    private fun cellsIn(rect: Rect): FloatArray? {
         val pageWidth = image.width / scale
         val pageHeight = image.height / scale
-        if (pageWidth <= 0f || pageHeight <= 0f) return luminance
+        if (pageWidth <= 0f || pageHeight <= 0f) return null
         val last = LuminanceSteps - 1
         fun cell(value: Float, extent: Float) = (value / extent * last).roundToInt().coerceIn(0, last)
         val left = cell(rect.left, pageWidth)
         val right = cell(rect.right, pageWidth)
         val top = cell(rect.top, pageHeight)
         val bottom = cell(rect.bottom, pageHeight)
-        var total = 0f
-        for (y in top..bottom) for (x in left..right) total += grid[y * LuminanceSteps + x]
-        return total / ((bottom - top + 1) * (right - left + 1))
+        val cells = FloatArray((bottom - top + 1) * (right - left + 1))
+        var i = 0
+        for (y in top..bottom) for (x in left..right) cells[i++] = grid[y * LuminanceSteps + x]
+        return cells
     }
 }
 

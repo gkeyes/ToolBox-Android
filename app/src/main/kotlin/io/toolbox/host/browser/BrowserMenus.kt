@@ -98,11 +98,12 @@ internal fun BrowserMenuSheet(state: BrowserUiState, actions: BrowserScreenActio
 
 @Composable
 internal fun BrowserMediaDiagnosticsSheet(state: BrowserUiState, actions: BrowserScreenActions) {
-    val colors = ToolBoxThemeTokens.colors
     ToolBoxActionSheet(
         title = "媒体诊断",
         onDismissRequest = { state.mediaDiagnosticsSheet = false },
     ) {
+        // Read inside the panel: it provides the legible glass text colours (onGlass) to its content.
+        val colors = ToolBoxThemeTokens.colors
         Column(Modifier.fillMaxWidth()) {
             ToolBoxActionSheetHeader {
                 Column(Modifier.fillMaxWidth()) {
@@ -173,11 +174,12 @@ internal fun BrowserMediaDiagnosticsSheet(state: BrowserUiState, actions: Browse
 
 @Composable
 internal fun BrowserUserAgentSheet(state: BrowserUiState, actions: BrowserScreenActions) {
-    val colors = ToolBoxThemeTokens.colors
     ToolBoxActionSheet(
         title = "网站兼容性",
         onDismissRequest = { state.userAgentSheet = false },
     ) {
+        // Read inside the panel: it provides the legible glass text colours (onGlass) to its content.
+        val colors = ToolBoxThemeTokens.colors
         Column(Modifier.fillMaxWidth()) {
             ToolBoxActionSheetHeader {
                 Column(Modifier.fillMaxWidth()) {
@@ -229,7 +231,6 @@ internal fun BrowserUserAgentSheet(state: BrowserUiState, actions: BrowserScreen
 
 @Composable
 internal fun BrowserAddressSheet(state: BrowserUiState, actions: BrowserScreenActions) {
-    val colors = ToolBoxThemeTokens.colors
     val uri = remember(state.address) { Uri.parse(state.address) }
     val host = uri.host.orEmpty().ifBlank { "网页地址" }
     val connectionLabel = when (uri.scheme?.lowercase()) {
@@ -241,6 +242,8 @@ internal fun BrowserAddressSheet(state: BrowserUiState, actions: BrowserScreenAc
         title = "网页地址",
         onDismissRequest = { state.fullAddress = false },
     ) {
+        // Read inside the panel: it provides the legible glass text colours (onGlass) to its content.
+        val colors = ToolBoxThemeTokens.colors
         Column(Modifier.fillMaxWidth()) {
             ToolBoxActionSheetHeader {
                 Row(
@@ -361,8 +364,9 @@ internal fun BrowserAddressSheet(state: BrowserUiState, actions: BrowserScreenAc
 
 @Composable
 internal fun BrowserClearDataDialog(state: BrowserUiState, actions: BrowserScreenActions) {
-    val colors = ToolBoxThemeTokens.colors
     ToolBoxModalDialog(onDismissRequest = { if (!state.clearing) state.clearConfirmation = false }) {
+        // Read inside the panel: it provides the legible glass text colours (onGlass) to its content.
+        val colors = ToolBoxThemeTokens.colors
         ToolBoxText(
             "清除浏览器网站数据",
             modifier = Modifier.semantics { heading() },
@@ -391,8 +395,9 @@ internal fun BrowserClearDataDialog(state: BrowserUiState, actions: BrowserScree
 
 @Composable
 internal fun BrowserRecoveryDialog(state: BrowserUiState, actions: BrowserScreenActions) {
-    val colors = ToolBoxThemeTokens.colors
     ToolBoxModalDialog(onDismissRequest = { state.interaction = state.interaction.keepWaiting() }) {
+        // Read inside the panel: it provides the legible glass text colours (onGlass) to its content.
+        val colors = ToolBoxThemeTokens.colors
         ToolBoxText("网页暂未响应", modifier = Modifier.semantics { heading() },
             style = ToolBoxThemeTokens.textStyles.title.copy(color = colors.textPrimary))
         Spacer(Modifier.height(12.dp))
