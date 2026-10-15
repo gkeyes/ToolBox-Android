@@ -93,8 +93,10 @@ function menuScrim(doc, layer) {
   if (!layer.classList?.contains("nextflux-context-scrim")) return false;
   const menu = doc.querySelector("body > .nextflux-context-menu");
   if (!menu) return false;
+  // The menu keeps its min width and padding when empty, so look for items.
   const rect = menu.getBoundingClientRect();
-  return rect.width > 0 && rect.height > 0;
+  return rect.width > 0 && rect.height > 0 && menu.childElementCount > 0 &&
+    doc.defaultView.getComputedStyle(menu).visibility !== "hidden";
 }
 
 export function findStrandedOverlays({ doc = document, win = window } = {}) {
