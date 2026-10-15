@@ -36,6 +36,7 @@ if [ -z "${TOOLBOX_ANDROID_TEST_FILTER:-}" ]; then
   run_module app || result=1
   run_module tool-runtime || result=1
   run_module core-data || result=1
+  python3 scripts/ci/print-android-failures.py
   exit "$result"
 fi
 
@@ -57,4 +58,5 @@ if [ "${#app_classes[@]}" -gt 0 ]; then run_module app "$(join "${app_classes[@]
 if [ "${#runtime_classes[@]}" -gt 0 ]; then run_module tool-runtime "$(join "${runtime_classes[@]}")" || result=1; fi
 if [ "${#data_classes[@]}" -gt 0 ]; then run_module core-data "$(join "${data_classes[@]}")" || result=1; fi
 python3 scripts/ci/check-android-results.py "$TOOLBOX_ANDROID_TEST_FILTER" || result=1
+python3 scripts/ci/print-android-failures.py
 exit "$result"
