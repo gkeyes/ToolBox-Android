@@ -98,6 +98,8 @@ fun ToolBoxActionSheet(
     var backdrop by remember { mutableStateOf<WindowBackdrop?>(null) }
     // Opaque until the copy lands, then eases into the lighter glass fill.
     val frostAmount = remember { Animatable(0f) }
+    // The sheet's page tone, shared with the buttons on it so they take the sheet's fill.
+    val panelTone = remember { PanelTone() }
     val configuration = LocalConfiguration.current
     if (frosted) LaunchedEffect(hostView, configuration.screenWidthDp, configuration.screenHeightDp) {
         // A resize (rotation, multi-window) makes the old copy the wrong size: drop it and go
@@ -284,7 +286,9 @@ fun ToolBoxActionSheet(
                                 Modifier.snapshotGlass(
                                     it, sheetRadius, SheetBlur,
                                     fill = { lerp(materials.overlayFallback, materials.overlayFill, frostAmount.value) },
-                                ) { entrance.value; dragOffset }
+                                    motion = { entrance.value; dragOffset },
+                                    tone = panelTone,
+                                )
                             } ?: Modifier.background(
                                 containerColor ?: lerp(materials.overlayFallback, materials.overlayFill, frost),
                             ),
@@ -306,6 +310,7 @@ fun ToolBoxActionSheet(
                             { lerp(materials.overlayFallback, materials.overlayFill, frostAmount.value) },
                             SheetBlur,
                             { entrance.value; dragOffset },
+                            panelTone,
                         ) {
                             Box(Modifier.fillMaxWidth()) { if (containerColor == null) ProvideToolBoxGlassText(content) else content() }
                         }
