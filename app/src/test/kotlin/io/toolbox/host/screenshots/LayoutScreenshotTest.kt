@@ -48,6 +48,7 @@ import io.toolbox.host.background.BackgroundTasksPageModel
 import io.toolbox.host.background.LiveNotificationSupportState
 import io.toolbox.host.browser.BrowserBottomBar
 import io.toolbox.host.browser.BrowserFilterController
+import io.toolbox.host.browser.BrowserPublicSuffix
 import io.toolbox.host.browser.BrowserScreenActions
 import io.toolbox.host.browser.BrowserCloseButton
 import io.toolbox.host.browser.BrowserUiState
@@ -114,6 +115,8 @@ class LayoutScreenshotTest(private val fontScale: Float) {
 
     @Before fun setFontScale() {
         RuntimeEnvironment.setFontScale(fontScale)
+        // As BrowserActivity does in the :browser process, so the browser capsule shows the shortened host.
+        BrowserPublicSuffix.load(RuntimeEnvironment.getApplication())
     }
 
     private fun render(name: String, dialog: Boolean = false, interact: () -> Unit = {}, content: @Composable () -> Unit) {

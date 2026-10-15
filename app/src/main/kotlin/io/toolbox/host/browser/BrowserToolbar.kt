@@ -189,7 +189,9 @@ private fun BrowserAddressCapsule(
             )
             Spacer(Modifier.width(4.dp))
             ToolBoxText(
-                (if (state.interaction.unresponsive) "未响应 · " else "") + browserDisplayHost(uri.host.orEmpty()),
+                (if (state.interaction.unresponsive) "未响应 · " else "") +
+                    // Checked first: a lookup before the list loads would latch OkHttp's failure for the process.
+                    if (BrowserPublicSuffix.ready) browserDisplayHost(uri.host.orEmpty()) else uri.host.orEmpty(),
                 modifier = Modifier.weight(1f, fill = false),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
