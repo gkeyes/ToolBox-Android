@@ -46,6 +46,7 @@ import kotlin.math.roundToInt
 @Stable
 class ToolBoxWindowGlass internal constructor() {
     internal var copy by mutableStateOf<WindowBackdrop?>(null)
+    internal var copySize: IntSize? = null
 
     /** False until the page copy lands (and always with 实色材质 on): draw an opaque panel then. */
     val ready: Boolean get() = copy != null
@@ -65,12 +66,18 @@ fun rememberToolBoxWindowGlass(hostView: View, active: Boolean = true): ToolBoxW
             glass.copy = null
             return@LaunchedEffect
         }
+        // A copy from another screen size is out of register: drop it rather than show it.
+        val size = IntSize(configuration.screenWidthDp, configuration.screenHeightDp)
+        if (glass.copySize != size) glass.copy = null
         // A closing overlay keeps its last copy, so it doesn't turn solid while it animates out.
+        // On reopen the old (heavily blurred) copy shows for the couple of frames until the new
+        // one lands, which reads better than a solid flash.
         if (!active) return@LaunchedEffect
         // Let the page settle at its current size before copying it.
         withFrameNanos { }
         withFrameNanos { }
         glass.copy = captureWindowBackdrop(hostView, scale = 0.5f)
+        glass.copySize = size
     }
     return glass
 }
