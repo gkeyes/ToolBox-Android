@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Themed-icon layer: the glass toolbox outline from the launcher foreground. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="1536"
+    android:viewportHeight="1536">
+    <group android:translateX="256" android:translateY="256">
+        <path
+            android:strokeColor="#FFFFFFFF"
+            android:strokeWidth="44"
+            android:strokeLineCap="round"
+            android:pathData="M392,418 V352 A56,56 0,0 1,448,296 H576 A56,56 0,0 1,632,352 V418" />
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:fillType="evenOdd"
+            android:pathData="M328,398 H696 A96,96 0,0 1,792,494 V682 A96,96 0,0 1,696,778 H328 A96,96 0,0 1,232,682 V494 A96,96 0,0 1,328,398 Z M490,526 H534 A38,38 0,0 1,534,602 H490 A38,38 0,0 1,490,526 Z" />
+    </group>
+</vector>
