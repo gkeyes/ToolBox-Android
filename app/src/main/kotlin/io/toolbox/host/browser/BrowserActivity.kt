@@ -174,8 +174,26 @@ class BrowserActivity : ComponentActivity() {
     private fun browserChromeTopThresholdPx(): Int =
         (8f * resources.displayMetrics.density).toInt().coerceAtLeast(1)
 
+    // A tap is one finger released within touch slop of where it went down; scrolls and pinches are not.
+    private var tapDownX = 0f
+    private var tapDownY = 0f
+    private var tapCandidate = false
+
+    private fun trackPageTap(event: MotionEvent) {
+        val slop = android.view.ViewConfiguration.get(this).scaledTouchSlop
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> { tapDownX = event.x; tapDownY = event.y; tapCandidate = true }
+            MotionEvent.ACTION_MOVE -> if (kotlin.math.hypot(event.x - tapDownX, event.y - tapDownY) > slop) tapCandidate = false
+            MotionEvent.ACTION_POINTER_DOWN, MotionEvent.ACTION_CANCEL -> tapCandidate = false
+            MotionEvent.ACTION_UP -> {
+                if (tapCandidate && kotlin.math.hypot(event.x - tapDownX, event.y - tapDownY) <= slop) navigation.pageTapped()
+                tapCandidate = false
+            }
+        }
+    }
+
     private fun updateBrowserChromeForTouch(page: WebView, event: MotionEvent) {
-        if (event.actionMasked == MotionEvent.ACTION_UP) navigation.pageTapped()
+        trackPageTap(event)
         state.chrome.onTouch(
             locked = browserChromeLocked(),
             scrollY = page.scrollY,
