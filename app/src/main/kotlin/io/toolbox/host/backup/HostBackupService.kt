@@ -14,6 +14,7 @@ import io.toolbox.host.runtime.withRuntimeStorageQuiescent
 import io.toolbox.tool.packagekit.*
 import io.toolbox.tool.packagekit.backup.*
 import io.toolbox.tool.packagekit.backup.BackupJson as J
+import io.toolbox.tool.packagekit.lifecycle.InstalledPackageIdentity
 import io.toolbox.tool.packagekit.lifecycle.SupportedToolCapabilities
 import java.io.File
 import java.io.FileOutputStream
@@ -215,7 +216,8 @@ internal class HostBackupService(
         val taskIds = mutableSetOf<String>()
         val plans = prepared.contents.tools.mapIndexed { index, tool ->
             val folder = File(prepared.directory, "tools/${tool.id}")
-            val manifest = restorablePackage(inspector.validate(FilePackageInput(File(folder, "package.tbx"))))?.manifest
+            val valid = restorablePackage(inspector.validate(FilePackageInput(File(folder, "package.tbx"))))
+            val manifest = valid?.manifest
             if (manifest != null && (manifest.id != tool.id || manifest.versionCode != tool.versionCode || manifest.version != tool.version)) throw BackupException("INDEX")
             val metadata = J.read(File(folder, "metadata.json"))
             if (metadata["id"] != tool.id || J.int(metadata["versionCode"]) != tool.versionCode) throw BackupException("INDEX")
@@ -226,6 +228,26 @@ internal class HostBackupService(
                 !HostVersionPolicy.supports(BuildConfig.VERSION_NAME, manifest.minHostVersion) -> "需要 ToolBox ${manifest.minHostVersion} 或更高版本"
                 manifest.permissions.any { it.required && it.name !in SupportedToolCapabilities.All } -> "当前宿主缺少该工具要求的能力"
                 else -> null
+            }
+            val installed = current.firstOrNull { it.metadata.id == tool.id }?.currentVersion
+            var keepInstalled = false
+            if (skipped == null && installed != null) {
+                // Hashing a large installed bundle must stop when the user cancels the restore preview.
+                val installedKey = try {
+                    runInterruptible(Dispatchers.IO) { InstalledPackageIdentity.signingKey(files, installed, resourceProbe) } to false
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    null to true
+                }
+                when (val identity = restoreIdentity(installed, installedKey.first, installedKey.second, checkNotNull(valid).signingKeyId, valid.manifest.versionCode, valid.integrityHash)) {
+                    RestoreIdentity.Replace -> Unit
+                    RestoreIdentity.KeepInstalled -> {
+                        keepInstalled = true
+                        warnings += "${tool.name}：包身份无法验证，保留本机版本 ${installed.version}，仅恢复普通数据；安全存储（登录凭据等）不会交给无法确认作者的本机版本。"
+                    }
+                    is RestoreIdentity.Skip -> skipped = identity.reason
+                }
             }
             if (skipped == null) validatePresentation(metadata)
             val keys = mutableSetOf<String>()
@@ -254,7 +276,8 @@ internal class HostBackupService(
                 dataFiles(folder, "kv").map { it.relativeTo(folder).invariantSeparatorsPath } + dataFiles(folder, "tasks").map { it.relativeTo(folder).invariantSeparatorsPath }
             if (BackupArchive.regularFiles(folder).any { it.relativeTo(folder).invariantSeparatorsPath !in known }) warnings += "${tool.name}：未知扩展文件暂不应用，原备份完整保留。"
             progress("按现有流程校验工具包", 70 + (index + 1) * 30 / maxOf(1, prepared.contents.tools.size))
-            RestoreToolPlan(tool.id, tool.name, tool.version, current.firstOrNull { it.metadata.id == tool.id }?.currentVersion?.version, skipped)
+            // A kept install shows its own version as the result, not a downgrade to the backup's.
+            RestoreToolPlan(tool.id, tool.name, if (keepInstalled) checkNotNull(installed).version else tool.version, installed?.version, skipped, keepInstalled)
         }
         return RestorePreview(prepared, plans, current.associate { it.metadata.id to it.currentVersion }, runtimeIds(), activeTasks(current), warnings.distinct())
     }
@@ -290,10 +313,13 @@ internal class HostBackupService(
                                 currentCoroutineContext().ensureActive()
                                 progress("恢复工具 ${index + 1}/${preview.recoverable.size}", 15 + index * 60 / maxOf(1, preview.recoverable.size))
                                 val folder = File(preview.prepared.directory, "tools/${plan.id}")
-                                installPackage(folder, plan)
+                                // The preview approved this exact installed version (checked above), so a
+                                // kept install is still the code whose identity could not be replaced.
+                                if (!plan.keepInstalled) installPackage(folder, plan)
                                 PreparedToolRestore(
                                     plan, folder, prepareSecure(folder, plan, warnings),
                                     dataFiles(folder, "tasks").mapNotNull { parseTask(it, plan.id, warnings) },
+                                    keptVersion = if (plan.keepInstalled) preview.currentVersions.getValue(plan.id) else null,
                                 )
                             }
                             progress("写入工具数据", 80)
@@ -348,6 +374,8 @@ internal class HostBackupService(
 
     /** Decides and encrypts secure data after the package (and its grants) is installed. */
     private suspend fun prepareSecure(folder: File, plan: RestoreToolPlan, warnings: MutableList<String>): SecureRestore {
+        // An unverified installed package may not be the backup's author, so it never receives the backup's secrets.
+        if (plan.keepInstalled) return SecureRestore.Keep
         val secure = File(folder, "data/secure.json")
         if (secure.exists()) {
             val manifest = packages.installedManifest(plan.id) as? HostInstalledManifestResult.Found
@@ -371,7 +399,7 @@ internal class HostBackupService(
 
     /** Row writes only; runs inside the restore transaction. */
     private suspend fun restoreRows(restore: PreparedToolRestore) {
-        val (plan, folder, secure, tasks) = restore
+        val (plan, folder, secure, tasks, keptVersion) = restore
         BackupDataCodec.requireSuccess(repositories.keyValues.replace(plan.id, repositories.keyValues.keys(plan.id).filterNot(BackupDataCodec::secureKey).toSet(), emptyMap(), 0))
         dataFiles(folder, "kv").forEach { file ->
             val row = J.read(file)
@@ -386,7 +414,7 @@ internal class HostBackupService(
             is SecureRestore.Replace -> BackupDataCodec.requireSuccess(secureStore(plan.id).replaceAll(secure.rows, System.currentTimeMillis()))
         }
         val metadata = J.read(File(folder, "metadata.json"))
-        database.restorePresentation(plan.id, J.long(metadata["installedAt"]), J.long(metadata["versionInstalledAt"]), metadata["lastOpenedAt"]?.let(J::long), metadata["pinnedOrder"]?.let(J::int), metadata["categoryId"]?.let(J::string))
+        database.restorePresentation(plan.id, J.long(metadata["installedAt"]), keptVersion?.installedAt ?: J.long(metadata["versionInstalledAt"]), metadata["lastOpenedAt"]?.let(J::long), metadata["pinnedOrder"]?.let(J::int), metadata["categoryId"]?.let(J::string))
         BackupDataCodec.requireSuccess(repositories.backgroundTasks.deleteForTool(plan.id))
         tasks.forEach { (task, result) -> database.restoreTaskHistory(task, result) }
     }
@@ -398,6 +426,8 @@ internal class HostBackupService(
         val folder: File,
         val secure: SecureRestore,
         val tasks: List<Pair<BackgroundTask, TaskRunResult?>>,
+        /** The installed version that stays when only data is restored. */
+        val keptVersion: ToolVersion? = null,
     )
 
     private sealed interface SecureRestore {

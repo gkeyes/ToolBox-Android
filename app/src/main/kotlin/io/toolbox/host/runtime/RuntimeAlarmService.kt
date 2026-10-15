@@ -7,7 +7,10 @@ import io.toolbox.tool.runtime.RuntimeAlarmHandler
 import io.toolbox.tool.runtime.RuntimeAlarmSummary
 import io.toolbox.tool.runtime.RuntimeHandlerException
 import io.toolbox.tool.runtime.RuntimeRpcErrorCode
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 /** Exact alarms: in-memory registry, system scheduling, persistence and delivery. Main thread only. */
@@ -21,6 +24,8 @@ internal class RuntimeAlarmService(
 ) {
     private val alarmManager = appContext.getSystemService(AlarmManager::class.java)
     private val alarmsByTool = mutableMapOf<String, MutableMap<String, StoredAlarm>>()
+    // Serializes reads and writes of the fired-but-undelivered list (receiver and page-load paths).
+    private val firedLock = Mutex()
 
     val toolIds: Set<String> get() = alarmsByTool.keys
 
@@ -35,24 +40,60 @@ internal class RuntimeAlarmService(
     }
 
     suspend fun removeAll(toolId: String) {
-        alarmsByTool.remove(toolId)?.values?.forEach { cancelScheduledAlarm(toolId, it.alarmId) }
-        persistAlarms(toolId)
+        // Same lock as handleAlarm, so a receiver that already loaded the alarms cannot bring one back afterwards.
+        firedLock.withLock {
+            alarmsByTool.remove(toolId)?.values?.forEach { cancelScheduledAlarm(toolId, it.alarmId) }
+            persistAlarms(toolId)
+            store.persistFiredAlarms(toolId, emptyList())
+        }
     }
 
     suspend fun handleAlarm(toolId: String, versionCode: Int, alarmId: String) {
-        val needsLoad = withContext(Dispatchers.Main.immediate) { alarmsByTool[toolId] == null }
-        val persisted = if (needsLoad) store.loadAlarms(toolId, versionCode) else emptyList()
-        withContext(Dispatchers.Main.immediate) {
-            if (persisted.isNotEmpty()) {
-                alarmsByTool.getOrPut(toolId, ::linkedMapOf).putAll(persisted.associateBy(StoredAlarm::alarmId))
+        // Held across loading and the delivery decision: removeAll cannot run in between, and a page that finishes
+        // loading meanwhile still replays the alarm.
+        firedLock.withLock {
+            val needsLoad = withContext(Dispatchers.Main.immediate) { alarmsByTool[toolId] == null }
+            val persisted = if (needsLoad) store.loadAlarms(toolId, versionCode) else emptyList()
+            val fired = withContext(Dispatchers.Main.immediate) {
+                if (persisted.isNotEmpty()) {
+                    alarmsByTool.getOrPut(toolId, ::linkedMapOf).putAll(persisted.associateBy(StoredAlarm::alarmId))
+                }
+                val alarm = alarmsByTool[toolId]?.remove(alarmId) ?: return@withContext null
+                persistAlarms(toolId)
+                val record = StoredFiredAlarm(alarm, nowMillis(), versionCode)
+                val delivered = hostFor(toolId)?.let { host ->
+                    host.versionCode == versionCode && host.mainEntryLoaded &&
+                        HardenedRuntimeWebView.emitEvent(host.webView, EVENT_ALARM, record.toEvent())
+                } == true
+                record.takeUnless { delivered }
+            } ?: return@withLock
+            // Not running (or still loading): keep the alarm until the tool's page is ready for events.
+            try {
+                store.persistFiredAlarms(toolId, store.loadFiredAlarms(toolId) + fired)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                // The notice below is still posted; the tool simply misses the replay.
             }
-            val alarm = alarmsByTool[toolId]?.remove(alarmId) ?: return@withContext
-            persistAlarms(toolId)
-            val payload = alarm.toEvent(nowMillis())
-            val delivered = hostFor(toolId)?.let { host ->
-                host.versionCode == versionCode && HardenedRuntimeWebView.emitEvent(host.webView, EVENT_ALARM, payload)
-            } == true
-            if (!delivered) notifications.postAlarmNotification(toolId, alarm)
+            withContext(Dispatchers.Main.immediate) { notifications.postAlarmNotification(toolId, fired.alarm) }
+        }
+    }
+
+    /** Emits alarms that fired while [host]'s tool was not running, once its main entry has loaded. */
+    suspend fun deliverFired(toolId: String, host: RuntimeHost) {
+        firedLock.withLock {
+            val fired = store.loadFiredAlarms(toolId)
+            if (fired.isEmpty()) return@withLock
+            val remaining = withContext(Dispatchers.Main.immediate) {
+                if (hostFor(toolId) !== host || !host.mainEntryLoaded) return@withContext fired
+                var open = true
+                // An alarm queued by another package version (an update raced the receiver) is dropped, not delivered.
+                fired.filter { it.versionCode == host.versionCode }.filterNot { alarm ->
+                    open = open && HardenedRuntimeWebView.emitEvent(host.webView, EVENT_ALARM, alarm.toEvent())
+                    open
+                }
+            }
+            if (remaining != fired) store.persistFiredAlarms(toolId, remaining)
         }
     }
 

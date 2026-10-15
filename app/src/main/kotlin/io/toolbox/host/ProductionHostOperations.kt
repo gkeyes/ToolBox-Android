@@ -68,6 +68,7 @@ import io.toolbox.tool.runtime.RuntimeDataCleanupExecution
 import io.toolbox.tool.runtime.ToolRuntimePreparer
 import java.io.InputStream
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
@@ -200,14 +201,34 @@ internal class ProductionHostPackageOperations(
 
     override suspend fun installBundledExamples(): HostExampleInstallResult {
         var available = 0
+        var updated = 0
+        var alreadyCurrent = 0
         for (asset in BUNDLED_EXAMPLES) {
-            when (val result = packages.importAndInstall(AssetPackageInput(application, asset), cleanup)) {
+            val result = packages.importAndInstall(AssetPackageInput(application, asset), cleanup)
+            val outcome = if (
+                result is PackageInstallResult.ConfirmationRequired &&
+                result.confirmation.kind == PackageVersionConfirmationKind.UPDATE
+            ) {
+                // The examples ship inside this APK, so they are trusted: unsigned bundled packages always
+                // ask for confirmation, and only a newer bundled versionCode is accepted here.
+                try {
+                    packages.confirmInstall(result.confirmation.id, cleanup)
+                } finally {
+                    withContext(NonCancellable) { packages.cancelInstall(result.confirmation.id) }
+                }
+            } else result
+            when (outcome) {
                 PackageInstallResult.Cancelled -> return HostExampleInstallResult.Failed("CANCELLED", "范例安装已取消。")
-                is PackageInstallResult.Installed -> available += 1
+                is PackageInstallResult.Installed -> {
+                    available += 1
+                    if (outcome.updated) updated += 1
+                }
                 is PackageInstallResult.ConfirmationRequired -> {
-                    val failure = packages.cancelInstall(result.confirmation.id)
+                    // Same or older version than the installed copy: keep it and its data.
+                    val failure = packages.cancelInstall(outcome.confirmation.id)
                     if (failure == null) {
                         available += 1
+                        alreadyCurrent += 1
                     } else {
                         return HostExampleInstallResult.Failed(
                             code = failure.code.name,
@@ -217,17 +238,17 @@ internal class ProductionHostPackageOperations(
                 }
                 is PackageInstallResult.Failed -> {
                     return HostExampleInstallResult.Failed(
-                        code = result.failure.code.name,
+                        code = outcome.failure.code.name,
                         message = "范例安装未完成，请重试。",
                     )
                 }
                 is PackageInstallResult.Rejected -> return HostExampleInstallResult.Failed(
-                    code = result.rejection.code.name,
+                    code = outcome.rejection.code.name,
                     message = "范例工具包无法安装。",
                 )
             }
         }
-        return HostExampleInstallResult.Installed(available)
+        return HostExampleInstallResult.Installed(available, updated, alreadyCurrent)
     }
 
     private suspend fun clearRuntimeState(toolId: String, removeShortcut: Boolean) {

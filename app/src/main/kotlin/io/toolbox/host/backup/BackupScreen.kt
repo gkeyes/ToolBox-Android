@@ -212,12 +212,16 @@ private fun RestorePreviewRow(tool: RestoreToolPlan, first: Boolean, last: Boole
             AppText(tool.name, textStyle = ToolBoxThemeTokens.textStyles.title)
             if (tool.skipped != null) {
                 AppText("跳过 · ${tool.skipped}", color = ToolBoxThemeTokens.colors.danger)
+            } else if (tool.keepInstalled) {
+                // The package could not be verified, so the installed code stays; only the backup's non-secure data comes back.
+                AppText("包身份无法验证 · 保留本机版本，仅恢复普通数据（不含安全存储）", color = ToolBoxThemeTokens.colors.textSecondary,
+                    textStyle = ToolBoxThemeTokens.textStyles.metadata)
             } else {
                 AppText(if (tool.current == null) "新增安装" else "将覆盖本机版本",
                     color = if (tool.current == null) ToolBoxThemeTokens.colors.primary else ToolBoxThemeTokens.colors.danger,
                     textStyle = ToolBoxThemeTokens.textStyles.metadata)
             }
-            AppText("${tool.current ?: "未安装"} → ${tool.incoming}", textStyle = ToolBoxThemeTokens.textStyles.metadata,
+            AppText(if (tool.keepInstalled) "保留 ${tool.current}" else "${tool.current ?: "未安装"} → ${tool.incoming}", textStyle = ToolBoxThemeTokens.textStyles.metadata,
                 color = ToolBoxThemeTokens.colors.textSecondary)
         }
         if (!last) SettingsRowSeparator(start = 16.dp)
@@ -229,6 +233,7 @@ internal data class RestorePlanCounts(val recoverable: Int, val overwritten: Int
 /** Skipped conflicts must never be counted as planned overwrites. */
 internal fun restorePlanCounts(tools: List<RestoreToolPlan>): RestorePlanCounts = RestorePlanCounts(
     recoverable = tools.count { it.skipped == null },
-    overwritten = tools.count { it.skipped == null && it.current != null },
+    // A kept tool restores only its data; its package is not overwritten.
+    overwritten = tools.count { it.skipped == null && it.current != null && !it.keepInstalled },
     skipped = tools.count { it.skipped != null },
 )

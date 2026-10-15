@@ -1,6 +1,7 @@
 package io.toolbox.tool.packagekit
 
 import io.toolbox.core.data.ResourceCapacity
+import io.toolbox.tool.packagekit.lifecycle.aggregatePackageHash
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.LinkOption
@@ -27,7 +28,12 @@ internal class DefaultPackageInspector(
             is PreparationResult.Prepared -> {
                 val prepared = result.value
                 try {
-                    PackageValidationResult.Valid(prepared.manifest, prepared.archive)
+                    PackageValidationResult.Valid(
+                        prepared.manifest,
+                        prepared.archive,
+                        signingKeyId = prepared.signingKeyId,
+                        integrityHash = aggregatePackageHash(prepared.fileHashes),
+                    )
                 } finally {
                     deleteTree(prepared.temporaryDirectory)
                 }
