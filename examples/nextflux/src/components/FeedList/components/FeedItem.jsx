@@ -60,7 +60,7 @@ const FeedItem = ({ feed, active, count }) => {
         asChild
         isActive={active}
         className={cn(
-          "pl-11 pr-3",
+          "pl-[44px] pr-3",
           active && "active-feed",
         )}
       >
@@ -70,15 +70,15 @@ const FeedItem = ({ feed, active, count }) => {
           onContextMenu={handleContextMenu}
         >
           <FeedIcon feedId={feed.id} />
-          <span className="flex-1 flex items-center gap-1">
+          <span className="flex-1 flex min-w-0 items-center gap-1">
             {feed.parsing_error_count > 0 && (
               <span className="text-warning">
                 <TriangleAlert className="size-4" />
               </span>
             )}
-            <span className="line-clamp-1">{feed.title}</span>
+            <span className="min-w-0 truncate">{feed.title}</span>
           </span>
-          <span className="sidebar-badge ds-tnum text-[length:var(--ds-text-subhead)]">
+          <span className="sidebar-badge shrink-0 ds-tnum text-[length:var(--ds-text-subhead)]">
             {count !== 0 && count}
           </span>
         </Link>

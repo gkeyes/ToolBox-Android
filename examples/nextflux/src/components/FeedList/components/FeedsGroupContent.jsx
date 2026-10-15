@@ -85,7 +85,7 @@ const FeedsGroupContent = ({ category, active, activeFeedId }) => {
             onClick={() => isMobile && setOpenMobile(false)}
             onContextMenu={handleContextMenu}
           >
-            <span className="pl-8 font-medium">{category.title}</span>
+            <span className="pl-[32px] min-w-0 truncate font-medium">{category.title}</span>
           </Link>
         </SidebarMenuButton>
 

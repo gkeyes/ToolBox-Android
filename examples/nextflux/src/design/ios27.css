@@ -634,6 +634,21 @@ fieldset, .fieldset { min-inline-size: 0; max-inline-size: 100%; }
 }
 .card-time-wrapper { flex: 0 1 auto; min-inline-size: 0; max-inline-size: 100%; }
 .card-time { overflow: hidden; text-overflow: ellipsis; }
+/* A narrow card at large text leaves the meta row only a sliver beside a side
+   thumbnail; there the meta row spans the card and the thumbnail sits beside
+   the title. */
+.article-card { container: nf-card / inline-size; }
+@container nf-card (max-width: 10rem) {
+  .card-content:has(> .card-image) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    column-gap: 0.75rem;
+    row-gap: 0.25rem;
+  }
+  .card-content:has(> .card-image) > .card-header { display: contents; }
+  .card-content:has(> .card-image) > .card-header > .card-meta { grid-column: 1 / -1; }
+  .card-content:has(> .card-image) > .card-image { grid-column: 2; grid-row: 2; }
+}
 
 /* Long-press menu, iOS style: the page blurs, the pressed row lifts, the menu
    sits under it with its icons trailing. */

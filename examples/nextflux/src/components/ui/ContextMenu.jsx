@@ -56,7 +56,9 @@ const ContextMenu = ({ isOpen, onClose, position, children }) => {
       }
     };
 
-    const handleScroll = () => {
+    const handleScroll = (event) => {
+      // A menu taller than the room left scrolls itself; that keeps it open.
+      if (menuRef.current?.contains(event.target)) return;
       onClose();
     };
 
@@ -75,20 +77,33 @@ const ContextMenu = ({ isOpen, onClose, position, children }) => {
     if (!isOpen || !menuRef.current || !position) return undefined;
     const menu = menuRef.current;
     const place = () => {
+      menu.style.maxBlockSize = "";
+      menu.style.overflowY = "";
       // Layout size: the entrance animation scales the box, which
       // getBoundingClientRect() would report as smaller than the menu.
       const width = menu.offsetWidth;
-      const height = menu.offsetHeight;
+      let height = menu.offsetHeight;
       const viewportWidth = window.innerWidth;
       const viewportHeight = window.innerHeight;
 
       let { x, y } = position;
       if (anchor) {
-        // Under the row; above it when there is no room below.
+        // Under the row; above it when there is no room below. When it fits
+        // neither way it scrolls on the roomier side, so the row stays visible.
         const rect = row.getBoundingClientRect();
+        const below = viewportHeight - 10 - (rect.bottom + 8);
+        const above = rect.top - 8 - 10;
         x = rect.left + 8;
         y = rect.bottom + 8;
-        if (y + height > viewportHeight - 10 && rect.top - height - 8 >= 10) y = rect.top - height - 8;
+        if (height > below) {
+          if (height <= above) y = rect.top - height - 8;
+          else {
+            height = Math.max(below, above);
+            menu.style.maxBlockSize = `${height}px`;
+            menu.style.overflowY = "auto";
+            y = below >= above ? rect.bottom + 8 : rect.top - 8 - height;
+          }
+        }
       }
 
       // Keep a 10px margin from the right and bottom edges
