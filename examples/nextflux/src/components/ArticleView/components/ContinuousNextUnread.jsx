@@ -180,7 +180,7 @@ export default function ContinuousNextUnread({ articleId, scrollAreaRef, surface
   };
 
   useLayoutEffect(() => {
-    latestRef.current = { nextUnread, paint, hideRealClose, clearVisuals, cancelPull, commit, finishHandoff, abortHandoff, revealActualPage };
+    latestRef.current = { nextUnread, paint, hideRealClose, showRealClose, clearVisuals, cancelPull, commit, finishHandoff, abortHandoff, revealActualPage };
   });
 
   useLayoutEffect(() => {
@@ -227,6 +227,9 @@ export default function ContinuousNextUnread({ articleId, scrollAreaRef, surface
       const chrome = chromeRef.current;
       if (chrome && !transitionRef.current) {
         chrome.replaceChildren();
+        // A pull started before the last one sprang back still has the
+        // real button hidden; the copy must not inherit that.
+        latestRef.current.showRealClose();
         const bar = viewport.querySelector(".action-buttons");
         const row = bar?.querySelector(".reader-topbar-row");
         const button = row?.querySelector(".nextflux-close-button");
@@ -239,6 +242,9 @@ export default function ContinuousNextUnread({ articleId, scrollAreaRef, surface
           const copyRow = row.cloneNode(false);
           const copyButton = button.cloneNode(true);
           for (const node of [copy, copyRow, copyButton, ...copyButton.querySelectorAll("[id]")]) node.removeAttribute("id");
+          // The copy stays usable: a handoff can wait on a slow first screen,
+          // and the close button must still close the reader meanwhile.
+          copyButton.addEventListener("click", (event) => { event.preventDefault(); button.click(); });
           copy.style.cssText = `position:absolute;top:${barRect.top - top}px;left:${barRect.left}px;width:${barRect.width}px;margin:0;`;
           copyRow.append(copyButton);
           copy.append(copyRow);
@@ -271,6 +277,7 @@ export default function ContinuousNextUnread({ articleId, scrollAreaRef, surface
       const touch = event.touches[0];
       gestureRef.current = { id: touch.identifier, x: touch.clientX, y: touch.clientY,
         lastY: touch.clientY, lastT: performance.now(), direction: null, velocity: 0, pulling: rawRef.current > 0 };
+      if (rawRef.current > 0) latestRef.current.hideRealClose();
     };
     const onMove = (event) => {
       const gesture = gestureRef.current;
