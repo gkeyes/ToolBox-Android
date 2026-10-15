@@ -35,10 +35,10 @@ class ToolPermissionSummaryTest {
         val stored = summarizeToolPermissions("t", setOf("network", "notifications", "location"), listOf(
             PermissionGrant("t", "network", true, 1), PermissionGrant("t", "notifications", true, 1), PermissionGrant("t", "location", true, 1),
         ))
-        val revoked = stored.withSystemState { false }
+        val revoked = stored.withSystemState({ false })
         assertEquals(1, (revoked as ToolPermissionSummary.Ready).enabled)
         assertEquals("已允许 1 / 3 项 · 2 项关闭", revoked.label)
-        assertEquals(3, (stored.withSystemState { true } as ToolPermissionSummary.Ready).enabled)
+        assertEquals(3, (stored.withSystemState({ true }) as ToolPermissionSummary.Ready).enabled)
     }
 
     @Test
