@@ -38,6 +38,7 @@ import com.kyant.backdrop.highlight.Highlight
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 import kotlin.math.roundToInt
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.runtime.CompositionLocalProvider
 
 /**
  * Liquid Glass for a panel in an overlay window (a dialog). The overlay cannot sample the page
@@ -105,6 +106,8 @@ private class WindowCopyBackdrop(
     private val copy: WindowBackdrop,
     /** Null: measure the scale of the layers the glass sits in (a popup zooming in on its own). */
     private val layerScale: (() -> Float)?,
+    /** Drawn over the copy: the panel's own fill, for controls that sit on the panel. */
+    private val overlay: Color? = null,
 ) : Backdrop {
     override val isCoordinatesDependent: Boolean = true
 
@@ -130,8 +133,43 @@ private class WindowCopyBackdrop(
                 drawImage(copy.image, dstOffset = IntOffset.Zero, dstSize = pageSize)
             }
         }
+        if (overlay != null) drawRect(overlay)
     }
 }
+
+/**
+ * Buttons on a panel of window glass (a sheet, a dialog, the group panel) refract what the panel
+ * shows: the page copy under the panel's [fill], blurred as much as the panel. Without a copy
+ * (实色材质, or before it lands) they keep the clear backdrop.
+ */
+@Composable
+internal fun ProvideWindowButtonBackdrop(
+    copy: WindowBackdrop?,
+    fill: Color,
+    blurRadius: Dp,
+    content: @Composable () -> Unit,
+) {
+    if (copy == null) {
+        content()
+        return
+    }
+    val overlay = legibleFill(fill, copy.luminance)
+    val backdrop = remember(copy, overlay) { WindowCopyBackdrop(copy, null, overlay) }
+    CompositionLocalProvider(
+        LocalToolBoxButtonBackdrop provides backdrop,
+        LocalToolBoxButtonBlur provides blurRadius,
+        content = content,
+    )
+}
+
+/** [ProvideWindowButtonBackdrop] for a panel drawn with [toolBoxWindowGlassEffect]. */
+@Composable
+fun ProvideToolBoxWindowButtonBackdrop(
+    glass: ToolBoxWindowGlass,
+    fill: Color = ToolBoxThemeTokens.materials.overlayFill,
+    blurRadius: Dp = 28.dp,
+    content: @Composable () -> Unit,
+) = ProvideWindowButtonBackdrop(glass.copy, fill, blurRadius, content)
 
 /**
  * Liquid Glass over a copy of the page: the page frosted by [blurRadius] (colours and shapes stay,

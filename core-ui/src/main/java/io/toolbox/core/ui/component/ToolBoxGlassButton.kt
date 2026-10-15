@@ -35,6 +35,7 @@ import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 import androidx.compose.ui.graphics.Shape
 import com.kyant.backdrop.drawBackdrop
 import com.kyant.backdrop.effects.vibrancy
+import com.kyant.backdrop.effects.blur
 
 /**
  * Round iOS 27 glass button. Uses the vendored Kyant [LiquidButton], so it refracts what is behind
@@ -72,9 +73,11 @@ fun ToolBoxGlassIconButton(
         LiquidButton(
             onClick = onClick,
             backdrop = if (recorded) glassState!!.backdrop else LocalToolBoxButtonBackdrop.current ?: emptyBackdrop(),
-            modifier = described.graphicsLayer { alpha = if (enabled || tint == null) 1f else 0.42f },
+            modifier = described,
             enabled = enabled,
-            surfaceColor = tint?.copy(alpha = 0.9f) ?: ToolBoxThemeTokens.materials.glassTint,
+            // Disabled fades the fill, not a layer around the button (that would clip its shadow).
+            surfaceColor = tint?.copy(alpha = if (enabled) 0.9f else 0.38f) ?: ToolBoxThemeTokens.materials.glassTint,
+            blurRadius = if (recorded) 2.dp else LocalToolBoxButtonBlur.current,
             // A round icon button centres its glyph; the default 16dp text padding would leave
             // only 12dp of a 44dp button for a 20dp icon.
             contentPadding = PaddingValues(0.dp),
@@ -119,6 +122,7 @@ fun ToolBoxGlassCapsule(
             modifier = modifier,
             enabled = enabled,
             surfaceColor = surface,
+            blurRadius = LocalToolBoxButtonBlur.current,
             contentPadding = contentPadding,
             height = height,
             content = content,
@@ -162,10 +166,14 @@ fun Modifier.toolBoxClearGlass(
     val live = ToolBoxThemeTokens.materials.realBlurEnabled && LocalView.current.isHardwareAccelerated
     if (!live) return clip(shape).background(solid)
     val backdrop = LocalToolBoxButtonBackdrop.current ?: emptyBackdrop()
+    val blurRadius = LocalToolBoxButtonBlur.current
     return drawBackdrop(
         backdrop = backdrop,
         shape = { shape },
-        effects = { vibrancy() },
+        effects = {
+            vibrancy()
+            blur(blurRadius.toPx())
+        },
         onDrawSurface = { drawRect(tint) },
     )
 }

@@ -298,7 +298,10 @@ fun ToolBoxActionSheet(
                         // Opaque custom containers (browser sheets) keep their opaque cards.
                         LocalToolBoxInGlassSheet provides (containerColor == null),
                     ) {
-                        Box(Modifier.fillMaxWidth()) { content() }
+                        // Buttons on the sheet refract what the sheet shows: the frosted page copy.
+                        ProvideWindowButtonBackdrop(backdrop?.takeIf { frosted }, materials.overlayFill, SheetBlur) {
+                            Box(Modifier.fillMaxWidth()) { content() }
+                        }
                     }
                 }
             }
