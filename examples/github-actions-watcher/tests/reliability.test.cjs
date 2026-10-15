@@ -443,6 +443,31 @@ test('reading a different repository drops the previous watch setup', async () =
   } finally { h.close(); }
 });
 
+test('reading a different repository clears a branch typed by hand for the previous one', async () => {
+  const h = harness((options) => {
+    if (/\/repos\/(other\/project|fixture\/fixture)$/.test(options.url)) {
+      const name = options.url.includes('/other/') ? 'other/project' : 'fixture/fixture';
+      return response({ full_name: name, default_branch: name === 'other/project' ? 'trunk' : 'main' });
+    }
+    if (options.url.includes('/actions/workflows')) return response({ workflows: [{ id: 5, name: 'Build', path: '.github/workflows/build.yml', state: 'active' }] });
+    if (options.url.includes('/branches')) return response([{ name: 'trunk' }]);
+    return response({ workflow_runs: [] });
+  });
+  try {
+    h.state.monitoring = false;
+    h.node('repo-input').value = 'https://github.com/fixture/fixture';
+    await h.readRepository();
+    h.node('branch-manual').value = 'release/1.x';
+    // Re-reading the same repository keeps the typed branch.
+    await h.readRepository();
+    assert.equal(h.node('branch-manual').value, 'release/1.x');
+    h.node('repo-input').value = 'https://github.com/other/project';
+    await h.readRepository();
+    assert.equal(h.state.repository.fullName, 'other/project');
+    assert.equal(h.node('branch-manual').value, '');
+  } finally { h.close(); }
+});
+
 test('a failed final save while stopping still leaves the watch screen', async () => {
   let renders = 0;
   const h = harness(undefined, { renderAll() { renders += 1; } });
