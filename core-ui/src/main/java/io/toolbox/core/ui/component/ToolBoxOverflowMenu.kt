@@ -23,6 +23,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
@@ -205,12 +206,18 @@ private fun ToolBoxContextMenuItem(
         modifier
             .fillMaxWidth()
             .heightIn(min = 48.dp)
+            // Glass press: the row grows slightly and lights up under the finger instead of a grey highlight.
+            .graphicsLayer {
+                val s = 1f + 0.02f * glow
+                scaleX = s
+                scaleY = s
+            }
             .clip(ContextMenuItemShape)
-            // Glass press: the row lights up under the finger instead of a grey highlight.
             .drawBehind {
                 if (glow > 0.001f) {
+                    // White adds almost nothing on the light menu (~250), so light mode glows in the accent instead.
                     drawRect(
-                        Color.White.copy(alpha = (if (dark) 0.16f else 0.55f) * glow),
+                        if (dark) Color.White.copy(alpha = 0.16f * glow) else colors.primary.copy(alpha = 0.14f * glow),
                         blendMode = if (dark) BlendMode.Plus else BlendMode.SrcOver,
                     )
                 }

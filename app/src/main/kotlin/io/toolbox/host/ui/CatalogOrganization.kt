@@ -374,9 +374,10 @@ private fun CatalogGroupFolder(
             val capsuleShape = RoundedCornerShape(metrics.radius)
             Box(
                 Modifier.fillMaxWidth().height(metrics.height)
-                    .toolBoxPressFeedback(interactionSource, shape = capsuleShape)
+                    // Same glass press, rim and shadow as the 新建分组 tile beside it: grow and glow, never shrink.
+                    .toolBoxGlassPress(interactionSource, shape = capsuleShape)
+                    .toolBoxClearGlass(capsuleShape, tint = lerp(colors.surface, style.bottom, 0.06f))
                     .clip(capsuleShape)
-                    .background(lerp(colors.surface, style.bottom, 0.06f))
                     .testTag("catalog_group:" + group.id)
                     .semantics {
                         contentDescription = "分组${group.name}，${members.size} 个工具"
