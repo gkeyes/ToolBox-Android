@@ -230,8 +230,9 @@ internal fun ToolManagerContent(
                     )
                 }
             }
-            // The load-failed status below already says the list can't be read; don't repeat it in a banner.
-            state.feedback?.takeUnless { state.loadFailed && (it as? CatalogFeedback.Failure)?.code == "CATALOG_UNAVAILABLE" }?.let { feedback ->
+            // With no tools to show, the load-failed status below is at the top and already says the list can't be read.
+            // When stale tools are still listed, the banner stays so the failure is visible above them.
+            state.feedback?.takeUnless { state.loadFailed && state.tools.isEmpty() && (it as? CatalogFeedback.Failure)?.code == "CATALOG_UNAVAILABLE" }?.let { feedback ->
                 item("catalog-feedback") {
                     FeedbackSurface(
                         message = feedback.message,
