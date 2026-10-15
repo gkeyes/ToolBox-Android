@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { contentMetrics, testScraperRule, applyScraperRule, replayScraperRollbacks, flushScraperTests } from "../src/toolbox/fulltext-adapter/fulltext-server.mjs";
+import { contentMetrics, testScraperRule, applyScraperRule, replayScraperRollbacks } from "../src/toolbox/fulltext-adapter/fulltext-server.mjs";
 import { createRollbackJournal } from "../src/toolbox/fulltext-adapter/rollback-journal.mjs";
 import { isMiniMaxProvider, parseScraperCandidate } from "../src/toolbox/fulltext-adapter/fulltext-ai.mjs";
 
@@ -111,7 +111,6 @@ test("a test cut short leaves a rollback that the next start replays", async () 
   assert.equal((await a.getFeed()).scraper_rules, ".old");
   assert.deepEqual(await next.list(), []);
   release("<p>late</p>");
-  await flushScraperTests();
 });
 
 test("a finished test clears its rollback; a failed rollback keeps it", async () => {
@@ -140,17 +139,16 @@ test("replay leaves a rule someone else changed, and apply drops an old rollback
   assert.deepEqual(await journal.list(), []);
 });
 
-test("flush waits for a running test", async () => {
+test("a rollback that could not be replayed blocks a new test of that feed", async () => {
+  const storage = memoryStorage();
+  const journal = createRollbackJournal({ storage, account: "s#1" });
   const a = api();
-  let release;
-  a.fetchEntryContent = () => new Promise((resolve) => { release = resolve; });
-  testScraperRule({ feedId: 1, entryId: 9, candidate: "article", baselineRule: ".old", api: a });
-  await new Promise((r) => setTimeout(r, 10));
-  let flushed = false;
-  const flush = flushScraperTests().then(() => { flushed = true; });
-  await new Promise((r) => setTimeout(r, 10));
-  assert.equal(flushed, false);
-  release("<p>x</p>");
-  await flush;
+  await a.updateFeed(1, { scraper_rules: "article" });
+  await journal.save({ feedId: 1, candidate: "article", baselineRule: ".old" });
+  const offline = { ...a, getFeed: async () => { throw new Error("offline"); } };
+  assert.equal((await replayScraperRollbacks({ api: offline, journal })).length, 1);
+  await assert.rejects(testScraperRule({ feedId: 1, entryId: 9, candidate: ".new", baselineRule: "article", api: a, journal }), { code: "ROLLBACK_PENDING" });
+  assert.deepEqual(await journal.list(), [{ feedId: 1, candidate: "article", baselineRule: ".old" }]);
+  assert.deepEqual(await replayScraperRollbacks({ api: a, journal }), []);
   assert.equal((await a.getFeed()).scraper_rules, ".old");
 });

@@ -20,11 +20,10 @@ async function boot() {
   window.ToolBox.runtime.registerFlushHandler(async () => {
     // Stores must read the restored preference engine, including during early exit.
     await initializePreferences();
-    const [{ flushSyncWork }, { flushBackgroundWork }, { flushScraperTests }] = await Promise.all([
+    const [{ flushSyncWork }, { flushBackgroundWork }] = await Promise.all([
       import("./stores/syncStore.js"), import("./toolbox/background.js"),
-      import("./toolbox/fulltext-adapter/fulltext-server.mjs"),
     ]);
-    const work = await Promise.allSettled([flushSyncWork(), flushBackgroundWork(), flushScraperTests()]);
+    const work = await Promise.allSettled([flushSyncWork(), flushBackgroundWork()]);
     await flushPreferences();
     const failure = work.find((result) => result.status === "rejected");
     if (failure) throw failure.reason;

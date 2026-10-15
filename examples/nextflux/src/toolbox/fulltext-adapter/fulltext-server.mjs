@@ -24,23 +24,17 @@ async function restoreBaseline({ feedId, candidate, baselineRule, api }) {
   }
 }
 
-// Tests still talking to the server; the host's flush handler waits for them.
-const running = new Set();
-export function flushScraperTests() {
-  return Promise.allSettled([...running]);
-}
+const PENDING_MESSAGE = "上次测试的规则还没恢复，请检查网络后重新打开全文适配。";
 
 // `journal` keeps a rollback that must still happen. It is saved before the
 // candidate reaches the server and cleared once the baseline is back, so a
 // test cut short (back, Home, a killed task) is rolled back on the next start.
-export function testScraperRule(options) {
-  const run = runScraperTest(options);
-  running.add(run);
-  run.then(() => running.delete(run), () => running.delete(run));
-  return run;
-}
-
-async function runScraperTest({ feedId, entryId, candidate, baselineRule, api, journal }) {
+// The host refuses network requests once it starts closing, so the rollback
+// cannot run on the way out; the journal is what carries it.
+export async function testScraperRule({ feedId, entryId, candidate, baselineRule, api, journal }) {
+  // An unreplayed rollback means the server still holds an old candidate:
+  // testing on top of it would record that candidate as the baseline.
+  if (journal && (await journal.list()).some((entry) => entry.feedId === Number(feedId))) throw fail("ROLLBACK_PENDING", PENDING_MESSAGE);
   const current = await api.getFeed(feedId);
   if ((current.scraper_rules || "") !== (baselineRule || "")) throw fail("CONFLICT", "服务器采集规则已被其他页面修改，请重新载入后再生成。");
   const same = (baselineRule || "") === candidate;
@@ -67,6 +61,7 @@ async function runScraperTest({ feedId, entryId, candidate, baselineRule, api, j
 
 // Replays rollbacks a cut-short test left behind. A rollback that fails on the
 // network stays for the next try; one the server no longer needs is dropped.
+// Returns the rollbacks still owed.
 export async function replayScraperRollbacks({ api, journal }) {
   const pending = await journal.list();
   for (const entry of pending) {
@@ -77,6 +72,11 @@ export async function replayScraperRollbacks({ api, journal }) {
       if (error?.code === "ROLLBACK_CONFLICT" || error?.response?.status === 404) await journal.clear(entry.feedId).catch(() => {});
     }
   }
+  return journal.list();
+}
+
+export function assertNoPendingRollback(pending, feedId) {
+  if (pending.some((entry) => entry.feedId === Number(feedId))) throw fail("ROLLBACK_PENDING", PENDING_MESSAGE);
 }
 export async function applyScraperRule({ feedId, candidate, baselineRule, api, journal }) {
   // An older cut-short test of this feed must not undo the rule saved here.

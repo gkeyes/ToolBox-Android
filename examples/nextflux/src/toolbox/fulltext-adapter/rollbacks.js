@@ -13,9 +13,10 @@ export function rollbackJournal() {
 let replaying = null;
 // Rolls back rules left on the server by a test cut short (once per start,
 // and again before a new test so it never builds on a leftover rule).
+// Resolves to the rollbacks still owed.
 export function replayRollbacks() {
   const journal = rollbackJournal();
-  if (!journal) return Promise.resolve();
+  if (!journal) return Promise.resolve([]);
   if (!replaying) replaying = replayScraperRollbacks({ api: minifluxAPI, journal }).finally(() => { replaying = null; });
   return replaying;
 }

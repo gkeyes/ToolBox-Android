@@ -11,7 +11,7 @@ import minifluxAPI from "@/api/miniflux.js";
 import CustomModal from "@/components/ui/CustomModal.jsx";
 import { fetchSourceSnapshot, inspectSelector } from "@/toolbox/fulltext-adapter/fulltext-source.mjs";
 import { isMiniMaxProvider, suggestScraperRule } from "@/toolbox/fulltext-adapter/fulltext-ai.mjs";
-import { applyScraperRule, contentMetrics, testScraperRule } from "@/toolbox/fulltext-adapter/fulltext-server.mjs";
+import { applyScraperRule, assertNoPendingRollback, contentMetrics, testScraperRule } from "@/toolbox/fulltext-adapter/fulltext-server.mjs";
 import { replayRollbacks, rollbackJournal } from "@/toolbox/fulltext-adapter/rollbacks.js";
 import "@/toolbox/fulltext-adapter/fulltext-adapter.css";
 
@@ -73,7 +73,7 @@ export default function FullTextAdaptButton() {
     const cancelled=()=>{ if(run.signal.aborted) throw {code:"CANCELLED"}; };
     try{
       if(!settings.aiApiKey) throw new Error("请先在 NextFlux 设置中配置 AI API Key。");
-      await replayRollbacks();
+      assertNoPendingRollback(await replayRollbacks(),feedId);
       const [remote,source]=await Promise.all([minifluxAPI.getFeed(feedId),fetchSourceSnapshot(article.url)]);
       cancelled();
       if(Number(activeArticle.get()?.id)!==Number(article.id)) throw new Error("文章已切换，请重新打开全文适配。");
