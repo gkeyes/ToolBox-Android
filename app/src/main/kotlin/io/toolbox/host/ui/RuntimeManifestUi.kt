@@ -30,6 +30,19 @@ internal fun ManifestStatusBarStyle.darkStatusBarIcons(): Boolean? = when (this)
 }
 
 /**
+ * Applies [readyUi] while the runtime is ready and keeps the last one applied while it reloads or
+ * shows an error, so a portrait-locked tool does not rotate during a reload. Everything is restored
+ * only when this leaves composition (the tool's screen closes).
+ */
+@Composable
+internal fun ApplyRetainedRuntimeManifestUi(readyUi: ManifestUi?) {
+    // A plain holder, not state: it only remembers the last ready value for the non-ready frames.
+    val retained = remember { arrayOfNulls<ManifestUi>(1) }
+    if (readyUi != null) retained[0] = readyUi
+    (readyUi ?: retained[0])?.let { ApplyRuntimeManifestUi(it) }
+}
+
+/**
  * Applies the running tool's manifest `ui` block to the Activity while the tool is on screen and
  * restores the host's values when it leaves. `allowFullscreen` is enforced by the runtime WebView's
  * custom-view handling, not here.

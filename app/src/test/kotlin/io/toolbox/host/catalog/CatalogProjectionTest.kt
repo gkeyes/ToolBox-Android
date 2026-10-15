@@ -95,6 +95,15 @@ class CatalogProjectionTest {
         assertEquals(listOf("阿里", "北京", "上海", "北京", "上海"), calculatedNames)
     }
 
+    @Test fun searchMatchesTheManifestCategory() {
+        val projected = CatalogToolProjection { it }.project(
+            listOf(entry("a", "构建守望").copy(categoryId = "开发"), entry("b", "笔记")),
+        )
+        assertEquals("开发", projected.first().category)
+        assertEquals(listOf("a"), projected.filteredBy("开发").map { it.toolId })
+        assertEquals(listOf("b"), projected.filteredBy("笔记").map { it.toolId })
+    }
+
     @Test fun cachedListsMatchFreshDerivationAcrossEverySortAndCatalogMutation() {
         val a = tool("a", "apple", 1, 10)
         val b = tool("b", "Beta", 2, null)

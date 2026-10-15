@@ -74,6 +74,22 @@ class ForegroundCapabilityBrokerTest {
         assertFalse(PendingForegroundRequests.mutex.isLocked)
     }
 
+    @Test
+    fun pinnedShortcutUsesTheManifestShortNameAsItsShortLabel() {
+        assertEquals(
+            ForegroundCapabilityBroker.ShortcutLabels("构建守望", "GitHub Actions 构建守望"),
+            ForegroundCapabilityBroker.shortcutLabels(null, "构建守望", "GitHub Actions 构建守望"),
+        )
+        assertEquals(
+            ForegroundCapabilityBroker.ShortcutLabels("Demo", "Demo"),
+            ForegroundCapabilityBroker.shortcutLabels(null, null, "Demo"),
+        )
+        assertEquals(
+            ForegroundCapabilityBroker.ShortcutLabels("Mine", "Mine"),
+            ForegroundCapabilityBroker.shortcutLabels("Mine", "D", "Demo"),
+        )
+    }
+
     private fun resumedActivityWithBroker(): ActivityController<ComponentActivity> {
         val controller = Robolectric.buildActivity(ComponentActivity::class.java).create()
         // Launchers are registered before the activity starts, as in MainActivity.onCreate.

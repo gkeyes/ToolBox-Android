@@ -15,6 +15,9 @@ data class InstalledManifest(
     val icon: String? = null,
     val description: String? = null,
     val ui: ManifestUi = ManifestUi(),
+    /** Launcher-style label (pinned shortcut short label); null means use [name]. */
+    val shortName: String? = null,
+    val categories: List<String> = emptyList(),
 )
 
 data class InstalledManifestPermission(
@@ -84,6 +87,8 @@ object InstalledManifestVerifier {
                 icon = parsed.icon,
                 description = parsed.description,
                 ui = parsed.ui,
+                shortName = parsed.shortName,
+                categories = parsed.categories,
             ),
         )
     }
