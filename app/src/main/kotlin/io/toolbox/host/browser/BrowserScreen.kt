@@ -161,6 +161,7 @@ private fun BrowserErrorOverlay(state: BrowserUiState, actions: BrowserScreenAct
     ) {
         // Keep the last message while fading out after a successful reload.
         val message = remember { mutableStateOf("") }.also { last -> state.error?.let { last.value = it } }.value
+        val notice = remember { mutableStateOf(false) }.also { last -> if (state.error != null) last.value = state.errorIsNotice }.value
         Column(
             Modifier.fillMaxSize().background(colors.background)
                 .padding(horizontal = ToolBoxThemeTokens.spacing.md, vertical = ToolBoxThemeTokens.spacing.lg)
@@ -169,10 +170,10 @@ private fun BrowserErrorOverlay(state: BrowserUiState, actions: BrowserScreenAct
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             io.toolbox.core.ui.component.ToolBoxStatusState(
-                title = "无法打开此网页",
+                title = if (notice) "网站数据已清除" else "无法打开此网页",
                 message = message,
                 icon = ToolBoxIconKey.Globe,
-                tone = io.toolbox.core.ui.component.ToolBoxStatusTone.Error,
+                tone = if (notice) io.toolbox.core.ui.component.ToolBoxStatusTone.Neutral else io.toolbox.core.ui.component.ToolBoxStatusTone.Error,
             )
             Column(
                 Modifier.widthIn(max = 360.dp).fillMaxWidth(),

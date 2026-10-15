@@ -24,7 +24,6 @@ import io.toolbox.core.ui.component.ToolBoxSecondaryButton
 import io.toolbox.core.ui.component.ToolBoxText
 import io.toolbox.core.ui.component.ToolBoxTextButton
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
-import io.toolbox.tool.runtime.validateRuntimeBrowserUrl
 
 /** Navigation decisions are visible and scoped to the document that requested them. */
 internal class BrowserNavigationController(
@@ -66,7 +65,7 @@ internal class BrowserNavigationController(
         val parsed = runCatching { Intent.parseUri(url, Intent.URI_INTENT_SCHEME) }.getOrNull()
         val target = parsed?.data ?: Uri.parse(url)
         val fallback = parsed?.getStringExtra("browser_fallback_url")?.let {
-            runCatching { validateRuntimeBrowserUrl(it) }.getOrNull()
+            BrowserWebUrl.valid(it)
         }
         // Build a fresh browsable intent; never inherit a webpage's component, extras or flags.
         val kind = BrowserLinkPolicy.classify(target.toString())
@@ -107,7 +106,7 @@ internal class BrowserNavigationController(
 
     fun download(page: WebView, url: String, userAgent: String, disposition: String?, mime: String?) {
         if (!isCurrentPage(page)) return
-        if (runCatching { validateRuntimeBrowserUrl(url) }.isFailure) {
+        if (BrowserWebUrl.host(url) == null) {
             notify("此下载由网页临时生成，系统下载器无法接管；可在系统浏览器中完成。")
             return
         }
