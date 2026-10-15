@@ -4,7 +4,7 @@
   // Ledger money is integer cents. DOM content originating from users is escaped.
   const KEY = 'ledger.v1';
   const runtime = window.ZZRuntime;
-  const VERSION = '1.5.6';
+  const VERSION = '1.5.7';
   const MAX_CENTS = 100000000000;
   const $ = s => document.querySelector(s);
   const $$ = s => [...document.querySelectorAll(s)];
@@ -81,7 +81,8 @@
   }
   function emptyLedger(){return {schemaVersion:2,revision:0,completedDrafts:[],project:{name:'装修项目',area:'',layout:'',budget:0,initialBudget:0},items:[],payments:[],changes:[]};}
   let storageOK=false,restoreError='',bootError='',rawBackup=null;
-  let data=emptyLedger(),busy=false,busyBackground=false,actionWaiting=false,waitCancelled=false;
+  let data=emptyLedger(),busy=false,busyBackground=false,actionWaiting=false,waitSeq=0,waitButton=null;
+  const WAIT_MSG='我的家正在保存，稍等一下…';
   let entryValues={};
   let activeDraftWritten=false,draftsUnreadable=false,drafts=[],storedDraftIds=new Set(),activeDraftOriginal=null,activeDraftId='',activeDraftBase=null,activeDraftReview=false,pendingNavigation=null,draftBusy=false;
   let draftTimer=null,draftQueue=Promise.resolve(),draftSnapshot='',calcTimer=null,calcQueue=Promise.resolve(),calcSaving=Promise.resolve(true);
@@ -161,13 +162,25 @@
 
   // action: {label, run} adds one button (1.5.0 「去摆放」); the toast then stays a little longer and takes taps.
   // warn: a failure; it shows the info mark instead of the tick and stays a little longer.
-  function toast(text,action,warn=false){
+  // ms: how long it stays, for a notice that lasts as long as a wait.
+  function toast(text,action,warn=false,ms=0){
     const el=$('#toast');clearTimeout(toastTimer);el.classList.toggle('warn',warn);el.innerHTML=icon(warn?'info':'check')+`<span class="toast-text">${esc(text)}</span>`+(action?`<button type="button" class="toast-action">${esc(action.label)}</button>`:'');
     el.classList.toggle('has-action',Boolean(action));
-    const hide=()=>{clearTimeout(toastTimer);el.classList.remove('show');try{if(el.hidePopover&&el.matches(':popover-open'))el.hidePopover();}catch(_){}};
+    const hide=()=>hideToast();
     if(action)el.querySelector('.toast-action').onclick=()=>{hide();action.run();};
     try{if(el.showPopover&&!el.matches(':popover-open'))el.showPopover();}catch(_){}
-    el.classList.add('show');toastTimer=setTimeout(hide,action||warn?5200:3000);
+    el.classList.add('show');toastTimer=setTimeout(hide,ms||(action||warn?5200:3000));
+  }
+  // only: hide just when that text is still showing, so a newer notice stays.
+  function hideToast(only){
+    const el=$('#toast');if(only&&el.querySelector('.toast-text')?.textContent!==only)return;
+    clearTimeout(toastTimer);el.classList.remove('show');try{if(el.hidePopover&&el.matches(':popover-open'))el.hidePopover();}catch(_){}
+  }
+  // Drops a tap that is waiting for a background save, at once, so the next tap counts.
+  function cancelWait(){
+    if(!actionWaiting)return;waitSeq++;actionWaiting=false;
+    if(waitButton){waitButton.classList.remove('pending');waitButton.removeAttribute('aria-busy');waitButton=null;}
+    hideToast(WAIT_MSG);
   }
   function showError(message){if(ui.page==='home'&&!$('#guard').open&&!$('#sheet').open&&matchMedia('(max-width:700px)').matches){toast(message,null,true);return;}const body=$('#guard').open?$('#guard .guard-content'):$('#sheet').open?$('#sheet-body'):$('#main');let box=body.querySelector('.error-message');if(!box){box=document.createElement('div');box.className='error-message';box.setAttribute('role','alert');body.prepend(box);}box.textContent=message;box.scrollIntoView({block:'nearest',behavior:'smooth'});}
   function dialog(title,html){
@@ -181,7 +194,9 @@
     $('#sheet [data-action="close-dialog"]').focus({preventScroll:true});
   }
   function closeDialog(force=false){
-    if(busy||draftBusy&&!force)return;
+    // A form save (body.saving) keeps the sheet even while it waits behind a 我的家 save.
+    if(busy&&!busyBackground||document.body.classList.contains('saving')||draftBusy&&!force)return;
+    cancelWait();
     if(!force&&isFormDirty()){
       $('#guard').showModal();$('#guard [data-action="continue-edit"]').focus({preventScroll:true});return;
     }
@@ -643,13 +658,15 @@
   document.addEventListener('click',async e=>{
     const b=e.target.closest('[data-action]');if(!b||b.disabled||(busy&&!busyBackground)||draftBusy)return;const a=b.dataset.action,id=b.dataset.id||'';
     // One tap waits for a background save; further taps meanwhile are dropped so nothing runs twice.
-    // Switching tabs always works and drops a tap that is still waiting; other taps meanwhile are ignored.
-    if(a==='nav'&&actionWaiting)waitCancelled=true;
+    // Switching tabs, ✕, 继续编辑, back and Escape always work and drop a tap that is still waiting; other taps meanwhile are ignored.
+    const cancels=a==='nav'||a==='close-dialog'||a==='continue-edit';
+    if(cancels&&actionWaiting)cancelWait();
     else if(actionWaiting)return;
-    if(busy&&a!=='nav'){
-      actionWaiting=true;waitCancelled=false;b.classList.add('pending');b.setAttribute('aria-busy','true');toast('我的家正在保存，稍等一下…');
-      try{for(let n=0;n<200&&busy&&!waitCancelled;n++)await new Promise(r=>setTimeout(r,50));}finally{actionWaiting=false;b.classList.remove('pending');b.removeAttribute('aria-busy');}
-      if(waitCancelled)return;
+    if(busy&&!cancels){
+      const t=++waitSeq;actionWaiting=true;waitButton=b;b.classList.add('pending');b.setAttribute('aria-busy','true');toast(WAIT_MSG,null,true,10500);
+      try{for(let n=0;n<200&&busy&&waitSeq===t;n++)await new Promise(r=>setTimeout(r,50));}finally{if(waitSeq===t){actionWaiting=false;waitButton=null;b.classList.remove('pending');b.removeAttribute('aria-busy');}}
+      if(waitSeq!==t)return;
+      hideToast(WAIT_MSG);
       if(busy){showError('我的家还在保存，请稍后再试。');return;}
     }
     if(['nav','detail','transaction','payment','add-item','edit-item','edit-plan','edit-estimate','settle-item','project','settings','apply-preview'].includes(a)&&isFormDirty()){pendingNavigation=()=>{if(b.isConnected)b.click();};closeDialog();return;}
@@ -750,7 +767,7 @@
     if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom){if(d.id==='sheet')closeDialog();else d.close();}
   });
   $('#sheet').addEventListener('cancel',e=>{e.preventDefault();closeDialog();});
-  $('#guard').addEventListener('cancel',e=>{e.preventDefault();if(draftBusy)return;pendingNavigation=null;closeGuard();});
+  $('#guard').addEventListener('cancel',e=>{e.preventDefault();if(draftBusy)return;cancelWait();pendingNavigation=null;closeGuard();});
   document.addEventListener('input',e=>{if(e.target.closest('#sheet form'))markDraft();});
   document.addEventListener('change',e=>{if(e.target.closest('#sheet form'))markDraft();});
   document.addEventListener('visibilitychange',()=>{if(document.hidden){if(isFormDirty())saveDraftNow().catch(()=>{});flushCalc();}});
