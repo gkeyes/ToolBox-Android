@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -35,6 +36,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
@@ -44,6 +47,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -67,6 +71,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -80,6 +85,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.webkit.WebViewCompat
+import androidx.webkit.WebViewFeature
 import io.toolbox.core.ui.component.ToolBoxBusyIndicator
 import io.toolbox.core.ui.component.ToolBoxIcon
 import io.toolbox.core.ui.component.ToolBoxIconKey
@@ -116,7 +123,10 @@ internal fun RuntimeShellScreen(
         if (state is RuntimeUiState.Error) onPresentationReady()
         if ((state as? RuntimeUiState.Ready)?.mainEntryLoaded == true) onPresentationReady()
     }
-    ApplyRetainedRuntimeManifestUi((state as? RuntimeUiState.Ready)?.runtime?.installedManifest?.ui)
+    val ready = state as? RuntimeUiState.Ready
+    ApplyRetainedRuntimeManifestUi(ready?.runtime?.installedManifest?.ui)
+    val edgeToEdge = ready?.runtime?.installedManifest?.ui?.edgeToEdge == true
+    if (ready != null && edgeToEdge) PublishRuntimeSafeAreaTop(ready.webView, ready.runtime.origin)
 
     closeState?.let { saving ->
         key(exitRevision) {
@@ -130,6 +140,7 @@ internal fun RuntimeShellScreen(
             .background(ToolBoxThemeTokens.colors.background)
             .testTag(HostTestTags.RuntimeShell),
         immersiveNavigationBar = immersiveNavigationBar,
+        immersiveStatusBar = edgeToEdge,
     ) {
         Box(
             modifier = Modifier
@@ -169,6 +180,30 @@ internal fun RuntimeShellScreen(
                 )
             }
         }
+    }
+}
+
+/**
+ * An edge-to-edge tool draws under the status bar, so it is told the bar's height as the CSS variable
+ * `--toolbox-safe-area-top` (CSS px equal dp at the runtime's 100% zoom). A document-start script
+ * sets it in every document the tool loads (reloads, other local pages); the current document is set
+ * directly. Both are replaced whenever the inset changes.
+ */
+@Composable
+private fun PublishRuntimeSafeAreaTop(webView: android.webkit.WebView, origin: String) {
+    val density = LocalDensity.current
+    val topPx = WindowInsets.statusBars.union(WindowInsets.displayCutout).getTop(density)
+    val topDp = with(density) { topPx.toDp().value }
+    DisposableEffect(webView, origin, topDp) {
+        val value = String.format(java.util.Locale.ROOT, "%.2fpx", topDp)
+        val script = "document.documentElement.style.setProperty('--toolbox-safe-area-top','$value')"
+        val handler = if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
+            runCatching { WebViewCompat.addDocumentStartJavaScript(webView, script, setOf(origin.removeSuffix("/"))) }.getOrNull()
+        } else {
+            null
+        }
+        webView.evaluateJavascript(script, null)
+        onDispose { runCatching { handler?.remove() } }
     }
 }
 

@@ -24,6 +24,7 @@ class ManifestUiTest {
             ),
             installedUi("""{"orientation":"landscape","statusBarStyle":"dark"}"""),
         )
+        assertEquals(ManifestUi(edgeToEdge = true), installedUi("""{"edgeToEdge":true}"""))
     }
 
     @Test
@@ -42,6 +43,7 @@ class ManifestUiTest {
             """{"orientation":"sideways"}""",
             """{"statusBarStyle":"black"}""",
             """{"allowFullscreen":1}""",
+            """{"edgeToEdge":"yes"}""",
             """{"theme":"dark"}""",
         ).forEach { block ->
             assertTrue(block, runCatching { ManifestValidator.parse(manifest(block)) }.exceptionOrNull() is JsonFormatException)

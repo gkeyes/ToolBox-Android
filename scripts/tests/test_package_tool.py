@@ -226,6 +226,7 @@ class PackageToolTest(unittest.TestCase):
             "removed network field": {"network": {"allowDomains": []}},
             "duplicate categories": {"categories": ["a", "a"]},
             "bad ui": {"ui": {"orientation": "sideways"}},
+            "bad edgeToEdge": {"ui": {"edgeToEdge": "yes"}},
         }
         for label, changes in cases.items():
             with self.subTest(case=label):
@@ -236,7 +237,7 @@ class PackageToolTest(unittest.TestCase):
                     PACKAGER.validate_manifest(raw.encode("utf-8"))
         accepted = dict(minHostVersion="0.3.0", permissions=long_permission, versionCode=2.0,
                         network={"maxResponseBytes": 9007199254740991, "timeoutMs": 0},
-                        ui={"orientation": "portrait", "allowFullscreen": True})
+                        ui={"orientation": "portrait", "allowFullscreen": True, "edgeToEdge": True})
         self.write_manifest(self.source, **accepted)
         PACKAGER.package_tool(self.source, self.root / "accepted.tbx")
 

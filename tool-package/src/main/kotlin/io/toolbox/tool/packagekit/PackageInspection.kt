@@ -64,6 +64,8 @@ data class ManifestUi(
     val orientation: ManifestOrientation? = null,
     val allowFullscreen: Boolean = false,
     val statusBarStyle: ManifestStatusBarStyle = ManifestStatusBarStyle.AUTO,
+    /** The page draws under the status bar; the host passes its height as `--toolbox-safe-area-top`. */
+    val edgeToEdge: Boolean = false,
 )
 enum class ManifestOrientation { UNSPECIFIED, PORTRAIT, LANDSCAPE }
 enum class ManifestStatusBarStyle { AUTO, LIGHT, DARK }

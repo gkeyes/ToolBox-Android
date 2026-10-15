@@ -123,7 +123,7 @@ internal object ManifestValidator {
 
     private fun parseUi(value: JsonValue): ManifestUi {
         val ui = value.asObject("ui")
-        ui.requireOnly("ui", setOf("orientation", "allowFullscreen", "statusBarStyle", "showHostToolbar"))
+        ui.requireOnly("ui", setOf("orientation", "allowFullscreen", "statusBarStyle", "edgeToEdge", "showHostToolbar"))
         val orientation = ui["orientation"]?.asString("ui.orientation")?.let {
             when (it) {
                 "unspecified" -> ManifestOrientation.UNSPECIFIED
@@ -147,6 +147,7 @@ internal object ManifestValidator {
             orientation = orientation,
             allowFullscreen = ui["allowFullscreen"]?.asBoolean("ui.allowFullscreen") ?: false,
             statusBarStyle = statusBarStyle,
+            edgeToEdge = ui["edgeToEdge"]?.asBoolean("ui.edgeToEdge") ?: false,
         )
     }
 

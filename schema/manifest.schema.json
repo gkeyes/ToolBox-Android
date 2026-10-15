@@ -472,6 +472,11 @@
           "default": "auto",
           "description": "Status bar icon colour while the tool is on screen: light draws light icons for a dark page, dark draws dark icons for a light page, auto follows the ToolBox theme."
         },
+        "edgeToEdge": {
+          "type": "boolean",
+          "default": false,
+          "description": "Whether the page draws under the status bar. The host then sets the CSS variable --toolbox-safe-area-top on the document element to the status bar height (CSS px), and the page pads its own top bar by it. Older hosts reject the key, so a tool that sets it raises minHostVersion to the first host that supports it."
+        },
         "showHostToolbar": {
           "type": "boolean",
           "default": true,
