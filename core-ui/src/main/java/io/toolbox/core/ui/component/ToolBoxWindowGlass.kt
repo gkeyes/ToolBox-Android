@@ -9,12 +9,16 @@ import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.GraphicsLayerScope
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.drawscope.translate
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.positionOnScreen
 import androidx.compose.ui.graphics.Color
@@ -71,8 +75,15 @@ fun rememberToolBoxWindowGlass(hostView: View, active: Boolean = true): ToolBoxW
     return glass
 }
 
-/** The page copy, pinned to where the page sits on screen. */
-private class WindowCopyBackdrop(private val copy: WindowBackdrop) : Backdrop {
+/**
+ * The page copy, pinned to where the page sits on screen. [layerScale] is the scale of a
+ * graphicsLayer the glass sits in (a panel zooming in): the copy is drawn unscaled, so it stays in
+ * register with the page while the panel scales.
+ */
+private class WindowCopyBackdrop(
+    private val copy: WindowBackdrop,
+    private val layerScale: () -> Float,
+) : Backdrop {
     override val isCoordinatesDependent: Boolean = true
 
     override fun DrawScope.drawBackdrop(
@@ -87,8 +98,11 @@ private class WindowCopyBackdrop(private val copy: WindowBackdrop) : Backdrop {
             (copy.image.width / copy.scale).roundToInt(),
             (copy.image.height / copy.scale).roundToInt(),
         )
-        translate(-origin.x, -origin.y) {
-            drawImage(copy.image, dstOffset = IntOffset.Zero, dstSize = pageSize)
+        val inverse = 1f / layerScale().coerceAtLeast(0.01f)
+        scale(inverse, inverse, pivot = Offset.Zero) {
+            translate(-origin.x, -origin.y) {
+                drawImage(copy.image, dstOffset = IntOffset.Zero, dstSize = pageSize)
+            }
         }
     }
 }
@@ -104,9 +118,11 @@ internal fun Modifier.snapshotGlass(
     cornerRadius: Dp,
     blurRadius: Dp,
     fill: () -> Color,
+    layerScale: () -> Float = { 1f },
     motion: () -> Unit = {},
 ): Modifier {
-    val backdrop = remember(copy) { WindowCopyBackdrop(copy) }
+    val scale by rememberUpdatedState(layerScale)
+    val backdrop = remember(copy) { WindowCopyBackdrop(copy) { scale() } }
     val lensShape = remember(cornerRadius) { RoundedCornerShape(cornerRadius) }
     return drawBackdrop(
         backdrop = backdrop,
@@ -141,11 +157,39 @@ fun Modifier.toolBoxWindowGlassEffect(
     blurRadius: Dp = 28.dp,
     fill: Color = ToolBoxThemeTokens.materials.overlayFill,
     fallback: Color = ToolBoxThemeTokens.materials.overlayFallback,
+    layerScale: () -> Float = { 1f },
     motion: () -> Unit = {},
 ): Modifier {
     val copy = glass.copy
     if (copy == null || !ToolBoxThemeTokens.materials.realBlurEnabled || !LocalView.current.isHardwareAccelerated) {
         return background(fallback)
     }
-    return snapshotGlass(copy, cornerRadius, blurRadius, { fill }, motion)
+    return snapshotGlass(copy, cornerRadius, blurRadius, { fill }, layerScale, motion)
+}
+
+/**
+ * The whole page behind an overlay, frosted: the copy blurred by [blurRadius] under [tint], so the
+ * page reads as colour and shape around a panel, never as text beside the panel's own. Draws
+ * [fallback] before the copy lands or with 实色材质 on.
+ */
+@Composable
+fun Modifier.toolBoxWindowFrost(
+    glass: ToolBoxWindowGlass,
+    tint: Color,
+    fallback: Color,
+    blurRadius: Dp = 28.dp,
+): Modifier {
+    val copy = glass.copy
+    if (copy == null || !ToolBoxThemeTokens.materials.realBlurEnabled || !LocalView.current.isHardwareAccelerated) {
+        return background(fallback)
+    }
+    val backdrop = remember(copy) { WindowCopyBackdrop(copy) { 1f } }
+    return drawBackdrop(
+        backdrop = backdrop,
+        shape = { RectangleShape },
+        effects = { blur(blurRadius.toPx()) },
+        highlight = null,
+        shadow = null,
+        onDrawSurface = { drawRect(tint) },
+    )
 }

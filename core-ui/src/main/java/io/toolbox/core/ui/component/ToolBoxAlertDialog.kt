@@ -131,7 +131,7 @@ fun ToolBoxAlertDialog(
                         spotColor = Color.Black.copy(alpha = if (dark) 0.6f else 0.22f),
                     )
                     .clip(shape)
-                    .toolBoxWindowGlassEffect(glass, radius) { appear.value }
+                    .toolBoxWindowGlassEffect(glass, radius, layerScale = { 1.12f - 0.12f * appear.value }) { appear.value }
                     .border(0.5.dp, materials.overlayBorder, shape)
                     .semantics { paneTitle = title }
                     .verticalScroll(rememberScrollState())

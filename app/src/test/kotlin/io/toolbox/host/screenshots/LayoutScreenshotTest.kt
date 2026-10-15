@@ -43,6 +43,7 @@ import io.toolbox.core.data.CatalogGroup
 import io.toolbox.core.data.CatalogLayout
 import io.toolbox.core.data.TaskState
 import io.toolbox.core.ui.component.ToolBoxModalDialog
+import io.toolbox.core.ui.component.toolBoxOpenDesignCanvas
 import io.toolbox.core.ui.theme.ToolBoxTheme
 import io.toolbox.core.ui.theme.ToolBoxThemeMode
 import io.toolbox.host.background.BackgroundSafeguardsContent
@@ -293,7 +294,8 @@ class LayoutScreenshotTest(private val fontScale: Float) {
     }
 
     @Composable private fun GroupFolderOverHome() {
-        Box(Modifier.fillMaxSize()) { Catalog(home = true) }
+        // The page canvas, as in the app: the dark home is black, not the light test window.
+        Box(Modifier.fillMaxSize().toolBoxOpenDesignCanvas()) { Catalog(home = true) }
         CatalogGroupFolderOverlay(groups[0], tools.filter { it.toolId in groups[0].members }, editing = false, {}, {}, {}, {})
     }
 
