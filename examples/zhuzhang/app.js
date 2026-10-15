@@ -4,7 +4,7 @@
   // Ledger money is integer cents. DOM content originating from users is escaped.
   const KEY = 'ledger.v1';
   const runtime = window.ZZRuntime;
-  const VERSION = '1.5.0';
+  const VERSION = '1.5.1';
   const MAX_CENTS = 100000000000;
   const $ = s => document.querySelector(s);
   const $$ = s => [...document.querySelectorAll(s)];
@@ -81,7 +81,7 @@
   }
   function emptyLedger(){return {schemaVersion:2,revision:0,completedDrafts:[],project:{name:'装修项目',area:'',layout:'',budget:0,initialBudget:0},items:[],payments:[],changes:[]};}
   let storageOK=false,restoreError='',bootError='',rawBackup=null;
-  let data=emptyLedger(),busy=false;
+  let data=emptyLedger(),busy=false,busyBackground=false;
   let entryValues={};
   let activeDraftWritten=false,draftsUnreadable=false,drafts=[],storedDraftIds=new Set(),activeDraftOriginal=null,activeDraftId='',activeDraftBase=null,activeDraftReview=false,pendingNavigation=null,draftBusy=false;
   let draftTimer=null,draftQueue=Promise.resolve(),draftSnapshot='',calcTimer=null,calcQueue=Promise.resolve(),calcSaving=Promise.resolve(true);
@@ -91,8 +91,15 @@
   let pickerState=null, pendingImport=null, applyResult=null, toastTimer;
   // background: a 我的家 change (moving furniture, the floor plan) that is not the open form's submission.
   async function write(next,{background=false}={}){
+    // A tap on 保存 that lands during a 我的家 background save waits for it instead of being dropped.
+    if(busy&&!background&&busyBackground){
+      const before=data;
+      for(let n=0;n<40&&busy;n++)await new Promise(r=>setTimeout(r,50));
+      // Background saves only touch item.model and project.home; carry them over so the form does not undo the move.
+      if(data!==before){const same=(a,b)=>JSON.stringify(a)===JSON.stringify(b),old=new Map(before.items.map(i=>[i.id,i.model])),fresh=new Map(data.items.map(i=>[i.id,i]));for(const i of next.items||[]){const f=fresh.get(i.id);if(f&&!same(old.get(i.id),f.model)){if(f.model)i.model=clone(f.model);else delete i.model;}}if(next.project&&!same(before.project.home,data.project.home)){if(data.project.home)next.project.home=clone(data.project.home);else delete next.project.home;}}
+    }
     if(busy)return false;
-    busy=true;
+    busy=true;busyBackground=background;
     if(!background)document.body.classList.add('saving');
     const submit=background?null:$('#sheet [type="submit"]');
     const label=submit?.innerHTML;
@@ -109,7 +116,7 @@
       data=next;
       return true;
     }catch(error){showError(runtime.explain(error));return false;}
-    finally{busy=false;if(!background)document.body.classList.remove('saving');controls.forEach(([el,wasDisabled])=>{if(el.isConnected)el.disabled=wasDisabled;});if(submit?.isConnected){submit.disabled=false;submit.innerHTML=label;}}
+    finally{busy=false;busyBackground=false;if(!background)document.body.classList.remove('saving');controls.forEach(([el,wasDisabled])=>{if(el.isConnected)el.disabled=wasDisabled;});if(submit?.isConnected){submit.disabled=false;submit.innerHTML=label;}}
   }
   const paymentIndex = new WeakMap();
   function cashIndex(source){
