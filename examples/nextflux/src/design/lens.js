@@ -12,6 +12,7 @@
 const NS = "http://www.w3.org/2000/svg";
 const EDGE = 16; // px of rim that bends
 const SCALE = 21; // displacement strength, as on the boards (lens 38 × 0.55)
+const REGION = 4096; // px of filter region around the element (see filterFor)
 
 // What gets a lens, and the inset of the painted disc inside the element
 // (the close button paints its 44px disc on ::before, 2px inside a 48px target).
@@ -92,13 +93,27 @@ export function installLens({ doc = document, win = window } = {}) {
     if (!href) return null;
     const id = `nf-lens-${filters.size}`;
     const filter = doc.createElementNS(NS, "filter");
-    const attrs = { id, x: 0, y: 0, width, height, filterUnits: "userSpaceOnUse", primitiveUnits: "userSpaceOnUse", "color-interpolation-filters": "sRGB" };
+    // The region is far larger than the element and the map sits on neutral
+    // grey: Chromium leaves any backdrop outside the region unfiltered (losing
+    // the blur too), and inside some overlays its filter space doesn't start at
+    // the element. There the map lands elsewhere and the glass stays plain
+    // frosted instead of losing its blur.
+    const attrs = { id, x: -REGION, y: -REGION, width: REGION * 2 + width, height: REGION * 2 + height, filterUnits: "userSpaceOnUse", primitiveUnits: "userSpaceOnUse", "color-interpolation-filters": "sRGB" };
     for (const [name, value] of Object.entries(attrs)) filter.setAttribute(name, String(value));
-    const map = doc.createElementNS(NS, "feImage");
-    for (const [name, value] of Object.entries({ href, x: 0, y: 0, width, height, preserveAspectRatio: "none", result: "map" })) map.setAttribute(name, String(value));
+    const neutral = doc.createElementNS(NS, "feFlood");
+    for (const [name, value] of Object.entries({ "flood-color": "rgb(128,128,128)", result: "neutral" })) neutral.setAttribute(name, String(value));
+    const image = doc.createElementNS(NS, "feImage");
+    for (const [name, value] of Object.entries({ href, x: 0, y: 0, width, height, preserveAspectRatio: "none", result: "edge" })) image.setAttribute(name, String(value));
+    const merge = doc.createElementNS(NS, "feMerge");
+    merge.setAttribute("result", "map");
+    for (const input of ["neutral", "edge"]) {
+      const node = doc.createElementNS(NS, "feMergeNode");
+      node.setAttribute("in", input);
+      merge.append(node);
+    }
     const displace = doc.createElementNS(NS, "feDisplacementMap");
     for (const [name, value] of Object.entries({ in: "SourceGraphic", in2: "map", scale: SCALE, xChannelSelector: "R", yChannelSelector: "G" })) displace.setAttribute(name, String(value));
-    filter.append(map, displace);
+    filter.append(neutral, image, merge, displace);
     svg.append(filter);
     filters.set(key, id);
     return id;
@@ -106,9 +121,11 @@ export function installLens({ doc = document, win = window } = {}) {
 
   const update = (element) => {
     const inset = bound.get(element) ?? 0;
-    const rect = element.getBoundingClientRect();
-    const width = Math.round(rect.width) - inset * 2;
-    const height = Math.round(rect.height) - inset * 2;
+    // Layout size, not getBoundingClientRect: a sheet or alert measured while
+    // it scales in would get a map smaller than itself, and Chromium leaves the
+    // backdrop outside the filter region unfiltered (no blur at all there).
+    const width = element.offsetWidth - inset * 2;
+    const height = element.offsetHeight - inset * 2;
     if (width < 8 || height < 8) return;
     const style = win.getComputedStyle(element, inset ? "::before" : null);
     const radius = Math.min(parseFloat(style.borderTopLeftRadius) || 0, width / 2, height / 2);
