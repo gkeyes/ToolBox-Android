@@ -394,6 +394,13 @@ internal fun ToolDetailScreen(
     var entryMessage by rememberSaveable(toolId) { mutableStateOf(state.feedback?.message) }
     LaunchedEffect(state.feedback == null) { if (state.feedback == null) entryMessage = null }
     val ownFeedback = state.feedback?.takeIf { it.message != entryMessage }
+    // Anything started here makes the next result this page's own, even if its text matches the list's
+    // message, which is retired at that point.
+    val act: (CatalogAction) -> Unit = { action ->
+        if (state.feedback?.message?.let { it == entryMessage } == true) onAction(CatalogAction.DismissFeedback)
+        entryMessage = null
+        onAction(action)
+    }
     // Leave the page once the confirmed delete lands; the list shows the "已删除" notice.
     LaunchedEffect(deleteConfirmed, tool == null) {
         if (deleteConfirmed && tool == null) onBack()
@@ -431,7 +438,7 @@ internal fun ToolDetailScreen(
                         tool = tool,
                         favorite = favorite,
                         onOpen = { onAction(CatalogAction.RequestRuntimeLaunch(tool.toolId)) },
-                        onToggleFavorite = { onAction(CatalogAction.SetFavorite(tool.toolId, !favorite)) },
+                        onToggleFavorite = { act(CatalogAction.SetFavorite(tool.toolId, !favorite)) },
                         onGroups = { groupsOpen = !groupsOpen },
                         modifier = Modifier.toolBoxEntrance(entrance, 0),
                     )
@@ -457,7 +464,7 @@ internal fun ToolDetailScreen(
                         ToolBoxSwitchSettingRow(
                             title = "收藏",
                             checked = favorite,
-                            onCheckedChange = { onAction(CatalogAction.SetFavorite(tool.toolId, it)) },
+                            onCheckedChange = { act(CatalogAction.SetFavorite(tool.toolId, it)) },
                             summary = "显示在首页“常用”",
                             icon = ToolBoxIconKey.Star,
                             modifier = Modifier.testTag("tool_detail_favorite"),
@@ -490,7 +497,7 @@ internal fun ToolDetailScreen(
                                         group = group,
                                         selected = tool.toolId in group.members,
                                         onChecked = { selected ->
-                                            onAction(CatalogAction.SetGroupMembership(group.id, tool.toolId, selected))
+                                            act(CatalogAction.SetGroupMembership(group.id, tool.toolId, selected))
                                         },
                                     )
                                 }
@@ -554,7 +561,7 @@ internal fun ToolDetailScreen(
                     onConfirm = {
                         if (ownFeedback != null) onAction(CatalogAction.DismissFeedback)
                         deleteConfirmed = true
-                        onAction(CatalogAction.ConfirmUninstall)
+                        act(CatalogAction.ConfirmUninstall)
                     },
                     onCancel = { onAction(CatalogAction.CancelUninstall) },
                     destructive = true,
