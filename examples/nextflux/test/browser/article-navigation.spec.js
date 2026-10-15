@@ -206,7 +206,8 @@ test("a delayed real-body worker cannot uncover or replace the frozen target", a
   await expect(page.locator(".article-scroll-area .article-body")).toHaveAttribute("data-reading-ready", "false");
   await expect(page.locator(".nextflux-continuous-layer")).toHaveAttribute("data-phase", "handoff");
   await expect(page.locator(".nextflux-continuous-next-page .article-title")).toHaveText("文章 2");
-  expect(await page.locator(".nextflux-continuous-next-page").evaluate((element) => element.getBoundingClientRect().top)).toBeCloseTo(56, 0);
+  // The frozen preview covers the title bar too, so its header slides in rather than switching at the handoff.
+  expect(await page.locator(".nextflux-continuous-next-page").evaluate((element) => element.getBoundingClientRect().top)).toBeCloseTo(0, 0);
   await releaseReadingMessages(page);
   await expect(page.locator(".article-scroll-area .article-body")).toHaveAttribute("data-reading-ready", "true");
   await expect(page.locator(".nextflux-continuous-layer")).toHaveAttribute("data-phase", "idle");

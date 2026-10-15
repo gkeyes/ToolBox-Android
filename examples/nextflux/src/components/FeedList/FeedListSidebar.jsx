@@ -67,7 +67,7 @@ const FeedListSidebar = () => {
 
   // The mobile sidebar renders in its own panel, so the scale lives on the root.
   useEffect(() => {
-    const scale = Number.isFinite(feedFontScale) ? Math.min(1.3, Math.max(0.85, feedFontScale)) : 1;
+    const scale = Number.isFinite(feedFontScale) ? Math.min(1.5, Math.max(0.5, feedFontScale)) : 1;
     document.documentElement.style.setProperty("--nf-feed-scale", String(scale));
   }, [feedFontScale]);
 
