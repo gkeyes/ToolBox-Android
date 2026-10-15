@@ -115,6 +115,8 @@ class LayoutScreenshotTest(private val fontScale: Float) {
 
     @Before fun setFontScale() {
         RuntimeEnvironment.setFontScale(fontScale)
+        // As BrowserActivity does in the :browser process, so the browser capsule shows the shortened host.
+        BrowserPublicSuffix.load(RuntimeEnvironment.getApplication())
     }
 
     private fun render(name: String, dialog: Boolean = false, interact: () -> Unit = {}, content: @Composable () -> Unit) {
@@ -337,8 +339,6 @@ class LayoutScreenshotTest(private val fontScale: Float) {
 
     @Test fun browserBars() = render("browser") {
         val context = LocalContext.current
-        // As BrowserActivity does in the :browser process, so the capsule shows the shortened host.
-        androidx.compose.runtime.remember { BrowserPublicSuffix.load(context) }
         val scope = rememberCoroutineScope()
         val state = androidx.compose.runtime.remember {
             BrowserUiState().apply {
