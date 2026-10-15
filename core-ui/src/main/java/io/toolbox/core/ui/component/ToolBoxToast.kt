@@ -17,7 +17,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -40,6 +39,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 import kotlinx.coroutines.delay
+import androidx.compose.foundation.shape.RoundedCornerShape
 
 /**
  * iOS-style toast: a liquid glass capsule near the bottom of the page, in place of the system
@@ -122,7 +122,9 @@ private fun ToolBoxToastCapsule(text: String, glass: ToolBoxWindowGlass) {
     val colors = ToolBoxThemeTokens.colors
     val materials = ToolBoxThemeTokens.materials
     val dark = colors.surface.luminance() < 0.5f
-    val shape = CircleShape
+    // One line is a 46dp capsule; two or three lines keep the same 23dp corners so the glass,
+    // its border and its shadow all draw one outline.
+    val shape = RoundedCornerShape(ToolBoxToastRadius)
     val shadowColor = Color.Black.copy(alpha = if (dark) 0.55f else 0.18f)
     Box(
         Modifier
@@ -131,7 +133,7 @@ private fun ToolBoxToastCapsule(text: String, glass: ToolBoxWindowGlass) {
             .heightIn(min = 46.dp)
             .shadow(18.dp, shape, clip = false, ambientColor = shadowColor, spotColor = shadowColor)
             .clip(shape)
-            .toolBoxWindowGlassEffect(glass, 23.dp)
+            .toolBoxWindowGlassEffect(glass, ToolBoxToastRadius)
             .border(0.5.dp, materials.overlayBorder, shape)
             .padding(horizontal = 20.dp, vertical = 12.dp)
             .semantics { liveRegion = LiveRegionMode.Polite },
@@ -149,3 +151,5 @@ private fun ToolBoxToastCapsule(text: String, glass: ToolBoxWindowGlass) {
         )
     }
 }
+
+private val ToolBoxToastRadius = 23.dp

@@ -9,6 +9,7 @@ import android.os.Looper
 import android.view.PixelCopy
 import android.view.View
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.window.DialogWindowProvider
@@ -25,21 +26,42 @@ internal class WindowBackdrop(
     val image: ImageBitmap,
     val scale: Float,
     val rootOnScreen: Offset,
+    /** Relative luminance on a [LuminanceSteps]² grid over the page, row by row. */
+    private val grid: FloatArray = FloatArray(LuminanceSteps * LuminanceSteps) { 0.5f },
+) {
     /** Mean relative luminance of the page, so glass over a page of the opposite tone stays legible. */
-    val luminance: Float = 0.5f,
-)
+    val luminance: Float = grid.average().toFloat()
 
-/** Mean relative luminance of a 16x16 grid of samples. */
-private fun Bitmap.meanLuminance(): Float {
-    var total = 0f
-    val steps = 16
-    for (y in 0 until steps) {
-        for (x in 0 until steps) {
-            val pixel = getPixel(x * (width - 1) / (steps - 1), y * (height - 1) / (steps - 1))
-            total += androidx.compose.ui.graphics.Color(pixel).luminance()
-        }
+    /**
+     * Mean luminance of the page under [rect] (window pixels): a dialog over the white article
+     * of a page with a dark header sees white, not the page's mean.
+     */
+    fun luminanceIn(rect: Rect): Float {
+        val pageWidth = image.width / scale
+        val pageHeight = image.height / scale
+        if (pageWidth <= 0f || pageHeight <= 0f) return luminance
+        val last = LuminanceSteps - 1
+        fun cell(value: Float, extent: Float) = (value / extent * last).roundToInt().coerceIn(0, last)
+        val left = cell(rect.left, pageWidth)
+        val right = cell(rect.right, pageWidth)
+        val top = cell(rect.top, pageHeight)
+        val bottom = cell(rect.bottom, pageHeight)
+        var total = 0f
+        for (y in top..bottom) for (x in left..right) total += grid[y * LuminanceSteps + x]
+        return total / ((bottom - top + 1) * (right - left + 1))
     }
-    return total / (steps * steps)
+}
+
+private const val LuminanceSteps = 16
+
+/** Relative luminance on a [LuminanceSteps]² grid of samples. */
+private fun Bitmap.luminanceGrid(): FloatArray {
+    val last = LuminanceSteps - 1
+    return FloatArray(LuminanceSteps * LuminanceSteps) { index ->
+        val x = index % LuminanceSteps
+        val y = index / LuminanceSteps
+        androidx.compose.ui.graphics.Color(getPixel(x * (width - 1) / last, y * (height - 1) / last)).luminance()
+    }
 }
 
 /**
@@ -63,7 +85,7 @@ internal suspend fun captureWindowBackdrop(view: View, scale: Float = 0.25f): Wi
             PixelCopy.request(window, bitmap, { result ->
                 if (continuation.isActive) {
                     continuation.resume(
-                        if (result == PixelCopy.SUCCESS) WindowBackdrop(bitmap.asImageBitmap(), bitmap.width.toFloat() / root.width, rootOnScreen, bitmap.meanLuminance()) else null,
+                        if (result == PixelCopy.SUCCESS) WindowBackdrop(bitmap.asImageBitmap(), bitmap.width.toFloat() / root.width, rootOnScreen, bitmap.luminanceGrid()) else null,
                     )
                 }
             }, Handler(Looper.getMainLooper()))

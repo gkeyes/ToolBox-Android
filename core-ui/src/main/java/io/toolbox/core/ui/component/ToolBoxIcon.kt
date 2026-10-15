@@ -111,12 +111,13 @@ fun ToolBoxIconButton(
     enabled: Boolean = true,
     tint: Color = ToolBoxThemeTokens.colors.textSecondary,
 ) {
-    // iOS borderless glyph button: the glyph dims under the finger, with no grey plate.
+    // Borderless glyph button with the glass press: it grows and a soft glass disc lights up
+    // under the finger, instead of the glyph dimming.
     val interactionSource = remember { MutableInteractionSource() }
-    val pressed by interactionSource.collectIsPressedAsState()
     Box(
         modifier = modifier
             .size(48.dp)
+            .toolBoxGlassPress(interactionSource, enabled, glow = toolBoxBareGlow())
             .clickable(enabled = enabled, role = Role.Button, interactionSource = interactionSource, indication = null, onClick = onClick)
             .semantics {
                 this.contentDescription = contentDescription
@@ -126,7 +127,6 @@ fun ToolBoxIconButton(
         contentAlignment = Alignment.Center,
     ) {
         ToolBoxIcon(icon = icon, contentDescription = null,
-            modifier = Modifier.graphicsLayer { alpha = if (pressed) 0.35f else 1f },
             tint = if (enabled) tint else ToolBoxThemeTokens.disabledContent)
     }
 }

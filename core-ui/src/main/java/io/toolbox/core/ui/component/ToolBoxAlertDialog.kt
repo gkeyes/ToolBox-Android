@@ -48,6 +48,8 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.DialogWindowProvider
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
+import io.toolbox.core.ui.theme.ProvideToolBoxGlassText
+import io.toolbox.core.ui.theme.onGlass
 
 /**
  * Centered iOS 27 alert: a floating 34dp continuous panel with a title, an optional message,
@@ -157,14 +159,14 @@ fun ToolBoxAlertDialog(
                         it,
                         modifier = Modifier.padding(horizontal = 8.dp),
                         style = ToolBoxThemeTokens.textStyles.metadata.copy(
-                            color = colors.textSecondary,
+                            color = (if (materials.realBlurEnabled) colors.onGlass() else colors).textSecondary,
                             textAlign = TextAlign.Center,
                         ),
                     )
                 }
                 content?.let {
                     Spacer(Modifier.height(14.dp))
-                    Column(Modifier.fillMaxWidth(), content = it)
+                    ProvideToolBoxGlassText { Column(Modifier.fillMaxWidth(), content = it) }
                 }
                 Spacer(Modifier.height(18.dp))
                 ToolBoxAlertButtons(
@@ -253,7 +255,7 @@ private fun ToolBoxAlertCapsuleButton(
         modifier
             .heightIn(min = 48.dp)
             .then(if (testTag != null) Modifier.testTag(testTag) else Modifier)
-            .toolBoxPressFeedback(interactionSource, enabled = enabled, shape = CircleShape, scale = 0.96f)
+            .toolBoxGlassPress(interactionSource, enabled = enabled, shape = CircleShape)
             .clip(CircleShape)
             .background(if (enabled) container else container.copy(alpha = container.alpha * 0.45f))
             .clickable(

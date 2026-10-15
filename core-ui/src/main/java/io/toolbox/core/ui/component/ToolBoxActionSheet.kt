@@ -47,6 +47,7 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.CancellationException
+import io.toolbox.core.ui.theme.ProvideToolBoxGlassText
 
 private val LocalSheetHeaderDrag = staticCompositionLocalOf<Modifier> { Modifier }
 
@@ -306,7 +307,7 @@ fun ToolBoxActionSheet(
                             SheetBlur,
                             { entrance.value; dragOffset },
                         ) {
-                            Box(Modifier.fillMaxWidth()) { content() }
+                            Box(Modifier.fillMaxWidth()) { if (containerColor == null) ProvideToolBoxGlassText(content) else content() }
                         }
                     }
                 }

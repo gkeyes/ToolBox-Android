@@ -391,7 +391,7 @@ internal fun RunningToolCapsule(
     ) {
         Row(
             Modifier.fillMaxHeight()
-                .toolBoxPressFeedback(openInteraction, shape = capsule)
+                .toolBoxGlassPress(openInteraction, shape = capsule)
                 .clickable(interactionSource = openInteraction, indication = null, role = Role.Button, onClick = onOpen)
                 .semantics(mergeDescendants = true) { contentDescription = "打开${session.toolName}" },
             verticalAlignment = Alignment.CenterVertically,

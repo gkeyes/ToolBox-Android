@@ -38,6 +38,8 @@ import com.kyant.backdrop.highlight.Highlight
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 import kotlin.math.roundToInt
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.unit.toSize
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.geometry.Size
 
@@ -107,12 +109,16 @@ private class WindowCopyBackdrop(
     private val copy: WindowBackdrop,
     /** Null: measure the scale of the layers the glass sits in (a popup zooming in on its own). */
     private val layerScale: (() -> Float)?,
-    /** Drawn over the copy: the panel's own fill, for controls that sit on the panel. */
+    /** Drawn over the copy (made legible like the panel's): the panel's own fill, for controls on it. */
     private val overlay: (() -> Color)? = null,
     /** Read on every draw, so a control moving with its panel (a slide, a drag) is redrawn in register. */
     private val motion: () -> Unit = {},
 ) : Backdrop {
     override val isCoordinatesDependent: Boolean = true
+
+    /** Luminance of the page under the glass as last drawn; the fill reads it in the same frame. */
+    var regionLuminance: Float = copy.luminance
+        private set
 
     private val layerProbe by lazy { GraphicsLayerScope() }
 
@@ -129,6 +135,7 @@ private class WindowCopyBackdrop(
         val node = coordinates?.takeIf { it.isAttached } ?: return
         // On screen, not in window: popups and dialogs need not share the page window's origin.
         val origin = node.positionOnScreen() - copy.rootOnScreen
+        regionLuminance = copy.luminanceIn(Rect(origin, node.size.toSize()))
         val pageSize = IntSize(
             (copy.image.width / copy.scale).roundToInt(),
             (copy.image.height / copy.scale).roundToInt(),
@@ -146,7 +153,7 @@ private class WindowCopyBackdrop(
             }
         }
         // Past the control's bounds too: blur and lens sample a padded region around it.
-        if (overlay != null) drawRect(overlay(), topLeft = Offset(-OverlayBleed, -OverlayBleed), size = Size(size.width + 2 * OverlayBleed, size.height + 2 * OverlayBleed))
+        if (overlay != null) drawRect(legibleFill(overlay(), regionLuminance), topLeft = Offset(-OverlayBleed, -OverlayBleed), size = Size(size.width + 2 * OverlayBleed, size.height + 2 * OverlayBleed))
     }
 }
 
@@ -166,9 +173,7 @@ internal fun ProvideWindowButtonBackdrop(
 ) {
     val currentFill by rememberUpdatedState(fill)
     val currentMotion by rememberUpdatedState(motion)
-    val backdrop = remember(copy) {
-        copy?.let { WindowCopyBackdrop(it, null, { legibleFill(currentFill(), it.luminance) }) { currentMotion() } }
-    }
+    val backdrop = remember(copy) { copy?.let { WindowCopyBackdrop(it, null, { currentFill() }) { currentMotion() } } }
     // One provider either way, so the content keeps its state while the copy comes and goes.
     CompositionLocalProvider(
         LocalToolBoxButtonBackdrop provides (backdrop ?: LocalToolBoxButtonBackdrop.current),
@@ -222,19 +227,19 @@ internal fun Modifier.snapshotGlass(
             motion()
             draw()
         },
-        onDrawSurface = { drawRect(legibleFill(fill(), copy.luminance)) },
+        onDrawSurface = { drawRect(legibleFill(fill(), backdrop.regionLuminance)) },
     )
 }
 
 /**
- * A light panel over a dark page (or a dark one over a light page, such as a web page behind a
- * dark-theme dialog) lets the page's tone through and washes out secondary text: make the fill
- * nearly opaque then.
+ * A light panel over dark content (or a dark one over light content, such as a web article
+ * behind a dark-theme dialog) lets that tone through and washes out secondary text: make the
+ * fill nearly opaque then. [pageLuminance] is measured under the panel, not across the page.
  */
 private fun legibleFill(fill: Color, pageLuminance: Float): Color {
     val darkPanel = fill.copy(alpha = 1f).luminance() < 0.5f
     val opposite = if (darkPanel) pageLuminance > 0.45f else pageLuminance < 0.25f
-    return if (opposite && fill.alpha < 0.88f) fill.copy(alpha = 0.88f) else fill
+    return if (opposite && fill.alpha < 0.92f) fill.copy(alpha = 0.92f) else fill
 }
 
 /**

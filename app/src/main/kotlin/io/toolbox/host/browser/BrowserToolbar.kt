@@ -151,7 +151,7 @@ private fun BrowserAddressCapsule(
         Box(Modifier.size(42.dp)) {
             Box(
                 Modifier.matchParentSize()
-                    .toolBoxPressFeedback(shieldInteraction, enabled = canInteract, shape = CircleShape)
+                    .toolBoxGlassPress(shieldInteraction, enabled = canInteract, shape = CircleShape)
                     .clip(CircleShape)
                     .background(if (filtering && canInteract) colors.primary.copy(alpha = 0.12f) else Color.Transparent)
                     .clickable(enabled = canInteract, interactionSource = shieldInteraction, indication = null, role = Role.Button) {

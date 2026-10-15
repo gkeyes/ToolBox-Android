@@ -28,6 +28,8 @@ import androidx.compose.ui.graphics.drawOutline
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.graphics.luminance
+import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 
 /**
  * Press feedback shared by every tappable card, button and row: the visual content springs
@@ -177,6 +179,8 @@ fun Modifier.toolBoxGlassPress(
     interactionSource: InteractionSource,
     enabled: Boolean = true,
     shape: Shape = androidx.compose.foundation.shape.CircleShape,
+    /** Null: a white additive glow (over glass). A colour: that wash at full press, for bare controls on a light page. */
+    glow: androidx.compose.ui.graphics.Color? = null,
 ): Modifier {
     val pressed by interactionSource.collectIsPressedAsState()
     val progress = animateFloatAsState(
@@ -190,13 +194,28 @@ fun Modifier.toolBoxGlassPress(
         scaleY = s
     }.drawWithContent {
         drawContent()
-        val alpha = 0.12f * progress.value.coerceIn(0f, 1f)
-        if (alpha > 0.001f) {
-            drawOutline(
-                shape.createOutline(size, layoutDirection, this),
-                androidx.compose.ui.graphics.Color.White.copy(alpha = alpha),
-                blendMode = androidx.compose.ui.graphics.BlendMode.Plus,
-            )
+        val amount = progress.value.coerceIn(0f, 1f)
+        if (amount > 0.001f) {
+            if (glow == null) {
+                drawOutline(
+                    shape.createOutline(size, layoutDirection, this),
+                    androidx.compose.ui.graphics.Color.White.copy(alpha = 0.12f * amount),
+                    blendMode = androidx.compose.ui.graphics.BlendMode.Plus,
+                )
+            } else {
+                drawOutline(shape.createOutline(size, layoutDirection, this), glow.copy(alpha = glow.alpha * amount))
+            }
         }
+    }
+}
+
+/** Glow of a bare (borderless) control under the finger: an accent wash on light pages, white on dark. */
+@Composable
+fun toolBoxBareGlow(): androidx.compose.ui.graphics.Color {
+    val colors = ToolBoxThemeTokens.colors
+    return if (colors.background.luminance() < 0.5f) {
+        androidx.compose.ui.graphics.Color.White.copy(alpha = 0.14f)
+    } else {
+        colors.primary.copy(alpha = 0.10f)
     }
 }
