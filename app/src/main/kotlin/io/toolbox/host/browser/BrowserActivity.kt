@@ -3,6 +3,7 @@ package io.toolbox.host.browser
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Intent
+import android.content.res.Configuration
 import android.os.Bundle
 import android.util.Base64
 import android.view.MotionEvent
@@ -23,6 +24,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.webkit.WebStorageCompat
 import androidx.webkit.WebViewFeature
 import io.toolbox.core.ui.theme.ToolBoxTheme
+import io.toolbox.host.R
 import io.toolbox.host.runtime.systemBrowserIntent
 import io.toolbox.host.ui.applyHyperOsGestureNavigationImmersion
 import kotlinx.coroutines.CoroutineScope
@@ -97,8 +99,11 @@ class BrowserActivity : ComponentActivity() {
         BrowserWebViewFactory(this, state, filters, ssl, capabilities, navigation, pageHost)
     }
 
+    private var nightUiMode = Configuration.UI_MODE_NIGHT_UNDEFINED
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        nightUiMode = resources.configuration.uiMode
         state.address = validBrowserUrl(savedInstanceState?.getString("address") ?: intent.dataString.orEmpty()) ?: run {
             finish()
             return
@@ -467,6 +472,18 @@ class BrowserActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    /** Night mode switches no longer recreate the page (form input survives), so the window theme that
+     * WebView reads for prefers-color-scheme is re-resolved here, then the page is told about it. */
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        val nightChanged = (newConfig.uiMode xor nightUiMode) and Configuration.UI_MODE_NIGHT_MASK != 0
+        super.onConfigurationChanged(newConfig)
+        if (!nightChanged) return
+        nightUiMode = newConfig.uiMode
+        theme.applyStyle(R.style.Theme_ToolBox, true)
+        window.setBackgroundDrawableResource(R.color.toolbox_window_background)
+        state.webView?.dispatchConfigurationChanged(newConfig)
     }
 
     override fun onSaveInstanceState(outState: Bundle) {

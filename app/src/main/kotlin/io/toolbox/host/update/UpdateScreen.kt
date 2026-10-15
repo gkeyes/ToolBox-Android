@@ -2,7 +2,6 @@ package io.toolbox.host.update
 
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -15,7 +14,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.runtime.Composable
@@ -407,7 +405,7 @@ private fun VersionRow(
         contentAlignment = Alignment.CenterStart,
     ) {
     // The version moves to its own line whenever it would not fit beside the title, so the build
-    // number (what tells test builds apart) is never cut mid-glyph; that line still scrolls sideways.
+    // number (what tells test builds apart) is never cut mid-glyph; on its own line it wraps instead.
     val fitsBeside = with(density) {
         val titleWidth = measurer.measure(title, textStyles.body, maxLines = 1).size.width.toDp()
         val valueWidth = measurer.measure(value, textStyles.body, maxLines = 1).size.width.toDp()
@@ -419,9 +417,9 @@ private fun VersionRow(
         val valueText = @Composable { modifier: Modifier ->
             ToolBoxText(
                 value,
-                modifier = modifier.horizontalScroll(rememberScrollState()),
+                modifier = modifier,
                 style = textStyles.body.copy(color = valueColor),
-                maxLines = 1,
+                maxLines = if (stacked) 3 else 1,
             )
         }
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
