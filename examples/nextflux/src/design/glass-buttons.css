@@ -122,8 +122,8 @@
 .nf-switch .switch__thumb {
   transition: scale var(--nf-press-out), background-color 160ms ease-out, box-shadow 160ms ease-out, transform var(--ds-dur-spatial, 300ms) var(--ds-ease-spatial, ease);
 }
-.switch:is(:active, [data-pressed="true"], [data-nf-pressed="true"]) .switch__thumb,
-.switch:is(:active, [data-pressed="true"], [data-nf-pressed="true"]) .nf-switch .switch__thumb {
+.switch:not([data-disabled="true"], [aria-disabled="true"]):is(:active, [data-pressed="true"], [data-nf-pressed="true"]) .switch__thumb,
+.switch:not([data-disabled="true"], [aria-disabled="true"]):is(:active, [data-pressed="true"], [data-nf-pressed="true"]) .nf-switch .switch__thumb {
   scale: 1.18 1.12;
   background: rgb(255 255 255 / 0.45);
   -webkit-backdrop-filter: blur(2px) saturate(180%) brightness(1.1);
@@ -139,6 +139,7 @@
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
   }
+  .button:is(.button--secondary, .button--tertiary):not(.nf-set-row) { --nf-btn-glass: color-mix(in srgb, var(--ds-on-surface) 8%, var(--surface)); }
   .button.button--primary:not(.nf-set-row) { --nf-btn-glass: var(--accent); }
   .button.button--danger:not(.nf-set-row) { --nf-btn-glass: var(--nf-btn-danger); }
 }

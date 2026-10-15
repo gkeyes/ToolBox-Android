@@ -208,6 +208,7 @@ export function installLens({ doc = document, win = window } = {}) {
 // it) and a data-nf-pressed flag, from touch as well as pointer events, since
 // some Android WebViews deliver no pointer events for a touch.
 const PRESSABLE = ".button:not(.nf-set-row), .tabs__tab, .switch";
+const DISABLED = ':disabled, [data-disabled="true"], [aria-disabled="true"]';
 export function installGlassPress({ doc = document } = {}) {
   let pressed = null;
   const place = (element, x, y) => {
@@ -224,6 +225,7 @@ export function installGlassPress({ doc = document } = {}) {
     const element = event.target?.closest?.(PRESSABLE);
     if (!point || !element) return;
     release();
+    if (element.matches(DISABLED) || element.querySelector(":scope > input:disabled")) return;
     pressed = element;
     element.dataset.nfPressed = "true";
     place(element, point.clientX, point.clientY);
@@ -244,6 +246,15 @@ export function installGlassPress({ doc = document } = {}) {
     ["touchstart", start], ["touchmove", move], ["touchend", release], ["touchcancel", release],
     ["pointerdown", start], ["pointermove", move], ["pointerup", release], ["pointercancel", release],
   ];
+  // A mouse released outside the page sends no pointerup here.
+  const leave = (event) => { if (!event.relatedTarget) release(); };
+  listeners.push(["pointerout", leave]);
+  const win = doc.defaultView;
   for (const [type, handler] of listeners) doc.addEventListener(type, handler, options);
-  return () => { for (const [type, handler] of listeners) doc.removeEventListener(type, handler, options); release(); };
+  win?.addEventListener("blur", release);
+  return () => {
+    for (const [type, handler] of listeners) doc.removeEventListener(type, handler, options);
+    win?.removeEventListener("blur", release);
+    release();
+  };
 }
