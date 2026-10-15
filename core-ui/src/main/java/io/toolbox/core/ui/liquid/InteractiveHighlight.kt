@@ -46,6 +46,9 @@ class InteractiveHighlight(
     /** Where the finger is, in the control's coordinates (it springs back to the touch-down point on release). */
     val touchPosition: Offset get() = positionAnimation.value
 
+    /** The rim highlight's last turn, so it keeps the nearer of two equivalent turns (see followingHighlight). */
+    internal var highlightTurn: Float? = null
+
     /** The control's size as last drawn, so the rim highlight can aim at the finger. */
     var size: Size = Size.Unspecified
         private set

@@ -68,6 +68,10 @@ import androidx.compose.foundation.gestures.horizontalDrag
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.LayoutDirection
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
+import androidx.compose.foundation.border
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
+import kotlin.math.abs
 import kotlin.math.roundToInt
 
 /**
@@ -100,6 +104,7 @@ fun ToolBoxSegmentedControl(
     val currentSelected by rememberUpdatedState(selectedIndex)
     val currentOnSelect by rememberUpdatedState(onSelect)
     var dragging by remember { mutableStateOf(false) }
+    var focusedIndex by remember { mutableStateOf(-1) }
     val lift = animateFloatAsState(
         targetValue = if (enabled && dragging) 1f else 0f,
         animationSpec = spring(dampingRatio = 0.5f, stiffness = 300f),
@@ -143,8 +148,10 @@ fun ToolBoxSegmentedControl(
                 val thumbStart = thumbX.value
                 if (fromStart(down.position.x) !in thumbStart..thumbStart + segmentPx) return@awaitEachGesture
                 var under = (thumbStart / segmentPx).roundToInt().coerceIn(0, lastIndex)
+                // Keep the thumb where it was grabbed instead of jumping its centre to the finger.
+                val grab = fromStart(down.position.x) - thumbStart
                 fun follow(fingerX: Float) {
-                    val x = (fromStart(fingerX) - segmentPx / 2f).coerceIn(0f, segmentPx * lastIndex)
+                    val x = (fromStart(fingerX) - grab).coerceIn(0f, segmentPx * lastIndex)
                     scope.launch { thumbX.snapTo(x) }
                     val now = (x / segmentPx).roundToInt().coerceIn(0, lastIndex)
                     if (now != under) {
@@ -179,6 +186,12 @@ fun ToolBoxSegmentedControl(
         ) {
             options.forEachIndexed { index, label ->
                 val isSelected = index == selectedIndex
+                // Keyboard focus shows as a ring drawn above the thumb (see below).
+                val interaction = remember { MutableInteractionSource() }
+                val focused by interaction.collectIsFocusedAsState()
+                LaunchedEffect(focused) {
+                    if (focused) focusedIndex = index else if (focusedIndex == index) focusedIndex = -1
+                }
                 val textColor = animateColorAsState(
                     if (isSelected) colors.textPrimary else colors.textSecondary,
                     ToolBoxMotion.effects(),
@@ -193,7 +206,7 @@ fun ToolBoxSegmentedControl(
                             selected = isSelected,
                             enabled = enabled,
                             role = Role.RadioButton,
-                            interactionSource = null,
+                            interactionSource = interaction,
                             indication = null,
                             onClick = {
                                 if (!isSelected) {
@@ -217,7 +230,22 @@ fun ToolBoxSegmentedControl(
                 }
             }
         }
-        if (!hasSelection) return@BoxWithConstraints
+        // Over everything, so the opaque thumb at rest can't hide the selected segment's ring.
+        val focusRing: @Composable () -> Unit = {
+            if (focusedIndex in options.indices) {
+                Box(
+                    Modifier
+                        .offset { IntOffset((segmentPx * focusedIndex).roundToInt(), 0) }
+                        .width(segmentWidth)
+                        .fillMaxHeight()
+                        .border(2.dp, colors.primary, CircleShape),
+                )
+            }
+        }
+        if (!hasSelection) {
+            focusRing()
+            return@BoxWithConstraints
+        }
         val thumb = Modifier
             .offset { IntOffset(thumbX.value.roundToInt(), 0) }
             .width(segmentWidth)
@@ -242,9 +270,13 @@ fun ToolBoxSegmentedControl(
                 ),
             )
             // The label of the segment under the thumb, drawn on top so it stays readable: fully at
-            // rest, still 60% while the thumb is lifted.
+            // rest, still 60% while the thumb is lifted. Between segments the lifted thumb shows the
+            // labels beneath it, so the overlay fades out there rather than doubling them.
             Box(
-                thumb.graphicsLayer { alpha = 1f - 0.4f * lift.value }.clearAndSetSemantics { },
+                thumb.graphicsLayer {
+                    val offCentre = (abs(thumbX.value - thumbIndex * segmentPx) / (segmentPx / 2f)).coerceIn(0f, 1f)
+                    alpha = (1f - 0.4f * lift.value) * (1f - offCentre * lift.value)
+                }.clearAndSetSemantics { },
                 contentAlignment = Alignment.Center,
             ) {
                 ToolBoxText(
@@ -273,6 +305,7 @@ fun ToolBoxSegmentedControl(
                     .background(pillFill),
             )
         }
+        focusRing()
     }
 }
 
