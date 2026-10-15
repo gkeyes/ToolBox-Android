@@ -4,20 +4,29 @@
 // "press again to exit". The answer must be given synchronously.
 //
 // Back closes the top layer the same way its own dismiss gesture would, so
-// the existing close paths (and their animations, and their refusal while a
-// save is pending) all apply. With nothing to close, the host handles it.
+// the existing close paths and their animations apply. With nothing to close,
+// or with a top layer that is busy and refuses to close, the host handles it.
 
 import { hasVisibleDialog } from "@/toolbox/overlayJanitor.js";
 
 const subpages = [];
 
-// A subpage (the reader) registers how to leave it while it is open.
-export function registerBackHandler(handler) {
-  subpages.push(handler);
+// A subpage (the reader, the phone sidebar) registers how to leave it while it
+// is open. `layer` says which one is drawn on top: a handler re-registers when
+// its route changes, so the order of registration alone is not the stacking.
+export function registerBackHandler(handler, layer = 0) {
+  const entry = { handler, layer };
+  subpages.push(entry);
   return () => {
-    const index = subpages.lastIndexOf(handler);
+    const index = subpages.lastIndexOf(entry);
     if (index >= 0) subpages.splice(index, 1);
   };
+}
+
+function topSubpage() {
+  let top = null;
+  for (const entry of subpages) if (!top || entry.layer >= top.layer) top = entry;
+  return top?.handler;
 }
 
 // The Escape is meant for the top layer only. It stops at the document so
@@ -48,8 +57,12 @@ export function closeTopLayer({ doc = document, win = window } = {}) {
   // Native modal dialogs (the link dialog) sit in the top layer, above all.
   const native = [...doc.querySelectorAll("dialog[open]")].pop();
   if (native) {
+    // A dialog handling cancel itself (LoadingModal dismisses in its own
+    // handler) keeps the back. One that refuses while busy (the link dialog
+    // while a share is answering, marked aria-busy) leaves it to the host.
     const cancel = new Event("cancel", { cancelable: true });
     if (native.dispatchEvent(cancel)) native.close();
+    else if (native.getAttribute("aria-busy") === "true") return false;
     return true;
   }
 
@@ -82,11 +95,16 @@ export function closeTopLayer({ doc = document, win = window } = {}) {
     if (hasVisibleDialog(layer, win)) {
       const dialog = [...layer.querySelectorAll("[role='dialog'], [role='alertdialog']")]
         .filter((element) => !element.closest("[data-exiting='true']")).pop() || layer;
-      // Alerts ignore Escape; back is their close (×) button. While it is
-      // disabled (a request is running) back stays on the alert.
+      // A layer that refuses to close while a request runs is busy: back is
+      // left to the host (its exit hint), so a stalled request never traps
+      // the reader. Alerts are busy when their × is disabled; sheets say so
+      // with data-nf-locked (CustomModal's locked prop).
+      if (dialog.closest("[data-nf-locked='true']") || dialog.querySelector("[data-nf-locked='true']")) return false;
+      // Alerts ignore Escape; back is their close (×) button.
       if (dialog.getAttribute("role") === "alertdialog") {
         const close = dialog.querySelector("[slot='close'], .nextflux-close-button");
-        if (close && !close.disabled && close.getAttribute("aria-disabled") !== "true") close.click();
+        if (!close || close.disabled || close.getAttribute("aria-disabled") === "true") return false;
+        close.click();
       } else {
         pressEscape(dialog, doc);
       }
@@ -94,7 +112,7 @@ export function closeTopLayer({ doc = document, win = window } = {}) {
     }
   }
 
-  const subpage = subpages[subpages.length - 1];
+  const subpage = topSubpage();
   if (subpage) {
     subpage();
     return true;

@@ -43,7 +43,7 @@ const SidebarProvider = React.forwardRef(
     const { isMobile } = useIsMobile();
     const [openMobile, setOpenMobile] = React.useState(false);
     // System back closes the phone sidebar, like a tap on its scrim.
-    React.useEffect(() => (isMobile && openMobile ? registerBackHandler(() => setOpenMobile(false)) : undefined), [isMobile, openMobile]);
+    React.useEffect(() => (isMobile && openMobile ? registerBackHandler(() => setOpenMobile(false), 1) : undefined), [isMobile, openMobile]);
 
     // This is the internal state of the sidebar.
     // We use openProp and setOpenProp for control from outside the component.

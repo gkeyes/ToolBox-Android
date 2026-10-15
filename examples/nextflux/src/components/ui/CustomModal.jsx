@@ -10,6 +10,9 @@ export default function CustomModal({
   fixedHeight = false,
   children,
   footer,
+  // True while the owner refuses to close (a write is running): system back
+  // then goes to the host instead of being swallowed.
+  locked = false,
 }) {
   const { isMedium } = useIsMobile();
   const { t } = useTranslation();
@@ -24,6 +27,7 @@ export default function CustomModal({
         fixedHeight={fixedHeight}
         footer={footer}
         dialogClassName="nextflux-floating-sheet"
+        locked={locked}
       >
         {children}
       </MobileSheet>
@@ -35,7 +39,7 @@ export default function CustomModal({
       <Button className="hidden" />
       <Modal.Backdrop className="nextflux-modal-backdrop" isOpen={open} onOpenChange={onOpenChange}>
         <Modal.Container>
-          <Modal.Dialog className={cn("nextflux-modal-surface p-0", fixedHeight && "h-2/3")}>
+          <Modal.Dialog className={cn("nextflux-modal-surface p-0", fixedHeight && "h-2/3")} data-nf-locked={locked || undefined}>
             <Modal.Header className="nextflux-close-header">
               <Modal.Heading className="p-4">{title}</Modal.Heading>
             </Modal.Header>
