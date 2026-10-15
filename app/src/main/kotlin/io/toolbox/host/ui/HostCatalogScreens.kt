@@ -114,6 +114,7 @@ import java.text.DateFormat
 import java.util.Date
 import io.toolbox.core.ui.component.ToolBoxGlassCapsule
 import io.toolbox.core.ui.component.toolBoxClearGlassFill
+import io.toolbox.core.ui.component.toolBoxClearGlass
 
 @Composable
 internal fun ToolManagerContent(
@@ -930,7 +931,12 @@ internal fun FeedbackSurface(
     Row(
         modifier = modifier.fillMaxWidth().semantics(mergeDescendants = true) {
             if (tone != FeedbackTone.Progress) liveRegion = LiveRegionMode.Polite
-        }.clip(toolBoxShape(ToolBoxThemeTokens.radii.control)).drawBehind { drawRect(containerState.value) }
+        }.toolBoxClearGlass(
+            // Clear glass in the banner's tone: the rim highlight of the other glass surfaces.
+            toolBoxShape(ToolBoxThemeTokens.radii.control),
+            tint = containerState.value.copy(alpha = 0.78f),
+            solid = containerState.value,
+        )
             .heightIn(min = ToolBoxThemeTokens.sizes.touchTarget).padding(start = ToolBoxThemeTokens.spacing.oneHalf),
         verticalAlignment = Alignment.CenterVertically,
     ) {
