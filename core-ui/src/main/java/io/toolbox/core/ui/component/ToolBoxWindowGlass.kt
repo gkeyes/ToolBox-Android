@@ -39,6 +39,7 @@ import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 import kotlin.math.roundToInt
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.geometry.Size
 
 /**
  * Liquid Glass for a panel in an overlay window (a dialog). The overlay cannot sample the page
@@ -136,7 +137,8 @@ private class WindowCopyBackdrop(
                 drawImage(copy.image, dstOffset = IntOffset.Zero, dstSize = pageSize)
             }
         }
-        if (overlay != null) drawRect(overlay())
+        // Past the control's bounds too: blur and lens sample a padded region around it.
+        if (overlay != null) drawRect(overlay(), topLeft = Offset(-OverlayBleed, -OverlayBleed), size = Size(size.width + 2 * OverlayBleed, size.height + 2 * OverlayBleed))
     }
 }
 
@@ -154,18 +156,15 @@ internal fun ProvideWindowButtonBackdrop(
     motion: () -> Unit = {},
     content: @Composable () -> Unit,
 ) {
-    if (copy == null) {
-        content()
-        return
-    }
     val currentFill by rememberUpdatedState(fill)
     val currentMotion by rememberUpdatedState(motion)
     val backdrop = remember(copy) {
-        WindowCopyBackdrop(copy, null, { legibleFill(currentFill(), copy.luminance) }) { currentMotion() }
+        copy?.let { WindowCopyBackdrop(it, null, { legibleFill(currentFill(), it.luminance) }) { currentMotion() } }
     }
+    // One provider either way, so the content keeps its state while the copy comes and goes.
     CompositionLocalProvider(
-        LocalToolBoxButtonBackdrop provides backdrop,
-        LocalToolBoxButtonBlur provides blurRadius,
+        LocalToolBoxButtonBackdrop provides (backdrop ?: LocalToolBoxButtonBackdrop.current),
+        LocalToolBoxButtonBlur provides (if (backdrop != null) blurRadius else LocalToolBoxButtonBlur.current),
         content = content,
     )
 }
@@ -277,3 +276,6 @@ fun Modifier.toolBoxWindowFrost(
         onDrawSurface = { drawRect(tint) },
     )
 }
+
+/** How far a control's panel overlay extends past it, beyond any blur or lens padding. */
+private const val OverlayBleed = 4096f
