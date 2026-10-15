@@ -502,7 +502,7 @@ body[data-page=home] .workspace{padding-bottom:0}
  .bottom-nav::before,.calc-dock::before,.top-actions>.icon-button::before,.nav-plus::before{background:var(--lens-tint);box-shadow:var(--rim2),inset 0 0 0 1px var(--glass-line);backdrop-filter:blur(7px) var(--zz-lens,) saturate(180%) brightness(1.04)}
 }
  .bottom-nav button{color:#3d483c}
- .bottom-nav button.active{color:#1d5a48}
+ .bottom-nav button.active{color:#134236}
  .calc-dock .caption{color:#56655d}
  .nav-plus{color:#1d5a48}
 }
@@ -542,4 +542,4 @@ body[data-page="home"] #toast.has-action{top:calc(var(--home-top,64px) + 78px);b
 /* 1.5.1: on 我的家 the toast sits under the title so it never covers the 摆放 tray or the 户型 bar. */
 @media(max-width:700px){body[data-page="home"] #toast{top:calc(var(--home-top,81px) + 62px);bottom:auto;transform:translate(-50%,-15px)}body[data-page="home"] #toast.show{transform:translate(-50%,0)}}
 .hv[data-mode="resize"] .hv-label{color:var(--ink)}
-@media (prefers-color-scheme:dark){.hv[data-mode="resize"] .hv-label{color:#eef3ee}.hv[data-mode="resize"] .hv-label small{color:#c6d0c8}}
+@media (prefers-color-scheme:dark){.hv[data-mode="resize"] .hv-label{color:#f2f6f2;background:#17201cdb!important}.hv[data-mode="resize"] .hv-label small{color:#d2dbd4}}
