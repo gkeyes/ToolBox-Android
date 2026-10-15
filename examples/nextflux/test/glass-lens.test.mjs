@@ -27,3 +27,19 @@ test("every sheet, alert and toast floats on glass", () => {
   assert.match(css, /html \.toolbox-link-dialog \{\n  background: var\(--nf-menu\);/);
   assert.match(source("components/ui/MobileSheet.jsx"), /"nextflux-modal-surface nextflux-mobile-sheet nextflux-floating-sheet p-0"/);
 });
+
+// Buttons are iOS interactive glass: no shrink, grow and brighten on press,
+// glass material on filled buttons, press state from touch too.
+test("buttons grow into glass on press instead of shrinking", () => {
+  const css = source("design/glass-buttons.css");
+  assert.match(css, /--ds-press-scale: 1;/);
+  assert.match(css, /--ds-press-scale-row: 1;/);
+  assert.match(css, /scale: var\(--nf-press-grow\);\n  filter: brightness\(1\.08\);/);
+  assert.match(css, /--nf-press-grow: 1\.08;/);
+  assert.match(source("index.css"), /@import "\.\/design\/ios27\.css";\n@import "\.\/design\/glass-buttons\.css";/);
+  const lens = source("design/lens.js");
+  assert.match(lens, /export function installGlassPress/);
+  assert.match(lens, /\["touchstart", start\]/);
+  assert.match(source("render.jsx"), /\ninstallGlassPress\(\);\n/);
+  assert.doesNotMatch(source("components/Settings/Settings.jsx"), /size-10 min-w-10/);
+});
