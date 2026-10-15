@@ -40,6 +40,7 @@ import com.kyant.shapes.Capsule
 import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.cos
+import kotlin.math.hypot
 import kotlin.math.sin
 import kotlin.math.tanh
 
@@ -151,6 +152,9 @@ fun LiquidButton(
 /** Kyant's resting highlight angle: light on the top-left and bottom-right rims. */
 private const val RestingHighlightAngle = 45f
 
+// Within this fraction of the half-size from the centre, the turn fades towards the resting angle.
+private const val CentreFade = 0.35f
+
 
 /**
  * The rim highlight of a pressed glass control: at rest the default 45° light; under the finger it
@@ -161,19 +165,25 @@ private const val RestingHighlightAngle = 45f
 internal fun followingHighlight(interaction: InteractiveHighlight): Highlight {
     val progress = interaction.pressProgress.fastCoerceIn(0f, 1f)
     val size = interaction.size
-    if (progress <= 0.001f || size.isUnspecified || size.width <= 0f || size.height <= 0f) return Highlight.Default
+    if (progress <= 0.001f || size.isUnspecified || size.width <= 0f || size.height <= 0f) {
+        interaction.highlightTurn = null
+        return Highlight.Default
+    }
     val touch = interaction.touchPosition
     // -1..1 across each axis, so the angle follows the button's shape rather than raw pixels.
     val dx = (touch.x - size.width / 2f) / (size.width / 2f)
     val dy = (touch.y - size.height / 2f) / (size.height / 2f)
     val touchAngle = Math.toDegrees(atan2(dy.toDouble(), dx.toDouble())).toFloat()
-    // Shortest turn on the 180° period. It can't also fade towards the centre: a map from the
-    // button to orientations that is the resting angle at the centre and the finger's direction
-    // further out winds twice round the 180° circle, so it must break somewhere. The break is left
-    // at the centre point, and the touch position is the spring-animated one, so jitter there is
-    // smoothed rather than snapping the light.
-    val turn = ((touchAngle - RestingHighlightAngle) % 180f + 270f) % 180f - 90f
-    val angle = RestingHighlightAngle + turn * progress
+    // Shortest turn on the 180° period, then whichever equivalent (±180°) is nearest the last one:
+    // while the press fades in or out, crossing the opposite diagonal no longer snaps the light a
+    // quarter turn. The turn fades out within the inner third, so finger jitter at the centre
+    // (where the direction is undefined) barely moves it.
+    val shortest = ((touchAngle - RestingHighlightAngle) % 180f + 270f) % 180f - 90f
+    val last = interaction.highlightTurn
+    val turn = if (last == null) shortest else listOf(shortest, shortest - 180f, shortest + 180f).minBy { abs(it - last) }
+    interaction.highlightTurn = turn
+    val reach = (hypot(dx, dy) / CentreFade).fastCoerceAtMost(1f)
+    val angle = RestingHighlightAngle + turn * progress * reach
     return Highlight(
         style = HighlightStyle.Default(
             color = Color.White.copy(alpha = 0.5f + 0.3f * progress),
