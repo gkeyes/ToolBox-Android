@@ -98,15 +98,16 @@ export default function ContinuousNextUnread({ articleId, scrollAreaRef, surface
   };
   // The next page slides up under the floating close button, so a copy of
   // the button stays on top of it; the real one hides meanwhile, or the two
-  // glass discs would stack.
+  // glass discs would stack. Opacity, not visibility: the real button stays
+  // in the accessibility tree, since the whole layer is aria-hidden.
   const hideRealClose = () => {
     const button = chromeRef.current?.firstChild ? realCloseRef.current : null;
     if (!button) return;
-    button.style.visibility = "hidden";
+    button.style.opacity = "0";
     hiddenCloseRef.current = button;
   };
   const showRealClose = () => {
-    if (hiddenCloseRef.current) hiddenCloseRef.current.style.visibility = "";
+    if (hiddenCloseRef.current) hiddenCloseRef.current.style.opacity = "";
     hiddenCloseRef.current = null;
   };
   const cancelPull = () => {
