@@ -193,8 +193,10 @@ def main_compute(args):
     written_code, written_name = version_bump.app_version(read_head(version_bump.APP_BUILD))
     published = read_dev(gh_api, repo)
     if published:
-        if not has_commit(published["commit"]):
-            raise LookupFailed(f"dev's build commit {published['commit']} is not in this repository's history")
+        if not has_commit(published["commit"]) or subprocess.run(
+                ["git", "merge-base", "--is-ancestor", published["commit"], args.head], cwd=ROOT,
+                capture_output=True).returncode != 0:
+            raise LookupFailed(f"dev's build commit {published['commit']} is not in the history of {args.head}")
         base_name, base_code, base = published["name"], published["code"], published["commit"]
         print(f"Last published build: ToolBox {base_name} ({base_code}) from {base[:7]}.")
     else:

@@ -218,7 +218,17 @@ class ComputeFromHistoryTest(unittest.TestCase):
     def test_published_commit_missing_from_history_fails_closed(self):
         code, _, stderr = self.compute({"name": "0.13.14", "code": 90, "commit": "d" * 40})
         self.assertEqual(2, code)
-        self.assertIn("not in this repository's history", stderr)
+        self.assertIn("is not in the history of", stderr)
+
+    def test_published_commit_outside_the_current_history_fails_closed(self):
+        # main was rewritten: the old dev commit still exists but is no longer an ancestor of the head.
+        self.git("checkout", "-q", "-b", "old")
+        old = self.commit("old published build", {"app/src/main/gone.kt": "g"})
+        self.git("checkout", "-q", "main")
+        self.commit("fix", {"app/src/main/a.kt": "a", "changes/fix.md": fragment("patch", "修正甲。")})
+        code, _, stderr = self.compute({"name": "0.13.15", "code": 91, "commit": old})
+        self.assertEqual(2, code)
+        self.assertIn("is not in the history of", stderr)
 
     def test_check_dev(self):
         head = self.commit("fix", {"app/src/main/a.kt": "a", "changes/fix.md": fragment("patch", "修正甲。")})

@@ -6,13 +6,15 @@ name: Android CI
 # Emulator behavior tests are opt-in from a manual run. Pushes to the default branch also build the
 # signed release and cold-start it on an emulator before uploading it. On the default branch the APK version
 # is computed first from the changelog fragments in changes/ (scripts/ci/app_version.py); pull requests never
-# edit it.
+# edit it. A push that only adds a fragment (changes/*.md) still runs, so a follow-up fragment for a change
+# that reached main without one rebuilds and publishes it.
 on:
   push:
     branches: ["main"]
     paths:
       - "**"
       - "!**.md"
+      - "changes/*.md"
       - "sdk/help/**"
       - "!docs/**"
       - "!examples/**"
