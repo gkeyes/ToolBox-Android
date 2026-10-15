@@ -4,7 +4,7 @@
   // Ledger money is integer cents. DOM content originating from users is escaped.
   const KEY = 'ledger.v1';
   const runtime = window.ZZRuntime;
-  const VERSION = '1.5.9';
+  const VERSION = '1.6.0';
   const MAX_CENTS = 100000000000;
   const $ = s => document.querySelector(s);
   const $$ = s => [...document.querySelectorAll(s)];
@@ -796,7 +796,7 @@
   window.addEventListener('pagehide',()=>{flushCalc();if(isFormDirty())saveDraftNow().catch(()=>{});});
   runtime.onFlush(async()=>{
     let failure=null;flushCalc();const calcWrite=calcSaving;
-    if(isFormDirty())await saveDraftNow().catch(error=>{failure=error;});else await draftQueue.catch(()=>{});
+    if(isFormDirty())await saveDraftNow({resume:true}).catch(error=>{failure=error;});else await draftQueue.catch(()=>{});
     if(!await calcWrite)failure=failure||new Error('测算输入未保存');
     if(failure){showError('关闭前保存失败：'+runtime.explain(failure));throw failure;}
   });
@@ -861,11 +861,15 @@
       drafts=next;storedDraftIds=new Set(next.map(d=>d.id));updateDraftBanner();
     });return draftQueue;
   }
-  function saveDraftNow(){
+  // resume: saved by the host's close flush (system Back exit); the next launch reopens this form by itself.
+  // Once closing, later saves (pagehide) keep the mark.
+  let closing=false;
+  function saveDraftNow({resume=false}={}){
+    if(resume)closing=true;resume=resume||closing;
     clearTimeout(draftTimer);const form=$('#sheet form[data-form]');
     if(!form||!isFormDirty()||busy)return Promise.resolve();
     const id=activeDraftId||(activeDraftId=uid('d'));activeDraftWritten=true;
-    const record={id,type:form.dataset.form,title:$('#sheet-title').textContent,fields:formFields(form),baseRevision:data.revision||0,baseEntity:clone(form.dataset.form==='apply'?draftBase():activeDraftBase),requiresReview:activeDraftReview,time:new Date().toISOString(),applyTotal:applyResult?.total??null,entryValues:clone(entryValues)};
+    const record={id,type:form.dataset.form,title:$('#sheet-title').textContent,fields:formFields(form),baseRevision:data.revision||0,baseEntity:clone(form.dataset.form==='apply'?draftBase():activeDraftBase),requiresReview:activeDraftReview,time:new Date().toISOString(),applyTotal:applyResult?.total??null,entryValues:clone(entryValues),...(resume?{resume:true}:{})};
     return mutateDrafts(list=>[record,...list.filter(d=>d.id!==id)]).then(()=>{if($('#sheet').open&&activeDraftId===id&&isFormDirty())$('#draft-status').textContent='草稿已保存';});
   }
   function clearDraft(id=activeDraftId,all=false){clearTimeout(draftTimer);return mutateDrafts(list=>all?[]:list.filter(d=>d.id!==id));}
@@ -979,6 +983,15 @@
       try{const v=await runtime.get('home.ui.v1');if(v&&typeof v.labels==='boolean'){homeState.ui={labels:v.labels};homeState.mod?.setUi(homeState.ui);}}catch(_){}
     }catch(error){bootError=runtime.explain(error);}
     render();
+    resumeClosedForm();
+  }
+  // The app was closed (e.g. system Back) with a form open and unsaved: reopen it as it was, once.
+  function resumeClosedForm(){
+    if(!storageOK||bootError||restoreError)return;
+    const d=availableDrafts().find(x=>x.resume);if(!d)return;
+    mutateDrafts(list=>list.map(x=>{if(!x.resume)return x;const{resume,...rest}=x;return rest;})).catch(()=>{});
+    restoreDraft(d.id);
+    if($('#sheet').open)toast('已恢复上次没保存的内容');
   }
 
   // validate() is exposed for the unit tests; the 3D module talks to the ledger only through homeApi.
