@@ -249,7 +249,10 @@ private fun prominentGlassColors(fill: Color, behind: Color): ToolBoxActionColor
     val glass = fill.copy(alpha = ProminentGlassAlpha)
     // The label is judged against the glass over the page, the lightest it can look.
     val seen = glass.compositeOver(behind)
-    return ToolBoxActionColors(glass, if (actionContrast(seen, Color.White) >= 3.0f) Color.White else Color(0xFF1C1C1E))
+    // Whichever label reads better: white on the accent, the iOS dark label on light reds
+    // (#FF6961 over a dark page is ~3.4:1 with white, ~5:1 with #1C1C1E).
+    val dark = Color(0xFF1C1C1E)
+    return ToolBoxActionColors(glass, if (actionContrast(seen, Color.White) >= actionContrast(seen, dark)) Color.White else dark)
 }
 
 private const val ProminentGlassAlpha = 0.9f
