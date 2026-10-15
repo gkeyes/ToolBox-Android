@@ -55,6 +55,7 @@ import com.kyant.backdrop.effects.blur
 import com.kyant.backdrop.effects.lens
 import com.kyant.backdrop.effects.vibrancy
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
+import kotlin.math.roundToInt
 
 /**
  * Segmented control (iOS 26): a capsule track with a glass thumb that slides between segments on
@@ -171,13 +172,16 @@ fun ToolBoxSegmentedControl(
                         onDrawSurface = { drawRect(pillFill.copy(alpha = 1f - 0.85f * lift.value)) },
                     ),
                 )
-                // The selected label stays readable on top of the solid thumb at rest.
+                // The label of the segment the thumb is over stays readable on top of the solid
+                // thumb, so a new selection's label doesn't ride across with the sliding thumb.
+                val thumbIndex = (indicatorOffset.value / segmentWidth).roundToInt()
+                    .coerceIn(0, options.lastIndex)
                 Box(
                     thumb.graphicsLayer { alpha = 1f - lift.value }.clearAndSetSemantics { },
                     contentAlignment = Alignment.Center,
                 ) {
                     ToolBoxText(
-                        options[selectedIndex],
+                        options[thumbIndex],
                         style = ToolBoxThemeTokens.textStyles.metadata.copy(
                             color = colors.textPrimary,
                             fontWeight = FontWeight.SemiBold,
