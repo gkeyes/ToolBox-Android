@@ -10,6 +10,7 @@ import { Toaster } from "sonner";
 import { isModalOpen } from "@/stores/modalStore.js";
 import { imageGalleryActive } from "@/stores/articlesStore.js";
 import { installOverlayJanitor } from "@/toolbox/overlayJanitor.js";
+import { installLens } from "@/design/lens.js";
 import {
   Info,
   CircleCheck,
@@ -23,6 +24,8 @@ initTheme();
 // Release any floating layer left over the page after its close path was
 // interrupted (see overlayJanitor.js); never while an overlay is meant to be open.
 installOverlayJanitor({ isOverlayExpected: () => isModalOpen.get() || imageGalleryActive.get() });
+// Edge refraction on the floating glass chrome (see design/lens.js).
+installLens();
 // Reduced-motion preference must be on <html> before the first frame so CSS tokens snap.
 if (settingsState.get().reduceMotion) document.documentElement.dataset.reduceMotion = "true";
 
