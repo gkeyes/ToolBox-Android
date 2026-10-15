@@ -57,6 +57,18 @@ test('v1 single-blob store migrates to per-session keys without losing sessions 
   assert.deepEqual(useApp.getState().bookmarks,['t1']);
 });
 
+test('unknown proficiency keys already in storage are dropped on load',async()=>{
+  const known=SCENARIOS[0].skills[0];
+  const index=JSON.stringify({profile,proficiency:{[known]:3,'retired-skill':4},sessionIds:[],customScenarios:[],bookmarks:[],practiceDays:[],settings:{},todayDate:null,todaySessionId:null,patternInsight:null});
+  const host=mockHost({[INDEX_KEY]:index});
+  await hydrateApp();
+  assert.deepEqual(useApp.getState().proficiency,{[known]:3});
+  // The next index write stores the cleaned map.
+  useApp.setState({bookmarks:['t1']});
+  await flushStorage();
+  assert.deepEqual(JSON.parse(host.ordinary.get(INDEX_KEY) as string).proficiency,{[known]:3});
+});
+
 test('a migration interrupted after the index was written recovers missing sessions from the v1 record',async()=>{
   const sessions=sessionsOf(3);
   const legacy=JSON.stringify({state:{profile,sessions},version:0});

@@ -1,4 +1,4 @@
-/* RSS Scout 1.4.8 — unified RSSHub instance + additive private rules + Radar + Miniflux discovery. */
+/* RSS Scout 1.4.9 — unified RSSHub instance + additive private rules + Radar + Miniflux discovery. */
 (function () {
   'use strict';
   const C = window.RSSScoutCore,
@@ -151,7 +151,8 @@
   }
   function partialNote() {
     const missing = state.cache?.partial === 'base' ? 'Radar 规则' : state.cache?.partial === 'private' ? '私人规则' : '';
-    return missing ? '（缺' + missing + '，下次探测时重试）' : '';
+    if (!missing) return '';
+    return state.cache.stuck ? '（缺' + missing + '，来源拒绝请求；修改规则设置或密钥，或手动同步后重试）' : '（缺' + missing + '，下次探测时重试）';
   }
   function topModal() {
     return state.modals.at(-1)?.id;
@@ -682,6 +683,14 @@
       if (auth) await state.api.storage.secure.set(KEYS.hub, auth);
       else await state.api.storage.secure.remove(KEYS.hub);
       state.hubAuth = auth;
+      // A new key may fix an instance that refused the old one: let the next scan try again.
+      if (state.cache?.stuck) {
+        state.cache = { ...state.cache, stuck: false };
+        const cache = state.cache;
+        Promise.resolve()
+          .then(() => state.api.storage.set(KEYS.rules, cache))
+          .catch(() => {});
+      }
     }
     await state.api.storage.set(KEYS.settings, settings);
     state.settings = settings;
@@ -991,7 +1000,7 @@
           if (state.settings.useRadar) {
             $('scan-status').textContent = '正在匹配 RSSHub / RSSWorker 路由并验证候选…';
             // A cache that holds only one half of the rules syncs again here; until that succeeds, its half stays in use.
-            if (!cacheUsable() || state.cache.partial) {
+            if (R.needsRetry(state.cache, state.settings)) {
               try {
                 await syncRules(signal);
               } catch (error) {
@@ -1440,7 +1449,7 @@
     nativeAction(async () => {
       if (!state.api) throw new Error('请在 ToolBox 中使用复制功能');
       const text =
-        'RSS Scout 1.4.8\n' + redact($('log').textContent) + '\n规则同步\n' + redact($('rule-log').textContent);
+        'RSS Scout 1.4.9\n' + redact($('log').textContent) + '\n规则同步\n' + redact($('rule-log').textContent);
       await state.api.clipboard.writeText(text);
       toast('已复制诊断信息（密钥已隐藏）');
     })

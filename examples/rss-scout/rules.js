@@ -36,6 +36,11 @@
     if(status===429)return '请求受限，请稍后重试';
     return '服务未成功返回规则';
   }
+  // A failure that retrying the same settings and key cannot fix (4xx other than 408/429, no permission).
+  function permanentFailure(error){
+    if(error.code==='PERMISSION_DENIED'||error.code==='NOT_DECLARED')return true;
+    const s=error.status;return Number.isInteger(s)&&s>=400&&s<500&&s!==408&&s!==429;
+  }
   function cacheValid(cache,settings){return !!(cache&&Array.isArray(cache.rules)&&cache.rules.length&&cache.sourceKey===sourceKey(settings));}
   async function fetchSource(network,source,signal,accessKey,attempts,onProgress){
     if(signal?.aborted)throw new DOMException('已停止','AbortError');
@@ -50,7 +55,7 @@
       if(signal?.aborted||error.name==='AbortError'||error.code==='CANCELLED')throw error;
       let message=C.cleanText(error.message||'请求失败',400);
       if(accessKey)message=message.split(accessKey).join('[密钥已隐藏]').split(encodeURIComponent(accessKey)).join('[密钥已隐藏]');
-      attempts.push({source:source.name,status:error.status||null,message});
+      attempts.push({source:source.name,status:error.status||null,message,permanent:permanentFailure(error)});
       throw error;
     }
   }
@@ -67,7 +72,7 @@
     }catch(error){
       if(signal?.aborted||error.name==='AbortError'||error.code==='CANCELLED')throw error;
       privateError=error;
-      if(!attempts.some(x=>x.source==='私人规则订阅'))attempts.push({source:'私人规则订阅',status:null,message:C.cleanText(error.message||'私人规则地址无效',400)});
+      if(!attempts.some(x=>x.source==='私人规则订阅'))attempts.push({source:'私人规则订阅',status:null,message:C.cleanText(error.message||'私人规则地址无效',400),permanent:true});
     }
     if(!base&&!extra){const error=new Error('规则更新未完成；'+attempts.map(x=>x.source+'：'+x.message).join('；'));error.attempts=attempts;throw error;}
     const rules=[...(extra?.parsed.rules||[]),...(base?.parsed.rules||[])];
@@ -75,7 +80,11 @@
     const sources=[extra?.source.name,base?.source.name].filter(Boolean);
     // A half that failed is named here so a later scan syncs again instead of treating this cache as complete.
     const partial=!base?'base':settings.usePrivateRules&&!extra?'private':'';
-    return {sourceKey:sourceKey(settings),partial,privateCount:extra?.parsed.rules.length||0,source:sources.join(' + '),sourceURL:[extra?.source.url,base?.source.url].filter(Boolean).map(u=>{const x=new URL(u);return x.origin+x.pathname;}),rules,skipped,at:Date.now(),attempts,privateWarning:privateError?C.cleanText(privateError.message||'私人规则同步失败',300):''};
+    // When every source of the missing half failed permanently, scans stop re-syncing until the rule settings
+    // (sourceKey) or the instance key change, or the user syncs by hand.
+    const failedHalf=attempts.filter(a=>(a.source==='私人规则订阅')===(partial==='private'));
+    const stuck=!!partial&&failedHalf.length>0&&failedHalf.every(a=>a.permanent);
+    return {sourceKey:sourceKey(settings),partial,stuck,privateCount:extra?.parsed.rules.length||0,source:sources.join(' + '),sourceURL:[extra?.source.url,base?.source.url].filter(Boolean).map(u=>{const x=new URL(u);return x.origin+x.pathname;}),rules,skipped,at:Date.now(),attempts,privateWarning:privateError?C.cleanText(privateError.message||'私人规则同步失败',300):''};
   }
   // A partial sync keeps the other half from the previous cache, so sources failing on alternate tries never drop
   // rules that already worked. The result stays partial, so the next scan still retries the failed half.
@@ -86,5 +95,7 @@
     if(!kept.length)return cache;
     return {...cache,rules:base?[...cache.rules,...kept]:[...kept,...cache.rules],privateCount:base?cache.privateCount:kept.length};
   }
-  root.RSSScoutRules={PUBLIC_SOURCES,instanceURL,publicURL,sourceKey,cacheValid,basePlan,privateSource,sync,keepCachedHalf};
+  // Whether a scan should sync again before matching: no usable cache, or a partial one whose missing half may recover.
+  function needsRetry(cache,settings){return !cacheValid(cache,settings)||(!!cache.partial&&!cache.stuck);}
+  root.RSSScoutRules={PUBLIC_SOURCES,instanceURL,publicURL,sourceKey,cacheValid,basePlan,privateSource,sync,keepCachedHalf,needsRetry};
 })(window);
