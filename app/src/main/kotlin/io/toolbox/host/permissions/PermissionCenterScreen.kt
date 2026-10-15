@@ -361,11 +361,8 @@ private val FOREGROUND_LOCATION_PERMISSIONS = arrayOf(
 )
 
 /** Location works with either coarse or fine; every other capability needs all of its Android permissions. */
-internal fun PermissionItem.systemAllowed(granted: (String) -> Boolean): Boolean = when {
-    androidPermissions.isEmpty() -> true
-    capability == "location" -> androidPermissions.any(granted)
-    else -> androidPermissions.all(granted)
-}
+internal fun PermissionItem.systemAllowed(granted: (String) -> Boolean): Boolean =
+    androidPermissionsAllowed(capability, androidPermissions, granted)
 
 private fun List<PermissionItem>.permissionGroups(): List<Pair<String, List<PermissionItem>>> {
     val grouped = groupBy { it.category() }

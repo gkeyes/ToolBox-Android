@@ -39,6 +39,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.toolbox.core.ui.component.ToolBoxAppScaffold
 import io.toolbox.core.ui.component.ToolBoxGroupedSurface
 import io.toolbox.core.ui.component.ToolBoxIconKey
+import io.toolbox.core.ui.component.ToolBoxModalDialog
 import io.toolbox.core.ui.component.toolBoxShape
 import io.toolbox.host.settings.SettingsFooter
 import io.toolbox.host.settings.SettingsIconTint
@@ -71,6 +72,7 @@ import io.toolbox.host.ui.RunningToolRow
 import io.toolbox.host.ui.RunningToolsStopDialog
 import io.toolbox.host.ui.FeedbackSurface
 import io.toolbox.host.ui.FeedbackTone
+import io.toolbox.host.ui.HostConfirmationContent
 import androidx.compose.runtime.key
 import io.toolbox.host.settings.SettingsViewModel
 import io.toolbox.host.settings.BackgroundSettingsFeedback
@@ -136,6 +138,7 @@ internal fun BackgroundSafeguardsScreen(
     // has asked here before.
     var askedBefore by rememberSaveable { mutableStateOf(false) }
     var requestedAt by rememberSaveable { mutableStateOf(0L) }
+    var offerNotificationSettings by rememberSaveable { mutableStateOf(false) }
     val requestRecord = remember(context) { context.getSharedPreferences(PermissionRequestRecord, Context.MODE_PRIVATE) }
     val notificationLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
@@ -145,8 +148,12 @@ internal fun BackgroundSafeguardsScreen(
         // after the request); only then send the user to settings, never after a first-time denial.
         // An answer faster than a person can react means Android showed no dialog at all, which also
         // covers denials from before this record existed.
+        // A Back dismissal of a dialog Android did show looks the same here, so never open settings
+        // directly: offer them, and only the confirm button opens them.
         val noDialog = android.os.SystemClock.elapsedRealtime() - requestedAt < InstantAnswerMillis
-        if (!granted && (askedBefore || noDialog) && !rationaleBeforeRequest && !notificationRationale()) openNotificationSettings()
+        if (!granted && (askedBefore || noDialog) && !rationaleBeforeRequest && !notificationRationale()) {
+            offerNotificationSettings = true
+        }
     }
 
     BackgroundSafeguardsContent(
@@ -204,6 +211,22 @@ internal fun BackgroundSafeguardsScreen(
         onOpenHyperOsAutoStart = context::openHyperOsAutoStart,
         onOpenHyperOsBatteryPolicy = context::openHyperOsBatteryPolicy,
     )
+    if (offerNotificationSettings) {
+        val title = "在系统设置中开启通知"
+        // Back, a tap outside and cancel all just close this; only the confirm button opens settings.
+        ToolBoxModalDialog(onDismissRequest = { offerNotificationSettings = false }, title = title) {
+            HostConfirmationContent(
+                title = title,
+                summary = "通知权限仍未开启。如果系统没有再弹出授权窗口，可以在系统设置中为 ToolBox 开启通知。",
+                confirmLabel = "打开设置",
+                onConfirm = {
+                    offerNotificationSettings = false
+                    openNotificationSettings()
+                },
+                onCancel = { offerNotificationSettings = false },
+            )
+        }
+    }
 }
 
 @Composable
