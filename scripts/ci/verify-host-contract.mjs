@@ -29,6 +29,31 @@ assert.deepEqual(kotlinStrings('tool-package/src/main/kotlin/io/toolbox/tool/pac
   'allowedPermissions = setOf('), capabilities, 'ManifestValidator.allowedPermissions must match ToolBoxApiV1');
 assert.deepEqual(kotlinStrings('tool-package/src/main/kotlin/io/toolbox/tool/packagekit/lifecycle/PackageLifecycle.kt',
   'val All = setOf('), capabilities, 'SupportedToolCapabilities.All must match ToolBoxApiV1');
+// Default grants are kept twice (install-time grant rows and the permission center's reset state);
+// both must name the same real capabilities.
+const installDefaults = kotlinStrings('tool-package/src/main/kotlin/io/toolbox/tool/packagekit/lifecycle/DefaultToolPackageManager.kt',
+  'val DEFAULT_GRANTED_CAPABILITIES = setOf(');
+const centerDefaults = kotlinStrings('app/src/main/kotlin/io/toolbox/host/permissions/PermissionCenterViewModel.kt',
+  'fun String.defaultEnabled() = this in setOf(');
+assert(installDefaults.length > 0, 'DEFAULT_GRANTED_CAPABILITIES must not be empty');
+assert.deepEqual(centerDefaults, installDefaults,
+  'PermissionCenterViewModel.defaultEnabled must match DefaultToolPackageManager.DEFAULT_GRANTED_CAPABILITIES');
+for (const name of installDefaults) assert(capabilities.includes(name), `Default grant ${name} is not a ToolBoxApiV1 capability`);
+// scripts/package-tool.py mirrors ManifestValidator so a package it builds installs; its copies must not drift.
+const pythonStrings = (path, start) => {
+  const text = read(path);
+  const from = text.indexOf(start);
+  assert(from >= 0, `${path}: ${start} not found`);
+  const body = text.slice(from + start.length, text.indexOf('}', from + start.length));
+  return [...body.matchAll(/"([^"]+)"/g)].map(m => m[1]).sort();
+};
+const validatorPath = 'tool-package/src/main/kotlin/io/toolbox/tool/packagekit/ManifestValidator.kt';
+assert.deepEqual(pythonStrings('scripts/package-tool.py', 'PERMISSIONS = {'), capabilities,
+  'package-tool.py PERMISSIONS must match ToolBoxApiV1');
+assert.deepEqual(pythonStrings('scripts/package-tool.py', 'V03_CAPABILITIES = {'),
+  kotlinStrings(validatorPath, 'val v03Capabilities = setOf('), 'package-tool.py V03_CAPABILITIES must match ManifestValidator');
+assert.deepEqual(pythonStrings('scripts/package-tool.py', 'TOP_LEVEL_FIELDS = {'),
+  kotlinStrings(validatorPath, 'val TOP_LEVEL_FIELDS = setOf('), 'package-tool.py TOP_LEVEL_FIELDS must match ManifestValidator');
 // The document-start SDK is an asset; RuntimeBridgeSession.shim fills these placeholders.
 const shimTemplate = read('tool-runtime/src/main/assets/toolbox-runtime/runtime-sdk.js');
 const shim = shimTemplate.replaceAll('__TOOLBOX_VERSION_CODE__', '1')
