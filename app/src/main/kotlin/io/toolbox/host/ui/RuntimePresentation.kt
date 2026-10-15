@@ -13,6 +13,43 @@ internal fun runtimeExitHint(toolName: String?): String {
 internal fun shouldExitRuntimeOnBack(lastBackAt: Long, now: Long): Boolean =
     lastBackAt > 0L && now >= lastBackAt && now - lastBackAt <= RUNTIME_EXIT_BACK_WINDOW_MS
 
+/** Backs in a row the page may take, with no touch on the page between them, before the host takes the next one. */
+internal const val PAGE_BACK_STREAK = 2
+
+/**
+ * A finger lifted this close to a Back press, before or after it, is taken for the Back gesture
+ * itself: some gesture systems may send Back on lift without cancelling the touch.
+ */
+internal const val PAGE_TOUCH_NEAR_BACK_MS = 150L
+
+/**
+ * Counts the Backs a running page took in a row, so a page that cancels every Back can't trap the
+ * user: after [PAGE_BACK_STREAK] of them the next Back goes to the host, however slowly they came.
+ * A touch on the page (opening another panel) or a Back the host took starts the count again.
+ */
+internal class PageBackStreak {
+    private var count = 0
+    private var lastPageBackAt = 0L
+
+    /** Whether the Back pressed at [now] goes to the host without asking the page. */
+    fun hostTakes(now: Long, pageTouchedAt: Long): Boolean {
+        if (pageTouchedAt - lastPageBackAt > PAGE_TOUCH_NEAR_BACK_MS && now - pageTouchedAt > PAGE_TOUCH_NEAR_BACK_MS) {
+            count = 0
+        }
+        return count >= PAGE_BACK_STREAK
+    }
+
+    /** The page took the Back pressed at [pressedAt]: a touch after that press restarts the count. */
+    fun pageTook(pressedAt: Long) {
+        count++
+        lastPageBackAt = pressedAt
+    }
+
+    fun reset() {
+        count = 0
+    }
+}
+
 internal data class RuntimeErrorPresentation(val summary: String, val details: String?)
 
 /** Preserve the first actual reason in the summary and the original diagnostic text in full. */

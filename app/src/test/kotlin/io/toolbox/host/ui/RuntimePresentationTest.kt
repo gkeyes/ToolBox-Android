@@ -28,6 +28,65 @@ class RuntimePresentationTest {
         assertTrue(!shouldExitRuntimeOnBack(10_000L, 9_999L))
     }
 
+    /** A page that takes every Back: returns the press index (1-based) the host first takes. */
+    private fun firstHostBack(intervalMs: Long, touchAt: (Long) -> Long = { 0L }): Int {
+        val streak = PageBackStreak()
+        for (press in 1..40) {
+            val now = 10_000L + press * intervalMs
+            if (streak.hostTakes(now, touchAt(now))) return press
+            streak.pageTook(now)
+        }
+        return -1
+    }
+
+    @Test
+    fun pageCannotKeepBackPastTwoInARowAtAnyPace() {
+        assertEquals(3, firstHostBack(1_000L))
+        assertEquals(3, firstHostBack(1_100L))
+        assertEquals(3, firstHostBack(2_000L))
+        assertEquals(3, firstHostBack(30_000L))
+    }
+
+    @Test
+    fun hintShownByTheHostTakenBackConfirmsTheNextBackWithinTwoSeconds() {
+        val hostBackAt = 10_000L + 3 * 1_100L
+        assertTrue(shouldExitRuntimeOnBack(hostBackAt, hostBackAt + 1_100L))
+        assertTrue(shouldExitRuntimeOnBack(hostBackAt, hostBackAt + 2_000L))
+    }
+
+    @Test
+    fun aTouchOnThePageRestartsTheCount() {
+        val streak = PageBackStreak()
+        streak.pageTook(10_000L)
+        streak.pageTook(11_000L)
+        // Touched while the page was still answering the second Back.
+        assertTrue(!streak.hostTakes(13_000L, pageTouchedAt = 11_300L))
+        streak.pageTook(13_000L)
+        assertTrue(!streak.hostTakes(14_000L, pageTouchedAt = 11_300L))
+        streak.pageTook(14_000L)
+        assertTrue(streak.hostTakes(15_000L, pageTouchedAt = 11_300L))
+    }
+
+    @Test
+    fun aLiftRightAroundABackPressIsTakenForTheGesture() {
+        val streak = PageBackStreak()
+        streak.pageTook(10_000L)
+        streak.pageTook(11_000L)
+        // Lifted 100 ms before this press, or 100 ms after the last one: neither restarts the count.
+        assertTrue(streak.hostTakes(12_000L, pageTouchedAt = 11_900L))
+        assertTrue(streak.hostTakes(12_000L, pageTouchedAt = 11_100L))
+    }
+
+    @Test
+    fun aHostTakenBackRestartsTheCount() {
+        val streak = PageBackStreak()
+        streak.pageTook(10_000L)
+        streak.pageTook(11_000L)
+        assertTrue(streak.hostTakes(12_000L, 0L))
+        streak.reset()
+        assertTrue(!streak.hostTakes(13_000L, 0L))
+    }
+
     @Test
     fun shortErrorsRemainFullyVisible() {
         val message = "NETWORK_UNAVAILABLE\n请检查网络后重试。"
