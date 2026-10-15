@@ -383,8 +383,12 @@ body { font-family: var(--nf-sans); -webkit-tap-highlight-color: transparent; }
   .action-buttons.reader-topbar { margin-block-end: -60px; pointer-events: none; }
   .action-buttons.reader-topbar > :not(.reader-topbar-row),
   .action-buttons.reader-topbar .reader-topbar-row > * { pointer-events: auto; }
-  .article-scroll-area .nextflux-article-header .nextflux-article-feed { min-block-size: 28px; padding-inline-start: 44px; }
-  .article-scroll-area .nextflux-article-header .nextflux-article-feed.justify-center { padding-inline: 44px; }
+  /* The next-article preview copies the real page's header layout, so the
+     handoff to the real page doesn't shift it. */
+  .article-scroll-area .nextflux-article-header .nextflux-article-feed,
+  .nextflux-continuous-next-page .nextflux-article-header .nextflux-article-feed { min-block-size: 28px; padding-inline-start: 44px; }
+  .article-scroll-area .nextflux-article-header .nextflux-article-feed.justify-center,
+  .nextflux-continuous-next-page .nextflux-article-header .nextflux-article-feed.justify-center { padding-inline: 44px; }
   .action-buttons .reader-speech-slot:has(.nextflux-speech-bar) {
     background: var(--nf-glass);
     -webkit-backdrop-filter: var(--nf-glass-filter);

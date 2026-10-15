@@ -200,16 +200,12 @@ export default function ContinuousNextUnread({ articleId, scrollAreaRef, surface
       // The preview starts below the title bar, but the real page's content
       // starts under it. Shift the preview up by that gap so its title lands
       // exactly where the real one will be; otherwise the handoff jumps.
+      // Compare the two article surfaces, not their titles: the outgoing and
+      // incoming feed rows can differ in height.
       const viewportTop = viewport.getBoundingClientRect().top;
-      let shift = top - viewportTop;
-      const realTitle = surfaceRef.current?.querySelector("h1");
-      const inner = nextPageRef.current?.firstElementChild;
-      const previewTitle = inner?.querySelector("h1");
-      if (realTitle && previewTitle) {
-        const realOffset = realTitle.getBoundingClientRect().top - viewportTop + viewport.scrollTop;
-        const previewOffset = previewTitle.getBoundingClientRect().top - inner.getBoundingClientRect().top;
-        shift = top + previewOffset - viewportTop - realOffset;
-      }
+      const surface = surfaceRef.current;
+      const realOffset = surface ? surface.getBoundingClientRect().top - viewportTop + viewport.scrollTop : 0;
+      let shift = top - viewportTop - realOffset;
       shift = Math.round(shift);
       layer.style.setProperty("--nf-continuous-shift", `${Math.max(0, shift)}px`);
       heightRef.current = layer.clientHeight;
