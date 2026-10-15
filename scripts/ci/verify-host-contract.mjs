@@ -283,8 +283,18 @@ for (const name of rtcNames) {
     `${name} must not be redefinable`);
 }
 const hardenedTool = read('tool-runtime/src/main/kotlin/io/toolbox/tool/runtime/HardenedRuntimeWebView.kt');
-assert(/addDocumentStartJavaScript\(\s*createdWebView,\s*RuntimeHardeningScripts\.webRtc\(context\)/.test(hardenedTool),
+assert(/addDocumentStartJavaScript\(\s*createdWebView,\s*RuntimeHardeningScripts\.webRtc\(context\),\s*RuntimeHardeningScripts\.WEBRTC_ORIGIN_RULES,?\s*\)/.test(hardenedTool),
   'Every tool WebView must install the WebRTC hardening script');
+assert(/val WEBRTC_ORIGIN_RULES: Set<String> = setOf\("\*"\)/.test(hardenedTool),
+  'WebRTC hardening must reach every frame, including opaque-origin iframes');
+// The script runs in every frame, so a second run in the same global must be a harmless no-op.
+vm.runInContext(webRtcHardening, rtcWindow);
+assert.equal(vm.runInContext('globalThis.__toolboxWebRtcBlocked', rtcWindow), true);
+// An opaque-origin frame without the WebRTC globals still ends up locked and marked.
+const bareFrame = vm.createContext({});
+vm.runInContext(webRtcHardening, bareFrame);
+assert.equal(vm.runInContext('globalThis.__toolboxWebRtcBlocked', bareFrame), true);
+assert.equal(vm.runInContext('typeof RTCPeerConnection', bareFrame), 'undefined');
 
 const forbidden = [/\.addJavascriptInterface\s*\(/, /setAllowUniversalAccessFromFileURLs\(true\)/, /allowUniversalAccessFromFileURLs\s*=\s*true/];
 for (const module of ['app', 'tool-runtime']) {
