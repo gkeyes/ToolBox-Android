@@ -4,7 +4,7 @@
   // Ledger money is integer cents. DOM content originating from users is escaped.
   const KEY = 'ledger.v1';
   const runtime = window.ZZRuntime;
-  const VERSION = '1.5.1';
+  const VERSION = '1.5.2';
   const MAX_CENTS = 100000000000;
   const $ = s => document.querySelector(s);
   const $$ = s => [...document.querySelectorAll(s)];
@@ -91,21 +91,23 @@
   let pickerState=null, pendingImport=null, applyResult=null, toastTimer;
   // background: a 我的家 change (moving furniture, the floor plan) that is not the open form's submission.
   async function write(next,{background=false}={}){
-    // A tap on 保存 that lands during a 我的家 background save waits for it instead of being dropped.
-    if(busy&&!background&&busyBackground){
-      const before=data;
-      for(let n=0;n<40&&busy;n++)await new Promise(r=>setTimeout(r,50));
-      // Background saves only touch item.model and project.home; carry them over so the form does not undo the move.
-      if(data!==before){const same=(a,b)=>JSON.stringify(a)===JSON.stringify(b),old=new Map(before.items.map(i=>[i.id,i.model])),fresh=new Map(data.items.map(i=>[i.id,i]));for(const i of next.items||[]){const f=fresh.get(i.id);if(f&&!same(old.get(i.id),f.model)){if(f.model)i.model=clone(f.model);else delete i.model;}}if(next.project&&!same(before.project.home,data.project.home)){if(data.project.home)next.project.home=clone(data.project.home);else delete next.project.home;}}
-    }
-    if(busy)return false;
-    busy=true;busyBackground=background;
+    if(busy&&(background||!busyBackground))return false;
+    // The form locks first: a tap on 保存 during a 我的家 background save waits for it instead of being dropped.
     if(!background)document.body.classList.add('saving');
     const submit=background?null:$('#sheet [type="submit"]');
     const label=submit?.innerHTML;
     const controls=background?[]:$$('#sheet input,#sheet button,#sheet textarea').map(el=>[el,el.disabled]);
     controls.forEach(([el])=>el.disabled=true);
     if(submit){submit.disabled=true;submit.textContent='正在保存…';}
+    const unlock=()=>{if(!background)document.body.classList.remove('saving');controls.forEach(([el,wasDisabled])=>{if(el.isConnected)el.disabled=wasDisabled;});if(submit?.isConnected){submit.disabled=false;submit.innerHTML=label;}};
+    if(busy){
+      const before=data;
+      for(let n=0;n<40&&busy;n++)await new Promise(r=>setTimeout(r,50));
+      if(busy){unlock();return false;}
+      // Background saves only touch item.model and project.home; carry over what they changed unless the form changed it too.
+      if(data!==before){const same=(a,b)=>JSON.stringify(a)===JSON.stringify(b),old=new Map(before.items.map(i=>[i.id,i.model])),fresh=new Map(data.items.map(i=>[i.id,i]));for(const i of next.items||[]){const f=fresh.get(i.id),o=old.get(i.id);if(f&&!same(o,f.model)&&same(o,i.model)){if(f.model)i.model=clone(f.model);else delete i.model;}}if(next.project&&!same(before.project.home,data.project.home)&&same(before.project.home,next.project.home)){if(data.project.home)next.project.home=clone(data.project.home);else delete next.project.home;}}
+    }
+    busy=true;busyBackground=background;
     try{
       if(!storageOK)throw new Error(bootError||'存储未就绪；记录未保存，请重试连接。');
       if(restoreError)throw new Error('原始账本无法解析。请先导出原始数据，再导入有效备份。');
@@ -116,7 +118,7 @@
       data=next;
       return true;
     }catch(error){showError(runtime.explain(error));return false;}
-    finally{busy=false;busyBackground=false;if(!background)document.body.classList.remove('saving');controls.forEach(([el,wasDisabled])=>{if(el.isConnected)el.disabled=wasDisabled;});if(submit?.isConnected){submit.disabled=false;submit.innerHTML=label;}}
+    finally{busy=false;busyBackground=false;unlock();}
   }
   const paymentIndex = new WeakMap();
   function cashIndex(source){

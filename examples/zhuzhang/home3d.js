@@ -437,7 +437,7 @@ export function createHome(api) {
       const h = canvas.clientHeight || 1, dx = x - gesture.lx, dy = y - gesture.ly;
       if (Math.hypot(x - gesture.x, y - gesture.y) > 6) gesture.moved = true;
       const da = -2 * PI * dx / h * .8, dp = -2 * PI * dy / h * .8;
-      cam.az += da; cam.pol = Math.min(POL_MAX, Math.max(POL_MIN, cam.pol + dp)); gesture.lx = x; gesture.ly = y; gesture.v = { az: da, pol: dp };
+      cam.az += da; cam.pol = Math.min(POL_MAX, Math.max(POL_MIN, cam.pol + dp)); gesture.lx = x; gesture.ly = y; { const now = performance.now(), f = 16.667 / Math.max(4, now - (gesture.lt || gesture.t)); gesture.lt = now; gesture.v = { az: da * f, pol: dp * f }; } // per 60 Hz frame, whatever the touch rate
       tw = null; invalidate();
     }
   }
@@ -510,7 +510,8 @@ export function createHome(api) {
     updateRing(); invalidate();
   }
   // A failed save puts the piece back where the ledger has it, so the screen never shows a spot that will not survive a restart.
-  function saveModel(e) { api.saveModel(e.id, { ...e.model }).then(ok => { if (ok) return; api.toast('没保存上，已放回原位，请再试一次'); syncItems(true); updateRing(); invalidate(); }); }
+  const saveGen = new Map();
+  function saveModel(e) { const gen = (saveGen.get(e.id) || 0) + 1; saveGen.set(e.id, gen); api.saveModel(e.id, { ...e.model }).then(ok => { if (ok || saveGen.get(e.id) !== gen) return; api.toast('没保存上，已放回原位，请再试一次'); syncItems(true); updateRing(); invalidate(); }); }
   let homeTimer = 0;
   function saveHome() { clearTimeout(homeTimer); homeTimer = setTimeout(() => api.saveHome({ template: T.key, sizes: HM.sizesOf(T) }).then(ok => { if (!ok) api.toast('户型没保存上，下次打开会回到上次保存的样子，请再调整一次'); }), 300); }
 
