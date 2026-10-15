@@ -5,6 +5,7 @@
 @import "./design/views.css";
 @import "./design/reader.css";
 @import "./design/ios27.css";
+@import "./design/glass-buttons.css";
 
 @config '../tailwind.config.js';
 

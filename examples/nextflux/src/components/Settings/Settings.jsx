@@ -245,7 +245,7 @@ function MobileSettings() {
           size="sm"
           variant="tertiary"
           onPress={handleBack}
-          className="size-10 min-w-10"
+          className="size-11 min-w-11"
           aria-label={t("common.back", { defaultValue: "Back" })}
         >
           <ArrowLeft className="size-5" />
@@ -257,7 +257,7 @@ function MobileSettings() {
           size="sm"
           variant="tertiary"
           onPress={() => handleClose(false)}
-          className="size-10 min-w-10"
+          className="size-11 min-w-11"
           aria-label={t("common.close")}
         >
           <X className="size-5" />

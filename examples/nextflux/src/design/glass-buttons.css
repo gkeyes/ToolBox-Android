@@ -1,0 +1,179 @@
+/*
+ * iOS 26 interactive glass for every NextFlux button. Loaded after ios27.css.
+ *
+ * Press: nothing shrinks or greys any more. A pressed button grows to 1.08 on
+ * a bouncy spring, brightens, and a white sheen sits under the finger
+ * (--nf-gx/--nf-gy, set by design/lens.js from touch and pointer events, since
+ * some WebViews send no pointer events). List and settings rows keep the iOS
+ * row highlight instead.
+ *
+ * Material: filled buttons (primary, secondary, tertiary, danger) are glass:
+ * a translucent tint, white rims, a soft shadow, a light blur and, outside
+ * sheets and dialogs, the edge lens from design/lens.js. Primary is
+ * accent-tinted glass, danger red-tinted glass. Buttons grouped in a glass
+ * capsule or bar (header, dock, speech bar) stay clear inside it: the capsule
+ * is the glass, the button only reacts.
+ */
+
+:root {
+  /* No shrink anywhere (HeroUI .button, .ds-press, settings rows). */
+  --ds-press-scale: 1;
+  --ds-press-scale-row: 1;
+  --nf-press-grow: 1.08;
+  --nf-press-in: 160ms cubic-bezier(0.2, 0.9, 0.3, 1.2);
+  --nf-press-out: 520ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  --nf-btn-glass: color-mix(in srgb, rgb(120 120 128) 14%, rgb(255 255 255 / 0.5));
+  --nf-btn-rim: inset 0 1px 1px rgb(255 255 255 / 0.9), inset 0 -1px 1px rgb(255 255 255 / 0.35),
+    inset 0 0 0 0.5px rgb(255 255 255 / 0.55), 0 4px 14px rgb(0 0 0 / 0.10);
+  --nf-btn-danger: #FF3B30;
+}
+.dark,
+[data-theme="dark"] {
+  --nf-btn-glass: rgb(255 255 255 / 0.12);
+  --nf-btn-rim: inset 0 1px 1px rgb(255 255 255 / 0.30), inset 0 -1px 1px rgb(255 255 255 / 0.10),
+    inset 0 0 0 0.5px rgb(255 255 255 / 0.20), 0 4px 14px rgb(0 0 0 / 0.40);
+  --nf-btn-danger: #FF453A;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    --nf-btn-glass: rgb(255 255 255 / 0.12);
+    --nf-btn-rim: inset 0 1px 1px rgb(255 255 255 / 0.30), inset 0 -1px 1px rgb(255 255 255 / 0.10),
+      inset 0 0 0 0.5px rgb(255 255 255 / 0.20), 0 4px 14px rgb(0 0 0 / 0.40);
+    --nf-btn-danger: #FF453A;
+  }
+}
+
+/* A button never borrows its container's lens (that map has the container's
+   size); lens.js sets a button's own --nf-lens inline where it applies. */
+.button { --nf-lens: initial; }
+
+/* ---------------------------------------------------------------- press */
+.button:not(.nf-set-row) {
+  --button-bg-pressed: var(--button-bg);
+  transition:
+    scale var(--nf-press-out),
+    filter 240ms ease-out,
+    background-color 120ms var(--ds-ease-standard),
+    color 120ms var(--ds-ease-standard),
+    box-shadow 240ms ease-out,
+    opacity 160ms ease-out,
+    transform var(--ds-dur-press-release) var(--ds-ease-press-release);
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+.button:not(.nf-set-row):is(:active, [data-pressed="true"], [data-nf-pressed="true"]):not(:disabled, [data-disabled="true"], [aria-disabled="true"]) {
+  scale: var(--nf-press-grow);
+  filter: brightness(1.08);
+  background-image: radial-gradient(circle at var(--nf-gx, 50%) var(--nf-gy, 50%), rgb(255 255 255 / 0.5), rgb(255 255 255 / 0) 62%);
+  transition:
+    scale var(--nf-press-in),
+    filter 80ms linear,
+    background-color 80ms linear,
+    color 80ms linear,
+    box-shadow 80ms linear,
+    opacity 160ms ease-out,
+    transform var(--ds-dur-press-release) var(--ds-ease-press-release);
+}
+.dark .button:not(.nf-set-row):is(:active, [data-pressed="true"], [data-nf-pressed="true"]),
+[data-theme="dark"] .button:not(.nf-set-row):is(:active, [data-pressed="true"], [data-nf-pressed="true"]) {
+  background-image: radial-gradient(circle at var(--nf-gx, 50%) var(--nf-gy, 50%), rgb(255 255 255 / 0.22), rgb(255 255 255 / 0) 62%);
+}
+/* The reader close button grows as a whole; its painted disc no longer
+   shrinks a second time. */
+.action-buttons .reader-topbar-row .nextflux-close-button[data-pressed="true"]::before { transform: none; }
+.button.reader-more-item[data-pressed="true"] { background-color: transparent; }
+
+/* ---------------------------------------------------------------- material */
+.button:is(.button--primary, .button--secondary, .button--tertiary, .button--danger):not(.nf-set-row) {
+  --button-bg: var(--nf-btn-glass);
+  --button-bg-hover: var(--nf-btn-glass);
+  --button-bg-pressed: var(--nf-btn-glass);
+  background-color: var(--nf-btn-glass);
+  -webkit-backdrop-filter: var(--nf-lens, blur(6px)) blur(4px) saturate(180%) brightness(1.05);
+  backdrop-filter: var(--nf-lens, blur(6px)) blur(4px) saturate(180%) brightness(1.05);
+  box-shadow: var(--nf-btn-rim);
+}
+.button.button--primary:not(.nf-set-row) {
+  --nf-btn-glass: color-mix(in srgb, var(--accent) 84%, transparent);
+  --button-fg: #FFFFFF;
+  color: #FFFFFF;
+}
+.button.button--danger:not(.nf-set-row) {
+  --nf-btn-glass: color-mix(in srgb, var(--nf-btn-danger) 82%, transparent);
+  --button-fg: #FFFFFF;
+  color: #FFFFFF;
+}
+/* Inside a glass capsule or bar the bar is the glass: a filled button there
+   (the speech bar's play button) keeps its plain fill and only reacts. */
+:is(.reader-speech-slot, .reader-dock, .article-list-actions) .button:is(.button--primary, .button--secondary, .button--tertiary, .button--danger) {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  box-shadow: none;
+}
+:is(.reader-speech-slot, .reader-dock, .article-list-actions) .button.button--primary { --nf-btn-glass: var(--accent); }
+:is(.reader-speech-slot, .reader-dock, .article-list-actions) .button.button--danger { --nf-btn-glass: var(--nf-btn-danger); }
+:is(.reader-speech-slot, .reader-dock, .article-list-actions) .button:is(.button--secondary, .button--tertiary) { --nf-btn-glass: transparent; }
+
+/* Native controls outside HeroUI grow too instead of losing their feedback. */
+:is(.ds-press, .nf-auth-reveal):active:not(:disabled, [aria-disabled="true"]) {
+  transform: scale(var(--nf-press-grow));
+  filter: brightness(1.08);
+}
+/* ---------------------------------------------------------------- segmented and switches */
+/* The selected pill is glass and lifts while a segment is held. */
+/* Adds the lift to the pill's own movement (components.css sets the timing). */
+.tabs__indicator {
+  transition-property: left, right, top, width, height, inset, translate, transform, scale, box-shadow;
+}
+.article-list-tabs .tabs__indicator,
+.nf-segmented .tabs__indicator {
+  background: color-mix(in srgb, var(--nf-seg-pill) 82%, transparent);
+  box-shadow: var(--nf-btn-rim);
+}
+/* Selection commits on press, so the pill under a held segment is its own. */
+.tabs__list:has(.tabs__tab[aria-selected="true"]:is(:active, [data-pressed="true"], [data-nf-pressed="true"])) .tabs__indicator {
+  scale: 1.1;
+}
+/* The switch knob turns into a clear glass lens while it is held. */
+.switch .switch__thumb,
+.nf-switch .switch__thumb {
+  transition: scale var(--nf-press-out), background-color 160ms ease-out, box-shadow 160ms ease-out, transform var(--ds-dur-spatial, 300ms) var(--ds-ease-spatial, ease);
+}
+.switch:not([data-disabled="true"], [aria-disabled="true"]):is(:active, [data-pressed="true"], [data-nf-pressed="true"]) .switch__thumb,
+.switch:not([data-disabled="true"], [aria-disabled="true"]):is(:active, [data-pressed="true"], [data-nf-pressed="true"]) .nf-switch .switch__thumb {
+  scale: 1.18 1.12;
+  background: rgb(255 255 255 / 0.45);
+  -webkit-backdrop-filter: blur(2px) saturate(180%) brightness(1.1);
+  backdrop-filter: blur(2px) saturate(180%) brightness(1.1);
+  box-shadow: inset 0 1px 1px rgb(255 255 255 / 0.95), inset 0 -1px 1px rgb(255 255 255 / 0.5),
+    inset 0 0 0 0.5px rgb(255 255 255 / 0.7), 0 4px 12px rgb(0 0 0 / 0.16);
+  transition: scale var(--nf-press-in), background-color 80ms linear, box-shadow 80ms linear, transform var(--ds-dur-spatial, 300ms) var(--ds-ease-spatial, ease);
+}
+
+/* ---------------------------------------------------------------- fallbacks */
+@media (prefers-reduced-transparency: reduce) {
+  .button:is(.button--primary, .button--secondary, .button--tertiary, .button--danger):not(.nf-set-row) {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+  .button:is(.button--secondary, .button--tertiary):not(.nf-set-row) { --nf-btn-glass: color-mix(in srgb, var(--ds-on-surface) 8%, var(--surface)); }
+  .button.button--primary:not(.nf-set-row) { --nf-btn-glass: var(--accent); }
+  .button.button--danger:not(.nf-set-row) { --nf-btn-glass: var(--nf-btn-danger); }
+  .article-list-tabs .tabs__indicator,
+  .nf-segmented .tabs__indicator { background: #FFFFFF; }
+  .dark :is(.article-list-tabs, .nf-segmented) .tabs__indicator,
+  [data-theme="dark"] :is(.article-list-tabs, .nf-segmented) .tabs__indicator { background: #636366; }
+  .switch:not([data-disabled="true"], [aria-disabled="true"]):is(:active, [data-pressed="true"], [data-nf-pressed="true"]) .switch__thumb {
+    background: #FFFFFF;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .button:not(.nf-set-row):is(:active, [data-pressed="true"], [data-nf-pressed="true"]),
+  .tabs__list .tabs__indicator,
+  .switch .switch__thumb { scale: 1 !important; }
+}
+html[data-reduce-motion="true"] .button:not(.nf-set-row):is(:active, [data-pressed="true"], [data-nf-pressed="true"]),
+html[data-reduce-motion="true"] .tabs__list .tabs__indicator,
+html[data-reduce-motion="true"] .switch .switch__thumb { scale: 1 !important; }

@@ -25,6 +25,9 @@ const TARGETS = [
   { selector: ".action-buttons .reader-dock" },
   { selector: ".action-buttons .reader-speech-slot" },
   { selector: ".action-buttons .reader-topbar-row .nextflux-close-button", inset: 2 },
+  // Standalone glass buttons (design/glass-buttons.css). Inside sheets and
+  // dialogs a url() filter drops the blur in Chromium, so they stay frosted there.
+  { selector: ".button:is(.button--primary, .button--secondary, .button--tertiary, .button--danger):not(.nf-set-row)", outside: ".nextflux-modal-surface, .toolbox-link-dialog, .dropdown__popover, .popover, .reader-speech-slot, .reader-dock, .article-list-actions" },
 ];
 
 export function lensSupported(win = window) {
@@ -157,7 +160,7 @@ export function installLens({ doc = document, win = window } = {}) {
   const bind = (element) => {
     if (bound.has(element)) return;
     const target = TARGETS.find(({ selector }) => element.matches(selector));
-    if (!target) return;
+    if (!target || (target.outside && element.closest(target.outside))) return;
     bound.set(element, { inset: target.inset ?? 0, key: null });
     resizes.observe(element);
   };
@@ -198,5 +201,60 @@ export function installLens({ doc = document, win = window } = {}) {
       for (const element of bound.keys()) element.style.removeProperty("--nf-lens");
       svg.remove();
     },
+  };
+}
+
+// Press state for the glass buttons: where the finger is (the sheen follows
+// it) and a data-nf-pressed flag, from touch as well as pointer events, since
+// some Android WebViews deliver no pointer events for a touch.
+const PRESSABLE = ".button:not(.nf-set-row), .tabs__tab, .switch";
+const DISABLED = ':disabled, [data-disabled="true"], [aria-disabled="true"]';
+export function installGlassPress({ doc = document } = {}) {
+  let pressed = null;
+  const place = (element, x, y) => {
+    const rect = element.getBoundingClientRect();
+    element.style.setProperty("--nf-gx", `${Math.round(x - rect.left)}px`);
+    element.style.setProperty("--nf-gy", `${Math.round(y - rect.top)}px`);
+  };
+  const release = () => {
+    if (pressed) delete pressed.dataset.nfPressed;
+    pressed = null;
+  };
+  const start = (event) => {
+    const point = event.touches ? event.touches[0] : event;
+    const element = event.target?.closest?.(PRESSABLE);
+    if (!point || !element) return;
+    release();
+    if (element.matches(DISABLED) || element.querySelector(":scope > input:disabled")) return;
+    pressed = element;
+    element.dataset.nfPressed = "true";
+    place(element, point.clientX, point.clientY);
+  };
+  const move = (event) => {
+    const point = event.touches ? event.touches[0] : event;
+    if (!pressed || !point) return;
+    const rect = pressed.getBoundingClientRect();
+    // A finger that slides well off the button is a scroll or a cancel.
+    if (point.clientX < rect.left - 24 || point.clientX > rect.right + 24 || point.clientY < rect.top - 24 || point.clientY > rect.bottom + 24) {
+      release();
+      return;
+    }
+    place(pressed, point.clientX, point.clientY);
+  };
+  const options = { capture: true, passive: true };
+  const listeners = [
+    ["touchstart", start], ["touchmove", move], ["touchend", release], ["touchcancel", release],
+    ["pointerdown", start], ["pointermove", move], ["pointerup", release], ["pointercancel", release],
+  ];
+  // A mouse released outside the page sends no pointerup here.
+  const leave = (event) => { if (!event.relatedTarget) release(); };
+  listeners.push(["pointerout", leave]);
+  const win = doc.defaultView;
+  for (const [type, handler] of listeners) doc.addEventListener(type, handler, options);
+  win?.addEventListener("blur", release);
+  return () => {
+    for (const [type, handler] of listeners) doc.removeEventListener(type, handler, options);
+    win?.removeEventListener("blur", release);
+    release();
   };
 }
