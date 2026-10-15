@@ -5,6 +5,7 @@ import android.util.JsonReader
 import android.util.JsonToken
 import android.util.JsonWriter
 import androidx.room.withTransaction
+import androidx.sqlite.db.SupportSQLiteDatabase
 import io.toolbox.core.data.*
 import io.toolbox.core.data.db.*
 import java.io.File
@@ -34,9 +35,12 @@ class BackupDatabase internal constructor(private val database: ToolBoxDatabase)
                         val columns = sql.query("SELECT * FROM `$table` LIMIT 0").use { it.columnNames.toList() }
                         // A row holding a cell larger than one ~2 MB CursorWindow can't be read whole (a
                         // big background result, a big stored value), so text cells come out in slices.
+                        // Slices are taken from the cell's bytes: SQLite's length()/substr() on TEXT stop
+                        // at the first U+0000, which would cut a text cell holding a raw NUL short.
+                        // The second value is the cell's UTF-8 byte length, or -1 when it isn't text.
                         val cells = columns.joinToString { column ->
-                            "CASE typeof(`$column`) WHEN 'text' THEN substr(`$column`, 1, $CHECKPOINT_SLICE_CHARS) ELSE `$column` END, " +
-                                "CASE typeof(`$column`) WHEN 'text' THEN length(`$column`) ELSE 0 END"
+                            "CASE typeof(`$column`) WHEN 'text' THEN substr(CAST(`$column` AS BLOB), 1, $CHECKPOINT_SLICE_BYTES) ELSE `$column` END, " +
+                                "CASE typeof(`$column`) WHEN 'text' THEN length(CAST(`$column` AS BLOB)) ELSE -1 END"
                         }
                         sql.query("SELECT rowid, $cells FROM `$table` ORDER BY rowid").use { cursor ->
                             writer.beginObject().name("table").value(table).name("columns").beginArray()
@@ -48,24 +52,13 @@ class BackupDatabase internal constructor(private val database: ToolBoxDatabase)
                                 writer.beginArray()
                                 columns.forEachIndexed { index, column ->
                                     val cell = 1 + index * 2
-                                    when (cursor.getType(cell)) {
+                                    val textBytes = cursor.getInt(cell + 1)
+                                    if (textBytes >= 0) {
+                                        val first = if (cursor.isNull(cell)) null else cursor.getBlob(cell)
+                                        writer.value(checkpointText(sql, table, column, rowId, textBytes, first))
+                                    } else when (cursor.getType(cell)) {
                                         Cursor.FIELD_TYPE_NULL -> writer.nullValue()
                                         Cursor.FIELD_TYPE_INTEGER -> writer.value(cursor.getLong(cell))
-                                        Cursor.FIELD_TYPE_STRING -> {
-                                            val length = cursor.getInt(cell + 1)
-                                            val text = cursor.getString(cell)
-                                            writer.value(if (length <= CHECKPOINT_SLICE_CHARS) text else buildString(length) {
-                                                append(text)
-                                                var start = CHECKPOINT_SLICE_CHARS + 1
-                                                while (start <= length) {
-                                                    sql.query(
-                                                        "SELECT substr(`$column`, ?, $CHECKPOINT_SLICE_CHARS) FROM `$table` WHERE rowid = ?",
-                                                        arrayOf<Any?>(start, rowId),
-                                                    ).use { slice -> check(slice.moveToFirst()); append(slice.getString(0)) }
-                                                    start += CHECKPOINT_SLICE_CHARS
-                                                }
-                                            })
-                                        }
                                         else -> error("UNSUPPORTED_CHECKPOINT_CELL")
                                     }
                                 }
@@ -79,6 +72,31 @@ class BackupDatabase internal constructor(private val database: ToolBoxDatabase)
             }
             Files.move(partial.toPath(), destination.toPath(), ATOMIC_MOVE)
         } finally { partial.delete() }
+    }
+
+    /** Reassembles one text cell from its [length] UTF-8 bytes, of which [first] holds the leading slice. */
+    private fun checkpointText(
+        sql: SupportSQLiteDatabase,
+        table: String,
+        column: String,
+        rowId: Long,
+        length: Int,
+        first: ByteArray?,
+    ): String {
+        val bytes = ByteArray(length)
+        var filled = first?.size?.coerceAtMost(length) ?: 0
+        if (filled > 0) System.arraycopy(first!!, 0, bytes, 0, filled)
+        while (filled < length) {
+            // substr counts blob bytes from 1. A slice can end inside a multi-byte character, so decode only once whole.
+            val slice = sql.query(
+                "SELECT substr(CAST(`$column` AS BLOB), ?, $CHECKPOINT_CONTINUATION_BYTES) FROM `$table` WHERE rowid = ?",
+                arrayOf<Any?>(filled + 1, rowId),
+            ).use { cursor -> check(cursor.moveToFirst()); if (cursor.isNull(0)) null else cursor.getBlob(0) }
+            check(slice != null && slice.isNotEmpty() && filled + slice.size <= length) { "CHECKPOINT_CELL_CHANGED" }
+            System.arraycopy(slice, 0, bytes, filled, slice.size)
+            filled += slice.size
+        }
+        return String(bytes, Charsets.UTF_8)
     }
 
     suspend fun restoreCheckpoint(source: File) = withContext(Dispatchers.IO) {
@@ -155,8 +173,10 @@ class BackupDatabase internal constructor(private val database: ToolBoxDatabase)
     }
 
     private companion object {
-        // Characters per text slice: at most 256 KB of UTF-8, so a row of several sliced cells still fits a window.
-        const val CHECKPOINT_SLICE_CHARS = 64 * 1024
+        // UTF-8 bytes per text slice in the row query, so a row of several sliced cells still fits a window.
+        const val CHECKPOINT_SLICE_BYTES = 256 * 1024
+        // A continuation slice is the only cell of its query, so it can be larger and the passes fewer.
+        const val CHECKPOINT_CONTINUATION_BYTES = 1024 * 1024
         val TABLES = listOf("tools", "tool_versions", "permission_grants", "tool_kv", "install_transactions", "background_tasks", "task_results")
     }
 }

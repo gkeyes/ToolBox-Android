@@ -138,6 +138,8 @@ internal class RuntimeSessionManager(
         hostActivityResumed = resumed
         if (resumed) AndroidNotificationGateway.invalidateMiuiSupportCache()
         hosts.values.forEach(::updateWebViewPlayback)
+        // Foreground-only location watches stop requesting updates while paused and resume with the tool shown.
+        locationWatches.onHostActivityResumed(resumed, visibleTools)
     }
 
     private fun applyRuntimeTheme() {

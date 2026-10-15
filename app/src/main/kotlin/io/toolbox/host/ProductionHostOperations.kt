@@ -347,6 +347,8 @@ internal class ProductionHostBackgroundOperations(
 
     override fun observeResult(taskId: String) = delegate.observeResult(taskId)
 
+    override fun observeResultPreview(taskId: String) = delegate.observeResultPreview(taskId)
+
     override suspend fun cancel(toolId: String, taskId: String) = delegate.cancel(toolId, taskId)
 
     override suspend fun cancelTool(toolId: String) {
