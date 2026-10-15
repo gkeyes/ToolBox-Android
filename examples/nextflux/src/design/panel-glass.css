@@ -1,0 +1,135 @@
+/*
+ * Sheets, alerts and the loading dialog: edge-lens glass on ::before, as on
+ * the chrome (lens-host.css explains why the host keeps only its shadow).
+ *
+ * They also stay frosted while they open and close. heroui fades the
+ * backdrop's opacity (sheets) and the alert/modal container's opacity and
+ * filter; both are ancestors of the glass, and an ancestor with opacity < 1 or
+ * a filter becomes the backdrop root, so the glass blurred nothing and the
+ * page behind showed sharp until the fade ended. Here those ancestors keep
+ * opacity 1 and no filter: the scrim fades its colour, the container only
+ * scales, and the glass layer and the content fade themselves.
+ */
+:root {
+  --nf-menu-drop: 0 18px 50px rgb(0 0 0 / 0.20);
+  --nf-menu-inset: inset 0 1px 1px rgb(255 255 255 / 0.75), inset 0 0 0 0.5px rgb(255 255 255 / 0.75);
+  /* Secondary text on floating glass: #6C6C70 / #98989F fall under 4.5:1
+     once busy content shows through, so panels use a stronger grey. */
+  --nf-panel-secondary: #48484A;
+}
+.dark,
+[data-theme="dark"] {
+  --nf-menu-drop: 0 18px 50px rgb(0 0 0 / 0.55);
+  --nf-menu-inset: inset 0 1px 1px rgb(255 255 255 / 0.22), inset 0 0 0 0.5px rgb(255 255 255 / 0.22);
+  --nf-panel-secondary: #C7C7CC;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    --nf-menu-drop: 0 18px 50px rgb(0 0 0 / 0.55);
+    --nf-menu-inset: inset 0 1px 1px rgb(255 255 255 / 0.22), inset 0 0 0 0.5px rgb(255 255 255 / 0.22);
+    --nf-panel-secondary: #C7C7CC;
+  }
+}
+
+/* ------------------------------------------------------------ the glass */
+html .nextflux-modal-surface {
+  isolation: isolate;
+  background: transparent;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  box-shadow: var(--nf-menu-drop);
+}
+html .nextflux-modal-surface::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  pointer-events: none;
+  background: var(--nf-menu);
+  box-shadow: var(--nf-menu-inset);
+  /* The lens first, then the frost (blur before url() loses the bend). */
+  -webkit-backdrop-filter: var(--nf-lens, blur(24px)) blur(12px) saturate(190%);
+  backdrop-filter: var(--nf-lens, blur(24px)) blur(12px) saturate(190%);
+}
+@media (prefers-reduced-transparency: reduce) {
+  html .nextflux-modal-surface::before {
+    background: var(--nf-sheet-bg);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+/* Secondary text inside floating panels. */
+html :is(.nextflux-modal-surface, .toolbox-link-dialog) {
+  --nf-secondary: var(--nf-panel-secondary);
+  --muted: var(--nf-panel-secondary);
+  --ds-text-secondary: var(--nf-panel-secondary);
+}
+/* Loading dialog 取消: accent on the tonal fill was 3.6:1 in dark. */
+html .nextflux-modal-loading button {
+  color: var(--ds-text-primary, var(--foreground));
+  background: color-mix(in srgb, var(--ds-on-surface, currentColor) 8%, transparent);
+}
+/* Link dialog primary: white on #0A84FF is 3.65:1; a darker blue keeps 5:1. */
+html .toolbox-link-dialog .toolbox-link-primary {
+  background: color-mix(in srgb, var(--accent, #1264cc) 80%, black);
+  border-color: transparent;
+}
+
+/* ------------------------------------------------------- open and close */
+/* Sheets: the backdrop transitions its colour, never its opacity. */
+html .drawer__backdrop.nextflux-modal-backdrop { transition-property: background-color; }
+html .drawer__backdrop.nextflux-modal-backdrop:is([data-entering="true"], [data-exiting="true"]) {
+  opacity: 1;
+  background-color: transparent;
+  will-change: auto;
+}
+/* Alerts and modals: the same for their keyframe-animated backdrop. */
+html :is(.modal__backdrop, .alert-dialog__backdrop).nextflux-modal-backdrop:is([data-entering="true"], [data-exiting="true"]) {
+  opacity: 1;
+  will-change: auto;
+}
+html :is(.modal__backdrop, .alert-dialog__backdrop).nextflux-modal-backdrop[data-entering="true"] { animation-name: nf-scrim-in; }
+html :is(.modal__backdrop, .alert-dialog__backdrop).nextflux-modal-backdrop[data-exiting="true"] { animation-name: nf-scrim-out; animation-fill-mode: forwards; }
+/* The container only scales. */
+html :is(.modal__container, .alert-dialog__container):is([data-entering="true"], [data-exiting="true"]) { will-change: transform; }
+html :is(.modal__container, .alert-dialog__container)[data-entering="true"] { animation-name: nf-panel-in; }
+html :is(.modal__container, .alert-dialog__container)[data-exiting="true"] { animation-name: nf-panel-out; animation-fill-mode: forwards; }
+/* Opening, the glass is there at full frost from the first frame (a fading
+   glass layer would let the page show sharp through it); only the content
+   fades in. Closing, the glass fades too, revealing the page it covered. */
+html :is(.modal__container, .alert-dialog__container)[data-entering="true"] > .nextflux-modal-surface > * {
+  animation: nf-fade-in var(--ds-dur-dialog) var(--ds-ease-dialog) both;
+}
+html :is(.modal__container, .alert-dialog__container)[data-entering="true"] > .nextflux-modal-surface {
+  animation: nf-drop-in var(--ds-dur-dialog) var(--ds-ease-dialog) both;
+}
+html :is(.modal__container, .alert-dialog__container)[data-exiting="true"] > .nextflux-modal-surface::before,
+html :is(.modal__container, .alert-dialog__container)[data-exiting="true"] > .nextflux-modal-surface > * {
+  animation: nf-fade-out var(--ds-dur-exit) var(--ds-ease-exit) forwards;
+}
+html :is(.modal__container, .alert-dialog__container)[data-exiting="true"] > .nextflux-modal-surface {
+  animation: nf-drop-out var(--ds-dur-exit) var(--ds-ease-exit) forwards;
+}
+@keyframes nf-scrim-in { from { background-color: transparent; } }
+@keyframes nf-scrim-out { to { background-color: transparent; } }
+@keyframes nf-panel-in { from { transform: scale(0.94); } }
+@keyframes nf-panel-out { to { transform: scale(0.96); } }
+@keyframes nf-fade-in { from { opacity: 0; } }
+@keyframes nf-fade-out { to { opacity: 0; } }
+@keyframes nf-drop-in { from { box-shadow: 0 0 0 transparent; } }
+@keyframes nf-drop-out { to { box-shadow: 0 0 0 transparent; } }
+
+/* ------------------------------------------------------------- geometry */
+/* Phone alerts float 8px from the edges, like the sheets. */
+@media (max-width: 639px) {
+  html .alert-dialog__container {
+    padding: 8px 8px calc(8px + env(safe-area-inset-bottom, 0px));
+  }
+}
+/* The title-filter toast matches the other toasts: a pill 16px up. */
+html .nf-title-filter-toast {
+  border-radius: 999px;
+  bottom: calc(16px + env(safe-area-inset-bottom, 0px) + var(--nf-toast-viewport-inset, 0px));
+}

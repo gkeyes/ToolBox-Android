@@ -1,5 +1,6 @@
 import "./i18n";
-import { initTheme } from "@/stores/themeStore";
+import { currentThemeMode, initTheme } from "@/stores/themeStore";
+import { useStore } from "@nanostores/react";
 import { settingsState } from "@/stores/settingsStore.js";
 import { createRoot } from "react-dom/client";
 import "./index.css";
@@ -31,10 +32,17 @@ installGlassPress();
 // Reduced-motion preference must be on <html> before the first frame so CSS tokens snap.
 if (settingsState.get().reduceMotion) document.documentElement.dataset.reduceMotion = "true";
 
+// Sonner follows NextFlux's own light/dark choice; left on its default it kept
+// light-theme description text on dark glass.
+function AppToaster(props) {
+  const mode = useStore(currentThemeMode);
+  return <Toaster theme={mode} {...props} />;
+}
+
 createRoot(document.getElementById("root")).render(
   <>
     <SplashScreen />
-    <Toaster
+    <AppToaster
       position="bottom-center"
       offset={{ bottom: "calc(16px + env(safe-area-inset-bottom))" }}
       mobileOffset={{ bottom: "calc(16px + env(safe-area-inset-bottom))" }}
