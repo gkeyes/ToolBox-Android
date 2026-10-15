@@ -14,14 +14,13 @@ import io.toolbox.host.runtime.withRuntimeStorageQuiescent
 import io.toolbox.tool.packagekit.*
 import io.toolbox.tool.packagekit.backup.*
 import io.toolbox.tool.packagekit.backup.BackupJson as J
+import io.toolbox.tool.packagekit.lifecycle.InstalledPackageExport
 import io.toolbox.tool.packagekit.lifecycle.InstalledPackageIdentity
 import io.toolbox.tool.packagekit.lifecycle.SupportedToolCapabilities
 import java.io.File
 import java.io.FileOutputStream
 import java.io.InputStream
 import java.util.UUID
-import java.util.zip.ZipEntry
-import java.util.zip.ZipOutputStream
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
@@ -119,26 +118,8 @@ internal class HostBackupService(
         val tool = snapshot.tool
         val id = tool.metadata.id
         val target = File(root, "tools/$id").apply { mkdirs() }
-        val bundle = File(files, tool.currentVersion.bundleLocator.value)
-        check(bundle.canonicalFile.toPath().startsWith(File(files, "miniapps/$id/versions").canonicalFile.toPath()))
         val pack = File(target, "package.tbx")
-        val destination = object : java.io.FilterOutputStream(FileOutputStream(pack)) {
-            override fun write(bytes: ByteArray, offset: Int, length: Int) {
-                ResourceCapacity.requireStorageBytes(target, length.toLong())
-                out.write(bytes, offset, length)
-            }
-            override fun write(value: Int) {
-                ResourceCapacity.requireStorageBytes(target, 1)
-                out.write(value)
-            }
-        }
-        ZipOutputStream(destination).use { zip ->
-            BackupArchive.regularFiles(bundle).forEach { file ->
-                zip.putNextEntry(ZipEntry(file.relativeTo(bundle).invariantSeparatorsPath))
-                file.inputStream().use { BackupArchive.copy(it, zip) }
-                zip.closeEntry()
-            }
-        }
+        InstalledPackageExport.write(files, tool.currentVersion, pack)
         val inspector = ToolPackageInspectors.create(File(root.parentFile, "inspection"), resourceProbe)
         validatePackage(inspector, pack)
         BackupDataCodec.write(File(target, "metadata.json"), mapOf(

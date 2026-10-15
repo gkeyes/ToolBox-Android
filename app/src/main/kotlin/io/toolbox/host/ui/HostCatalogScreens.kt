@@ -23,6 +23,7 @@ import androidx.compose.ui.platform.LocalAccessibilityManager
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import io.toolbox.host.importflow.ImportOutcome
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -99,6 +100,8 @@ import io.toolbox.core.ui.component.toolBoxPressFeedback
 import io.toolbox.core.ui.component.toolBoxShape
 import io.toolbox.host.HostImportConfirmationKind
 import io.toolbox.host.R
+import io.toolbox.host.backup.CreateToolPackageDocument
+import io.toolbox.host.backup.exportFileName
 import io.toolbox.host.catalog.CatalogAction
 import io.toolbox.host.catalog.CatalogFeedback
 import io.toolbox.host.catalog.CatalogTool
@@ -419,6 +422,10 @@ internal fun ToolDetailScreen(
         entryMessage = null
         onAction(action)
     }
+    // The save dialog returns here, so the export result shows as this page's own feedback.
+    val exportLauncher = rememberLauncherForActivityResult(CreateToolPackageDocument()) { uri ->
+        if (uri != null) act(CatalogAction.ExportTool(toolId, uri.toString()))
+    }
     // Leave the page once the confirmed delete lands; the list shows the "已删除" notice.
     LaunchedEffect(deleteConfirmed, tool == null) {
         if (deleteConfirmed && tool == null) onBack()
@@ -472,6 +479,14 @@ internal fun ToolDetailScreen(
                         ToolBoxSettingRow(title = "权限", icon = ToolBoxIconKey.Shield, onClick = { onPermissions(tool.toolId) })
                         ToolBoxGroupDivider()
                         ToolBoxSettingRow(title = "后台任务", icon = ToolBoxIconKey.Clock, onClick = { onBackground(tool.toolId) })
+                        ToolBoxGroupDivider()
+                        ToolBoxSettingRow(
+                            title = "导出工具",
+                            summary = "保存为 .tbx 文件，可再次导入；不含工具数据",
+                            icon = ToolBoxIconKey.Share,
+                            onClick = { runCatching { exportLauncher.launch(exportFileName(tool.name, tool.versionName)) } },
+                            modifier = Modifier.testTag("tool_detail_export"),
+                        )
                     }
                 }
                 item("before-organization") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.section)) }
