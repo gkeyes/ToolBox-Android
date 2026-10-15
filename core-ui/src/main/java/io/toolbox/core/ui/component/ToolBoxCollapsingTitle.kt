@@ -48,6 +48,8 @@ import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.RectangleShape
 import com.kyant.backdrop.drawBackdrop
 import com.kyant.backdrop.effects.blur
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.unit.Constraints
 
 /**
  * Scroll position that drives the large-title collapse.
@@ -270,6 +272,12 @@ fun ToolBoxCollapsingTopBar(
             val barHeight = ToolBoxThemeTokens.sizes.topBar
             Column(
                 Modifier
+                    // Drawn below the bar but measured as zero height: the band must not make the
+                    // top bar (and the page padding taken from it) taller.
+                    .layout { measurable, constraints ->
+                        val placeable = measurable.measure(constraints.copy(minHeight = 0, maxHeight = Constraints.Infinity))
+                        layout(placeable.width, 0) { placeable.place(0, 0) }
+                    }
                     .fillMaxWidth()
                     .graphicsLayer {
                         alpha = progress(readScrolled())
