@@ -46,8 +46,15 @@ export function edgeMap(doc, width, height, radius) {
   if (!context) return null;
   const image = context.createImageData(width, height);
   const edge = Math.min(EDGE, radius || EDGE, height / 2, width / 2);
+  // Everything deeper than the rim (and clear of the corners) is neutral grey:
+  // fill it in one go and only work out the rim band. Panels are as large as
+  // the screen, so walking every pixel cost ~100ms per sheet on a desktop.
+  new Uint32Array(image.data.buffer).fill(new Uint32Array(new Uint8ClampedArray([128, 128, 128, 255]).buffer)[0]);
+  const band = Math.ceil(Math.max(edge, radius));
   for (let y = 0; y < height; y++) {
+    const inner = y >= band && y < height - band;
     for (let x = 0; x < width; x++) {
+      if (inner && x === band) x = Math.max(band, width - band);
       const px = x + 0.5;
       const py = y + 0.5;
       // Distance to the rounded-rect edge and the outward normal there.
@@ -62,17 +69,18 @@ export function edgeMap(doc, width, height, radius) {
         nx /= corner;
         ny /= corner;
       } else {
-        // On a straight side: the nearest side gives depth and normal.
-        const sides = [[px, -1, 0], [width - px, 1, 0], [py, 0, -1], [height - py, 0, 1]];
-        sides.sort((a, b) => a[0] - b[0]);
-        [depth, nx, ny] = sides[0];
+        // On a straight side: the nearest side gives depth and normal
+        // (ties go to the earlier of left, right, top, bottom).
+        depth = px; nx = -1; ny = 0;
+        if (width - px < depth) { depth = width - px; nx = 1; ny = 0; }
+        if (py < depth) { depth = py; nx = 0; ny = -1; }
+        if (height - py < depth) { depth = height - py; nx = 0; ny = 1; }
       }
       const k = depth < edge ? (1 - Math.max(depth, 0) / edge) ** 2 : 0;
+      if (!k) continue;
       const i = (y * width + x) * 4;
       image.data[i] = 128 - nx * k * 127;
       image.data[i + 1] = 128 - ny * k * 127;
-      image.data[i + 2] = 128;
-      image.data[i + 3] = 255;
     }
   }
   context.putImageData(image, 0, 0);
