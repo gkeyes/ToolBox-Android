@@ -58,7 +58,7 @@
             android:exported="false"
             android:hardwareAccelerated="true"
             android:process=":browser"
-            android:configChanges="orientation|screenSize|keyboardHidden"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|density|uiMode|keyboardHidden"
             android:windowSoftInputMode="adjustResize" />
         <service
             android:name=".runtime.RuntimeForegroundService"

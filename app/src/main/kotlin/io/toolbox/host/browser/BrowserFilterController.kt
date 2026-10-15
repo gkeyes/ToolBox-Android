@@ -5,14 +5,17 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import java.io.ByteArrayInputStream
 import java.util.UUID
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -47,7 +50,10 @@ class BrowserFilterController(context: Context, private val scope: CoroutineScop
         private set
     private var undo: (() -> Unit)? = null
     val canUndo get() = undo != null
-    val blockedCount get() = requestPage.blocked.get()
+    /** Requests blocked on the current page, mirrored from the network-thread counter at most every [CountPublishMs]. */
+    var blockedCount by mutableIntStateOf(0)
+        private set
+    private val countPublishPending = AtomicBoolean(false)
 
     data class PickerState(
         val active: Boolean = false, val selector: String = "", val count: Int = 0,
@@ -69,6 +75,7 @@ class BrowserFilterController(context: Context, private val scope: CoroutineScop
         filterEngineInstalled = false
         site = BrowserFilterValidation.urlHost(url).orEmpty()
         requestPage = RequestPage(site)
+        blockedCount = 0
         picker = PickerState()
         sheet = false
         notice = null
@@ -90,6 +97,7 @@ class BrowserFilterController(context: Context, private val scope: CoroutineScop
         page = null
         generation++
         requestPage = RequestPage("")
+        blockedCount = 0
     }
 
     init { refresh() }
@@ -128,6 +136,14 @@ class BrowserFilterController(context: Context, private val scope: CoroutineScop
         if (!rules.active(current.host)) return null
         if (!rules.blocks(current.host, request.url.toString(), request.isForMainFrame)) return null
         current.blocked.incrementAndGet()
+        if (countPublishPending.compareAndSet(false, true)) {
+            scope.launch {
+                delay(CountPublishMs)
+                // Clear first: a request counted after this point schedules the next publish.
+                countPublishPending.set(false)
+                blockedCount = requestPage.blocked.get()
+            }
+        }
         return WebResourceResponse("text/plain", "UTF-8", 200, "OK", mapOf("Cache-Control" to "no-store"), ByteArrayInputStream(ByteArray(0)))
     }
 
@@ -292,4 +308,8 @@ class BrowserFilterController(context: Context, private val scope: CoroutineScop
     fun undoLast() { val action = undo; undo = null; notice = null; action?.invoke() }
     fun dismissNotice() { notice = null; undo = null }
     private fun newKey() = "__toolbox_filter_" + UUID.randomUUID().toString().replace("-", "")
+
+    private companion object {
+        const val CountPublishMs = 250L
+    }
 }

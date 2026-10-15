@@ -40,6 +40,7 @@ class UpdateFeedTest {
         assertEquals("1.0.50", tools.getValue("nextflux").version)
         assertTrue(tools.getValue("game-2048").matches("io.toolbox.game2048"))
         assertFalse(tools.getValue("nextflux").matches("io.toolbox.game2048"))
+        assertFalse(tools.getValue("nextflux").matches("com.someone.nextflux"))
     }
 
     @Test

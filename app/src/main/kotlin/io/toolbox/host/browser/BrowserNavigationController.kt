@@ -39,9 +39,13 @@ internal class BrowserNavigationController(
         val actionLabel: String,
         val accept: () -> Unit,
         val cancel: () -> Unit = {},
+        /** Identifies an external-app target so one page cannot queue the same request twice. */
+        val externalTarget: String? = null,
     )
 
     private var decisions by mutableStateOf<List<Decision>>(emptyList())
+    /** App targets the user declined on the current document; a page timer must not re-ask after every dismissal. */
+    private val declinedExternal = mutableSetOf<String>()
     val hasPrompt get() = decisions.isNotEmpty()
 
     /** Returns false for navigations that the engine should perform without host rewriting. */
@@ -51,7 +55,12 @@ internal class BrowserNavigationController(
         return when (BrowserLinkPolicy.classify(url)) {
             BrowserLinkKind.Web -> false
             BrowserLinkKind.External -> {
-                offerExternal(page, url)
+                // Only the top document may ask to leave for another app, one request at a time; frames
+                // would otherwise queue dialogs without limit. Script redirects without a gesture stay
+                // allowed because login and payment pages hand off to apps that way.
+                if (request.isForMainFrame && decisions.none { it.page === page && it.externalTarget != null }) {
+                    offerExternal(page, url)
+                }
                 true
             }
             BrowserLinkKind.Unsupported -> {
@@ -74,6 +83,8 @@ internal class BrowserNavigationController(
             else notify("此应用链接没有有效的目标地址。")
             return
         }
+        val targetKey = target.toString()
+        if (targetKey in declinedExternal || decisions.any { it.page === page && it.externalTarget == targetKey }) return
         decisions = decisions + Decision(
             page, "在其他应用中打开", "网页请求打开 ${target.scheme.orEmpty()} 链接。", "打开应用",
             accept = {
@@ -89,6 +100,7 @@ internal class BrowserNavigationController(
                     else notify("系统未允许打开此应用链接。")
                 }
             },
+            externalTarget = targetKey,
         )
     }
 
@@ -142,8 +154,12 @@ internal class BrowserNavigationController(
         // A double click on an obsolete dialog must not approve the next queued request.
         if (decisions.firstOrNull() !== decision) return
         decisions = decisions.drop(1)
+        if (!allow) decision.externalTarget?.let(declinedExternal::add)
         if (allow && isCurrentPage(decision.page)) decision.accept() else decision.cancel()
     }
+
+    /** A new main-frame document may ask again for targets declined on the previous one. */
+    fun documentStarted() = declinedExternal.clear()
 
     @Composable
     fun Prompt() {
