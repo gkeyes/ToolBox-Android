@@ -217,7 +217,7 @@ export default function EditFeedModal() {
                   <Button
                     variant="outline"
                     fullWidth
-                    className="flex justify-between rounded-field px-3 text-muted"
+                    className="nf-advanced-toggle flex justify-between rounded-field px-3 text-muted"
                   >
                     {t("feed.advancedOptions")}
                     <ChevronDown

@@ -43,8 +43,9 @@ const FeedItem = ({ feed, active, count }) => {
       position: {
         x: e.clientX,
         y: e.clientY,
-        // The whole row, with its count and chevron, not just the link.
-        anchor: e.currentTarget.closest('[data-sidebar="menu-item"]') || e.currentTarget,
+        // The link is the whole feed row, count included. Its list item has no
+        // menu-item marker, so closest() would lift the parent category.
+        anchor: e.currentTarget,
       },
     });
   };

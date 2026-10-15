@@ -20,16 +20,18 @@ function liftedCopy(anchor) {
 
 // position.anchor (the pressed row) gives the iOS presentation: the page
 // blurs, the row lifts, and the menu sits under it. Without one the menu opens
-// at the pointer.
+// at the pointer. position.row narrows the lifted box when the anchor holds
+// more than the row (a category's item also holds its feeds).
 const ContextMenu = ({ isOpen, onClose, position, children }) => {
   const menuRef = useRef(null);
   const liftRef = useRef(null);
   const anchor = position?.anchor?.isConnected ? position.anchor : null;
+  const row = anchor && position?.row?.isConnected ? position.row : anchor;
 
   useLayoutEffect(() => {
     const lift = liftRef.current;
     if (!isOpen || !anchor || !lift) return;
-    const rect = anchor.getBoundingClientRect();
+    const rect = row.getBoundingClientRect();
     Object.assign(lift.style, { left: `${rect.left}px`, top: `${rect.top}px`, width: `${rect.width}px`, height: `${rect.height}px` });
     // Row styles are scoped by the list style; carry it to the portal.
     const listStyle = anchor.closest("[data-list-style]")?.getAttribute("data-list-style");
@@ -37,7 +39,7 @@ const ContextMenu = ({ isOpen, onClose, position, children }) => {
     else lift.removeAttribute("data-list-style");
     lift.replaceChildren(liftedCopy(anchor));
     return () => lift.replaceChildren();
-  }, [isOpen, anchor]);
+  }, [isOpen, anchor, row]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -83,7 +85,7 @@ const ContextMenu = ({ isOpen, onClose, position, children }) => {
       let { x, y } = position;
       if (anchor) {
         // Under the row; above it when there is no room below.
-        const rect = anchor.getBoundingClientRect();
+        const rect = row.getBoundingClientRect();
         x = rect.left + 8;
         y = rect.bottom + 8;
         if (y + height > viewportHeight - 10 && rect.top - height - 8 >= 10) y = rect.top - height - 8;
@@ -111,7 +113,7 @@ const ContextMenu = ({ isOpen, onClose, position, children }) => {
     const observer = new ResizeObserver(place);
     observer.observe(menu);
     return () => observer.disconnect();
-  }, [isOpen, position, anchor]);
+  }, [isOpen, position, anchor, row]);
 
   if (!isOpen) return null;
 
