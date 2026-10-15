@@ -44,7 +44,7 @@ internal class BrowserNavigationController(
     )
 
     private var decisions by mutableStateOf<List<Decision>>(emptyList())
-    /** App targets the user declined on the current document; a page timer must not re-ask after every dismissal. */
+    /** Apps the user declined while the browser is open; a page timer or reload must not re-ask after every dismissal. */
     private val declinedExternal = mutableSetOf<String>()
     val hasPrompt get() = decisions.isNotEmpty()
 
@@ -62,7 +62,7 @@ internal class BrowserNavigationController(
                 if ((request.isForMainFrame || request.hasGesture()) &&
                     decisions.none { it.page === page && it.externalTarget != null }
                 ) {
-                    offerExternal(page, url)
+                    offerExternal(page, url, request.hasGesture())
                 }
                 true
             }
@@ -73,7 +73,7 @@ internal class BrowserNavigationController(
         }
     }
 
-    private fun offerExternal(page: WebView, url: String) {
+    private fun offerExternal(page: WebView, url: String, userTap: Boolean) {
         val parsed = runCatching { Intent.parseUri(url, Intent.URI_INTENT_SCHEME) }.getOrNull()
         val target = parsed?.data ?: Uri.parse(url)
         val fallback = parsed?.getStringExtra("browser_fallback_url")?.let {
@@ -86,10 +86,10 @@ internal class BrowserNavigationController(
             else notify("此应用链接没有有效的目标地址。")
             return
         }
-        // A declined app is remembered by package or scheme and host, so a page that changes the query
-        // (a timestamp, a nonce) cannot re-ask after every 取消.
-        val targetKey = externalTargetKey(target.scheme, target.host, parsed?.`package`)
-        if (targetKey in declinedExternal || decisions.any { it.page === page && it.externalTarget == targetKey }) return
+        // A declined app is remembered by package or scheme for as long as the browser is open, so a page
+        // that changes the address, the host or reloads cannot re-ask after every 取消; a tap still asks.
+        val targetKey = externalTargetKey(target.scheme, parsed?.`package`)
+        if ((!userTap && targetKey in declinedExternal) || decisions.any { it.page === page && it.externalTarget == targetKey }) return
         decisions = decisions + Decision(
             page, "在其他应用中打开", "网页请求打开 ${target.scheme.orEmpty()} 链接。", "打开应用",
             accept = {
@@ -163,9 +163,6 @@ internal class BrowserNavigationController(
         if (allow && isCurrentPage(decision.page)) decision.accept() else decision.cancel()
     }
 
-    /** A new main-frame document may ask again for targets declined on the previous one. */
-    fun documentStarted() = declinedExternal.clear()
-
     @Composable
     fun Prompt() {
         val decision = decisions.firstOrNull() ?: return
@@ -182,7 +179,6 @@ internal class BrowserNavigationController(
     }
 }
 
-/** One key per app a page can hand off to: the intent's package when it names one, else scheme and host. */
-internal fun externalTargetKey(scheme: String?, host: String?, packageName: String?): String =
-    packageName?.takeIf { it.isNotBlank() }?.let { "package:$it" }
-        ?: "${scheme.orEmpty().lowercase()}://${host.orEmpty().lowercase()}"
+/** One key per app a page can hand off to: the intent's package when it names one, else its scheme. */
+internal fun externalTargetKey(scheme: String?, packageName: String?): String =
+    packageName?.takeIf { it.isNotBlank() }?.let { "package:$it" } ?: "scheme:${scheme.orEmpty().lowercase()}"

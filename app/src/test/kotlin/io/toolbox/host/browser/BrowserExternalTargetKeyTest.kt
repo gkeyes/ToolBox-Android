@@ -5,10 +5,10 @@ import org.junit.Test
 
 class BrowserExternalTargetKeyTest {
     @Test fun declinesAreRememberedPerAppNotPerUrl() {
-        // Query changes such as a timestamp keep the same key, so 取消 is not asked again.
-        assertEquals("weixin://dl", externalTargetKey("weixin", "dl", null))
-        assertEquals("weixin://dl", externalTargetKey("WEIXIN", "DL", null))
-        assertEquals("package:com.eg.android.AlipayGphone", externalTargetKey("alipays", "platformapi", "com.eg.android.AlipayGphone"))
-        assertEquals("mailto://", externalTargetKey("mailto", null, " "))
+        // Changing the query or host keeps the same key, so 取消 is not asked again.
+        assertEquals("scheme:weixin", externalTargetKey("weixin", null))
+        assertEquals("scheme:weixin", externalTargetKey("WEIXIN", null))
+        assertEquals("package:com.eg.android.AlipayGphone", externalTargetKey("alipays", "com.eg.android.AlipayGphone"))
+        assertEquals("scheme:mailto", externalTargetKey("mailto", " "))
     }
 }

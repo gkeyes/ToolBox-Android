@@ -48,6 +48,7 @@ import io.toolbox.host.background.BackgroundTasksPageModel
 import io.toolbox.host.background.LiveNotificationSupportState
 import io.toolbox.host.browser.BrowserBottomBar
 import io.toolbox.host.browser.BrowserFilterController
+import io.toolbox.host.browser.BrowserPublicSuffix
 import io.toolbox.host.browser.BrowserScreenActions
 import io.toolbox.host.browser.BrowserCloseButton
 import io.toolbox.host.browser.BrowserUiState
@@ -336,6 +337,8 @@ class LayoutScreenshotTest(private val fontScale: Float) {
 
     @Test fun browserBars() = render("browser") {
         val context = LocalContext.current
+        // As BrowserActivity does in the :browser process, so the capsule shows the shortened host.
+        androidx.compose.runtime.remember { BrowserPublicSuffix.load(context) }
         val scope = rememberCoroutineScope()
         val state = androidx.compose.runtime.remember {
             BrowserUiState().apply {

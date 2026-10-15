@@ -111,6 +111,7 @@ class BrowserActivity : ComponentActivity() {
         state.userAgentMode = BrowserUserAgentMode.fromStored(
             browserPreferences.getString(USER_AGENT_MODE_KEY, null),
         )
+        lifecycleScope.launch(Dispatchers.IO) { BrowserPublicSuffix.load(applicationContext) }
         enableEdgeToEdge()
         applyHyperOsGestureNavigationImmersion()
         createPage(savedInstanceState?.getBundle("page"))
