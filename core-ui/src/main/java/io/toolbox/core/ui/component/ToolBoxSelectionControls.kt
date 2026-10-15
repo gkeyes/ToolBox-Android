@@ -41,11 +41,26 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.graphics.compositeOver
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.zIndex
+import com.kyant.backdrop.backdrops.layerBackdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop
+import com.kyant.backdrop.drawBackdrop
+import com.kyant.backdrop.effects.blur
+import com.kyant.backdrop.effects.lens
+import com.kyant.backdrop.effects.vibrancy
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 
 /**
- * Segmented control: the selection pill slides between segments on the spatial spring and each
- * change ticks. Segments are radio buttons inside a selectable group for accessibility.
+ * Segmented control (iOS 26): a capsule track with a glass thumb that slides between segments on
+ * the spatial spring. While a segment is held the thumb lifts: it grows about 10% and turns to
+ * clear glass that refracts the track and labels beneath it. Each change ticks. Segments are radio
+ * buttons inside a selectable group for accessibility.
  */
 @Composable
 fun ToolBoxSegmentedControl(
@@ -59,14 +74,26 @@ fun ToolBoxSegmentedControl(
     if (options.isEmpty()) return
     val colors = ToolBoxThemeTokens.colors
     val haptics = rememberToolBoxHaptics()
-    val outer = toolBoxShape(ToolBoxThemeTokens.radii.control)
-    val inner = toolBoxShape(ToolBoxThemeTokens.radii.badge)
-    // iOS 26 in-content segmented control: grey fill track, solid white (#636366 dark) pill.
     val dark = colors.surface.luminance() < 0.5f
     val trackFill = ToolBoxNeutralFill.copy(alpha = if (dark) 0.24f else 0.12f)
     val pillFill = if (dark) Color(0xFF636366) else Color.White
+    val live = glassRendersLive()
+    val sources = remember(options.size) { List(options.size) { MutableInteractionSource() } }
+    val pressed = sources.map { it.collectIsPressedAsState() }
+    val lift = animateFloatAsState(
+        targetValue = if (enabled && pressed.any { it.value }) 1f else 0f,
+        animationSpec = spring(dampingRatio = 0.5f, stiffness = 300f),
+        label = "segmented lift",
+    )
+    // The thumb refracts the track (and its labels) it slides over; the track is drawn on the
+    // surface, so record both into the thumb's backdrop.
+    val trackOnSurface = trackFill.compositeOver(colors.surface)
+    val trackBackdrop = rememberLayerBackdrop {
+        drawRect(trackOnSurface)
+        drawContent()
+    }
     BoxWithConstraints(
-        modifier.fillMaxWidth().heightIn(min = 44.dp).clip(outer).background(trackFill).padding(3.dp),
+        modifier.fillMaxWidth().heightIn(min = 44.dp).clip(CircleShape).background(trackFill).padding(3.dp),
     ) {
         val segmentWidth = maxWidth / options.size
         val indicatorOffset = animateDpAsState(
@@ -74,24 +101,11 @@ fun ToolBoxSegmentedControl(
             animationSpec = ToolBoxMotion.spatial(),
             label = "segmented indicator",
         )
-        if (selectedIndex in options.indices) {
-            Box(
-                Modifier
-                    .offset { IntOffset(indicatorOffset.value.roundToPx(), 0) }
-                    .width(segmentWidth)
-                    .fillMaxHeight()
-                    .shadow(
-                        elevation = 3.dp,
-                        shape = inner,
-                        clip = false,
-                        ambientColor = Color.Black.copy(alpha = 0.12f),
-                        spotColor = Color.Black.copy(alpha = 0.12f),
-                    )
-                    .clip(inner)
-                    .background(pillFill),
-            )
-        }
-        Row(Modifier.fillMaxSize().selectableGroup(), verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            Modifier.fillMaxSize().selectableGroup()
+                .then(if (live) Modifier.layerBackdrop(trackBackdrop) else Modifier),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             options.forEachIndexed { index, label ->
                 val selected = index == selectedIndex
                 val textColor = animateColorAsState(
@@ -108,7 +122,7 @@ fun ToolBoxSegmentedControl(
                             selected = selected,
                             enabled = enabled,
                             role = Role.RadioButton,
-                            interactionSource = remember { MutableInteractionSource() },
+                            interactionSource = sources[index],
                             indication = null,
                             onClick = {
                                 if (!selected) {
@@ -130,6 +144,63 @@ fun ToolBoxSegmentedControl(
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
+            }
+        }
+        if (selectedIndex in options.indices) {
+            val thumb = Modifier
+                .offset { IntOffset(indicatorOffset.value.roundToPx(), 0) }
+                .width(segmentWidth)
+                .fillMaxHeight()
+                .graphicsLayer {
+                    val s = 1f + 0.1f * lift.value
+                    scaleX = s
+                    scaleY = s
+                }
+            if (live) {
+                // Drawn over the labels: solid at rest (the selected label is drawn on top again
+                // below), clear lens glass while lifted.
+                Box(
+                    thumb.drawBackdrop(
+                        backdrop = trackBackdrop,
+                        shape = { CircleShape },
+                        effects = {
+                            vibrancy()
+                            blur(2.dp.toPx())
+                            lens(10.dp.toPx(), 20.dp.toPx())
+                        },
+                        onDrawSurface = { drawRect(pillFill.copy(alpha = 1f - 0.85f * lift.value)) },
+                    ),
+                )
+                // The selected label stays readable on top of the solid thumb at rest.
+                Box(
+                    thumb.graphicsLayer { alpha = 1f - lift.value }.clearAndSetSemantics { },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    ToolBoxText(
+                        options[selectedIndex],
+                        style = ToolBoxThemeTokens.textStyles.metadata.copy(
+                            color = colors.textPrimary,
+                            fontWeight = FontWeight.SemiBold,
+                            textAlign = TextAlign.Center,
+                        ),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            } else {
+                Box(
+                    thumb
+                        .zIndex(-1f)
+                        .shadow(
+                            elevation = 3.dp,
+                            shape = CircleShape,
+                            clip = false,
+                            ambientColor = Color.Black.copy(alpha = 0.12f),
+                            spotColor = Color.Black.copy(alpha = 0.12f),
+                        )
+                        .clip(CircleShape)
+                        .background(pillFill),
+                )
             }
         }
     }
