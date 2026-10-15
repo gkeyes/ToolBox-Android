@@ -17,6 +17,18 @@ assert.deepEqual(union('ToolBoxMethodName'), methods);
 assert.deepEqual(union('ToolBoxCapability'), capabilities);
 assert.deepEqual(schema.properties.permissions.items.properties.name.enum.toSorted(), capabilities);
 assert.equal(schema.properties.network.properties.maxResponseBytes.maximum, Number.MAX_SAFE_INTEGER);
+// Hand-kept copies of the capability list: the install validator and the host's supported set.
+const kotlinStrings = (path, start) => {
+  const text = read(path);
+  const from = text.indexOf(start);
+  assert(from >= 0, `${path}: ${start} not found`);
+  const body = text.slice(from + start.length, text.indexOf(')', from + start.length));
+  return [...body.matchAll(/"([^"]+)"/g)].map(m => m[1]).sort();
+};
+assert.deepEqual(kotlinStrings('tool-package/src/main/kotlin/io/toolbox/tool/packagekit/ManifestValidator.kt',
+  'allowedPermissions = setOf('), capabilities, 'ManifestValidator.allowedPermissions must match ToolBoxApiV1');
+assert.deepEqual(kotlinStrings('tool-package/src/main/kotlin/io/toolbox/tool/packagekit/lifecycle/PackageLifecycle.kt',
+  'val All = setOf('), capabilities, 'SupportedToolCapabilities.All must match ToolBoxApiV1');
 // The document-start SDK is an asset; RuntimeBridgeSession.shim fills these placeholders.
 const shimTemplate = read('tool-runtime/src/main/assets/toolbox-runtime/runtime-sdk.js');
 const shim = shimTemplate.replaceAll('__TOOLBOX_VERSION_CODE__', '1')
@@ -31,6 +43,10 @@ const bridge = { postMessage(encoded) {
 }};
 const context = vm.createContext({ __toolboxNative: bridge, Uint8Array, atob, btoa, queueMicrotask, addEventListener() {}, dispatchEvent() {} });
 vm.runInContext(shim, context);
+// The SDK's close-ticket write set must equal the native WRITE_METHODS that the close flush admits.
+const sdkWrites = [...shimTemplate.match(/const writeMethods = new Set\(\[([^\]]*)\]\)/)[1].matchAll(/'([^']+)'/g)].map(m => m[1]).sort();
+assert.deepEqual(sdkWrites, kotlinStrings('tool-runtime/src/main/kotlin/io/toolbox/tool/runtime/RuntimePresentationState.kt',
+  'val WRITE_METHODS = setOf('), 'runtime-sdk.js writeMethods must match RuntimePresentationState.WRITE_METHODS');
 assert.deepEqual([...shimTemplate.matchAll(/call\('([^']+)'/g)].map(m => m[1]).filter((v,i,a) => a.indexOf(v) === i).sort(), methods);
 await context.ToolBox.clipboard.writeText('');
 assert.equal(sent.findLast(request => request.method === 'clipboard.writeText')?.params.text, '');
@@ -244,6 +260,31 @@ await cancelHarness.settle();
 assert.equal(flushCalls, 2);
 assert.deepEqual(cancelHarness.sent.filter(request => request.method === 'runtime.flushComplete')
   .map(request => request.params.closeToken), ['new-token']);
+
+// SEC-X1: the document-start script removes WebRTC, which CSP connect-src and request interception never see.
+const webRtcHardening = read('tool-runtime/src/main/assets/toolbox-runtime/webrtc-hardening.js');
+const rtcNames = ['RTCPeerConnection', 'webkitRTCPeerConnection', 'RTCDataChannel', 'RTCRtpSender'];
+const rtcWindow = vm.createContext({});
+vm.runInContext(`class EventTarget {}
+  class RTCPeerConnection extends EventTarget {}
+  globalThis.RTCPeerConnection = RTCPeerConnection;
+  globalThis.webkitRTCPeerConnection = RTCPeerConnection;
+  globalThis.RTCDataChannel = class RTCDataChannel extends EventTarget {};
+  globalThis.RTCRtpSender = class RTCRtpSender {};
+  globalThis.keep = 1;`, rtcWindow);
+vm.runInContext(webRtcHardening, rtcWindow);
+assert.equal(vm.runInContext('globalThis.__toolboxWebRtcBlocked', rtcWindow), true);
+assert.equal(vm.runInContext('keep', rtcWindow), 1, 'Unrelated globals stay');
+for (const name of rtcNames) {
+  assert.equal(vm.runInContext(`typeof globalThis.${name}`, rtcWindow), 'undefined', `${name} must be removed`);
+  vm.runInContext(`try { globalThis.${name} = function () {}; } catch (_) {}`, rtcWindow);
+  assert.equal(vm.runInContext(`typeof globalThis.${name}`, rtcWindow), 'undefined', `${name} must not be writable`);
+  assert.throws(() => vm.runInContext(`'use strict'; Object.defineProperty(globalThis, '${name}', { value: 1 });`, rtcWindow),
+    `${name} must not be redefinable`);
+}
+const hardenedTool = read('tool-runtime/src/main/kotlin/io/toolbox/tool/runtime/HardenedRuntimeWebView.kt');
+assert(/addDocumentStartJavaScript\(\s*createdWebView,\s*RuntimeHardeningScripts\.webRtc\(context\)/.test(hardenedTool),
+  'Every tool WebView must install the WebRTC hardening script');
 
 const forbidden = [/\.addJavascriptInterface\s*\(/, /setAllowUniversalAccessFromFileURLs\(true\)/, /allowUniversalAccessFromFileURLs\s*=\s*true/];
 for (const module of ['app', 'tool-runtime']) {

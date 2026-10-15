@@ -54,7 +54,12 @@ const FeedsGroupContent = ({ category, active, activeFeedId }) => {
     e.preventDefault();
     setContextMenu({
       isOpen: true,
-      position: { x: e.clientX, y: e.clientY },
+      position: {
+        x: e.clientX,
+        y: e.clientY,
+        // The whole row, with its count and chevron, not just the link.
+        anchor: e.currentTarget.closest('[data-sidebar="menu-item"]') || e.currentTarget,
+      },
     });
   };
 

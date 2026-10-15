@@ -9,7 +9,7 @@
   const lostEvents = new Map();
   const stateListeners = new Map();
   const flushHandlers = new Set();
-  const writeMethods = new Set(['storage.apply', 'storage.set', 'storage.remove', 'storage.clear', 'storage.secure.set', 'storage.secure.remove']);
+  const writeMethods = new Set(['storage.apply', 'storage.set', 'storage.remove', 'storage.clear', 'storage.secure.set', 'storage.secure.remove', 'background.stop']);
   let sequence = 0;
   let runtimeState = null;
   let readyPromise = null;

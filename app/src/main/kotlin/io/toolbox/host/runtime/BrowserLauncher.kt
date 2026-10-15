@@ -12,8 +12,11 @@ import io.toolbox.tool.runtime.validateRuntimeBrowserUrl
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-internal fun browserViewIntent(url: String): Intent =
-    Intent(Intent.ACTION_VIEW, Uri.parse(validateRuntimeBrowserUrl(url)).normalizeScheme()).apply {
+internal fun browserViewIntent(url: String): Intent = systemBrowserIntent(validateRuntimeBrowserUrl(url))
+
+/** [url] must already be validated (strictly for tools, or by the in-app browser's page grammar). */
+internal fun systemBrowserIntent(url: String): Intent =
+    Intent(Intent.ACTION_VIEW, Uri.parse(url).normalizeScheme()).apply {
         // The selector controls resolution; the selected browser still receives ACTION_VIEW
         // and the URL. Never fall back to unselected ACTION_VIEW (which can open deep-link apps).
         // https://developer.android.com/reference/android/content/Intent#setSelector(android.content.Intent)

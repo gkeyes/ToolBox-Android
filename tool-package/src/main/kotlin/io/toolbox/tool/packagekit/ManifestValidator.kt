@@ -11,6 +11,18 @@ internal object ManifestValidator {
         "location.background", "alarms",
     )
 
+    /**
+     * The declared minHostVersion, read without the strict field and permission rules, so a package
+     * for a newer host is refused as such even when it uses fields or capabilities this host lacks.
+     */
+    fun declaredMinHostVersion(bytes: ByteArray): String? = try {
+        (StrictJson.parse(bytes) as? JsonValue.ObjectValue)?.values?.get("minHostVersion")
+            ?.let { it as? JsonValue.StringValue }?.value
+            ?.takeIf { versionPattern.matches(it) }
+    } catch (_: JsonFormatException) {
+        null
+    }
+
     fun parse(bytes: ByteArray): ToolManifest {
         val root = StrictJson.parse(bytes).asObject("manifest")
         root.requireOnly("manifest", TOP_LEVEL_FIELDS)
