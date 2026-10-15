@@ -702,9 +702,11 @@ export function createHome(api) {
     if (mode !== 'normal') { setMode('normal'); return true; }
     return false;
   }
+  // System Back while the look picker is lent to the ledger form: close only that sheet, never the selection or mode.
+  function closeTopSheet() { if (!openSheets.length) return false; closeSheet(); return true; }
   function setUi(ui) { if (ui && typeof ui.labels === 'boolean') { labelsOn = ui.labels; paintLabelBtn(); paintLabels(); } }
   paintLabelBtn();
   // Test hooks for the screenshot script: none of these change the ledger.
   const debug = { cam, items, select: id => select(items.get(id) || null), screen: (id, h = .3) => { const e = items.get(id); if (!e) return null; const r = canvas.getBoundingClientRect(); const [x, y] = project(new THREE.Vector3(e.x, h, e.z)); return [r.left + x, r.top + y]; }, mode: () => mode, setMode };
-  return { mount, hide, sync, setUi, openPicker, lendPicker, reveal, arrange, thumbs, back, debug };
+  return { mount, hide, sync, setUi, openPicker, lendPicker, reveal, arrange, thumbs, back, closeTopSheet, debug };
 }
