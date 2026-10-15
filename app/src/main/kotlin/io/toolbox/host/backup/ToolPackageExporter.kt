@@ -8,6 +8,7 @@ import io.toolbox.core.data.DataMutationLock
 import io.toolbox.tool.packagekit.PackageResourceProbe
 import io.toolbox.tool.packagekit.PackageValidationResult
 import io.toolbox.tool.packagekit.ToolPackageInspectors
+import io.toolbox.tool.packagekit.backup.BackupException
 import io.toolbox.tool.packagekit.lifecycle.InstalledPackageExport
 import java.io.File
 import java.util.UUID
