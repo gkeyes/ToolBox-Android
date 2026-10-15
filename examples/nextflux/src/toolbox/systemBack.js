@@ -20,10 +20,16 @@ export function registerBackHandler(handler) {
   };
 }
 
-function pressEscape(target) {
+// The Escape is meant for the top layer only. It stops at the document so
+// the reader's window-level Escape shortcut (close the article) never sees it.
+function pressEscape(target, doc) {
   const init = { key: "Escape", code: "Escape", keyCode: 27, which: 27, bubbles: true, cancelable: true };
-  target.dispatchEvent(new KeyboardEvent("keydown", init));
-  target.dispatchEvent(new KeyboardEvent("keyup", init));
+  for (const type of ["keydown", "keyup"]) {
+    const event = new KeyboardEvent(type, init);
+    const contain = (seen) => { if (seen === event) seen.stopPropagation(); };
+    doc.addEventListener(type, contain);
+    try { target.dispatchEvent(event); } finally { doc.removeEventListener(type, contain); }
+  }
 }
 
 function visible(element, win) {
@@ -51,12 +57,26 @@ export function closeTopLayer({ doc = document, win = window } = {}) {
   // long-press menu, and React Aria sheets, alerts and popovers.
   for (const layer of [...doc.body.children].reverse()) {
     if (layer.id === "root" || layer.tagName === "SCRIPT" || layer.dataset.nextfluxReleased) continue;
-    if (layer.matches(".PhotoView-Portal") || layer.querySelector(".PhotoView-Portal")) {
-      pressEscape(win);
+    // A layer left behind hidden and click-through (galleryRelease.js, the
+    // overlay janitor) is not open.
+    const style = win.getComputedStyle(layer);
+    if (style.visibility === "hidden" || style.pointerEvents === "none") continue;
+    // The gallery listens on window and the reader's shortcut skips Escape
+    // while it is open. A portal left hidden by galleryRelease.js is not open.
+    const gallery = layer.matches(".PhotoView-Portal") ? layer : layer.querySelector(".PhotoView-Portal");
+    if (gallery && visible(gallery, win) && win.getComputedStyle(gallery).pointerEvents !== "none") {
+      win.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", keyCode: 27, which: 27 }));
       return true;
     }
     if (layer.matches(".nextflux-context-menu") && layer.childElementCount && visible(layer, win)) {
-      pressEscape(doc);
+      pressEscape(doc, doc);
+      return true;
+    }
+    // Dropdown and select popovers hold a menu or listbox, not a dialog.
+    const list = [...layer.querySelectorAll("[role='menu'], [role='listbox']")]
+      .filter((element) => !element.closest("[data-exiting='true']") && visible(element, win)).pop();
+    if (list && !hasVisibleDialog(layer, win)) {
+      pressEscape(list, doc);
       return true;
     }
     if (hasVisibleDialog(layer, win)) {
@@ -68,7 +88,7 @@ export function closeTopLayer({ doc = document, win = window } = {}) {
         const close = dialog.querySelector("[slot='close'], .nextflux-close-button");
         if (close && !close.disabled && close.getAttribute("aria-disabled") !== "true") close.click();
       } else {
-        pressEscape(dialog);
+        pressEscape(dialog, doc);
       }
       return true;
     }
