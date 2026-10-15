@@ -9,8 +9,12 @@ import os
 from pathlib import Path
 import re
 import subprocess
+import sys
 import time
 import xml.etree.ElementTree as ET
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from app_version import computed_version  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -117,8 +121,9 @@ def main():
         raise RuntimeError("An emulator is required; physical devices are excluded")
     gradle = (ROOT / "app/build.gradle.kts").read_text()
     package = re.search(r'applicationId\s*=\s*"([^"]+)"', gradle)[1]
-    version = re.search(r'versionName\s*=\s*"([^"]+)"', gradle)[1]
-    code = re.search(r'versionCode\s*=\s*(\d+)', gradle)[1]
+    # CI on main passes the version it computed from the changelog fragments to Gradle (app_version.py).
+    version, code = computed_version(os.environ) or (re.search(r'versionName\s*=\s*"([^"]+)"', gradle)[1],
+                                                    re.search(r'versionCode\s*=\s*(\d+)', gradle)[1])
     apk = ROOT / "app/build/outputs/apk/release/app-release.apk"
     result = {"status": "FAILED", "scope": "cold_start_initial_home",
               "apk_sha256": hashlib.sha256(apk.read_bytes()).hexdigest(),
