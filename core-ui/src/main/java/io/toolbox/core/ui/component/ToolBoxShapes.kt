@@ -37,6 +37,13 @@ class ToolBoxContinuousShape(
             return Outline.Rectangle(androidx.compose.ui.geometry.Rect(0f, 0f, size.width, size.height))
         }
         val limit = minOf(size.width, size.height) / 2f
+        // A capsule radius (>= half the short side) gets a true stadium: the continuous curve at
+        // that radius reads as a rounded rectangle, not the flat pill the design calls for.
+        if (minOf(tl, tr, br, bl) >= limit) {
+            return Outline.Rounded(
+                androidx.compose.ui.geometry.RoundRect(0f, 0f, size.width, size.height, androidx.compose.ui.geometry.CornerRadius(limit)),
+            )
+        }
         fun reach(r: Float) = minOf(r * Extension, limit)
         fun handle(r: Float) = reach(r) * (Control / Extension)
         val w = size.width
