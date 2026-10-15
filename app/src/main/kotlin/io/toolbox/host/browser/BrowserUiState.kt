@@ -17,6 +17,10 @@ import androidx.compose.runtime.*
 internal class BrowserUiState {
     var webView by mutableStateOf<WebView?>(null)
     var address by mutableStateOf("")
+    /** The user let this page load past a certificate error; cleared when the SSL session ends. */
+    var certificateBypassed by mutableStateOf(false)
+    /** This HTTPS page loaded something over plain HTTP; cleared when the next page starts. */
+    var mixedContent by mutableStateOf(false)
     var title by mutableStateOf("")
     var loadProgress by mutableIntStateOf(0)
     var interaction by mutableStateOf(BrowserInteractionState())

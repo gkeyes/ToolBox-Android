@@ -74,8 +74,18 @@ internal class BrowserWebViewFactory(
         CookieManager.getInstance().setAcceptCookie(true)
         CookieManager.getInstance().setAcceptThirdPartyCookies(page, true)
         page.webViewClient = object : WebViewClient() {
-            override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? =
-                filters.intercept(view, request)
+            override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
+                filters.intercept(view, request)?.let { return it }
+                // Network thread. A plain-HTTP subresource that is actually requested marks an HTTPS page insecure.
+                if (!request.isForMainFrame && request.url.scheme == "http") {
+                    view.post {
+                        if (view === state.webView && state.address.startsWith("https:", ignoreCase = true)) {
+                            state.mixedContent = true
+                        }
+                    }
+                }
+                return null
+            }
 
             override fun onPageCommitVisible(view: WebView, url: String) {
                 if (view === state.webView) filters.applyToPage()
@@ -106,6 +116,7 @@ internal class BrowserWebViewFactory(
                 validBrowserUrl(url)?.let { state.address = it }
                 filters.navigated(url)
                 state.title = ""
+                state.mixedContent = false
                 state.error = null
                 state.loadProgress = 0
                 state.interaction = state.interaction.pageStarted()

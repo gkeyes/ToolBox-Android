@@ -23,12 +23,16 @@ import io.toolbox.core.ui.component.ToolBoxText
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 
 /** All methods and WebView callbacks must be invoked on the UI thread. */
-internal class BrowserSslController(currentPage: () -> WebView?) {
+internal class BrowserSslController(
+    currentPage: () -> WebView?,
+    bypassChanged: (Boolean) -> Unit = {},
+) {
     private var revision by mutableIntStateOf(0)
     private val session = BrowserSslSession(
         currentPage = currentPage,
         clearPreferences = WebView::clearSslPreferences,
         changed = { revision++ },
+        bypassChanged = bypassChanged,
     )
 
     val hasPrompt: Boolean

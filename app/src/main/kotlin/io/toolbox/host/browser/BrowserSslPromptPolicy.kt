@@ -38,6 +38,7 @@ internal class BrowserSslSession<Page : Any>(
     private val currentPage: () -> Page?,
     private val clearPreferences: (Page) -> Unit,
     private val changed: () -> Unit = {},
+    private val bypassChanged: (Boolean) -> Unit = {},
 ) {
     internal data class Warning<Page : Any>(
         val id: Long,
@@ -95,14 +96,19 @@ internal class BrowserSslSession<Page : Any>(
         val warning = warnings.firstOrNull()?.takeIf { it.id == id } ?: return
         warnings.removeFirst()
         changed()
-        if (allow && warning.page === page && warning.page === currentPage()) warning.proceed()
-        else warning.cancel()
+        if (allow && warning.page === page && warning.page === currentPage()) {
+            bypassChanged(true)
+            warning.proceed()
+        } else {
+            warning.cancel()
+        }
     }
 
     fun destroyPage(view: Page) {
         if (view !== page) return
         page = null
         awaitingStart = false
+        bypassChanged(false)
         clearPreferences(view)
         cancelOutstanding()
     }
@@ -111,6 +117,8 @@ internal class BrowserSslSession<Page : Any>(
         val previous = page
         page = view
         awaitingStart = false
+        // The certificate exception ends with the session, so the toolbar's warning does too.
+        bypassChanged(false)
         if (previous != null && previous !== view) clearPreferences(previous)
         clearPreferences(view)
         cancelOutstanding()

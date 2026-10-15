@@ -124,10 +124,12 @@ private fun BrowserAddressCapsule(
     val colors = ToolBoxThemeTokens.colors
     val uri = remember(state.address) { Uri.parse(state.address) }
     val unencrypted = uri.scheme == "http"
+    // A page loaded past a certificate error, or with plain-HTTP content, is no safer than HTTP.
+    val insecure = unencrypted || state.certificateBypassed || state.mixedContent
     val action = state.interaction.loadAction(state.clearing)
     val filtering = filters.snapshot.active(filters.site)
     val blocked = filters.blockedCount
-    val hostColor = if (state.interaction.unresponsive || unencrypted) colors.danger else colors.textPrimary
+    val hostColor = if (state.interaction.unresponsive || insecure) colors.danger else colors.textPrimary
     Row(
         modifier.fillMaxHeight().shadow(10.dp, RoundedCornerShape(26.dp), clip = false)
             .toolBoxSolidGlass(RoundedCornerShape(26.dp))
@@ -185,12 +187,17 @@ private fun BrowserAddressCapsule(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.Center,
         ) {
-            // On narrow phones the lock gives its room to the domain; an HTTP page keeps its warning globe.
+            // On narrow phones the lock gives its room to the domain; an insecure page keeps its warning globe.
             val narrow = LocalConfiguration.current.screenWidthDp < 360
-            if (unencrypted || !narrow) {
+            if (insecure || !narrow) {
                 ToolBoxIcon(
-                    if (unencrypted) ToolBoxIconKey.Globe else ToolBoxIconKey.Lock,
-                    if (unencrypted) "HTTP 页面" else "HTTPS 页面",
+                    if (insecure) ToolBoxIconKey.Globe else ToolBoxIconKey.Lock,
+                    when {
+                        unencrypted -> "HTTP 页面"
+                        state.certificateBypassed -> "证书有问题的页面"
+                        state.mixedContent -> "含不安全内容的页面"
+                        else -> "HTTPS 页面"
+                    },
                     modifier = Modifier.size(14.dp),
                     tint = hostColor,
                 )
@@ -206,9 +213,10 @@ private fun BrowserAddressCapsule(
             )
             // Below a 0.67 font scale the 10dp floor would exceed the 15sp maximum, which StepBased rejects.
             val minHostSize = with(LocalDensity.current) { 10.dp.toSp() }.let { if (it.value > 15f) 15.sp else it }
-            // Its own text, so cutting the domain from the start can never hide the status.
+            // Its own text, so cutting the domain from the start can never hide the status. It keeps a
+            // fixed size that follows the system font scale; only the domain shrinks.
             if (state.interaction.unresponsive) {
-                ToolBoxText("未响应 · ", maxLines = 1, style = hostStyle.copy(fontSize = minHostSize))
+                ToolBoxText("未响应 · ", maxLines = 1, style = hostStyle.copy(fontSize = 13.sp))
             }
             BasicText(
                 // Checked first: a lookup before the list loads would latch OkHttp's failure for the process.
