@@ -13,6 +13,25 @@ val verifyWebViewDebugging = providers.gradleProperty("toolbox.verifyWebViewDebu
 
 val ciRunId = providers.environmentVariable("GITHUB_RUN_ID").orNull?.toLongOrNull() ?: 0L
 
+// CI on main computes the version from the changelog fragments in changes/ (scripts/ci/app_version.py) and
+// passes it as -PtoolboxVersionName / -PtoolboxVersionCode or TOOLBOX_VERSION_NAME / TOOLBOX_VERSION_CODE.
+// Without them (pull requests, local builds) the values written in defaultConfig apply; pull requests never
+// edit those (scripts/ci/version_bump.py), so they only seed the first build when `dev` has none.
+fun versionInput(property: String, variable: String): String? =
+    (providers.gradleProperty(property).orNull ?: providers.environmentVariable(variable).orNull)?.takeIf { it.isNotBlank() }
+
+val computedVersionName = versionInput("toolboxVersionName", "TOOLBOX_VERSION_NAME")
+val computedVersionCode = versionInput("toolboxVersionCode", "TOOLBOX_VERSION_CODE")
+check((computedVersionName == null) == (computedVersionCode == null)) {
+    "The computed versionName and versionCode must be passed together."
+}
+check(computedVersionName == null || Regex("(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)").matches(computedVersionName)) {
+    "Computed versionName must be MAJOR.MINOR.PATCH: $computedVersionName"
+}
+check(computedVersionCode == null || (computedVersionCode.toIntOrNull() ?: 0) > 0) {
+    "Computed versionCode must be a positive integer: $computedVersionCode"
+}
+
 val stableSigningStoreFile = providers.environmentVariable("TOOLBOX_SIGNING_STORE_FILE").orNull
 val stableSigningStorePassword = providers.environmentVariable("TOOLBOX_SIGNING_STORE_PASSWORD").orNull
 val stableSigningKeyAlias = providers.environmentVariable("TOOLBOX_SIGNING_KEY_ALIAS").orNull
@@ -46,6 +65,8 @@ val packageBundledExamples = tasks.register<Exec>("packageBundledExamples") {
     bundledExampleNames.forEach { name -> inputs.dir(rootProject.layout.projectDirectory.dir("examples/$name")) }
     inputs.file(tbxTargetsFile)
     inputs.file(rootProject.layout.projectDirectory.file("scripts/package-examples.sh"))
+    // package-examples.sh hands every staged example to the shared packager, so a packager change repackages them.
+    inputs.file(rootProject.layout.projectDirectory.file("scripts/package-tool.py"))
     outputs.dir(bundledExamplesDir)
     // Start from an empty directory so a renamed or un-bundled example's old .tbx is never shipped.
     val outputDirectory = bundledExamplesDir.get().asFile
@@ -106,8 +127,10 @@ android {
         applicationId = "io.toolbox.host"
         minSdk = 33
         targetSdk = 37
-        versionCode = 87
-        versionName = "0.14.1"
+        versionCode = 94
+        versionName = "0.13.18"
+        computedVersionCode?.let { versionCode = it.toInt() }
+        computedVersionName?.let { versionName = it }
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // In-app updates read this repository's releases and compare against the CI run that built the APK.
         buildConfigField("String", "UPDATE_REPOSITORY", "\"gkeyes/toolbox-android\"")

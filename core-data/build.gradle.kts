@@ -25,6 +25,12 @@ ksp {
     arg("room.schemaLocation", "$projectDir/schemas")
 }
 
+// ToolBoxSchemaHistoryTest reads the exported Room schemas on the JVM, so a schema-only change (edit, delete or
+// rename) must re-run the unit tests instead of restoring a cached result.
+tasks.withType<Test>().configureEach {
+    inputs.dir("schemas").withPathSensitivity(PathSensitivity.RELATIVE).withPropertyName("roomSchemas")
+}
+
 dependencies {
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)

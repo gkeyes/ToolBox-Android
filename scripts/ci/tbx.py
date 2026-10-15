@@ -153,6 +153,10 @@ def selected_tests(name, changed, requested_filter, full, registry=None):
             elif name == "rss-scout" and relative in {"package.json", "package-lock.json"}:
                 # RSS Scout's npm dependencies are test-only, so a dependency change must install and run them.
                 selected |= unit_files
+            elif registry[name].get("npm") and relative in {"package.json", "package-lock.json"}:
+                # A built tool's dependencies ship in its .tbx and can break it at runtime without failing
+                # the build, so a dependency change runs every registered test (npm test and the browser suite).
+                return {**result, "full_tests": True}
             elif relative in {"manifest.json", "package.json", "package-lock.json", "README.md", "package.sh", "THIRD_PARTY_NOTICES.txt"}:
                 continue
             elif name == "nextflux" and (relative.startswith("src/") or relative.startswith("test/browser/fixtures/")
