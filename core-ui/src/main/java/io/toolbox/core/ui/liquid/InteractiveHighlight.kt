@@ -1,7 +1,7 @@
 /*
  * Vendored from Kyant0/AndroidLiquidGlass (https://github.com/Kyant0/AndroidLiquidGlass),
  * catalog app @ 65ab177, Copyright Kyant, licensed under the Apache License 2.0
- * (http://www.apache.org/licenses/LICENSE-2.0). Package renamed.
+ * (http://www.apache.org/licenses/LICENSE-2.0). Package renamed; touch position and size exposed for the rim highlight.
  */
 package io.toolbox.core.ui.liquid
 
@@ -43,6 +43,13 @@ class InteractiveHighlight(
     val pressProgress: Float get() = pressProgressAnimation.value
     val offset: Offset get() = positionAnimation.value - startPosition
 
+    /** Where the finger is, in the control's coordinates (it springs back to the touch-down point on release). */
+    val touchPosition: Offset get() = positionAnimation.value
+
+    /** The control's size as last drawn, so the rim highlight can aim at the finger. */
+    var size: Size = Size.Unspecified
+        private set
+
     private val shader =
         if (isRuntimeShaderSupported()) {
             RuntimeShader(
@@ -64,6 +71,7 @@ half4 main(float2 coord) {
 
     val modifier: Modifier =
         Modifier.drawWithContent {
+            this@InteractiveHighlight.size = size
             val progress = pressProgressAnimation.value
             if (progress > 0f) {
                 if (shader != null) {
