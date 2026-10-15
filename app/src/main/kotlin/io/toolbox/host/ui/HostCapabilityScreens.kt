@@ -372,6 +372,9 @@ private const val RUNTIME_PAGE_BACK_SCRIPT =
 /** A page busy for longer than this is treated as not handling Back, so Back never feels dead. */
 private const val RUNTIME_PAGE_BACK_TIMEOUT_MS = 400L
 
+/** Backs in a row the page may take within the exit window before the host takes the next one. */
+private const val PAGE_BACK_STREAK = 2
+
 /**
  * Back is offered to the page first through [askPage] (see [askPageToHandleBack]); only a Back the
  * page leaves alone counts here. The first such Back is consumed and only shows a short hint. A
@@ -409,11 +412,17 @@ internal fun RuntimeExitConfirmation(
         if (!hintVisible) glass.release()
     }
 
-    // While the page is deciding, further Backs are swallowed rather than queued.
+    // While the page is deciding, one further Back waits for its answer instead of being lost.
     var askingPage by remember { mutableStateOf(false) }
+    var pendingBackAt by remember { mutableLongStateOf(0L) }
+    // When the page took the last two Backs within the window, the next one goes to the host, so a
+    // page that cancels every Back can't trap the user without a way out.
+    val pageTookBackAt = remember { LongArray(PAGE_BACK_STREAK) }
+    var disposed by remember { mutableStateOf(false) }
+    DisposableEffect(Unit) { onDispose { disposed = true } }
     val currentAskPage by rememberUpdatedState(askPage)
     fun exitBack(now: Long) {
-        if (leaving) return
+        if (leaving || disposed) return
         if (shouldExitRuntimeOnBack(lastBackAt, now)) {
             lastBackAt = 0L
             leaving = true
@@ -425,19 +434,39 @@ internal fun RuntimeExitConfirmation(
         }
     }
 
+    fun offerBack(now: Long) {
+        val ask = currentAskPage
+        val pageKeepsBack = pageTookBackAt.all { it != 0L && now - it <= RUNTIME_EXIT_BACK_WINDOW_MS }
+        // While the exit hint shows, the next Back confirms it rather than going to the page again.
+        val hintShowing = shouldExitRuntimeOnBack(lastBackAt, now)
+        if (ask == null || pageKeepsBack || hintShowing) {
+            pageTookBackAt.fill(0L)
+            exitBack(now)
+            return
+        }
+        askingPage = true
+        ask { handled ->
+            if (disposed) return@ask
+            askingPage = false
+            if (handled) {
+                pageTookBackAt.copyInto(pageTookBackAt, 0, 1)
+                pageTookBackAt[PAGE_BACK_STREAK - 1] = now
+            } else {
+                pageTookBackAt.fill(0L)
+                exitBack(now)
+            }
+            val pending = pendingBackAt
+            if (pending != 0L) {
+                pendingBackAt = 0L
+                if (!leaving) offerBack(pending)
+            }
+        }
+    }
+
     BackHandler(enabled = !leaving) {
         // The press time, not the answer time, counts towards the confirmation window.
         val now = SystemClock.elapsedRealtime()
-        val ask = currentAskPage
-        if (ask == null) {
-            exitBack(now)
-        } else if (!askingPage) {
-            askingPage = true
-            ask { handled ->
-                askingPage = false
-                if (!handled) exitBack(now)
-            }
-        }
+        if (askingPage) pendingBackAt = now else offerBack(now)
     }
 
     AnimatedVisibility(
