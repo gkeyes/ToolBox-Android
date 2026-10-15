@@ -126,9 +126,24 @@
   transition-property: left, right, top, width, height, inset, translate, transform, scale, box-shadow;
 }
 .article-list-tabs .tabs__indicator,
+.article-list-inline-tabs .article-list-tabs .tabs__indicator,
+.article-list-inline-tabs .tabs__indicator,
 .nf-segmented .tabs__indicator {
   background: color-mix(in srgb, var(--nf-seg-pill) 82%, transparent);
   box-shadow: var(--nf-btn-rim);
+  -webkit-backdrop-filter: blur(4px) saturate(180%) brightness(1.05);
+  backdrop-filter: blur(4px) saturate(180%) brightness(1.05);
+}
+/* A held segment that isn't selected yet answers under the finger. */
+.tabs__tab:not([aria-selected="true"]):is(:active, [data-pressed="true"], [data-nf-pressed="true"]) {
+  border-radius: 999px;
+  background: radial-gradient(circle at var(--nf-gx, 50%) var(--nf-gy, 50%), rgb(255 255 255 / 0.55), rgb(255 255 255 / 0.18) 70%);
+  scale: 1.04;
+  transition: scale var(--nf-press-in);
+}
+.dark .tabs__tab:not([aria-selected="true"]):is(:active, [data-pressed="true"], [data-nf-pressed="true"]),
+[data-theme="dark"] .tabs__tab:not([aria-selected="true"]):is(:active, [data-pressed="true"], [data-nf-pressed="true"]) {
+  background: radial-gradient(circle at var(--nf-gx, 50%) var(--nf-gy, 50%), rgb(255 255 255 / 0.22), rgb(255 255 255 / 0.06) 70%);
 }
 /* Selection commits on press, so the pill under a held segment is its own. */
 .tabs__list:has(.tabs__tab[aria-selected="true"]:is(:active, [data-pressed="true"], [data-nf-pressed="true"])) .tabs__indicator {
@@ -160,9 +175,11 @@
   .button.button--primary:not(.nf-set-row) { --nf-btn-glass: var(--accent); }
   .button.button--danger:not(.nf-set-row) { --nf-btn-glass: var(--nf-btn-danger); }
   .article-list-tabs .tabs__indicator,
-  .nf-segmented .tabs__indicator { background: #FFFFFF; }
-  .dark :is(.article-list-tabs, .nf-segmented) .tabs__indicator,
-  [data-theme="dark"] :is(.article-list-tabs, .nf-segmented) .tabs__indicator { background: #636366; }
+  .article-list-inline-tabs .article-list-tabs .tabs__indicator,
+  .article-list-inline-tabs .tabs__indicator,
+  .nf-segmented .tabs__indicator { background: #FFFFFF; -webkit-backdrop-filter: none; backdrop-filter: none; }
+  .dark :is(.article-list-tabs, .article-list-inline-tabs, .nf-segmented) .tabs__indicator,
+  [data-theme="dark"] :is(.article-list-tabs, .article-list-inline-tabs, .nf-segmented) .tabs__indicator { background: #636366; }
   .switch:not([data-disabled="true"], [aria-disabled="true"]):is(:active, [data-pressed="true"], [data-nf-pressed="true"]) .switch__thumb {
     background: #FFFFFF;
     -webkit-backdrop-filter: none;

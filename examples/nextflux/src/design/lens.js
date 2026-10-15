@@ -207,7 +207,7 @@ export function installLens({ doc = document, win = window } = {}) {
 // Press state for the glass buttons: where the finger is (the sheen follows
 // it) and a data-nf-pressed flag, from touch as well as pointer events, since
 // some Android WebViews deliver no pointer events for a touch.
-const PRESSABLE = ".button:not(.nf-set-row), .tabs__tab, .switch";
+const PRESSABLE = ".button:not(.nf-set-row), .nextflux-close-button, .tabs__tab, .switch";
 const DISABLED = ':disabled, [data-disabled="true"], [aria-disabled="true"]';
 export function installGlassPress({ doc = document } = {}) {
   let pressed = null;
