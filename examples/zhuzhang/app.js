@@ -4,7 +4,7 @@
   // Ledger money is integer cents. DOM content originating from users is escaped.
   const KEY = 'ledger.v1';
   const runtime = window.ZZRuntime;
-  const VERSION = '1.5.8';
+  const VERSION = '1.5.9';
   const MAX_CENTS = 100000000000;
   const $ = s => document.querySelector(s);
   const $$ = s => [...document.querySelectorAll(s)];
@@ -169,7 +169,14 @@
     const hide=()=>hideToast();
     if(action)el.querySelector('.toast-action').onclick=()=>{hide();action.run();};
     try{if(el.showPopover&&!el.matches(':popover-open'))el.showPopover();}catch(_){}
-    el.classList.add('show');toastTimer=setTimeout(hide,ms||(action||warn?5200:3000));
+    placeToast(el);el.classList.add('show');toastTimer=setTimeout(hide,ms||(action||warn?5200:3000));
+  }
+  // On 我的家 (phone) the notice sits under the title; with a sheet open it goes just above the sheet so it covers none of it.
+  function placeToast(el){
+    el.style.top='';el.style.bottom='';
+    if(ui.page!=='home'||!$('#sheet').open||!matchMedia('(max-width:700px)').matches)return;
+    const sheetTop=$('#sheet').getBoundingClientRect().top,safe=parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--toolbox-safe-area-top'))||0;
+    el.style.bottom='auto';el.style.top=Math.max(safe+8,sheetTop-el.offsetHeight-12)+'px';
   }
   // only: hide just when that text is still showing, so a newer notice stays.
   function hideToast(only){
@@ -772,6 +779,8 @@
   window.addEventListener('toolboxback',e=>{if(closeTop())e.preventDefault();});
   function closeTop(){
     if($('#guard').open){if(!draftBusy){cancelWait();pendingNavigation=null;closeGuard();}return true;}
+    // 「选外观」 sits above the form in its own dialog; it closes first (still true while it slides away).
+    if($('#look-dialog').open){homeState.mod?.closeTopSheet();return true;}
     if(window.ZZCalendar?.isOpen){window.ZZCalendar.close();return true;}
     if($('#picker').open){$('#picker').close();return true;}
     if($('#sheet').open){closeDialog();return true;}
