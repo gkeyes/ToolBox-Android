@@ -16,7 +16,8 @@ import androidx.compose.ui.graphics.GraphicsLayerScope
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.layout.LayoutCoordinates
-import androidx.compose.ui.layout.positionInWindow
+import androidx.compose.ui.layout.positionOnScreen
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.Density
@@ -46,15 +47,22 @@ class ToolBoxWindowGlass internal constructor() {
     val ready: Boolean get() = copy != null
 }
 
-/** [hostView] is the page's view: read LocalView outside the Dialog. */
+/**
+ * [hostView] is the page's view: read LocalView outside the Dialog or popup. The copy is taken
+ * once [active] turns true (the overlay is showing) and again after a resize.
+ */
 @Composable
-fun rememberToolBoxWindowGlass(hostView: View): ToolBoxWindowGlass {
+fun rememberToolBoxWindowGlass(hostView: View, active: Boolean = true): ToolBoxWindowGlass {
     val glass = remember { ToolBoxWindowGlass() }
     val live = ToolBoxThemeTokens.materials.realBlurEnabled && hostView.isHardwareAccelerated
     val configuration = LocalConfiguration.current
-    LaunchedEffect(hostView, live, configuration.screenWidthDp, configuration.screenHeightDp) {
-        glass.copy = null
-        if (!live) return@LaunchedEffect
+    LaunchedEffect(hostView, live, active, configuration.screenWidthDp, configuration.screenHeightDp) {
+        if (!live) {
+            glass.copy = null
+            return@LaunchedEffect
+        }
+        // A closing overlay keeps its last copy, so it doesn't turn solid while it animates out.
+        if (!active) return@LaunchedEffect
         // Let the page settle at its current size before copying it.
         withFrameNanos { }
         withFrameNanos { }
@@ -72,7 +80,9 @@ private class WindowCopyBackdrop(private val copy: WindowBackdrop) : Backdrop {
         coordinates: LayoutCoordinates?,
         layerBlock: (GraphicsLayerScope.() -> Unit)?,
     ) {
-        val origin = coordinates?.takeIf { it.isAttached }?.positionInWindow() ?: return
+        val node = coordinates?.takeIf { it.isAttached } ?: return
+        // On screen, not in window: popups and dialogs need not share the page window's origin.
+        val origin = node.positionOnScreen() - copy.rootOnScreen
         val pageSize = IntSize(
             (copy.image.width / copy.scale).roundToInt(),
             (copy.image.height / copy.scale).roundToInt(),
@@ -84,20 +94,20 @@ private class WindowCopyBackdrop(private val copy: WindowBackdrop) : Backdrop {
 }
 
 /**
- * Draws [glass] behind this node: the page frosted by [blurRadius] (colours and shapes stay, text
- * does not read), refracted at the rounded edge, under the overlay fill. Before the copy lands, or
- * with 实色材质 on, it draws the opaque overlay fallback instead.
+ * Liquid Glass over a copy of the page: the page frosted by [blurRadius] (colours and shapes stay,
+ * text does not read), refracted at the rounded edge with a rim highlight, under [fill]. [motion]
+ * reads whatever moves the panel (a slide, a drag), so the copy is re-aligned on every frame of it.
  */
 @Composable
-fun Modifier.toolBoxWindowGlassEffect(glass: ToolBoxWindowGlass, cornerRadius: Dp, blurRadius: Dp = 28.dp): Modifier {
-    val materials = ToolBoxThemeTokens.materials
-    val copy = glass.copy
-    if (copy == null || !materials.realBlurEnabled || !LocalView.current.isHardwareAccelerated) {
-        return background(materials.overlayFallback)
-    }
+internal fun Modifier.snapshotGlass(
+    copy: WindowBackdrop,
+    cornerRadius: Dp,
+    blurRadius: Dp,
+    fill: () -> Color,
+    motion: () -> Unit = {},
+): Modifier {
     val backdrop = remember(copy) { WindowCopyBackdrop(copy) }
     val lensShape = remember(cornerRadius) { RoundedCornerShape(cornerRadius) }
-    val fill = materials.overlayFill
     return drawBackdrop(
         backdrop = backdrop,
         shape = { lensShape },
@@ -112,6 +122,30 @@ fun Modifier.toolBoxWindowGlassEffect(glass: ToolBoxWindowGlass, cornerRadius: D
         },
         highlight = { Highlight.Default },
         shadow = null,
-        onDrawSurface = { drawRect(fill) },
+        onDrawBackdrop = { draw ->
+            motion()
+            draw()
+        },
+        onDrawSurface = { drawRect(fill()) },
     )
+}
+
+/**
+ * Draws [glass] behind this node (see [snapshotGlass]). Before the copy lands, or with 实色材质
+ * on, it draws the opaque [fallback] instead.
+ */
+@Composable
+fun Modifier.toolBoxWindowGlassEffect(
+    glass: ToolBoxWindowGlass,
+    cornerRadius: Dp,
+    blurRadius: Dp = 28.dp,
+    fill: Color = ToolBoxThemeTokens.materials.overlayFill,
+    fallback: Color = ToolBoxThemeTokens.materials.overlayFallback,
+    motion: () -> Unit = {},
+): Modifier {
+    val copy = glass.copy
+    if (copy == null || !ToolBoxThemeTokens.materials.realBlurEnabled || !LocalView.current.isHardwareAccelerated) {
+        return background(fallback)
+    }
+    return snapshotGlass(copy, cornerRadius, blurRadius, { fill }, motion)
 }

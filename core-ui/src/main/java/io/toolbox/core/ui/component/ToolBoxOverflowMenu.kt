@@ -24,6 +24,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.paneTitle
@@ -77,6 +78,8 @@ fun ToolBoxOverflowMenu(
         }
         // Miuix draws an opaque 16dp surface behind the list; make it transparent so the iOS
         // context-menu panel below supplies the shape, material, rim and shadow.
+        // The menu is its own popup window: its glass refracts a copy of the page, taken on open.
+        val glass = rememberToolBoxWindowGlass(LocalView.current, active = expanded)
         MiuixTheme(colors = MiuixTheme.colorScheme.copy(surfaceContainer = Color.Transparent)) {
             WindowListPopup(
                 show = expanded,
@@ -97,7 +100,7 @@ fun ToolBoxOverflowMenu(
             ) {
                 // The nested MiuixTheme may re-provide its own indication; keep the flat iOS highlight.
                 CompositionLocalProvider(LocalIndication provides ToolBoxPressIndication) {
-                    ToolBoxContextMenuPanel {
+                    ToolBoxContextMenuPanel(glass) {
                         actions.forEachIndexed { index, action ->
                             if (index > 0) {
                                 val previous = actions[index - 1]
@@ -129,15 +132,14 @@ private val ContextMenuItemShape = ToolBoxContinuousShape(20.dp)
 /**
  * iOS 27 context-menu panel: a 26dp continuous rounded panel of menu glass, a 0.5dp light rim and
  * a soft drop shadow. The popup is its own window and cannot sample the app's recorded glass layer,
- * so it draws the denser translucent menu fallback. The outer padding leaves room for the shadow
- * inside the popup window's own clip.
+ * so its liquid glass refracts a copy of the page ([glass]); it is solid until the copy lands. The
+ * outer padding leaves room for the shadow inside the popup window's own clip.
  */
 @Composable
-private fun ToolBoxContextMenuPanel(content: @Composable ColumnScope.() -> Unit) {
+private fun ToolBoxContextMenuPanel(glass: ToolBoxWindowGlass, content: @Composable ColumnScope.() -> Unit) {
     val colors = ToolBoxThemeTokens.colors
     val materials = ToolBoxThemeTokens.materials
     val dark = colors.surface.luminance() < 0.5f
-    val fill = materials.menuFallback
     Box(Modifier.padding(10.dp)) {
         Column(
             Modifier
@@ -146,7 +148,7 @@ private fun ToolBoxContextMenuPanel(content: @Composable ColumnScope.() -> Unit)
                     ambientColor = Color.Black.copy(alpha = if (dark) 0.6f else 0.22f),
                     spotColor = Color.Black.copy(alpha = if (dark) 0.6f else 0.22f))
                 .clip(ContextMenuShape)
-                .background(fill)
+                .toolBoxWindowGlassEffect(glass, 26.dp, fill = materials.menuFill, fallback = materials.menuFallback)
                 .border(0.5.dp, materials.overlayBorder, ContextMenuShape)
                 .verticalScroll(rememberScrollState())
                 .padding(6.dp),

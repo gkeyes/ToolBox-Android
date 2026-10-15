@@ -74,6 +74,8 @@ fun ToolBoxAlertDialog(
     icon: (@Composable () -> Unit)? = null,
     content: (@Composable ColumnScope.() -> Unit)? = null,
 ) {
+    // Read outside the Dialog: this is the page's view, which the alert glass copies.
+    val glass = rememberToolBoxWindowGlass(LocalView.current)
     Dialog(
         onDismissRequest = onDismissRequest,
         properties = DialogProperties(
@@ -91,15 +93,15 @@ fun ToolBoxAlertDialog(
             val previousDim = window.attributes.dimAmount
             window.setDimAmount(0f)
             // No window blur: it would blur the whole page, which stays sharp behind an iOS 26
-            // alert. The alert window cannot sample the app's recorded glass layer, so it draws
-            // the denser translucent overlay fallback.
+            // alert. The alert window cannot sample the app's recorded glass layer, so its liquid
+            // glass refracts a copy of the page instead.
             onDispose { window.setDimAmount(previousDim) }
         }
         // iOS alerts settle in from slightly larger than final size while the dim fades in.
         val appear = remember { Animatable(0f) }
         LaunchedEffect(appear) { appear.animateTo(1f, ToolBoxMotion.DialogEnter) }
-        val shape = toolBoxShape(ToolBoxThemeTokens.radii.dialog)
-        val fill = materials.overlayFallback
+        val radius = ToolBoxThemeTokens.radii.dialog
+        val shape = toolBoxShape(radius)
         val scrim = colors.scrim
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Box(
@@ -129,7 +131,7 @@ fun ToolBoxAlertDialog(
                         spotColor = Color.Black.copy(alpha = if (dark) 0.6f else 0.22f),
                     )
                     .clip(shape)
-                    .background(fill)
+                    .toolBoxWindowGlassEffect(glass, radius) { appear.value }
                     .border(0.5.dp, materials.overlayBorder, shape)
                     .semantics { paneTitle = title }
                     .verticalScroll(rememberScrollState())
