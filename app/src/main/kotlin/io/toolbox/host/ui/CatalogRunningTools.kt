@@ -220,6 +220,7 @@ private fun runningToolStatusLines(
 /**
  * Grouped-list row for a running session (iOS 27): the tool tile with a live dot, name and status
  * lines, and a round stop button. Hairline separators are drawn by the surrounding list.
+ * [dangerStop] tints the stop button red, as on the safeguards page.
  */
 @Composable
 internal fun RunningToolRow(
@@ -229,9 +230,10 @@ internal fun RunningToolRow(
     canStop: Boolean,
     onOpen: (() -> Unit)?,
     onStop: () -> Unit,
+    dangerStop: Boolean = false,
 ) {
     val colors = ToolBoxThemeTokens.colors
-    val visual = tool?.visual(colors.primary) ?: ToolVisual(ToolBoxIconKey.Tools, colors.primary)
+    val visual = tool?.visual(colors.primary) ?: toolVisual(session.toolId, session.toolName, colors.primary)
     val interaction = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
     Row(
         modifier = Modifier.fillMaxWidth().testTag("catalog-running-${session.sessionId}"),
@@ -283,6 +285,7 @@ internal fun RunningToolRow(
             onStop = onStop,
             discSize = 38.dp,
             modifier = Modifier.padding(end = 6.dp),
+            danger = dangerStop,
         )
     }
 }
@@ -322,6 +325,7 @@ private fun RunningToolStopButton(
     onStop: () -> Unit,
     discSize: androidx.compose.ui.unit.Dp,
     modifier: Modifier = Modifier,
+    danger: Boolean = false,
 ) {
     val colors = ToolBoxThemeTokens.colors
     val dark = colors.surface.luminance() < 0.5f
@@ -340,13 +344,18 @@ private fun RunningToolStopButton(
                 .toolBoxPressFeedback(stopInteraction, enabled = canStop, shape = CircleShape)
                 .clip(CircleShape)
                 .background(
-                    if (stopping) colors.danger.copy(alpha = if (dark) 0.18f else 0.10f)
+                    if (stopping || danger) colors.danger.copy(alpha = if (dark) 0.18f else 0.10f)
                     else Color(0xFF767680).copy(alpha = if (dark) 0.24f else 0.12f),
                 ),
             contentAlignment = Alignment.Center,
         ) {
+            val glyph = when {
+                !canStop -> colors.textTertiary
+                danger -> colors.danger
+                else -> colors.onSoftSuccess
+            }
             if (stopping) io.toolbox.core.ui.component.ToolBoxBusyIndicator()
-            else Box(Modifier.size(12.dp).clip(toolBoxShape(3.dp)).background(if (canStop) colors.onSoftSuccess else colors.textTertiary))
+            else Box(Modifier.size(12.dp).clip(toolBoxShape(3.dp)).background(glyph))
         }
     }
 }

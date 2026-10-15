@@ -177,6 +177,8 @@ fun ToolBoxCollapsingTopBar(
     onNavigationClick: (() -> Unit)? = null,
     glassState: ToolBoxGlassState? = null,
     statusBarPadding: Boolean = true,
+    /** False for a page with only the 17sp bar title (no large title block below the bar). */
+    largeTitle: Boolean = true,
     actions: @Composable RowScope.() -> Unit = {},
 ) {
     val colors = ToolBoxThemeTokens.colors
@@ -192,7 +194,7 @@ fun ToolBoxCollapsingTopBar(
 
     Box(modifier.fillMaxWidth()) {
         // Large title first so the bar draws over it as it slides up.
-        Box(
+        if (largeTitle) Box(
             Modifier.fillMaxWidth()
                 .windowInsetsPadding(insets)
                 .padding(top = ToolBoxThemeTokens.sizes.topBar)
@@ -260,7 +262,7 @@ fun ToolBoxCollapsingTopBar(
             onNavigationClick = onNavigationClick,
             glassState = glassState,
             windowInsets = insets,
-            titleAlpha = { toolBoxBarTitleAlpha(progress(readScrolled())) },
+            titleAlpha = { if (largeTitle) toolBoxBarTitleAlpha(progress(readScrolled())) else 1f },
             actions = actions,
         )
     }

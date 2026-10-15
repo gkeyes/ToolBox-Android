@@ -177,7 +177,7 @@ private fun BrowserAddressCapsule(
         Row(
             Modifier.weight(1f).fillMaxHeight()
                 .clickable(role = Role.Button, onClickLabel = "查看完整地址", onClick = { state.fullAddress = true })
-                .padding(horizontal = 4.dp),
+                .padding(horizontal = 2.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.Center,
         ) {
@@ -187,9 +187,9 @@ private fun BrowserAddressCapsule(
                 modifier = Modifier.size(14.dp),
                 tint = hostColor,
             )
-            Spacer(Modifier.width(5.dp))
+            Spacer(Modifier.width(4.dp))
             ToolBoxText(
-                (if (state.interaction.unresponsive) "未响应 · " else "") + uri.host.orEmpty(),
+                (if (state.interaction.unresponsive) "未响应 · " else "") + browserDisplayHost(uri.host.orEmpty()),
                 modifier = Modifier.weight(1f, fill = false),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
