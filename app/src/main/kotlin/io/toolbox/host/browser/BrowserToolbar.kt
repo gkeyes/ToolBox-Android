@@ -37,6 +37,10 @@ import io.toolbox.core.ui.component.ToolBoxText
 import io.toolbox.core.ui.component.toolBoxPressFeedback
 import io.toolbox.core.ui.component.toolBoxSolidGlass
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
+import io.toolbox.core.ui.component.toolBoxClearGlass
+import io.toolbox.core.ui.component.toolBoxGlassPress
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.runtime.getValue
 
 /** Round glass close button floating over the page's top-left corner, as in the iOS 27 design. */
 @Composable
@@ -66,8 +70,11 @@ private fun BrowserRefreshButton(
             )
         }
     }
+    val pressed by interactionSource.collectIsPressedAsState()
     Box(
         Modifier.size(40.dp)
+            // iOS borderless glyph: it dims under the finger.
+            .graphicsLayer { alpha = if (pressed) 0.35f else 1f }
             .clickable(
                 enabled = enabled,
                 interactionSource = interactionSource,
@@ -131,8 +138,10 @@ private fun BrowserAddressCapsule(
     val blocked = filters.blockedCount
     val hostColor = if (state.interaction.unresponsive || insecure) colors.danger else colors.textPrimary
     Row(
-        modifier.fillMaxHeight().shadow(10.dp, RoundedCornerShape(26.dp), clip = false)
-            .toolBoxSolidGlass(RoundedCornerShape(26.dp))
+        // Glass rim and soft shadow; the fill stays nearly opaque because the bar can't blur the
+        // live web page under it, and the address must stay readable over any page.
+        modifier.fillMaxHeight()
+            .toolBoxClearGlass(RoundedCornerShape(26.dp), tint = ToolBoxThemeTokens.materials.overlayFallback.copy(alpha = 0.88f))
             .padding(horizontal = 4.dp)
             .testTag("browser_address"),
         verticalAlignment = Alignment.CenterVertically,
@@ -262,9 +271,8 @@ private fun BrowserGlassCircle(
     val interaction = remember { MutableInteractionSource() }
     Box(
         modifier.size(size)
-            .toolBoxPressFeedback(interaction, enabled = enabled, shape = CircleShape)
-            .shadow(10.dp, CircleShape, clip = false)
-            .toolBoxSolidGlass(CircleShape)
+            .toolBoxGlassPress(interaction, enabled = enabled)
+            .toolBoxClearGlass(CircleShape, tint = ToolBoxThemeTokens.materials.overlayFallback.copy(alpha = 0.88f))
             .clickable(enabled = enabled, interactionSource = interaction, indication = null, role = Role.Button, onClick = onClick)
             .semantics { contentDescription = label },
         contentAlignment = Alignment.Center,
