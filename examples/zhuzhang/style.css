@@ -540,7 +540,7 @@ body[data-page=home] .workspace{padding-bottom:0}
 /* 「已放进…」 sits at the top of 我的家, under the title, so the room it points at stays in view */
 body[data-page="home"] #toast.has-action{top:calc(var(--home-top,64px) + 78px);bottom:auto}
 /* 1.5.1: on 我的家 the toast sits under the title so it never covers the 摆放 tray or the 户型 bar. */
-@media(max-width:700px){body[data-page="home"] #toast{top:calc(var(--home-top,81px) + 62px);bottom:auto;transform:translate(-50%,-15px)}body[data-page="home"] #toast.show{transform:translate(-50%,0)}}
+@media(max-width:700px){body[data-page="home"] #toast{top:calc(var(--home-top,81px) + 62px);bottom:auto;transform:translate(-50%,-15px)}body[data-page="home"] #toast.show{transform:translate(-50%,0)}body[data-page="home"]:has(#sheet[open]) #toast{top:auto;bottom:calc(96px + env(safe-area-inset-bottom))}}
 .hv[data-mode="resize"] .hv-label{color:var(--ink)}
 @media (prefers-color-scheme:dark){.hv[data-mode="resize"] .hv-label{color:#f2f6f2;background:#17201cdb!important}.hv[data-mode="resize"] .hv-label small{color:#d2dbd4}}
 /* 1.5.6: a tap waiting for a 我的家 background save shows it is in progress. */
