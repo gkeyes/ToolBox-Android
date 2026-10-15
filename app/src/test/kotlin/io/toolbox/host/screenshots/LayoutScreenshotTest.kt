@@ -43,6 +43,7 @@ import io.toolbox.core.data.CatalogGroup
 import io.toolbox.core.data.CatalogLayout
 import io.toolbox.core.data.TaskState
 import io.toolbox.core.ui.theme.ToolBoxTheme
+import io.toolbox.core.ui.theme.ToolBoxThemeMode
 import io.toolbox.host.background.BackgroundSafeguardsContent
 import io.toolbox.host.background.BackgroundSystemState
 import io.toolbox.host.background.BackgroundTasksContent
@@ -265,7 +266,18 @@ class LayoutScreenshotTest(private val fontScale: Float) {
 
     @Test fun settings() = render("settings") { Primary(MainDestination.Settings) }
 
-    @Test fun groupFolder() = render("group_folder", dialog = true) {
+    @Test fun groupFolder() = render("group_folder", dialog = true) { GroupFolderOverHome() }
+
+    /** Phone height, so the home grid sits right behind the group's title and panel. */
+    @Config(qualifiers = "w320dp-h800dp-xxhdpi")
+    @Test fun groupFolderPhone() = render("group_folder_phone", dialog = true) { GroupFolderOverHome() }
+
+    @Config(qualifiers = "w320dp-h800dp-xxhdpi")
+    @Test fun groupFolderPhoneDark() = render("group_folder_phone_dark", dialog = true) {
+        ToolBoxTheme(mode = ToolBoxThemeMode.Dark) { GroupFolderOverHome() }
+    }
+
+    @Composable private fun GroupFolderOverHome() {
         Box(Modifier.fillMaxSize()) { Catalog(home = true) }
         CatalogGroupFolderOverlay(groups[0], tools.filter { it.toolId in groups[0].members }, editing = false, {}, {}, {}, {})
     }

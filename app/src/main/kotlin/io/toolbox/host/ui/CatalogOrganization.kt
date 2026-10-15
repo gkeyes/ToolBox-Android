@@ -549,14 +549,16 @@ internal fun CatalogGroupFolderOverlay(
     val colors = ToolBoxThemeTokens.colors
     val materials = ToolBoxThemeTokens.materials
     val dark = colors.surface.luminance() < 0.5f
+    // Read outside the Dialog: this is the home page's view, which the panel glass copies.
+    val glass = rememberToolBoxWindowGlass(LocalView.current)
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
     ) {
         val window = (LocalView.current.parent as? DialogWindowProvider)?.window
-        // See-through glass like the design draft: the home page stays sharp behind the group (no
-        // window blur), under a veil deep enough that its titles and icons don't read through the
-        // group's own text. "降低透明度" turns both the veil and the panel near-solid.
+        // Liquid glass: the panel refracts a frosted copy of the home page (colours and shapes, no
+        // readable text) and carries all of the group's text; around it the page stays sharp under
+        // a light veil. With 实色材质 on, the veil is near-solid and the panel opaque.
         val seeThrough = materials.realBlurEnabled
         DisposableEffect(window) {
             if (window == null) return@DisposableEffect onDispose { }
@@ -569,13 +571,15 @@ internal fun CatalogGroupFolderOverlay(
         val maxListHeight = (LocalConfiguration.current.screenHeightDp * 0.55f).dp
         Box(
             Modifier.fillMaxSize()
-                .background(colors.background.copy(alpha = if (seeThrough) 0.62f else 0.9f))
+                .background(colors.background.copy(alpha = if (seeThrough) 0.45f else 0.9f))
                 .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null,
                     onClickLabel = "关闭分组", onClick = onDismiss)
                 .windowInsetsPadding(WindowInsets.safeDrawing)
                 .padding(horizontal = 16.dp, vertical = 24.dp),
             contentAlignment = Alignment.Center,
         ) {
+            val panelRadius = ToolBoxThemeTokens.radii.sheet
+            val panelShape = toolBoxShape(panelRadius)
             Column(
                 Modifier.widthIn(max = 480.dp).fillMaxWidth()
                     .graphicsLayer {
@@ -588,11 +592,22 @@ internal fun CatalogGroupFolderOverlay(
                     // Taps on the panel itself must not reach the dismissing scrim.
                     .pointerInput(Unit) { detectTapGestures { } }
                     .semantics { paneTitle = "分组 " + group.name }
-                    .testTag("catalog_group_folder"),
+                    .testTag("catalog_group_folder")
+                    .shadow(
+                        elevation = 24.dp,
+                        shape = panelShape,
+                        clip = false,
+                        ambientColor = Color.Black.copy(alpha = if (dark) 0.6f else 0.22f),
+                        spotColor = Color.Black.copy(alpha = if (dark) 0.6f else 0.22f),
+                    )
+                    .clip(panelShape)
+                    .toolBoxWindowGlassEffect(glass, panelRadius)
+                    .border(0.5.dp, materials.overlayBorder, panelShape)
+                    .padding(start = 12.dp, end = 12.dp, top = 16.dp, bottom = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
                 Row(
-                    Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+                    Modifier.fillMaxWidth().padding(start = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
@@ -603,23 +618,10 @@ internal fun CatalogGroupFolderOverlay(
                     FolderRoundButton(ToolBoxIconKey.More, "编辑分组" + group.name, onEdit, Modifier.testTag("catalog_group_folder_edit"))
                     FolderRoundButton(ToolBoxIconKey.Close, "关闭分组", onDismiss, Modifier.testTag("catalog_group_folder_close"))
                 }
-                val panelShape = toolBoxShape(ToolBoxThemeTokens.radii.sheet)
                 Box(
                     // Takes only what the header and footer leave, so a two-line title in a short
                     // window shrinks the scrolling list instead of pushing the buttons off screen.
-                    Modifier.weight(1f, fill = false).fillMaxWidth()
-                        .shadow(
-                            elevation = 24.dp,
-                            shape = panelShape,
-                            clip = false,
-                            ambientColor = Color.Black.copy(alpha = if (dark) 0.6f else 0.22f),
-                            spotColor = Color.Black.copy(alpha = if (dark) 0.6f else 0.22f),
-                        )
-                        .clip(panelShape)
-                        // Translucent glass over the veil: the page shows through faintly, never legibly.
-                        .background(materials.overlayFallback.copy(alpha = if (seeThrough) 0.8f else 1f))
-                        .border(0.5.dp, materials.overlayBorder, panelShape)
-                        .padding(start = 12.dp, end = 12.dp, top = 22.dp, bottom = 18.dp),
+                    Modifier.weight(1f, fill = false).fillMaxWidth(),
                 ) {
                     if (members.isEmpty()) {
                         Column(
@@ -663,7 +665,7 @@ internal fun CatalogGroupFolderOverlay(
                 }
                 AppText(
                     if (editing) "长按拖动排序，点击工具可收藏、分组与管理" else "长按工具可收藏、分组与管理",
-                    Modifier.fillMaxWidth(), color = colors.textSecondary, align = TextAlign.Center,
+                    Modifier.fillMaxWidth(), color = colors.textPrimary.copy(alpha = 0.72f), align = TextAlign.Center,
                     textStyle = ToolBoxThemeTokens.textStyles.label.copy(fontSize = 13.sp, lineHeight = 18.sp),
                 )
             }
