@@ -247,6 +247,10 @@ class ComputeFromHistoryTest(unittest.TestCase):
         self.assertEqual(["v0.8.32"], app_version.released_apps(lambda path, accept=None: (0, json.dumps(releases), ""), REPO))
         with self.assertRaises(app_version.LookupFailed):
             app_version.released_apps(lambda path, accept=None: (1, "", "HTTP 500"), REPO)
+        # A shipped release behind a full page of others is still found.
+        pages = {1: [{"tag_name": f"t{n}", "assets": []} for n in range(100)], 2: releases[2:]}
+        api = lambda path, accept=None: (0, json.dumps(pages[int(path.rsplit("page=", 1)[1])]), "")
+        self.assertEqual(["v0.8.32"], app_version.released_apps(api, REPO))
 
     def test_published_commit_missing_from_history_fails_closed(self):
         code, _, stderr = self.compute({"name": "0.13.14", "code": 90, "commit": "d" * 40})

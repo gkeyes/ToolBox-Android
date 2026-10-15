@@ -159,11 +159,17 @@ def read_dev(api, repo, sleep=time.sleep, own_apk=None):
 
 def released_apps(api, repo):
     """Tags of releases other than `dev` that carry a ToolBox APK. Any failure to list them raises."""
-    code, out, err = api(f"repos/{repo}/releases?per_page=100")
-    if code != 0:
-        raise LookupFailed(f"Could not list releases: {err.strip()}")
-    return [release["tag_name"] for release in json.loads(out) if release.get("tag_name") != "dev"
-            and any(APP_APK.match(asset.get("name", "")) for asset in release.get("assets", []))]
+    tags, page = [], 1
+    while True:
+        code, out, err = api(f"repos/{repo}/releases?per_page=100&page={page}")
+        if code != 0:
+            raise LookupFailed(f"Could not list releases: {err.strip()}")
+        releases = json.loads(out)
+        tags += [release["tag_name"] for release in releases if release.get("tag_name") != "dev"
+                 and any(APP_APK.match(asset.get("name", "")) for asset in release.get("assets", []))]
+        if len(releases) < 100:
+            return tags
+        page += 1
 
 
 def gh_api(path, accept=None):
