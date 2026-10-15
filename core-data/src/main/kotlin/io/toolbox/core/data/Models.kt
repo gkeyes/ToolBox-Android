@@ -119,6 +119,27 @@ data class TaskRunResult(
     val attemptCount: Int,
 )
 
+/**
+ * A [TaskRunResult] with only the start of its payload, for lists that show a short preview. A
+ * stored payload can be many MB; a preview never reads more than [TASK_RESULT_PREVIEW_CHARS] of it.
+ */
+data class TaskRunResultPreview(
+    val taskId: String,
+    val outcome: RunOutcome,
+    val completedAt: Long,
+    /** At most [TASK_RESULT_PREVIEW_CHARS] leading characters of the payload; null without a payload. */
+    val payloadPrefix: String?,
+    val errorCode: String?,
+    val attemptCount: Int,
+)
+
+/** Characters of a payload a [TaskRunResultPreview] carries. Only a read bound; stored results are never limited. */
+const val TASK_RESULT_PREVIEW_CHARS = 4096
+
+fun TaskRunResult.preview(): TaskRunResultPreview = TaskRunResultPreview(
+    taskId, outcome, completedAt, payloadJson?.take(TASK_RESULT_PREVIEW_CHARS), errorCode, attemptCount,
+)
+
 data class HostSettings(
     val theme: ThemeMode = ThemeMode.SYSTEM,
     val backgroundEnabled: Boolean = true,

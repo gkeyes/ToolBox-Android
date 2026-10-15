@@ -49,7 +49,7 @@ function build(spec) {
   return node;
 }
 
-function loadTool(name, toolbox, { templates = {} } = {}) {
+function loadTool(name, toolbox, { templates = {}, confirm = () => true } = {}) {
   const filename = path.join(examples, name, 'app.js');
   const source = fs.readFileSync(filename, 'utf8');
   const nodes = new Map();
@@ -64,11 +64,20 @@ function loadTool(name, toolbox, { templates = {} } = {}) {
     },
     querySelectorAll() { return []; },
     createElement: (tag) => new Element(tag),
+    visibilityState: 'visible',
+    listeners: {},
+    addEventListener(type, listener) { (this.listeners[type] ||= []).push(listener); },
   };
   const hook = {};
-  const window = { ToolBox: toolbox, __TOOLBOX_TEST__: hook };
+  const window = { ToolBox: toolbox, __TOOLBOX_TEST__: hook, confirm: (message) => confirm(message), listeners: {}, addEventListener(type, listener) { (this.listeners[type] ||= []).push(listener); } };
   vm.runInNewContext(source, { window, document, Intl, Date, console, setTimeout, clearTimeout, BigInt, Promise }, { filename });
-  return { $: (id) => document.getElementById(id), api: hook.api };
+  // Sends the page to the background the way a WebView does: visibility turns hidden, then pagehide may follow.
+  const hide = () => {
+    document.visibilityState = 'hidden';
+    for (const listener of document.listeners.visibilitychange || []) listener({ type: 'visibilitychange' });
+    for (const listener of window.listeners.pagehide || []) listener({ type: 'pagehide' });
+  };
+  return { $: (id) => document.getElementById(id), api: hook.api, hide };
 }
 
 // ---------- position-calculator ----------
@@ -167,7 +176,7 @@ test('position calculator rejects a huge pasted mantissa without building BigInt
 const NOTE_TEMPLATE = ['article', 'note', [['p', 'note-body'], ['p', 'note-time'], ['div', 'note-actions', [
   ['button', 'text-button edit'], ['button', 'text-button copy'], ['button', 'text-button danger delete']]]]];
 
-function quickNotes(initial = {}, { beforeSet, ready } = {}) {
+function quickNotes(initial = {}, { beforeSet, ready, confirm } = {}) {
   const store = new Map(Object.entries(initial));
   const writes = [];
   const handlers = new Set();
@@ -181,7 +190,7 @@ function quickNotes(initial = {}, { beforeSet, ready } = {}) {
       remove: async (key) => { store.delete(key); },
     },
   };
-  const tool = loadTool('quick-notes', toolbox, { templates: { 'note-template': NOTE_TEMPLATE } });
+  const tool = loadTool('quick-notes', toolbox, { templates: { 'note-template': NOTE_TEMPLATE }, confirm });
   // Like the injected SDK: the handler set is snapshotted when the close starts, and the close fails if any handler rejects.
   const flush = () => Promise.allSettled([...handlers].map((handler) => Promise.resolve().then(handler))).then((results) => {
     const failed = results.find((result) => result.status === 'rejected');
@@ -249,6 +258,37 @@ test('quick notes keeps an unsaved draft through the flush handler', async () =>
   await second.$('editor').fire('submit');
   assert.equal(second.store.get('notes')[0].text, 'half-written edit');
   assert.equal(second.store.has('draft'), false);
+});
+
+test('quick notes asks before 编辑 replaces unsaved text, and keeps it when declined', async () => {
+  const asked = [];
+  let answer = false;
+  const tool = quickNotes({ notes: [{ id: 'a', text: 'saved note', updatedAt: 1 }] }, { confirm: (message) => { asked.push(message); return answer; } });
+  await settle();
+  tool.$('note-input').value = 'typed but not saved';
+  await noteButton(tool, 0, 'edit').fire('click');
+  assert.equal(asked.length, 1);
+  assert.equal(tool.$('note-input').value, 'typed but not saved');
+  answer = true;
+  await noteButton(tool, 0, 'edit').fire('click');
+  assert.equal(asked.length, 2);
+  assert.equal(tool.$('note-input').value, 'saved note');
+  assert.equal(tool.$('cancel-edit').hidden, false);
+  // The editor now holds only the note's own text, so opening it again needs no question.
+  await noteButton(tool, 0, 'edit').fire('click');
+  assert.equal(asked.length, 2);
+});
+
+test('quick notes writes the draft when the page is hidden, without waiting for a close', async () => {
+  const tool = quickNotes({ notes: [] });
+  await settle();
+  tool.$('note-input').value = 'typed before switching apps';
+  tool.hide();
+  await settle();
+  assert.deepEqual(tool.store.get('draft'), { text: 'typed before switching apps', editingId: null });
+  const reopened = quickNotes(Object.fromEntries(tool.store));
+  await settle();
+  assert.equal(reopened.$('note-input').value, 'typed before switching apps');
 });
 
 test('quick notes flush during a save does not keep the saved text as a draft', async () => {
@@ -328,7 +368,7 @@ test('quick notes deleting the edited note keeps text typed while the delete is 
 
 // ---------- notification-lab ----------
 
-function notificationLab({ sessions = [], saved = null, start, update, end, ready, stop, cancelTimer } = {}) {
+function notificationLab({ sessions = [], saved = null, start, update, end, ready, stop, cancelTimer, setTimer } = {}) {
   const calls = { start: [], update: [], end: [], bgStart: 0, set: 0, timers: [] };
   const listeners = {};
   let sessionCounter = 0;
@@ -343,7 +383,7 @@ function notificationLab({ sessions = [], saved = null, start, update, end, read
       start: async () => { calls.bgStart += 1; sessionCounter += 1; return { sessionId: `session-${sessionCounter}-xxxxxxxx` }; },
       stop: async (id) => { if (stop) return stop(id); },
       listSessions: async () => sessions,
-      setTimer: async (...args) => { calls.timers.push(args); },
+      setTimer: async (...args) => { calls.timers.push(args); if (setTimer) return setTimer(...args); },
       cancelTimer: async (key) => { if (cancelTimer) return cancelTimer(key); },
       onTimer: (listener) => { listeners.timer = listener; },
       onRestore: (listener) => { listeners.restore = listener; },
@@ -428,6 +468,25 @@ test('notification lab disables the interval select while busy', async () => {
   lab.api.state.busy = false;
   lab.api.render();
   assert.equal(lab.$('interval').disabled, false);
+});
+
+test('notification lab keeps the previous interval when changing it fails', async () => {
+  let fail = true;
+  const lab = notificationLab({ setTimer: async () => { if (fail) throw apiError('INTERNAL'); } });
+  await lab.api.bootWork;
+  lab.api.state.auto = true;
+  const select = lab.$('interval');
+  select.value = '1000';
+  await select.fire('change');
+  await settle();
+  assert.equal(lab.api.state.intervalMs, 2000);
+  assert.equal(select.value, '2000');
+  fail = false;
+  select.value = '5000';
+  await select.fire('change');
+  await settle();
+  assert.equal(lab.api.state.intervalMs, 5000);
+  assert.equal(select.value, '5000');
 });
 
 test('notification lab starts the live notification once when onRestore races boot', async () => {

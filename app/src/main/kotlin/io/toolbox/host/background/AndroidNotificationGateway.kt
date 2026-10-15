@@ -16,6 +16,7 @@ import io.toolbox.host.R
 import io.toolbox.host.ToolBoxApplication
 import java.security.MessageDigest
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 
 class AndroidNotificationGateway(
@@ -43,13 +44,16 @@ class AndroidNotificationGateway(
         if (!isValidNotification(notificationId, title)) {
             return@withContext BackgroundPreparedNotification { NotificationResult.Rejected("INVALID_NOTIFICATION") }
         }
+        val dependencies = withContext(Dispatchers.IO) { (appContext as? ToolBoxApplication)?.hostDependencies() }
+        val toolName = withContext(Dispatchers.IO) {
+            dependencies?.repositories?.catalog?.observeTool(toolId)?.first()?.metadata?.name
+        }?.takeIf { it.isNotBlank() }
         val channelId = channelId(toolId)
+        // Re-creating an existing channel only refreshes its name, so channels from older versions get renamed too.
         manager.createNotificationChannel(
-            NotificationChannel(channelId, "ToolBox · $toolId", NotificationManager.IMPORTANCE_DEFAULT),
+            NotificationChannel(channelId, toolName ?: toolId, NotificationManager.IMPORTANCE_DEFAULT),
         )
-        val toolIcon = withContext(Dispatchers.IO) {
-            (appContext as? ToolBoxApplication)?.hostDependencies()?.toolIcons?.load(toolId)
-        }
+        val toolIcon = withContext(Dispatchers.IO) { dependencies?.toolIcons?.load(toolId) }
         val notification = Notification.Builder(appContext, channelId)
             .setSmallIcon(R.drawable.ic_toolbox_notification)
             .setLargeIcon(toolIcon?.let(Icon::createWithBitmap) ?: Icon.createWithResource(appContext, R.mipmap.ic_launcher))
@@ -59,10 +63,15 @@ class AndroidNotificationGateway(
             .setAutoCancel(true)
             .build()
         BackgroundPreparedNotification {
-            if (appContext.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            if (appContext.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED ||
+                // A channel the user turned off accepts notify() but shows nothing.
+                manager.getNotificationChannel(channelId)?.importance == NotificationManager.IMPORTANCE_NONE
+            ) {
                 NotificationResult.Rejected("SYSTEM_PERMISSION_DENIED")
             } else {
-                manager.notify(toolId, notificationId.hashCode(), notification)
+                // An update to a notification posted before ids were keyed by tag replaces that copy instead of doubling it.
+                manager.cancel(toolId, notificationId.hashCode())
+                manager.notify(notificationTag(toolId, notificationId), TOOL_NOTIFICATION_ID, notification)
                 NotificationResult.Posted
             }
         }
@@ -91,12 +100,14 @@ class AndroidNotificationGateway(
     }
 
     override suspend fun cancel(toolId: String, notificationId: String) {
+        manager.cancel(notificationTag(toolId, notificationId), TOOL_NOTIFICATION_ID)
+        // Notifications posted before ids were keyed by tag.
         manager.cancel(toolId, notificationId.hashCode())
     }
 
     override suspend fun cancelTool(toolId: String) {
         manager.activeNotifications
-            .filter { it.tag == toolId }
+            .filter { it.tag == toolId || it.tag?.startsWith("$toolId$TAG_SEPARATOR") == true }
             .forEach { manager.cancel(it.tag, it.id) }
         manager.deleteNotificationChannel(channelId(toolId))
     }
@@ -107,6 +118,11 @@ class AndroidNotificationGateway(
     }
 
     companion object {
+        // Tool ids never contain ':', so the tag is unique per (tool, notificationId) with no hash collisions.
+        private const val TAG_SEPARATOR = ':'
+        private const val TOOL_NOTIFICATION_ID = 1
+        internal fun notificationTag(toolId: String, notificationId: String): String = "$toolId$TAG_SEPARATOR$notificationId"
+
         private const val MIUI_SUPPORT_CACHE_MILLIS = 30_000L
         private val MIUI_STATUS_URI = Uri.parse("content://miui.statusbar.notification.public")
         private data class MiuiPermission(val protocol: Int, val granted: Boolean, val checkedAt: Long)

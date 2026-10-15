@@ -16,6 +16,7 @@ import io.toolbox.host.ToolBoxApplication
 import io.toolbox.host.background.AndroidNotificationGateway
 import io.toolbox.host.background.LiveNotificationSupportState
 import io.toolbox.host.icons.ToolIconLoader
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -47,7 +48,11 @@ internal suspend fun presentCurrentRuntimeNotificationSnapshot(
 }
 
 internal class RuntimeForegroundService : Service() {
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    // Host start-up can fail on broken storage; log and stop instead of letting the exception kill the process.
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate + CoroutineExceptionHandler { _, error ->
+        Log.w(TAG, "Runtime service work failed", error)
+        stopIfCurrent(latestStartId)
+    })
     private val commands = Mutex()
     private var snapshots: Job? = null
     private var startupDeadline: Job? = null

@@ -52,7 +52,7 @@ class ToolNetworkTransportTest {
             first = fixture.https { request, socket ->
                 observed += request
                 if (request.target == "/start") fixture.respond(socket, 307, mapOf("Location" to "$second/cdn"))
-                else fixture.respond(socket, 206, body = "partial")
+                else fixture.respond(socket, 206, mapOf("Content-Type" to "text/plain"), body = "partial")
             }
             second = fixture.https { request, socket ->
                 observed += request

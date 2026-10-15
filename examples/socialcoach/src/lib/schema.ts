@@ -8,7 +8,9 @@ import {SKILLS,CONTEXTS,COMPETENCIES,RELATIONSHIPS} from '@/data/taxonomy';
 const known=(list: readonly string[])=>z.string().refine(x=>list.includes(x));
 const skill=known(SKILLS.map(x=>x.id)),context=known(CONTEXTS.map(x=>x.id));
 const number=z.number().finite(),L=z.object({zh:z.string(),en:z.string()});
-const proficiency=z.record(z.string(),number.min(1).max(5));
+// Estimates for skill ids this taxonomy does not know (another version, a hand-edited file) are dropped on restore.
+const SKILL_IDS=new Set<string>(SKILLS.map(x=>x.id));
+const proficiency=z.record(z.string(),number.min(1).max(5)).transform(p=>Object.fromEntries(Object.entries(p).filter(([k])=>SKILL_IDS.has(k))));
 const character=z.object({id:z.string(),name:L,role:L,personality:L,stance:L,hidden:L.optional(),playable:z.boolean().optional(),hue:number});
 export const scenarioSchema=z.object({id:z.string(),title:L,hook:L,background:L,context,contextType:L,competencies:z.array(known(COMPETENCIES.map(x=>x.id))),skills:z.array(skill).min(1),relatedSkills:z.array(skill).optional(),relationship:z.array(known(Object.keys(RELATIONSHIPS))),difficulty:z.union([z.literal(1),z.literal(2),z.literal(3)]),minutes:number.positive(),characters:z.array(character).min(2),objectives:z.array(L).min(1),success:L,failure:L,maxTurns:number.int().positive(),opening:z.object({characterId:z.string(),text:L}),icon:z.string().optional(),source:z.string(),keywords:z.array(z.string()),custom:z.boolean().optional()});
 const evidence=z.object({behavior:z.string(),evidence:z.string(),skill});

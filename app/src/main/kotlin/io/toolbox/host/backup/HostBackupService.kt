@@ -293,6 +293,8 @@ internal class HostBackupService(
                     BackupRuntimeGate.pauseAndDrain()
                     current.forEach { background.releaseRuntime(it.metadata.id) }
                     background.cancelAll(current.map { it.metadata.id })
+                    // Notifications from the pre-restore versions would otherwise outlive the restore.
+                    current.forEach { background.clearNotifications(it.metadata.id) }
                     cancelScheduledWork()
                     current.forEach { withRuntimeStorageQuiescent(it.metadata.id) { } }
                     repositories.mutations.run {

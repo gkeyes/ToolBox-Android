@@ -1,4 +1,4 @@
-/* RSS Scout 1.4.6 — unified RSSHub instance + additive private rules + Radar + Miniflux discovery. */
+/* RSS Scout 1.4.8 — unified RSSHub instance + additive private rules + Radar + Miniflux discovery. */
 (function () {
   'use strict';
   const C = window.RSSScoutCore,
@@ -149,6 +149,10 @@
   function cacheUsable() {
     return R.cacheValid(state.cache, state.settings);
   }
+  function partialNote() {
+    const missing = state.cache?.partial === 'base' ? 'Radar 规则' : state.cache?.partial === 'private' ? '私人规则' : '';
+    return missing ? '（缺' + missing + '，下次探测时重试）' : '';
+  }
   function topModal() {
     return state.modals.at(-1)?.id;
   }
@@ -290,7 +294,7 @@
             : '官方 Radar') +
         (state.settings.usePrivateRules ? ' + 私人规则' : '') +
         ' · ' +
-        (cacheUsable() ? state.cache.rules.length + ' 个匹配项' : '尚未同步');
+        (cacheUsable() ? state.cache.rules.length + ' 个匹配项' + partialNote() : '尚未同步');
     $('preferences-summary').textContent =
       (state.settings.checkHome ? '首页补查开启' : '仅检查当前页') +
       ' · ' +
@@ -307,7 +311,8 @@
           new Date(state.cache.at).toLocaleString('zh-CN', { hour12: false }) +
           ' 更新；跳过 ' +
           state.cache.skipped +
-          ' 项'
+          ' 项' +
+          partialNote()
       );
     } else status('rule-status', '尚未缓存匹配规则。首次探测或点击同步时获取。');
     summaries();
@@ -621,6 +626,7 @@
     $('rsshub-base').value = s.hubBase;
     $('rssworker-base').value = s.workerBase || '';
     $('hub-key').value = hubKey();
+    hubKeyBase = draftHubBase();
     $('use-radar').checked = s.useRadar;
     $('rule-url').value = s.ruleUrl;
     $('use-private-rules').checked = !!s.usePrivateRules;
@@ -640,6 +646,16 @@
   }
   function togglePrivateField() {
     $('private-rule-field').hidden = !$('use-private-rules').checked;
+  }
+  // The address the hub form's key field currently belongs to (see the hub-key / rsshub-base input handlers).
+  let hubKeyBase = '';
+  function draftHubBase() {
+    const raw = $('rsshub-base').value.trim() || defaults.hubBase;
+    try {
+      return C.serviceBase(raw);
+    } catch (_) {
+      return raw;
+    }
   }
   function readHub() {
     const mode = document.querySelector('[name=rule-mode]:checked').value;
@@ -697,12 +713,13 @@
   async function syncRules(signal) {
     state.ruleAttempts = [];
     try {
-      const cache = await R.sync(state.network, state.settings, hubKey(), signal, (name, attempts) => {
+      const fetched = await R.sync(state.network, state.settings, hubKey(), signal, (name, attempts) => {
         state.ruleAttempts = attempts;
         status('rule-status', '正在读取：' + name + '…');
         renderRuleLog();
       });
       if (signal?.aborted) throw new DOMException('已停止', 'AbortError');
+      const cache = R.keepCachedHalf(fetched, state.cache);
       let persisted = true;
       try {
         await state.api.storage.set(KEYS.rules, cache);
@@ -973,13 +990,17 @@
           }
           if (state.settings.useRadar) {
             $('scan-status').textContent = '正在匹配 RSSHub / RSSWorker 路由并验证候选…';
-            if (!cacheUsable()) {
+            // A cache that holds only one half of the rules syncs again here; until that succeeds, its half stays in use.
+            if (!cacheUsable() || state.cache.partial) {
               try {
                 await syncRules(signal);
               } catch (error) {
                 if (signal.aborted) throw error;
-                note('Radar 不可用，不影响原生源结果：' + safeError(error));
-                state.scanWarning += (state.scanWarning ? '；' : '') + 'RSSHub 规则暂不可用，原生源已继续检查';
+                if (cacheUsable()) note('规则重试未完成，继续使用已缓存的部分规则：' + safeError(error));
+                else {
+                  note('Radar 不可用，不影响原生源结果：' + safeError(error));
+                  state.scanWarning += (state.scanWarning ? '；' : '') + 'RSSHub 规则暂不可用，原生源已继续检查';
+                }
               }
             }
             if (cacheUsable()) {
@@ -1321,12 +1342,18 @@
   $('hub-form').addEventListener('submit', saveHub);
   $('sync-rules').addEventListener('click', syncManually);
   $('stop-sync').addEventListener('click', () => state.syncController?.abort());
+  // The key in the form belongs to the address it was shown or typed for: readHub() pairs it with whatever address is
+  // in the form on save, so a key must never survive a change of address (it would be sent to another instance).
+  $('hub-key').addEventListener('input', () => {
+    hubKeyBase = draftHubBase();
+  });
   $('rsshub-base').addEventListener('input', () => {
-    let base = $('rsshub-base').value;
-    try {
-      base = C.serviceBase(base);
-    } catch (_) {}
-    if (state.hubAuth?.base !== base) $('hub-key').value = '';
+    const base = draftHubBase();
+    if (base === hubKeyBase) return;
+    // Another address drops the draft key; the saved key comes back only on the address it was saved for. Whether the
+    // stored key is kept is decided when the form is saved.
+    $('hub-key').value = hubKey(base);
+    hubKeyBase = base;
   });
   for (const radio of document.querySelectorAll('[name=rule-mode]')) radio.addEventListener('change', toggleRuleField);
   $('use-private-rules').addEventListener('change', togglePrivateField);
@@ -1413,7 +1440,7 @@
     nativeAction(async () => {
       if (!state.api) throw new Error('请在 ToolBox 中使用复制功能');
       const text =
-        'RSS Scout 1.4.6\n' + redact($('log').textContent) + '\n规则同步\n' + redact($('rule-log').textContent);
+        'RSS Scout 1.4.8\n' + redact($('log').textContent) + '\n规则同步\n' + redact($('rule-log').textContent);
       await state.api.clipboard.writeText(text);
       toast('已复制诊断信息（密钥已隐藏）');
     })
