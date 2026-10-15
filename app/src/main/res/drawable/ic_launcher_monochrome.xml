@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="1536"
+    android:viewportHeight="1536">
+    <!-- Themed-icon layer: the launcher multitool (three blades and the body), same geometry as the 1024px artwork offset into the 1536 adaptive canvas. -->
+    <group android:translateX="574" android:translateY="906">
+        <clip-path
+            android:fillType="evenOdd"
+            android:pathData="M-2000,-2000 H2000 V2000 H-2000 Z M34,0 A34,34 0,1 0,-34,0 A34,34 0,1 0,34,0 Z" />
+        <group android:rotation="-4">
+            <path
+                android:fillColor="#FFFFFFFF"
+                android:pathData="M0.0,-360 H0.0 A35.0,35.0 0,0 1,35.0,-325.0 V0.0 A35.0,35.0 0,0 1,0.0,35.0 H0.0 A35.0,35.0 0,0 1,-35.0,0.0 V-325.0 A35.0,35.0 0,0 1,0.0,-360 Z" />
+        </group>
+        <group android:rotation="28">
+            <path
+                android:fillColor="#FFFFFFFF"
+                android:pathData="M0.0,-380 H0.0 A43.0,43.0 0,0 1,43.0,-337.0 V0.0 A43.0,43.0 0,0 1,0.0,43.0 H0.0 A43.0,43.0 0,0 1,-43.0,0.0 V-337.0 A43.0,43.0 0,0 1,0.0,-380 Z" />
+        </group>
+        <group android:rotation="58">
+            <path
+                android:fillColor="#FFFFFFFF"
+                android:pathData="M0.0,-330 H0.0 A31.0,31.0 0,0 1,31.0,-299.0 V0.0 A31.0,31.0 0,0 1,0.0,31.0 H0.0 A31.0,31.0 0,0 1,-31.0,0.0 V-299.0 A31.0,31.0 0,0 1,0.0,-330 Z" />
+        </group>
+        <group android:rotation="-14">
+            <path
+                android:fillColor="#FFFFFFFF"
+                android:pathData="M5,-100 H420 A100,100 0,0 1,520,0 V0 A100,100 0,0 1,420,100 H5 A100,100 0,0 1,-95,0 V0 A100,100 0,0 1,5,-100 Z" />
+        </group>
+    </group>
+</vector>

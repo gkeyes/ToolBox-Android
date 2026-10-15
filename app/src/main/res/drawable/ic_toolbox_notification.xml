@@ -2,34 +2,32 @@
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="24dp"
     android:height="24dp"
-    android:viewportWidth="736"
-    android:viewportHeight="736">
-    <!-- The approved multitool contours, without the launcher background or gradients. -->
-    <group
-        android:translateX="-208"
-        android:translateY="-326"
-        android:scaleX="1.25"
-        android:scaleY="1.25">
+    android:viewportWidth="640"
+    android:viewportHeight="640">
+    <!-- The launcher multitool contours, without the background or glass effects. -->
+    <group android:translateX="114" android:translateY="450">
         <clip-path
             android:fillType="evenOdd"
-            android:pathData="M0,0 H1024 V1024 H0 Z M346,698 A32,32 0,1 0,282 698 A32,32 0,1 0,346 698 Z" />
-        <group android:rotation="-5" android:pivotX="314" android:pivotY="698">
+            android:pathData="M-2000,-2000 H2000 V2000 H-2000 Z M34,0 A34,34 0,1 0,-34,0 A34,34 0,1 0,34,0 Z" />
+        <group android:rotation="-4">
             <path
                 android:fillColor="#FFFFFFFF"
-                android:pathData="M314,320 A38,38 0,0 1,352 358 V664 A38,38 0,0 1,314 702 A38,38 0,0 1,276 664 V358 A38,38 0,0 1,314 320 Z" />
+                android:pathData="M0.0,-360 H0.0 A35.0,35.0 0,0 1,35.0,-325.0 V0.0 A35.0,35.0 0,0 1,0.0,35.0 H0.0 A35.0,35.0 0,0 1,-35.0,0.0 V-325.0 A35.0,35.0 0,0 1,0.0,-360 Z" />
         </group>
-        <group android:rotation="34" android:pivotX="314" android:pivotY="698">
+        <group android:rotation="28">
             <path
                 android:fillColor="#FFFFFFFF"
-                android:pathData="M314,278 A48,48 0,0 1,362 326 V654 A48,48 0,0 1,314 702 A48,48 0,0 1,266 654 V326 A48,48 0,0 1,314 278 Z" />
+                android:pathData="M0.0,-380 H0.0 A43.0,43.0 0,0 1,43.0,-337.0 V0.0 A43.0,43.0 0,0 1,0.0,43.0 H0.0 A43.0,43.0 0,0 1,-43.0,0.0 V-337.0 A43.0,43.0 0,0 1,0.0,-380 Z" />
         </group>
-        <group android:rotation="78" android:pivotX="314" android:pivotY="698">
+        <group android:rotation="58">
             <path
                 android:fillColor="#FFFFFFFF"
-                android:pathData="M305,326 H323 A86,86 0,0 1,409 412 V664 A86,86 0,0 1,323 750 H305 A86,86 0,0 1,219 664 V412 A86,86 0,0 1,305 326 Z" />
+                android:pathData="M0.0,-330 H0.0 A31.0,31.0 0,0 1,31.0,-299.0 V0.0 A31.0,31.0 0,0 1,0.0,31.0 H0.0 A31.0,31.0 0,0 1,-31.0,0.0 V-299.0 A31.0,31.0 0,0 1,0.0,-330 Z" />
         </group>
-        <path
-            android:fillColor="#FFFFFFFF"
-            android:pathData="M396,698 A82,82 0,1 0,232 698 A82,82 0,1 0,396 698 Z" />
+        <group android:rotation="-14">
+            <path
+                android:fillColor="#FFFFFFFF"
+                android:pathData="M5,-100 H420 A100,100 0,0 1,520,0 V0 A100,100 0,0 1,420,100 H5 A100,100 0,0 1,-95,0 V0 A100,100 0,0 1,5,-100 Z" />
+        </group>
     </group>
 </vector>
