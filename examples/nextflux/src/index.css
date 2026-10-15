@@ -6,6 +6,7 @@
 @import "./design/reader.css";
 @import "./design/ios27.css";
 @import "./design/glass-buttons.css";
+@import "./design/lens-host.css";
 
 @config '../tailwind.config.js';
 

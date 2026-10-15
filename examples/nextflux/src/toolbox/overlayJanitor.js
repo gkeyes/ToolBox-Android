@@ -86,6 +86,17 @@ function describe(element) {
   return `${element.tagName.toLowerCase()}${id}${classes}`;
 }
 
+// The long-press menu is a body-level portal with a full-screen scrim and no
+// dialog role. Its scrim belongs there while the menu itself is on screen; a
+// leftover menu that is hidden or empty protects nothing.
+function menuScrim(doc, layer) {
+  if (!layer.classList?.contains("nextflux-context-scrim")) return false;
+  const menu = doc.querySelector("body > .nextflux-context-menu");
+  if (!menu) return false;
+  const rect = menu.getBoundingClientRect();
+  return rect.width > 0 && rect.height > 0;
+}
+
 export function findStrandedOverlays({ doc = document, win = window } = {}) {
   const { width, height } = viewport(win);
   const layers = new Set();
@@ -95,7 +106,7 @@ export function findStrandedOverlays({ doc = document, win = window } = {}) {
     const owner = portalOwner(doc, hit);
     if (!owner || hasVisibleDialog(owner, win)) continue;
     const layer = coveringLayer(owner, hit, win);
-    if (layer) layers.add(layer);
+    if (layer && !menuScrim(doc, layer)) layers.add(layer);
   }
   return { layers: [...layers], shell: staleShellState(doc, win) };
 }
@@ -116,10 +127,7 @@ export function createOverlayJanitor({
   // in a body-level portal means an overlay is legitimately open.
   const dialogOpen = () => [...doc.body.children].some((child) =>
     child.id !== "root" && child.tagName !== "SCRIPT" && hasVisibleDialog(child, win));
-  // The long-press menu is a body-level portal too, with a full-screen scrim
-  // and no dialog role: while it is mounted, its scrim is meant to be there.
-  const menuOpen = () => Boolean(doc.querySelector("body > .nextflux-context-menu"));
-  const quiet = () => !isOverlayExpected() && !fullscreenElement(doc) && !doc.querySelector("dialog[open]") && !dialogOpen() && !menuOpen();
+  const quiet = () => !isOverlayExpected() && !fullscreenElement(doc) && !doc.querySelector("dialog[open]") && !dialogOpen();
 
   const release = (found) => {
     const released = [];
