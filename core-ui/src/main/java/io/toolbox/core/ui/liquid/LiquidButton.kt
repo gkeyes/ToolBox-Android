@@ -40,6 +40,7 @@ import com.kyant.shapes.Capsule
 import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.cos
+import kotlin.math.hypot
 import kotlin.math.sin
 import kotlin.math.tanh
 
@@ -149,25 +150,32 @@ fun LiquidButton(
 /** Kyant's resting highlight angle: light on the top-left and bottom-right rims. */
 private const val RestingHighlightAngle = 45f
 
+/** Off-centre distance (in half-widths) at which the highlight turns all the way to the finger. */
+private const val FullTurnReach = 0.5f
+
 /**
  * The rim highlight of a pressed glass control: at rest the default 45° light; under the finger it
  * turns to the finger's side (the shader lights both ends of the axis, so angles repeat every
- * 180°) and brightens.
+ * 180°) and brightens. The direction is measured in the button's own proportions, so on a wide
+ * capsule a press left of centre lights the left rim, not the round ends; and it turns only as far
+ * as the finger is from the centre, so a press near the middle doesn't flip the light around.
  */
 internal fun followingHighlight(interaction: InteractiveHighlight): Highlight {
     val progress = interaction.pressProgress.fastCoerceIn(0f, 1f)
     val size = interaction.size
     if (progress <= 0.001f || size.isUnspecified || size.width <= 0f || size.height <= 0f) return Highlight.Default
     val touch = interaction.touchPosition
-    val touchAngle = Math.toDegrees(
-        atan2((touch.y - size.height / 2f).toDouble(), (touch.x - size.width / 2f).toDouble()),
-    ).toFloat()
-    // Shortest turn on the 180° period.
+    // -1..1 across each axis, so the angle follows the button's shape rather than raw pixels.
+    val dx = (touch.x - size.width / 2f) / (size.width / 2f)
+    val dy = (touch.y - size.height / 2f) / (size.height / 2f)
+    val touchAngle = Math.toDegrees(atan2(dy.toDouble(), dx.toDouble())).toFloat()
+    // Shortest turn on the 180° period, scaled by how far off centre the finger is.
     val turn = ((touchAngle - RestingHighlightAngle) % 180f + 270f) % 180f - 90f
+    val reach = (hypot(dx, dy) / FullTurnReach).fastCoerceIn(0f, 1f)
     return Highlight(
         style = HighlightStyle.Default(
             color = Color.White.copy(alpha = 0.5f + 0.3f * progress),
-            angle = RestingHighlightAngle + turn * progress,
+            angle = RestingHighlightAngle + turn * reach * progress,
         ),
     )
 }
