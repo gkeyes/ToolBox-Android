@@ -116,7 +116,7 @@ html .nextflux-modal-surface .button.button--danger:not(.nf-set-row) { --nf-btn-
    (fading out on close is fine: it reveals what they covered). */
 html .toolbox-link-dialog[open] { animation-name: nf-link-in; }
 @keyframes nf-link-in { from { transform: translateY(10px) scale(0.98); } }
-html [data-sonner-toaster] [data-sonner-toast].nextflux-toast[data-mounted="false"]:not([data-removed="true"]) { opacity: 1; }
+html [data-sonner-toaster] [data-sonner-toast].nextflux-toast[data-mounted="false"][data-visible="true"]:not([data-removed="true"]) { opacity: 1; }
 html .nf-title-filter-toast { animation-name: nf-title-filter-toast-pop; }
 @keyframes nf-title-filter-toast-pop { from { scale: 0.94; } }
 /* Sheets: the backdrop transitions its colour, never its opacity. */
@@ -147,6 +147,7 @@ html :is(.modal__container, .alert-dialog__container)[data-entering="true"] > .n
   animation: nf-drop-in var(--ds-dur-dialog) var(--ds-ease-dialog) both;
 }
 html :is(.modal__container, .alert-dialog__container)[data-exiting="true"] > .nextflux-modal-surface::before,
+html :is(.modal__container, .alert-dialog__container)[data-exiting="true"] > .nextflux-modal-surface::after,
 html :is(.modal__container, .alert-dialog__container)[data-exiting="true"] > .nextflux-modal-surface > * {
   animation: nf-fade-out var(--ds-dur-exit) var(--ds-ease-exit) forwards;
 }
