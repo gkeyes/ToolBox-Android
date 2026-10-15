@@ -38,8 +38,8 @@ import org.junit.runner.RunWith
 
 /**
  * SEC-X1: WebRTC must be gone in every frame of a real tool WebView, including a sandboxed
- * srcdoc iframe whose origin is opaque, a same-origin about:blank iframe, and an iframe whose
- * contentWindow/contentDocument is read in the same task as its appendChild.
+ * srcdoc iframe whose origin is opaque, a same-origin about:blank iframe, and an iframe reached in
+ * the same task as its insertion through contentWindow/contentDocument, window[i], frames[i] or its name.
  */
 @RunWith(AndroidJUnit4::class)
 class RuntimeWebRtcFrameInstrumentationTest {
@@ -64,9 +64,8 @@ class RuntimeWebRtcFrameInstrumentationTest {
                 window.mainProbe = probe(window);
                 // Same task as appendChild: the child's initial about:blank may not have run the
                 // document-start script yet, so the parent's frame accessors must lock it first.
-                const sameTaskProbe = read => {
-                  const frame = document.createElement('iframe');
-                  document.body.appendChild(frame);
+                const childProbe = (insert, read) => {
+                  const frame = insert();
                   let type;
                   let created;
                   let marked;
@@ -76,8 +75,15 @@ class RuntimeWebRtcFrameInstrumentationTest {
                   catch (_) { created = 'blocked'; }
                   return type + '|' + created + '|' + marked;
                 };
-                window.sameTaskWindowProbe = sameTaskProbe(frame => frame.contentWindow);
-                window.sameTaskDocumentProbe = sameTaskProbe(frame => frame.contentDocument.defaultView);
+                const appended = () => document.body.appendChild(document.createElement('iframe'));
+                window.sameTaskWindowProbe = childProbe(appended, frame => frame.contentWindow);
+                window.sameTaskDocumentProbe = childProbe(appended, frame => frame.contentDocument.defaultView);
+                // Indexed and named access reach the child without any frame-element accessor.
+                window.indexedProbe = childProbe(appended, () => window[window.length - 1]);
+                window.framesProbe = childProbe(appended, () => frames[frames.length - 1]);
+                window.namedHtmlProbe = childProbe(() => {
+                  document.body.insertAdjacentHTML('beforeend', '<iframe name="rtcNamed"></iframe>');
+                }, () => window.rtcNamed);
                 window.srcdocProbe = null;
                 window.addEventListener('message', event => {
                   if (event.data && typeof event.data.rtcProbe === 'string') window.srcdocProbe = event.data.rtcProbe;
@@ -143,6 +149,9 @@ class RuntimeWebRtcFrameInstrumentationTest {
             assertEquals("\"undefined|true\"", evaluate(view, "window.mainProbe"))
             assertEquals("\"undefined|blocked|true\"", evaluate(view, "window.sameTaskWindowProbe"))
             assertEquals("\"undefined|blocked|true\"", evaluate(view, "window.sameTaskDocumentProbe"))
+            assertEquals("\"undefined|blocked|true\"", evaluate(view, "window.indexedProbe"))
+            assertEquals("\"undefined|blocked|true\"", evaluate(view, "window.framesProbe"))
+            assertEquals("\"undefined|blocked|true\"", evaluate(view, "window.namedHtmlProbe"))
             await { evaluate(view, "window.srcdocProbe !== null") == "true" }
             val srcdoc = evaluate(view, "window.srcdocProbe")
             assertTrue("The sandboxed srcdoc frame must be opaque: $srcdoc", srcdoc.endsWith("|null\""))

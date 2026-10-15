@@ -371,6 +371,43 @@ parentFrame.crossOrigin = new Proxy({}, { get() { throw new Error('SecurityError
   getOwnPropertyDescriptor() { throw new Error('SecurityError'); } });
 assert.equal(vm.runInContext('new HTMLIFrameElement(crossOrigin).contentWindow === crossOrigin', parentFrame), true);
 
+// window[i] / frames[i] / named access never touch a frame accessor: every insertion call must lock
+// the document's child windows before it returns, using the original window.length getter.
+const domRealm = `class Node { appendChild(child) { frameList.push(child); return child; }
+    get ownerDocument() { return theDocument; } }
+  class Document extends Node { get defaultView() { return globalThis; } get ownerDocument() { return null; } }
+  class Element extends Node { set innerHTML(html) { frameList.push(pendingFrame); } }
+  globalThis.Node = Node; globalThis.Document = Document; globalThis.Element = Element;
+  globalThis.theDocument = new Document();
+  globalThis.frameList = [];
+  Object.defineProperty(globalThis, 'length', { get() { return frameList.length; }, configurable: true });
+  globalThis.RTCPeerConnection = class RTCPeerConnection {};`;
+const insertParent = vm.createContext({});
+vm.runInContext(domRealm, insertParent);
+vm.runInContext(webRtcHardening, insertParent);
+vm.runInContext(`for (let i = 0; i < 4; i++) Object.defineProperty(globalThis, i, { get() { return frameList[i]; } });`,
+  insertParent);
+const appended = vm.createContext({});
+vm.runInContext(domRealm, appended);
+insertParent.appendedWindow = vm.runInContext('globalThis', appended);
+vm.runInContext("Object.defineProperty(globalThis, 'length', { value: 0 });", insertParent);
+vm.runInContext('new Element().appendChild(appendedWindow)', insertParent);
+assert.equal(vm.runInContext('typeof RTCPeerConnection', appended), 'undefined',
+  'appendChild must lock a new child before window[0] can reach it, even with window.length replaced');
+assert.equal(vm.runInContext('Element.prototype.appendChild.name', insertParent), 'appendChild');
+const parsed = vm.createContext({});
+vm.runInContext(domRealm, parsed);
+insertParent.pendingFrame = vm.runInContext('globalThis', parsed);
+vm.runInContext("new Element().innerHTML = '<iframe></iframe>'", insertParent);
+assert.equal(vm.runInContext('typeof RTCPeerConnection', parsed), 'undefined', 'An innerHTML insertion must lock its frames too');
+// The frame's own document-start run on top of the parent's wrapping still locks later children.
+vm.runInContext(webRtcHardening, insertParent);
+const later = vm.createContext({});
+vm.runInContext(domRealm, later);
+insertParent.laterWindow = vm.runInContext('globalThis', later);
+vm.runInContext('new Element().appendChild(laterWindow)', insertParent);
+assert.equal(vm.runInContext('typeof RTCPeerConnection', later), 'undefined');
+
 const forbidden = [/\.addJavascriptInterface\s*\(/, /setAllowUniversalAccessFromFileURLs\(true\)/, /allowUniversalAccessFromFileURLs\s*=\s*true/];
 for (const module of ['app', 'tool-runtime']) {
   const base = resolve(root, module, 'src/main');

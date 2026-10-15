@@ -19,6 +19,28 @@
     'RTCRtpTransceiver', 'RTCIceTransport', 'RTCDtlsTransport', 'RTCSctpTransport', 'RTCRtpScriptTransform'
   ];
   const frameTypes = ['HTMLIFrameElement', 'HTMLFrameElement', 'HTMLObjectElement'];
+  // window[i], frames[i] and window.<frame name> hand out a child window without any frame-element
+  // accessor, so every DOM call that can insert a frame locks this document's child windows before
+  // it returns. A page can replace window.length ([Replaceable]), so the original getter is kept.
+  const accessorOf = (owner, key) => { const d = owner && getOwn(owner, key); return d && d.get; };
+  const protoOfType = type => { const d = getOwn(globalThis, type); return d && d.value && d.value.prototype; };
+  const lengthOf = accessorOf(globalThis, 'length');
+  const ownerDocumentOf = accessorOf(protoOfType('Node'), 'ownerDocument');
+  const defaultViewOf = accessorOf(protoOfType('Document'), 'defaultView');
+  const startContainerOf = accessorOf(protoOfType('Range'), 'startContainer');
+  const insertMethods = [
+    ['Node', ['appendChild', 'insertBefore', 'replaceChild']],
+    ['Element', ['append', 'prepend', 'before', 'after', 'replaceWith', 'replaceChildren', 'moveBefore',
+      'insertAdjacentElement', 'insertAdjacentHTML', 'setHTMLUnsafe']],
+    ['CharacterData', ['before', 'after', 'replaceWith']],
+    ['DocumentType', ['before', 'after', 'replaceWith']],
+    ['DocumentFragment', ['append', 'prepend', 'replaceChildren', 'moveBefore']],
+    ['ShadowRoot', ['setHTMLUnsafe']],
+    ['Document', ['append', 'prepend', 'replaceChildren', 'moveBefore', 'write', 'writeln', 'execCommand']],
+    ['Range', ['insertNode', 'surroundContents']]
+  ];
+  const insertSetters = [['Element', ['innerHTML', 'outerHTML']], ['ShadowRoot', ['innerHTML']]];
+  const ownWrappers = new WeakSet();
   const frameKeys = ['contentWindow', 'contentDocument'];
   // Null-prototype descriptors: a page-defined Object.prototype.get/set cannot leak into them.
   const lockedValue = enumerable =>
@@ -87,15 +109,78 @@
     }
   };
 
+  // The window whose frames an insertion may have changed: the target node's (or range's) document's.
+  const viewOf = target => {
+    if (!ownerDocumentOf || !defaultViewOf) return globalThis;
+    let node = target;
+    if (startContainerOf) {
+      try { node = apply(startContainerOf, target, []); } catch (_) {}
+    }
+    try {
+      const doc = apply(ownerDocumentOf, node, []) || node;
+      return apply(defaultViewOf, doc, []) || globalThis;
+    } catch (_) {
+      return globalThis;
+    }
+  };
+
+  const lockChildFrames = view => {
+    let count = 0;
+    try { count = lengthOf ? apply(lengthOf, view, []) : 0; } catch (_) { return; }
+    for (let i = 0; i < count; i++) {
+      let child;
+      try { child = view[i]; } catch (_) { continue; }
+      lockFrame(child);
+    }
+  };
+
+  const afterInsert = target => {
+    const view = viewOf(target);
+    lockChildFrames(view);
+    if (view !== globalThis) lockChildFrames(globalThis);
+  };
+
+  const wrapInsertions = scope => {
+    const wrap = (type, keys, setter) => {
+      const ctor = getOwn(scope, type);
+      const proto = ctor && ctor.value && ctor.value.prototype;
+      if (!proto) return;
+      for (let i = 0; i < keys.length; i++) {
+        const key = keys[i];
+        const descriptor = getOwn(proto, key);
+        if (!descriptor || descriptor.configurable === false) continue;
+        const original = setter ? descriptor.set : descriptor.value;
+        if (typeof original !== 'function' || ownWrappers.has(original)) continue;
+        // Method shorthand: named like the original and not constructible.
+        const wrapper = setter
+          ? getOwn({ set [key](value) { try { apply(original, this, [value]); } finally { afterInsert(this); } } }, key).set
+          : { [key](...args) { try { return apply(original, this, args); } finally { afterInsert(this); } } }[key];
+        ownWrappers.add(wrapper);
+        define(proto, key, setter
+          ? { __proto__: null, get: descriptor.get, set: wrapper, enumerable: descriptor.enumerable, configurable: true }
+          : { __proto__: null, value: wrapper, writable: descriptor.writable, enumerable: descriptor.enumerable,
+              configurable: true });
+      }
+    };
+    for (let i = 0; i < insertMethods.length; i++) wrap(insertMethods[i][0], insertMethods[i][1], false);
+    for (let i = 0; i < insertSetters.length; i++) wrap(insertSetters[i][0], insertSetters[i][1], true);
+  };
+
   // The one lock, used for this frame and for every same-origin child reached through a frame element.
   const harden = scope => {
     for (let i = 0; i < names.length; i++) lockName(scope, names[i]);
     for (let i = 0; i < frameTypes.length; i++) wrapFrameAccessors(scope, frameTypes[i]);
+    wrapInsertions(scope);
     define(scope, MARK, { __proto__: null, value: true, writable: false, enumerable: false, configurable: false });
   };
 
   try {
     harden(globalThis);
+    // Frames the HTML parser creates: the parser runs microtasks before each of its scripts.
+    const Observer = getOwn(globalThis, 'MutationObserver');
+    if (Observer && typeof Observer.value === 'function' && typeof document !== 'undefined') {
+      new Observer.value(() => lockChildFrames(globalThis)).observe(document, { childList: true, subtree: true });
+    }
   } catch (_) {
     try { window.stop(); } catch (_) {}
     try { document.documentElement?.replaceChildren(); } catch (_) {}
