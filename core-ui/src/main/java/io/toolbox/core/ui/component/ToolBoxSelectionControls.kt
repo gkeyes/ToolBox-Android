@@ -104,6 +104,7 @@ fun ToolBoxSegmentedControl(
     val currentSelected by rememberUpdatedState(selectedIndex)
     val currentOnSelect by rememberUpdatedState(onSelect)
     var dragging by remember { mutableStateOf(false) }
+    var focusedIndex by remember { mutableStateOf(-1) }
     val lift = animateFloatAsState(
         targetValue = if (enabled && dragging) 1f else 0f,
         animationSpec = spring(dampingRatio = 0.5f, stiffness = 300f),
@@ -185,9 +186,12 @@ fun ToolBoxSegmentedControl(
         ) {
             options.forEachIndexed { index, label ->
                 val isSelected = index == selectedIndex
-                // A visible ring for keyboard focus.
+                // Keyboard focus shows as a ring drawn above the thumb (see below).
                 val interaction = remember { MutableInteractionSource() }
                 val focused by interaction.collectIsFocusedAsState()
+                LaunchedEffect(focused) {
+                    if (focused) focusedIndex = index else if (focusedIndex == index) focusedIndex = -1
+                }
                 val textColor = animateColorAsState(
                     if (isSelected) colors.textPrimary else colors.textSecondary,
                     ToolBoxMotion.effects(),
@@ -198,7 +202,6 @@ fun ToolBoxSegmentedControl(
                         .weight(1f)
                         .heightIn(min = 38.dp)
                         .then(segmentTestTags.getOrNull(index)?.let(Modifier::testTag) ?: Modifier)
-                        .then(if (focused) Modifier.border(2.dp, colors.primary, CircleShape) else Modifier)
                         .selectable(
                             selected = isSelected,
                             enabled = enabled,
@@ -227,7 +230,22 @@ fun ToolBoxSegmentedControl(
                 }
             }
         }
-        if (!hasSelection) return@BoxWithConstraints
+        // Over everything, so the opaque thumb at rest can't hide the selected segment's ring.
+        val focusRing: @Composable () -> Unit = {
+            if (focusedIndex in options.indices) {
+                Box(
+                    Modifier
+                        .offset { IntOffset((segmentPx * focusedIndex).roundToInt(), 0) }
+                        .width(segmentWidth)
+                        .fillMaxHeight()
+                        .border(2.dp, colors.primary, CircleShape),
+                )
+            }
+        }
+        if (!hasSelection) {
+            focusRing()
+            return@BoxWithConstraints
+        }
         val thumb = Modifier
             .offset { IntOffset(thumbX.value.roundToInt(), 0) }
             .width(segmentWidth)
@@ -287,6 +305,7 @@ fun ToolBoxSegmentedControl(
                     .background(pillFill),
             )
         }
+        focusRing()
     }
 }
 
