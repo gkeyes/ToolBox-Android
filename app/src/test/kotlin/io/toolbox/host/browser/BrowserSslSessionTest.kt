@@ -74,16 +74,31 @@ class BrowserSslSessionTest {
         // The announced start after proceed() is the same page, so the warning stays.
         assertFalse(f.session.navigationStarted(f.view, "https://example.test/"))
         assertTrue(f.bypassed)
-        f.session.navigationRequested(f.view, "https://example.test/next")
-        assertFalse(f.bypassed)
-        f.request()
-        f.session.resolve(requireNotNull(f.session.first).id, true)
-        assertTrue(f.bypassed)
-        // Stop cancels the requests but the allowed document stays visible, and so does its warning.
+        // Stop cancels the requests but the allowed document stays visible, and so does its warning,
+        // even when a new certificate prompt on the same page is then cancelled.
         f.session.destroyPage(f.view)
         assertTrue(f.bypassed)
-        f.session.navigationRequested(f.view, "https://example.test/again")
+        f.request("https://cdn.other.test/late")
+        f.session.resolve(requireNotNull(f.session.first).id, false)
+        assertTrue(f.bypassed)
+        // Only a page that actually starts, without an allowance of its own, is clean.
+        f.session.navigationRequested(f.view, "https://example.test/next")
+        assertTrue(f.bypassed)
+        assertFalse(f.session.navigationStarted(f.view, "https://example.test/next"))
         assertFalse(f.bypassed)
+    }
+
+    @Test fun navigationThatNeverCommitsKeepsTheWarning() {
+        val f = Fixture()
+        f.session.navigationRequested(f.view, "https://expired.test/")
+        f.request("https://expired.test/")
+        f.session.resolve(requireNotNull(f.session.first).id, true)
+        assertFalse(f.session.navigationStarted(f.view, "https://expired.test/"))
+        assertTrue(f.bypassed)
+        // The page sends itself to a 204 or a download on a valid host: requested, never started.
+        f.session.navigationRequested(f.view, "https://valid.test/no-content")
+        f.session.navigationRequested(f.view, "https://valid.test/file.zip")
+        assertTrue(f.bypassed)
     }
 
     @Test fun unannouncedStartAfterProceedKeepsTheWarning() {

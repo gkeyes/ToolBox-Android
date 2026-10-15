@@ -216,10 +216,11 @@ private fun BrowserAddressCapsule(
             // Its own text, so cutting the domain from the start can never hide the status. It follows the
             // system font scale up to 13sp and shrinks to the same floor as the domain when space runs out.
             if (state.interaction.unresponsive) {
-                // Shares the row with the domain instead of taking all of it at large font scales.
+                // Its own width, capped so it never takes the domain's room at large font scales; only
+                // the domain is weighted, so it gets everything the label leaves.
                 BasicText(
                     "未响应 · ",
-                    modifier = Modifier.weight(1f, fill = false),
+                    modifier = Modifier.widthIn(max = 44.dp).testTag("browser_address_status"),
                     maxLines = 1,
                     autoSize = TextAutoSize.StepBased(minFontSize = if (minHostSize.value > 13f) 13.sp else minHostSize, maxFontSize = 13.sp, stepSize = 0.5.sp),
                     style = hostStyle,

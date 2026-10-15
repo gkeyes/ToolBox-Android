@@ -50,6 +50,7 @@ import io.toolbox.host.background.BackgroundTasksPageModel
 import io.toolbox.host.background.LiveNotificationSupportState
 import io.toolbox.host.browser.BrowserBottomBar
 import io.toolbox.host.browser.BrowserFilterController
+import io.toolbox.host.browser.BrowserInteractionState
 import io.toolbox.host.browser.BrowserPublicSuffix
 import io.toolbox.host.browser.BrowserScreenActions
 import io.toolbox.host.browser.BrowserCloseButton
@@ -397,6 +398,18 @@ class LayoutScreenshotTest(private val fontScale: Float) {
         state.certificateBypassed = false
         state.mixedContent = true
         check("mixed content", "含不安全内容的页面")
+        state.mixedContent = false
+        // Unresponsive: the status keeps its own capped width and the domain gets the rest of the row.
+        state.interaction = BrowserInteractionState(unresponsive = true)
+        check("unresponsive", null)
+        val status = compose.onNodeWithTag("browser_address_status", useUnmergedTree = true).fetchSemanticsNode()
+        val host = compose.onNodeWithTag("browser_address_host", useUnmergedTree = true).fetchSemanticsNode()
+        with(compose.density) {
+            val statusWidth = status.size.width.toDp()
+            val hostWidth = host.size.width.toDp()
+            assertTrue("unresponsive @${fontScale}x: status is $statusWidth wide", statusWidth <= 44.5.dp)
+            assertTrue("unresponsive @${fontScale}x: domain squeezed to $hostWidth", hostWidth >= 30.dp)
+        }
     }
 
     private object NoBrowserActions : BrowserScreenActions {
