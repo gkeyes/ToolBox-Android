@@ -114,7 +114,9 @@
       if(!background&&activeDraftId&&$('#sheet').open&&$('#sheet form[data-form]'))next.completedDrafts=[...new Set([...(next.completedDrafts||[]),activeDraftId])];
       if(!draftsUnreadable)next.completedDrafts=(next.completedDrafts||[]).filter(id=>id===activeDraftId||storedDraftIds.has(id));
       next=validate(next);next.revision=(data.revision||0)+1;
-      await Promise.race([runtime.set(KEY,next),new Promise((_,no)=>setTimeout(()=>no(new Error('存储没有响应，记录未保存，请稍后重试。')),10000))]);
+      // A slow store gets a word after 10 s, but the write keeps the lock until it settles so nothing can overtake it.
+      const slow=setTimeout(()=>{const m='存储响应很慢，仍在等待保存完成，请不要关闭。';if(background)toast(m,null,true);else showError(m);},10000);
+      try{await runtime.set(KEY,next);}finally{clearTimeout(slow);}
       data=next;
       return true;
     }catch(error){if(!background)showError(runtime.explain(error));return false;}
@@ -638,6 +640,7 @@
   // Delegated events keep dynamically rendered pages and bottom sheets consistent.
   document.addEventListener('click',async e=>{
     const b=e.target.closest('[data-action]');if(!b||b.disabled||(busy&&!busyBackground)||draftBusy)return;const a=b.dataset.action,id=b.dataset.id||'';
+    if(busy&&a!=='nav'){for(let n=0;n<200&&busy;n++)await new Promise(r=>setTimeout(r,50));if(busy){showError('我的家还在保存，请稍后再试。');return;}}
     if(['nav','detail','transaction','payment','add-item','edit-item','edit-plan','edit-estimate','settle-item','project','settings','apply-preview'].includes(a)&&isFormDirty()){pendingNavigation=()=>{if(b.isConnected)b.click();};closeDialog();return;}
     try{
       if(a==='nav')navigate(b.dataset.page);
