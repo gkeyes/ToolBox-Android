@@ -300,7 +300,7 @@ fun ToolBoxActionSheet(
                         LocalToolBoxInGlassSheet provides (containerColor == null),
                     ) {
                         // Buttons on the sheet refract what the sheet shows: the frosted page copy.
-                        ProvideWindowButtonBackdrop(backdrop?.takeIf { frosted }, materials.overlayFill, SheetBlur) {
+                        ProvideWindowButtonBackdrop(backdrop?.takeIf { frosted }, materials.overlayFill, SheetBlur, { entrance.value; dragOffset }) {
                             Box(Modifier.fillMaxWidth()) { if (containerColor == null) ProvideToolBoxGlassText(content) else content() }
                         }
                     }

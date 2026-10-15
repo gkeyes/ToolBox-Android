@@ -110,6 +110,8 @@ private class WindowCopyBackdrop(
     private val layerScale: (() -> Float)?,
     /** Drawn over the copy (made legible like the panel's): the panel's own fill, for controls on it. */
     private val overlay: Color? = null,
+    /** Read on every draw, so a control moving with its panel (a slide, a drag) is redrawn in register. */
+    private val motion: () -> Unit = {},
 ) : Backdrop {
     override val isCoordinatesDependent: Boolean = true
 
@@ -122,6 +124,7 @@ private class WindowCopyBackdrop(
         coordinates: LayoutCoordinates?,
         layerBlock: (GraphicsLayerScope.() -> Unit)?,
     ) {
+        motion()
         val node = coordinates?.takeIf { it.isAttached } ?: return
         // On screen, not in window: popups and dialogs need not share the page window's origin.
         val origin = node.positionOnScreen() - copy.rootOnScreen
@@ -147,20 +150,23 @@ private class WindowCopyBackdrop(
 /**
  * Buttons on a panel of window glass (a sheet, a dialog, the group panel) refract what the panel
  * shows: the page copy under the panel's [fill], blurred as much as the panel. Without a copy
- * (实色材质, or before it lands) they keep the clear backdrop.
+ * (实色材质, or before it lands) they keep the clear backdrop. [motion] reads whatever moves the
+ * panel, as for the panel's own glass.
  */
 @Composable
 internal fun ProvideWindowButtonBackdrop(
     copy: WindowBackdrop?,
     fill: Color,
     blurRadius: Dp,
+    motion: () -> Unit = {},
     content: @Composable () -> Unit,
 ) {
     if (copy == null) {
         content()
         return
     }
-    val backdrop = remember(copy, fill) { WindowCopyBackdrop(copy, null, fill) }
+    val currentMotion by rememberUpdatedState(motion)
+    val backdrop = remember(copy, fill) { WindowCopyBackdrop(copy, null, fill) { currentMotion() } }
     CompositionLocalProvider(
         LocalToolBoxButtonBackdrop provides backdrop,
         LocalToolBoxButtonBlur provides blurRadius,
@@ -174,8 +180,9 @@ fun ProvideToolBoxWindowButtonBackdrop(
     glass: ToolBoxWindowGlass,
     fill: Color = ToolBoxThemeTokens.materials.overlayFill,
     blurRadius: Dp = 28.dp,
+    motion: () -> Unit = {},
     content: @Composable () -> Unit,
-) = ProvideWindowButtonBackdrop(glass.copy, fill, blurRadius, content)
+) = ProvideWindowButtonBackdrop(glass.copy, fill, blurRadius, motion, content)
 
 /**
  * Liquid Glass over a copy of the page: the page frosted by [blurRadius] (colours and shapes stay,
