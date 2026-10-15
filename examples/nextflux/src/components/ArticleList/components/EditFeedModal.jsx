@@ -189,7 +189,7 @@ export default function EditFeedModal() {
               <TextField fullWidth variant="secondary" name="feedUrl">
                 <Label>{t("feed.feedUrl")}</Label>
                 <InputGroup>
-                  <InputGroup.Input placeholder={feedUrl} disabled />
+                  <InputGroup.Input value={feedUrl} readOnly />
                   <InputGroup.Suffix className="pr-0.5">
                     <Button
                       size="sm"
