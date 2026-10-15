@@ -26,6 +26,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
@@ -129,11 +130,12 @@ internal fun BackgroundSafeguardsScreen(
     val notificationRationale = {
         activity?.shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS) == true
     }
-    var rationaleBeforeRequest by remember { mutableStateOf(false) }
+    // Saveable: the permission dialog can outlive a rotation of this screen.
+    var rationaleBeforeRequest by rememberSaveable { mutableStateOf(false) }
     // A first dialog dismissed with Back also leaves no rationale, so settings only open once ToolBox
     // has asked here before.
-    var askedBefore by remember { mutableStateOf(false) }
-    var requestedAt by remember { mutableStateOf(0L) }
+    var askedBefore by rememberSaveable { mutableStateOf(false) }
+    var requestedAt by rememberSaveable { mutableStateOf(0L) }
     val requestRecord = remember(context) { context.getSharedPreferences(PermissionRequestRecord, Context.MODE_PRIVATE) }
     val notificationLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),

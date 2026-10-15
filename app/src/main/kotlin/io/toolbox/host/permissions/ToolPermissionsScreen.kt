@@ -57,8 +57,12 @@ internal fun ToolPermissionsContent(
     val context = androidx.compose.ui.platform.LocalContext.current
     // Re-read Android's permission state on every return, e.g. after revoking one in system settings.
     var systemGranted by remember { mutableStateOf<(String) -> Boolean>({ true }) }
+    var exactAlarms by remember { mutableStateOf(true) }
     androidx.lifecycle.compose.LifecycleResumeEffect(context) {
         systemGranted = { permission -> context.checkSelfPermission(permission) == android.content.pm.PackageManager.PERMISSION_GRANTED }
+        exactAlarms = runCatching {
+            context.getSystemService(android.app.AlarmManager::class.java)?.canScheduleExactAlarms() != false
+        }.getOrDefault(true)
         onPauseOrDispose { }
     }
     DetailScreen(title = "工具权限", onBack = onBack) { chromePadding ->
@@ -97,7 +101,7 @@ internal fun ToolPermissionsContent(
                         key(tool.currentVersion) {
                             val summaryFlow = remember(tool.currentVersion) { summaryFor(tool) }
                             val summary by summaryFlow.collectAsStateWithLifecycle(initialValue = ToolPermissionSummary.Loading)
-                            ToolPermissionSelectionRow(tool, summary.withSystemState(systemGranted), onSelectTool)
+                            ToolPermissionSelectionRow(tool, summary.withSystemState(systemGranted, exactAlarms), onSelectTool)
                         }
                     }
                 }

@@ -41,4 +41,11 @@ class ToolPermissionSummaryTest {
         assertEquals("已允许 $expectedNotifications / 3 项 · ${3 - expectedNotifications} 项关闭", revoked.label)
         assertEquals(3, (stored.withSystemState { true } as ToolPermissionSummary.Ready).enabled)
     }
+
+    @Test
+    fun revokedExactAlarmAccessCountsAlarmsAsOff() {
+        val stored = summarizeToolPermissions("t", setOf("alarms"), listOf(PermissionGrant("t", "alarms", true, 1)))
+        assertEquals(0, (stored.withSystemState({ true }, exactAlarms = false) as ToolPermissionSummary.Ready).enabled)
+        assertEquals(1, (stored.withSystemState({ true }, exactAlarms = true) as ToolPermissionSummary.Ready).enabled)
+    }
 }

@@ -334,14 +334,12 @@ internal fun String.defaultEnabled() = this in setOf(
     "haptics",
 )
 
-/**
- * Whether Android still allows [capability]; location works with either coarse or fine. Exact alarms
- * are a special access the Permission Center checks on its own, so they are not judged here.
- */
-internal fun capabilitySystemAllowed(capability: String, granted: (String) -> Boolean): Boolean {
+/** Whether Android still allows [capability]; location works with either coarse or fine, alarms need exact-alarm access. */
+internal fun capabilitySystemAllowed(capability: String, granted: (String) -> Boolean, exactAlarms: Boolean = true): Boolean {
     val permissions = capability.androidPermissions()
     return when {
-        capability == "alarms" || permissions.isEmpty() -> true
+        capability == "alarms" -> exactAlarms
+        permissions.isEmpty() -> true
         capability == "location" -> permissions.any(granted)
         else -> permissions.all(granted)
     }

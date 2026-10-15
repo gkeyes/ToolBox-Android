@@ -27,9 +27,9 @@ internal sealed interface ToolPermissionSummary {
 }
 
 /** Stored grants stay on after the user revokes the Android permission in system settings; count those as off. */
-internal fun ToolPermissionSummary.withSystemState(systemGranted: (String) -> Boolean): ToolPermissionSummary =
+internal fun ToolPermissionSummary.withSystemState(systemGranted: (String) -> Boolean, exactAlarms: Boolean = true): ToolPermissionSummary =
     if (this !is ToolPermissionSummary.Ready) this
-    else granted.filterTo(mutableSetOf()) { capabilitySystemAllowed(it, systemGranted) }.let { on -> copy(enabled = on.size, granted = on) }
+    else granted.filterTo(mutableSetOf()) { capabilitySystemAllowed(it, systemGranted, exactAlarms) }.let { on -> copy(enabled = on.size, granted = on) }
 
 internal val ToolPermissionSummary.label: String
     get() = when (this) {
