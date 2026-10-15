@@ -41,7 +41,6 @@ import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.hypot
-import kotlin.math.roundToInt
 import kotlin.math.sin
 import kotlin.math.tanh
 
@@ -175,18 +174,20 @@ internal fun followingHighlight(interaction: InteractiveHighlight): Highlight {
     val dx = (touch.x - size.width / 2f) / (size.width / 2f)
     val dy = (touch.y - size.height / 2f) / (size.height / 2f)
     val touchAngle = Math.toDegrees(atan2(dy.toDouble(), dx.toDouble())).toFloat()
-    // Shortest turn on the 180° period, then whichever equivalent (any multiple of 180°) is nearest
-    // the last one, so it unwinds across every revolution:
-    // while the press fades in or out, crossing the opposite diagonal no longer snaps the light a
-    // quarter turn. The turn fades out within the inner third, so finger jitter at the centre
-    // (where the direction is undefined) barely moves it.
+    // Shortest turn on the 180° period, then whichever of it and its ±180° equivalents is nearest
+    // the last one: while the press fades in or out, crossing the opposite diagonal no longer snaps
+    // the light a quarter turn. Kept within ±270°, so jitter in the centre fade (where the
+    // direction is undefined) can't wind it up. The turn fades out within the inner third, so that
+    // jitter barely moves the light.
     val shortest = ((touchAngle - RestingHighlightAngle) % 180f + 270f) % 180f - 90f
     val reach = (hypot(dx, dy) / CentreFade).fastCoerceAtMost(1f)
     val scale = progress * reach
-    // At full scale every equivalent turn looks the same, so the stored turn drops its extra
-    // revolutions there; it only unwinds while the press or the centre fade scales it down.
     val last = interaction.highlightTurn
-    val turn = if (last == null || scale >= 0.999f) shortest else shortest + 180f * ((last - shortest) / 180f).roundToInt()
+    val turn = if (last == null || scale >= 0.999f) {
+        shortest
+    } else {
+        floatArrayOf(shortest - 180f, shortest, shortest + 180f).minBy { abs(it - last) }
+    }
     interaction.highlightTurn = turn
     val angle = RestingHighlightAngle + turn * scale
     return Highlight(

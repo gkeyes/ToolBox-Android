@@ -238,7 +238,8 @@ fun ToolBoxSegmentedControl(
                         .offset { IntOffset((segmentPx * focusedIndex).roundToInt(), 0) }
                         .width(segmentWidth)
                         .fillMaxHeight()
-                        .border(2.dp, colors.primary, CircleShape),
+                        // The accent reads only 1.6:1 on the dark thumb; white keeps 3:1 there and on the track.
+                        .border(2.dp, if (dark) Color.White else colors.primary, CircleShape),
                 )
             }
         }
@@ -275,7 +276,8 @@ fun ToolBoxSegmentedControl(
             Box(
                 thumb.graphicsLayer {
                     val offCentre = (abs(thumbX.value - thumbIndex * segmentPx) / (segmentPx / 2f)).coerceIn(0f, 1f)
-                    alpha = (1f - 0.4f * lift.value) * (1f - offCentre * lift.value)
+                    // Gone by a fifth of a segment off centre, before the two labels visibly double.
+                    alpha = (1f - 0.4f * lift.value) * (1f - (offCentre / 0.4f).coerceAtMost(1f) * lift.value)
                 }.clearAndSetSemantics { },
                 contentAlignment = Alignment.Center,
             ) {
