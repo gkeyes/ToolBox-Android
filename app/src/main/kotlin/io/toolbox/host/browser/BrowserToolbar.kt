@@ -213,10 +213,17 @@ private fun BrowserAddressCapsule(
             )
             // Below a 0.67 font scale the 10dp floor would exceed the 15sp maximum, which StepBased rejects.
             val minHostSize = with(LocalDensity.current) { 10.dp.toSp() }.let { if (it.value > 15f) 15.sp else it }
-            // Its own text, so cutting the domain from the start can never hide the status. It keeps a
-            // fixed size that follows the system font scale; only the domain shrinks.
+            // Its own text, so cutting the domain from the start can never hide the status. It follows the
+            // system font scale up to 13sp and shrinks to the same floor as the domain when space runs out.
             if (state.interaction.unresponsive) {
-                ToolBoxText("未响应 · ", maxLines = 1, style = hostStyle.copy(fontSize = 13.sp))
+                // Shares the row with the domain instead of taking all of it at large font scales.
+                BasicText(
+                    "未响应 · ",
+                    modifier = Modifier.weight(1f, fill = false),
+                    maxLines = 1,
+                    autoSize = TextAutoSize.StepBased(minFontSize = if (minHostSize.value > 13f) 13.sp else minHostSize, maxFontSize = 13.sp, stepSize = 0.5.sp),
+                    style = hostStyle,
+                )
             }
             BasicText(
                 // Checked first: a lookup before the list loads would latch OkHttp's failure for the process.

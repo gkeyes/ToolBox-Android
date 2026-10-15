@@ -83,6 +83,20 @@ class BrowserSslSessionTest {
         assertFalse(f.bypassed)
     }
 
+    @Test fun unannouncedStartAfterProceedKeepsTheWarning() {
+        val f = Fixture()
+        f.session.navigationRequested(f.view, "https://example.test/")
+        assertFalse(f.session.navigationStarted(f.view, "https://example.test/"))
+        // A script navigation the host never announced hits a bad certificate before its start.
+        f.request("https://other.test/")
+        f.session.resolve(requireNotNull(f.session.first).id, true)
+        assertTrue(f.session.navigationStarted(f.view, "https://other.test/"))
+        assertTrue(f.bypassed)
+        // The next unannounced page started without any allowance is clean again.
+        assertTrue(f.session.navigationStarted(f.view, "https://third.test/"))
+        assertFalse(f.bypassed)
+    }
+
     @Test fun sslBeforeFirstStartAlsoWorksWithoutAnAnnouncedNavigation() {
         val f = Fixture()
         val request = f.request()

@@ -61,8 +61,19 @@ internal class BrowserWebViewFactory(
     private val navigation: BrowserNavigationController,
     private val host: BrowserPageHost,
 ) {
+    /** Bumped on every page start, so a mixed-content report from the previous document is dropped. */
+    @Volatile private var documentGeneration = 0
+
     /** May throw [android.util.AndroidRuntimeException] when System WebView is missing or disabled. */
     fun create(): WebView = WebView(activity)
+
+    private fun markMixedContent(view: WebView, generation: Int) {
+        if (view === state.webView && generation == documentGeneration &&
+            state.address.startsWith("https:", ignoreCase = true)
+        ) {
+            state.mixedContent = true
+        }
+    }
 
     @SuppressLint("SetJavaScriptEnabled")
     fun configure(page: WebView) {
@@ -78,13 +89,17 @@ internal class BrowserWebViewFactory(
                 filters.intercept(view, request)?.let { return it }
                 // Network thread. A plain-HTTP subresource that is actually requested marks an HTTPS page insecure.
                 if (!request.isForMainFrame && request.url.scheme == "http") {
-                    view.post {
-                        if (view === state.webView && state.address.startsWith("https:", ignoreCase = true)) {
-                            state.mixedContent = true
-                        }
-                    }
+                    val generation = documentGeneration
+                    view.post { markMixedContent(view, generation) }
                 }
                 return null
+            }
+
+            // Also sees the destination of a subresource redirect, which shouldInterceptRequest never does.
+            override fun onLoadResource(view: WebView, url: String) {
+                if (url.startsWith("http:", ignoreCase = true)) {
+                    markMixedContent(view, documentGeneration)
+                }
             }
 
             override fun onPageCommitVisible(view: WebView, url: String) {
@@ -116,6 +131,7 @@ internal class BrowserWebViewFactory(
                 validBrowserUrl(url)?.let { state.address = it }
                 filters.navigated(url)
                 state.title = ""
+                documentGeneration++
                 state.mixedContent = false
                 state.error = null
                 state.loadProgress = 0

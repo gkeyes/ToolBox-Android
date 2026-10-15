@@ -51,6 +51,8 @@ internal class BrowserSslSession<Page : Any>(
 
     private var page: Page? = null
     private var awaitingStart = false
+    /** The user allowed a connection since the last page start; that start's page inherits the warning. */
+    private var proceededBeforeStart = false
     private var nextId = 0L
     private val warnings = ArrayDeque<Warning<Page>>()
     val first: Warning<Page>? get() = warnings.firstOrNull()
@@ -72,9 +74,14 @@ internal class BrowserSslSession<Page : Any>(
             // engine may normalize the URL or follow a redirect before delivering this start;
             // URL equality cannot identify a navigation operation.
             awaitingStart = false
+            proceededBeforeStart = false
             return false
         }
+        // An unannounced navigation whose certificate the user already allowed keeps the warning;
+        // when the allowance was really for the previous page this errs on the side of warning.
+        val carry = proceededBeforeStart
         replaceSession(view)
+        if (carry) bypassChanged(true)
         return true
     }
 
@@ -97,6 +104,7 @@ internal class BrowserSslSession<Page : Any>(
         warnings.removeFirst()
         changed()
         if (allow && warning.page === page && warning.page === currentPage()) {
+            proceededBeforeStart = true
             bypassChanged(true)
             warning.proceed()
         } else {
@@ -117,6 +125,7 @@ internal class BrowserSslSession<Page : Any>(
         val previous = page
         page = view
         awaitingStart = false
+        proceededBeforeStart = false
         // The certificate exception ends with the session, so the toolbar's warning does too.
         bypassChanged(false)
         if (previous != null && previous !== view) clearPreferences(previous)
