@@ -6,7 +6,7 @@ import android.content.Context
 import android.os.Build
 import android.os.VibrationEffect
 import android.os.VibratorManager
-import android.widget.Toast
+import io.toolbox.core.ui.component.ToolBoxToasts
 import io.toolbox.tool.api.MethodDescriptor
 import io.toolbox.tool.runtime.RuntimeBasicDeviceInfo
 import io.toolbox.tool.runtime.RuntimeClipboardWriteHandler
@@ -47,7 +47,7 @@ internal class AndroidToastHandler(
                 if (notForeground.errorCode != RuntimeRpcErrorCode.SESSION_ENDED) throw notForeground
                 return@withContext
             }
-            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+            ToolBoxToasts.show(context, message)
         }
     }
 }

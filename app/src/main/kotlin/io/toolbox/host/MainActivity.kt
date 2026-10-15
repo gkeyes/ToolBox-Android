@@ -1,41 +1,47 @@
 package io.toolbox.host
 
-import android.content.Intent
 import android.content.Context
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
-import androidx.activity.compose.setContent
 import androidx.activity.compose.ReportDrawnWhen
+import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.withFrameNanos
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.toolbox.core.data.ThemeMode
+import io.toolbox.core.ui.component.ToolBoxToastHost
+import io.toolbox.core.ui.component.ToolBoxToasts
 import io.toolbox.core.ui.theme.ToolBoxTheme
 import io.toolbox.core.ui.theme.ToolBoxThemeMode
 import io.toolbox.core.ui.theme.ToolBoxThemeStyle
-import io.toolbox.host.catalog.CatalogViewModel
 import io.toolbox.host.browser.BrowserAppearance
 import io.toolbox.host.catalog.CatalogAction
+import io.toolbox.host.catalog.CatalogViewModel
 import io.toolbox.host.importflow.ImportViewModel
-import io.toolbox.host.update.launchUpdateHint
 import io.toolbox.host.navigation.ToolBoxNavigation
-import io.toolbox.host.settings.SettingsUiState
-import io.toolbox.host.settings.SettingsViewModel
 import io.toolbox.host.runtime.ForegroundCapabilityBroker
 import io.toolbox.host.runtime.RuntimeSessionManager
+import io.toolbox.host.settings.SettingsUiState
+import io.toolbox.host.settings.SettingsViewModel
 import io.toolbox.host.ui.HostBootstrapScreen
 import io.toolbox.host.ui.LocalToolIconLoader
 import io.toolbox.host.ui.applyHyperOsGestureNavigationImmersion
+import io.toolbox.host.update.launchUpdateHint
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.withContext
@@ -93,7 +99,7 @@ class MainActivity : ComponentActivity() {
                     LaunchedEffect(state.dependencies) {
                         state.dependencies.startupNotice.collect { notice ->
                             if (notice != null) {
-                                android.widget.Toast.makeText(this@MainActivity, notice, android.widget.Toast.LENGTH_LONG).show()
+                                ToolBoxToasts.show(this@MainActivity, notice, long = true)
                                 state.dependencies.startupNotice.value = null
                             }
                         }
@@ -102,7 +108,7 @@ class MainActivity : ComponentActivity() {
                         // Let the first frames and startup maintenance go first; the check itself runs off the main thread.
                         kotlinx.coroutines.delay(3_000)
                         state.dependencies.updates.launchUpdateHint(state.dependencies.repositories.catalog)
-                            ?.let { android.widget.Toast.makeText(this@MainActivity, it, android.widget.Toast.LENGTH_LONG).show() }
+                            ?.let { ToolBoxToasts.show(this@MainActivity, it, long = true) }
                     }
                     val featureFactory = remember(state.dependencies) {
                         HostFeatureViewModelFactory(state.dependencies)
@@ -156,15 +162,18 @@ class MainActivity : ComponentActivity() {
                         reduceTransparency = settingsState.reduceTransparency,
                     ) {
                         ApplySystemBarAppearance(themeMode)
-                        CompositionLocalProvider(LocalToolIconLoader provides state.dependencies.toolIcons) {
-                            ToolBoxNavigation(
-                                dependencies = state.dependencies,
-                                viewModelStoreOwner = this,
-                                catalogViewModel = catalogViewModel,
-                                importViewModel = importViewModel,
-                                settingsViewModel = settingsViewModel,
-                                contentResolver = contentResolver,
-                            )
+                        Box(Modifier.fillMaxSize()) {
+                            CompositionLocalProvider(LocalToolIconLoader provides state.dependencies.toolIcons) {
+                                ToolBoxNavigation(
+                                    dependencies = state.dependencies,
+                                    viewModelStoreOwner = this@MainActivity,
+                                    catalogViewModel = catalogViewModel,
+                                    importViewModel = importViewModel,
+                                    settingsViewModel = settingsViewModel,
+                                    contentResolver = contentResolver,
+                                )
+                            }
+                            ToolBoxToastHost(Modifier.align(Alignment.BottomCenter))
                         }
                         LaunchedEffect(pendingShortcutIntent) {
                             val launchIntent = pendingShortcutIntent ?: return@LaunchedEffect
