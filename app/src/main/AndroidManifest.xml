@@ -48,6 +48,11 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <!-- The host's notifications open tools through here; MainActivity only trusts its tokens. -->
+        <activity
+            android:name=".ToolLaunchActivity"
+            android:exported="false"
+            android:theme="@android:style/Theme.NoDisplay" />
         <activity
             android:name=".browser.BrowserActivity"
             android:exported="false"
