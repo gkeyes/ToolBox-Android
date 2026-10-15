@@ -55,6 +55,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 import io.toolbox.core.ui.theme.readableForeground
+import androidx.compose.ui.unit.Dp
 
 @Composable
 fun ToolBoxNavigationBar(
@@ -71,7 +72,8 @@ fun ToolBoxNavigationBar(
         if (item.id != selectedId) haptics.tick()
         onItemSelected(item)
     }
-    if (glassState != null && ToolBoxThemeTokens.materials.realBlurEnabled && items.isNotEmpty()) {
+    // Only when the page is really recorded: otherwise the tabs would refract an empty backdrop.
+    if (glassState != null && glassRendersLive() && items.isNotEmpty()) {
         LiquidTabNavigationBar(
             items = items,
             selectedId = selectedId,
@@ -88,6 +90,9 @@ fun ToolBoxNavigationBar(
         onItemSelected = select,
         modifier = modifier,
         navigationShape = navigationShape,
+        // Standing in for the 64dp refracting bar during a transition: keep its height, so the
+        // page's bottom padding doesn't jump.
+        barHeight = if (glassState != null && ToolBoxThemeTokens.materials.realBlurEnabled) 64.dp else 58.dp,
     )
 }
 
@@ -164,6 +169,7 @@ private fun LiquidGlassNavigationBar(
     onItemSelected: (ToolBoxNavigationItem) -> Unit,
     modifier: Modifier,
     navigationShape: RoundedCornerShape,
+    barHeight: Dp = 58.dp,
 ) {
     if (items.isEmpty()) return
     val surfaceModifier = modifier
@@ -181,7 +187,7 @@ private fun LiquidGlassNavigationBar(
     BoxWithConstraints(
         modifier = surfaceModifier
             .fillMaxWidth()
-            .height(58.dp),
+            .height(barHeight),
     ) {
         val itemWidth = maxWidth / items.size
         val selectedIndex = items.indexOfFirst { it.id == selectedId }

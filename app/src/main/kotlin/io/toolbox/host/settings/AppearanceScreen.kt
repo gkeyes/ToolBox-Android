@@ -49,6 +49,14 @@ import io.toolbox.host.ui.SectionHeader
 import io.toolbox.host.ui.SurfaceCard
 import io.toolbox.host.ui.mergePadding
 import io.toolbox.host.ui.rememberTitleBoundListState
+import com.kyant.backdrop.backdrops.layerBackdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop
+import com.kyant.backdrop.drawBackdrop
+import com.kyant.backdrop.effects.blur
+import com.kyant.backdrop.effects.lens
+import com.kyant.backdrop.effects.vibrancy
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.platform.LocalView
 
 @Composable
 internal fun AppearanceScreen(
@@ -168,6 +176,10 @@ private fun AppearancePreview(mode: ThemeMode, systemColor: Boolean, reduceTrans
     val materialLabel = if (reduceTransparency) "实色材质" else "透明材质"
     val accent = colors.primary
     val panelShape = toolBoxShape(22.dp)
+    val surface = colors.surface
+    val glassTint = materials.glassTint
+    val glassLive = !reduceTransparency && materials.realBlurEnabled && LocalView.current.isHardwareAccelerated
+    val blobBackdrop = rememberLayerBackdrop()
     Column(Modifier.fillMaxWidth().testTag("appearance_preview")) {
         Box(Modifier.padding(bottom = 7.dp)) { SectionHeader("颜色与排版预览") }
         Box(
@@ -175,37 +187,58 @@ private fun AppearancePreview(mode: ThemeMode, systemColor: Boolean, reduceTrans
                 .fillMaxWidth()
                 .height(156.dp)
                 .clip(toolBoxShape(ToolBoxThemeTokens.radii.card))
-                .background(colors.surface)
-                .drawBehind {
-                    val unit = 1.dp.toPx()
-                    val blobs = listOf(
-                        Triple(Color(0xFFFFC93C), Offset(65f * unit, 55f * unit), 95f * unit),
-                        Triple(Color(0xFF7C82FF), Offset(size.width - 65f * unit, 85f * unit), 105f * unit),
-                        Triple(Color(0xFF2ECBCB), Offset(210f * unit, size.height + 10f * unit), 100f * unit),
-                    )
-                    blobs.forEach { (color, center, radius) ->
-                        drawCircle(
-                            Brush.radialGradient(
-                                listOf(color.copy(alpha = blobAlpha), color.copy(alpha = 0f)),
-                                center = center,
-                                radius = radius,
-                            ),
-                            radius = radius,
-                            center = center,
-                        )
-                    }
-                }
                 .clearAndSetSemantics {
                     contentDescription = "外观预览：${mode.baseLabel}，$materialLabel"
                 },
         ) {
+            // The colour blobs are recorded as a backdrop, so the sample panel is real glass over
+            // them: blurred, refracted at the rim, with the specular highlight.
+            Box(
+                Modifier
+                    .matchParentSize()
+                    .then(if (glassLive) Modifier.layerBackdrop(blobBackdrop) else Modifier)
+                    .drawBehind {
+                        drawRect(surface)
+                        val unit = 1.dp.toPx()
+                        val blobs = listOf(
+                            Triple(Color(0xFFFFC93C), Offset(65f * unit, 55f * unit), 95f * unit),
+                            Triple(Color(0xFF7C82FF), Offset(size.width - 65f * unit, 85f * unit), 105f * unit),
+                            Triple(Color(0xFF2ECBCB), Offset(210f * unit, size.height + 10f * unit), 100f * unit),
+                        )
+                        blobs.forEach { (color, center, radius) ->
+                            drawCircle(
+                                Brush.radialGradient(
+                                    listOf(color.copy(alpha = blobAlpha), color.copy(alpha = 0f)),
+                                    center = center,
+                                    radius = radius,
+                                ),
+                                radius = radius,
+                                center = center,
+                            )
+                        }
+                    },
+            )
             Row(
                 Modifier
                     .padding(start = 16.dp, end = 16.dp, top = 22.dp)
                     .fillMaxWidth()
                     .heightIn(min = 76.dp)
-                    .clip(panelShape)
-                    .background(if (reduceTransparency) colors.raised else materials.glassTint)
+                    .then(
+                        if (glassLive) {
+                            Modifier.drawBackdrop(
+                                backdrop = blobBackdrop,
+                                shape = { RoundedCornerShape(22.dp) },
+                                effects = {
+                                    vibrancy()
+                                    blur(10.dp.toPx())
+                                    lens(14.dp.toPx(), 28.dp.toPx())
+                                },
+                                onDrawSurface = { drawRect(glassTint) },
+                            )
+                        } else {
+                            Modifier.clip(panelShape).background(if (reduceTransparency) colors.raised else materials.glassTint)
+                        },
+                    )
                     .border(0.5.dp, if (reduceTransparency) Color.Transparent else materials.glassBorder, panelShape)
                     .padding(horizontal = 14.dp),
                 verticalAlignment = Alignment.CenterVertically,

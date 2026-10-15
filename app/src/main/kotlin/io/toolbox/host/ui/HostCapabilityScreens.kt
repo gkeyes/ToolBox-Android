@@ -106,6 +106,12 @@ import io.toolbox.host.runtime.RuntimeCloseUiState
 import io.toolbox.host.runtime.RuntimeUiState
 import io.toolbox.host.runtime.RuntimeViewModel
 import kotlinx.coroutines.delay
+import com.kyant.backdrop.backdrops.layerBackdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop
+import com.kyant.backdrop.drawBackdrop
+import com.kyant.backdrop.effects.blur
+import com.kyant.backdrop.effects.lens
+import com.kyant.backdrop.effects.vibrancy
 
 /**
  * A running mini-tool is fullscreen and draws everything itself: the host adds no title bar,
@@ -362,7 +368,7 @@ internal fun RuntimeExitConfirmation(onConfirm: () -> Unit, toolName: String?, m
     LaunchedEffect(hintRevision) {
         if (hintRevision == 0) return@LaunchedEffect
         // Copy the page before the capsule shows: the capsule refracts that copy.
-        if (!hintVisible && realBlur) glass.capture(hostView)
+        if (realBlur && !glass.ready) glass.capture(hostView)
         hintVisible = true
         // The confirmation window started at the Back press, not after the copy: hide on time.
         delay((RUNTIME_EXIT_BACK_WINDOW_MS - (SystemClock.elapsedRealtime() - lastBackAt)).coerceAtLeast(0L))
@@ -652,10 +658,15 @@ private fun ToolBoxStartupMark(error: Boolean, tileSize: Dp = 104.dp) {
         value
     }
     val glow = if (error) Color(0xFFFF6961) else Color(0xFF4A9BFF)
+    // The disc is glass over the glow: the glow is recorded as its backdrop.
+    val glassLive = materials.realBlurEnabled && LocalView.current.isHardwareAccelerated
+    val glowBackdrop = rememberLayerBackdrop()
+    val discTint = materials.glassTint
     Box(Modifier.size(discSize).clearAndSetSemantics { }, contentAlignment = Alignment.Center) {
         Box(
             Modifier
                 .requiredSize(glowSize)
+                .then(if (glassLive) Modifier.layerBackdrop(glowBackdrop) else Modifier)
                 .graphicsLayer { alpha = glowAlpha }
                 .drawBehind {
                     drawCircle(
@@ -670,8 +681,22 @@ private fun ToolBoxStartupMark(error: Boolean, tileSize: Dp = 104.dp) {
         Box(
             Modifier
                 .size(discSize)
-                .clip(CircleShape)
-                .background(materials.glassTint)
+                .then(
+                    if (glassLive) {
+                        Modifier.drawBackdrop(
+                            backdrop = glowBackdrop,
+                            shape = { CircleShape },
+                            effects = {
+                                vibrancy()
+                                blur(6.dp.toPx())
+                                lens(16.dp.toPx(), 32.dp.toPx())
+                            },
+                            onDrawSurface = { drawRect(discTint) },
+                        )
+                    } else {
+                        Modifier.clip(CircleShape).background(discTint)
+                    },
+                )
                 .border(0.75.dp, materials.glassBorder, CircleShape),
         )
         Box(Modifier.size(tileSize)) {
