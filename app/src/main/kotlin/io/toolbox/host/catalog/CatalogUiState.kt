@@ -64,6 +64,10 @@ sealed interface CatalogAction {
     data class RequestUninstall(val toolId: String) : CatalogAction
     data object CancelUninstall : CatalogAction
     data object ConfirmUninstall : CatalogAction
+    /** Saves the installed package (no stored data) to the document [location] the save dialog returned. */
+    data class ExportTool(val toolId: String, val location: String) : CatalogAction
+    /** The system save dialog could not be opened. */
+    data object ExportPickerUnavailable : CatalogAction
     data object DismissFeedback : CatalogAction
     /** Restarts catalog collection after [CatalogUiState.loadFailed]. */
     data object RetryLoad : CatalogAction

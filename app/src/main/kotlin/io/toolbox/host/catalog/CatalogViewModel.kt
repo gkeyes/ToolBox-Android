@@ -15,6 +15,8 @@ import io.toolbox.core.data.DataResult
 import io.toolbox.host.HostDeleteResult
 import io.toolbox.host.HostPackageOperations
 import io.toolbox.host.HostTrace
+import io.toolbox.host.backup.ToolExportOperations
+import io.toolbox.host.backup.ToolExportResult
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -42,6 +44,7 @@ internal class CatalogViewModel(
     private val settings: HostSettingsRepository? = null,
     private val layoutRepository: CatalogLayoutRepository? = null,
     private val manifestCategories: (CatalogEntry) -> List<String>? = { null },
+    private val exporter: ToolExportOperations? = null,
 ) : ViewModel() {
     private val mutableState = MutableStateFlow(CatalogUiState())
     val state: StateFlow<CatalogUiState> = mutableState.asStateFlow()
@@ -185,6 +188,8 @@ internal class CatalogViewModel(
             is CatalogAction.RequestUninstall -> requestUninstall(action.toolId)
             CatalogAction.CancelUninstall -> update { it.copy(uninstallConfirmation = null) }
             CatalogAction.ConfirmUninstall -> confirmUninstall()
+            is CatalogAction.ExportTool -> exportTool(action.toolId, action.location)
+            CatalogAction.ExportPickerUnavailable -> showFailure("EXPORT_PICKER", "无法打开保存对话框，请确认系统“文件”应用可用。")
             CatalogAction.DismissFeedback -> update { it.copy(feedback = null) }
             CatalogAction.RetryLoad -> retryLoad()
         }
@@ -290,6 +295,22 @@ internal class CatalogViewModel(
                 throw cancelled
             } catch (_: Exception) {
                 showFailure("DELETE_FAILED", "删除未完成，请重试。")
+            }
+        }
+    }
+
+    private fun exportTool(toolId: String, location: String) {
+        val exporter = exporter ?: return showFailure("EXPORT_UNAVAILABLE", "导出暂不可用。")
+        viewModelScope.launch {
+            try {
+                when (val result = exporter.exportTool(toolId, location)) {
+                    is ToolExportResult.Exported -> update { it.copy(feedback = CatalogFeedback.Completed("${result.toolName} 已导出")) }
+                    is ToolExportResult.Failed -> showFailure(result.code, result.message)
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                showFailure("EXPORT_FAILED", "导出未完成，请重试。")
             }
         }
     }

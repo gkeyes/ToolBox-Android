@@ -129,5 +129,5 @@ private fun String.containsUnsafeFormatCodePoint(): Boolean {
     return false
 }
 
-private fun isUnsafeFormatCodePoint(codePoint: Int): Boolean =
+internal fun isUnsafeFormatCodePoint(codePoint: Int): Boolean =
     Character.getType(codePoint) == Character.FORMAT.toInt()

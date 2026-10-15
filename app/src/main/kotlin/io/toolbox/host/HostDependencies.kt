@@ -147,6 +147,16 @@ internal class HostDependencies(
         backupService, io.toolbox.host.backup.AndroidBackupDocumentIO(application.contentResolver),
     )
 
+    val toolExporter: io.toolbox.host.backup.ToolExportOperations by lazy {
+        io.toolbox.host.backup.HostToolPackageExporter(
+            application.filesDir, repositories.catalog, packageMutations,
+            io.toolbox.host.backup.AndroidBackupDocumentIO(application.contentResolver),
+            // Shares the backup scratch root, so HostBackupService.recover also clears sessions a process death left.
+            java.io.File(application.cacheDir, "backup-operations"),
+            io.toolbox.tool.packagekit.AndroidPackageResourceProbe(application),
+        )
+    }
+
     val updates by lazy { io.toolbox.host.update.UpdateRepository(application) }
 
     suspend fun reapMarkedOrphanProfiles(installedToolIds: Set<String>): RuntimeDataCleanupResult =
@@ -361,6 +371,7 @@ internal class HostFeatureViewModelFactory(
             layoutRepository = dependencies.catalogLayout,
             packageOperations = dependencies.packageOperations,
             manifestCategories = dependencies.manifestCategories,
+            exporter = dependencies.toolExporter,
         ) as T
         ImportViewModel::class.java.isAssignableFrom(modelClass) -> ImportViewModel(
             operations = dependencies.packageOperations,
