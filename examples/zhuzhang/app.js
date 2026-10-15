@@ -767,6 +767,17 @@
     if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom){if(d.id==='sheet')closeDialog();else d.close();}
   });
   $('#sheet').addEventListener('cancel',e=>{e.preventDefault();closeDialog();});
+  // System Back (ToolBox hosts that send toolboxback) closes the topmost layer the way ✕ or Escape would.
+  // With nothing to close it is left to the host, which shows its exit hint. Must answer synchronously.
+  window.addEventListener('toolboxback',e=>{if(closeTop())e.preventDefault();});
+  function closeTop(){
+    if($('#guard').open){if(!draftBusy){cancelWait();pendingNavigation=null;closeGuard();}return true;}
+    if(window.ZZCalendar?.isOpen){window.ZZCalendar.close();return true;}
+    if($('#picker').open){$('#picker').close();return true;}
+    if($('#sheet').open){closeDialog();return true;}
+    if(actionWaiting){cancelWait();return true;}
+    return ui.page==='home'&&Boolean(homeState.mod?.back());
+  }
   // However the picker closes (✕, Escape, backdrop), a pick still waiting on a 我的家 save is dropped.
   $('#picker').addEventListener('close',cancelWait);
   $('#guard').addEventListener('cancel',e=>{e.preventDefault();if(draftBusy)return;cancelWait();pendingNavigation=null;closeGuard();});

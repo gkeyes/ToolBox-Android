@@ -695,9 +695,16 @@ export function createHome(api) {
     setMode('place'); const e = items.get(id);
     if (e && e.shown) { select(e); focusRoom(e.room, 1.45); }
   }
+  // System Back on 我的家: closes a sheet, then drops the selection, then leaves place/resize mode. False when nothing is open.
+  function back() {
+    if (openSheets.length) { closeSheet(); return true; }
+    if (selected) { select(null); return true; }
+    if (mode !== 'normal') { setMode('normal'); return true; }
+    return false;
+  }
   function setUi(ui) { if (ui && typeof ui.labels === 'boolean') { labelsOn = ui.labels; paintLabelBtn(); paintLabels(); } }
   paintLabelBtn();
   // Test hooks for the screenshot script: none of these change the ledger.
   const debug = { cam, items, select: id => select(items.get(id) || null), screen: (id, h = .3) => { const e = items.get(id); if (!e) return null; const r = canvas.getBoundingClientRect(); const [x, y] = project(new THREE.Vector3(e.x, h, e.z)); return [r.left + x, r.top + y]; }, mode: () => mode, setMode };
-  return { mount, hide, sync, setUi, openPicker, lendPicker, reveal, arrange, thumbs, debug };
+  return { mount, hide, sync, setUi, openPicker, lendPicker, reveal, arrange, thumbs, back, debug };
 }
