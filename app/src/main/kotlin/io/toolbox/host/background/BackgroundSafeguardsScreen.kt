@@ -7,6 +7,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.provider.Settings
+import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -23,6 +24,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
@@ -114,9 +118,26 @@ internal fun BackgroundSafeguardsScreen(
         if (granted) backgroundLocationLauncher.launch(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
         else openAppSettings()
     }
+    val openNotificationSettings = {
+        context.openFirstSupported(
+            Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName),
+            appDetailsIntent(context),
+        )
+    }
+    val activity = LocalActivity.current
+    val notificationRationale = {
+        activity?.shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS) == true
+    }
+    var rationaleBeforeRequest by remember { mutableStateOf(false) }
     val notificationLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
-    ) { safeguards.refresh() }
+    ) { granted ->
+        safeguards.refresh()
+        // After two denials Android answers false without showing a dialog (no rationale before or
+        // after the request); only then send the user to settings, never after a first-time denial.
+        if (!granted && !rationaleBeforeRequest && !notificationRationale()) openNotificationSettings()
+    }
 
     BackgroundSafeguardsContent(
         settings = settings,
@@ -133,13 +154,10 @@ internal fun BackgroundSafeguardsScreen(
         onDismissFeedback = runningTools::dismissFeedback,
         onOpenNotifications = {
             if (context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                rationaleBeforeRequest = notificationRationale()
                 notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
             } else {
-                context.openFirstSupported(
-                    Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
-                        .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName),
-                    appDetailsIntent(context),
-                )
+                openNotificationSettings()
             }
         },
         onOpenBackgroundLocation = {

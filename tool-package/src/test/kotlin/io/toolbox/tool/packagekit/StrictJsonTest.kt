@@ -36,6 +36,20 @@ class StrictJsonTest {
     }
 
     @Test
+    fun numbersAcceptOnlyAsciiDigits() {
+        // Char.isDigit() is Unicode Nd, and BigDecimal accepts those digits too (PKG-7).
+        listOf("1\u0661", "-\u0661", "1.\u0661", "1e\u0661", "1E+\uFF11", "0\u0661", "\u0661", "1\u09E6").forEach { number ->
+            val error = runCatching { StrictJson.parse("[$number]".toByteArray()) }.exceptionOrNull()
+            assertTrue("$number must be rejected", error is JsonFormatException)
+        }
+        assertTrue(runCatching { StrictJson.parse("[01]".toByteArray()) }.exceptionOrNull() is JsonFormatException)
+        assertEquals(
+            JsonValue.ArrayValue(listOf(JsonValue.NumberValue("-10.5e+2".toBigDecimal()))),
+            StrictJson.parse("[-10.5e+2]".toByteArray()),
+        )
+    }
+
+    @Test
     fun duplicateObjectKeysAreStillRejected() {
         val error = runCatching { StrictJson.parse("""{"a":1,"a":2}""".toByteArray()) }.exceptionOrNull()
         assertTrue(error is JsonFormatException)
