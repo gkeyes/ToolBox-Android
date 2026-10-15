@@ -31,6 +31,10 @@ import io.toolbox.core.ui.component.ToolBoxText
 import io.toolbox.core.ui.component.ToolBoxTextButton
 import io.toolbox.core.ui.component.toolBoxPressFeedback
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
+import io.toolbox.core.ui.component.toolBoxClearGlass
+import io.toolbox.core.ui.component.toolBoxGlassPress
+import androidx.compose.ui.graphics.compositeOver
+import androidx.compose.ui.graphics.luminance
 
 @Composable
 internal fun BrowserMenuSheet(state: BrowserUiState, actions: BrowserScreenActions) {
@@ -415,20 +419,17 @@ private fun BrowserAddressSheetAction(
     onClick: () -> Unit,
 ) {
     val colors = ToolBoxThemeTokens.colors
-    val background = if (highlighted) colors.softPrimary else colors.surface
+    val dark = colors.surface.luminance() < 0.5f
     val tint = if (highlighted) colors.primary else colors.textPrimary
-    val interaction = remember { MutableInteractionSource() }
-    val shape = io.toolbox.core.ui.component.toolBoxShape(ToolBoxThemeTokens.radii.button)
-    Row(
-        modifier
-            .height(ToolBoxThemeTokens.sizes.primaryButton)
-            .toolBoxPressFeedback(interaction, shape = shape)
-            .clip(shape)
-            .background(background)
-            .clickable(interactionSource = interaction, indication = null, role = Role.Button, onClick = onClick)
-            .padding(horizontal = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.Center,
+    io.toolbox.core.ui.component.ToolBoxGlassCapsule(
+        onClick = onClick,
+        modifier = modifier,
+        surface = if (highlighted) {
+            colors.primary.copy(alpha = if (dark) 0.18f else 0.10f).compositeOver(ToolBoxThemeTokens.materials.glassTint)
+        } else {
+            io.toolbox.core.ui.component.toolBoxClearGlassFill()
+        },
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp),
     ) {
         ToolBoxIcon(
             icon,
@@ -436,7 +437,6 @@ private fun BrowserAddressSheetAction(
             modifier = Modifier.size(19.dp),
             tint = tint,
         )
-        Spacer(Modifier.width(7.dp))
         ToolBoxText(
             label,
             maxLines = 1,
@@ -585,9 +585,8 @@ private fun BrowserMenuTile(
     val shape = io.toolbox.core.ui.component.toolBoxShape(ToolBoxThemeTokens.radii.denseSurface)
     Column(
         modifier.heightIn(min = 64.dp)
-            .toolBoxPressFeedback(interaction, enabled = enabled, shape = shape)
-            .clip(shape)
-            .background(colors.textSecondary.copy(alpha = 0.08f))
+            .toolBoxGlassPress(interaction, enabled = enabled, shape = shape)
+            .toolBoxClearGlass(shape)
             .clickable(enabled = enabled, interactionSource = interaction, indication = null, role = Role.Button, onClick = onClick)
             .padding(horizontal = 4.dp, vertical = 10.dp),
         horizontalAlignment = Alignment.CenterHorizontally,

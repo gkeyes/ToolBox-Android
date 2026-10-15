@@ -166,3 +166,37 @@ fun Modifier.toolBoxEntrance(entrance: ToolBoxEntrance, index: Int): Modifier {
         }
     }
 }
+
+/**
+ * iOS 26 interactive glass press for a custom glass control that is not a [io.toolbox.core.ui.liquid.LiquidButton]:
+ * it grows about 8% on a bouncy spring and brightens under the finger, the opposite of
+ * [toolBoxPressFeedback]'s shrink and grey. The hit target is not resized.
+ */
+@Composable
+fun Modifier.toolBoxGlassPress(
+    interactionSource: InteractionSource,
+    enabled: Boolean = true,
+    shape: Shape = androidx.compose.foundation.shape.CircleShape,
+): Modifier {
+    val pressed by interactionSource.collectIsPressedAsState()
+    val progress = animateFloatAsState(
+        targetValue = if (enabled && pressed) 1f else 0f,
+        animationSpec = androidx.compose.animation.core.spring(dampingRatio = 0.5f, stiffness = 300f),
+        label = "toolbox glass press",
+    )
+    return graphicsLayer {
+        val s = 1f + 0.08f * progress.value
+        scaleX = s
+        scaleY = s
+    }.drawWithContent {
+        drawContent()
+        val alpha = 0.12f * progress.value.coerceIn(0f, 1f)
+        if (alpha > 0.001f) {
+            drawOutline(
+                shape.createOutline(size, layoutDirection, this),
+                androidx.compose.ui.graphics.Color.White.copy(alpha = alpha),
+                blendMode = androidx.compose.ui.graphics.BlendMode.Plus,
+            )
+        }
+    }
+}

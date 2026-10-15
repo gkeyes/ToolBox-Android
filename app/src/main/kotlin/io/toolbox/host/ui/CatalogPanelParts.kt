@@ -24,6 +24,10 @@ import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 import io.toolbox.host.catalog.CatalogTool
 import top.yukonga.miuix.kmp.basic.Checkbox
 import top.yukonga.miuix.kmp.basic.CheckboxDefaults
+import androidx.compose.foundation.layout.PaddingValues
+import io.toolbox.core.ui.component.ToolBoxGlassIconButton
+import io.toolbox.core.ui.component.ToolBoxGlassCapsule
+import io.toolbox.core.ui.component.toolBoxClearGlassFill
 
 @Composable
 internal fun PanelEditorActions(
@@ -49,14 +53,10 @@ internal fun PanelEditorActions(
 internal fun PanelHeader(title: String, onClose: () -> Unit, onBack: (() -> Unit)? = null, tool: CatalogTool? = null, enabled: Boolean = true) {
     ToolBoxActionSheetHeader(Modifier.testTag("catalog_panel_header")) {
         Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            if (onBack != null) ToolBoxIconButton(ToolBoxIconKey.Back, "返回", onBack, Modifier.testTag("catalog_panel_back"), enabled = enabled)
+            if (onBack != null) ToolBoxGlassIconButton(ToolBoxIconKey.Back, "返回", onBack, modifier = Modifier.testTag("catalog_panel_back"), enabled = enabled)
             if (tool != null) CatalogToolGlyph(tool.toolId, tool.versionCode, tool.visual(ToolBoxThemeTokens.colors.primary))
             ToolBoxText(title, Modifier.weight(1f).semantics { heading() }, style = ToolBoxThemeTokens.textStyles.headline.copy(color = ToolBoxThemeTokens.colors.textPrimary))
-            ToolBoxIconButton(
-                ToolBoxIconKey.Close, "关闭", onClose,
-                Modifier.clip(RoundedCornerShape(ToolBoxThemeTokens.radii.full)).background(ToolBoxThemeTokens.colors.surfaceMuted).testTag("catalog_panel_close"),
-                enabled = enabled,
-            )
+            ToolBoxGlassIconButton(ToolBoxIconKey.Close, "关闭", onClose, modifier = Modifier.testTag("catalog_panel_close"), enabled = enabled)
         }
     }
 }
@@ -72,34 +72,17 @@ internal fun PanelShortcut(
     onClick: () -> Unit,
 ) {
     val colors = ToolBoxThemeTokens.colors
-    val interactionSource = remember { MutableInteractionSource() }
     val haptics = rememberToolBoxHaptics()
-    val shape = toolBoxShape(ToolBoxThemeTokens.radii.button)
-    // Flat iOS 26 capsules: neutral grey fill, solid accent with white text once selected.
-    val dark = colors.surface.luminance() < 0.5f
-    val neutralFill = Color(0xFF767680).copy(alpha = if (dark) 0.24f else 0.12f)
-    val container = androidx.compose.animation.animateColorAsState(
-        if (selected) colors.primary else neutralFill, ToolBoxMotion.effects(), label = "shortcut container",
-    )
+    // iOS 26 glass capsules: clear glass, accent-tinted glass with white text once selected.
     val content = if (selected) Color.White else colors.textPrimary
-    Row(
-        modifier
+    ToolBoxGlassCapsule(
+        onClick = { haptics.tick(); onClick() },
+        modifier = modifier
             .graphicsLayer { alpha = if (enabled) 1f else 0.46f }
-            .toolBoxPressFeedback(interactionSource, enabled = enabled, shape = shape)
-            .clip(shape)
-            .drawBehind { drawRect(container.value) }
-            .clickable(
-                enabled = enabled,
-                role = Role.Button,
-                interactionSource = interactionSource,
-                indication = null,
-                onClick = { haptics.tick(); onClick() },
-            )
-            .semantics { if (busy) stateDescription = "正在保存" }
-            .heightIn(min = ToolBoxThemeTokens.sizes.primaryButton)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
-        verticalAlignment = Alignment.CenterVertically,
+            .semantics { if (busy) stateDescription = "正在保存" },
+        enabled = enabled,
+        surface = if (selected) colors.primary.copy(alpha = 0.9f) else toolBoxClearGlassFill(),
+        contentPadding = PaddingValues(horizontal = 16.dp),
     ) {
         if (busy) {
             ToolBoxBusyIndicator()

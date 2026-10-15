@@ -48,6 +48,7 @@ import io.toolbox.core.data.CatalogSort
 import io.toolbox.core.ui.component.*
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 import io.toolbox.host.catalog.*
+import io.toolbox.core.ui.component.toolBoxGlassPress
 
 internal val CatalogSort.label: String get() = when (this) {
     CatalogSort.NAME -> "名称首字母"
@@ -711,7 +712,7 @@ private fun FolderRoundButton(
     // highlight, so it stands out from the panel glass around it.
     Box(
         modifier.size(44.dp)
-            .toolBoxPressFeedback(interactionSource, shape = CircleShape)
+            .toolBoxGlassPress(interactionSource)
             .shadow(6.dp, CircleShape, clip = false)
             .clip(CircleShape)
             .toolBoxWindowGlassEffect(

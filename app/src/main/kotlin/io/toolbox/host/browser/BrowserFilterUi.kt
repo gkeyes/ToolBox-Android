@@ -20,6 +20,7 @@ import androidx.compose.ui.unit.dp
 import io.toolbox.core.ui.component.*
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 import kotlinx.coroutines.delay
+import io.toolbox.core.ui.component.ToolBoxGlassIconButton
 
 @Composable
 fun BrowserFilterControls(filters: BrowserFilterController, resumed: Boolean) {
@@ -116,10 +117,10 @@ fun BrowserFilterSheet(filters: BrowserFilterController, canPick: Boolean, resum
         Column(Modifier.heightIn(max = 620.dp)) {
             ToolBoxActionSheetHeader {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    if (screen != "home" || editing != null || resetConfirm) ToolBoxIconButton(ToolBoxIconKey.Back, "返回过滤设置", closeOrBack)
+                    if (screen != "home" || editing != null || resetConfirm) ToolBoxGlassIconButton(ToolBoxIconKey.Back, "返回过滤设置", closeOrBack)
                     ToolBoxText(if (editing != null) "编辑规则" else if (screen == "all") "全部规则" else if (screen == "site") "此网站的规则" else "广告过滤",
                         Modifier.weight(1f), style = ToolBoxThemeTokens.textStyles.title)
-                    ToolBoxIconButton(ToolBoxIconKey.Close, "关闭广告过滤", { filters.sheet = false })
+                    ToolBoxGlassIconButton(ToolBoxIconKey.Close, "关闭广告过滤", { filters.sheet = false })
                 }
             }
             Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
