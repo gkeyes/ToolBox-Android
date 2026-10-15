@@ -70,7 +70,7 @@ export default function ArticleCard({ article, active = false, onOpen, feedTitle
     e.preventDefault();
     setContextMenu({
       isOpen: true,
-      position: { x: e.clientX, y: e.clientY },
+      position: { x: e.clientX, y: e.clientY, anchor: e.currentTarget },
     });
   };
 

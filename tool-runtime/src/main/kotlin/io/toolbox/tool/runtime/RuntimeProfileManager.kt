@@ -187,6 +187,12 @@ class RuntimeProfileManager(privateFilesDirectory: File) : RuntimeDataCleaner, R
             val cleanupResult = when (mode) {
                 null -> RuntimeDataCleanupResult.AlreadyAbsent
                 RuntimeIsolationMode.ORIGIN_ONLY_STATELESS -> {
+                    // The origin is a pure hash of the id: drop anything a contract-breaking tool
+                    // stored there (for example from a worker) before a same-id install can read it.
+                    val originCleared = withContext(NonCancellable + Dispatchers.Main.immediate) {
+                        deleteStatelessOrigin(toolId)
+                    }
+                    if (!originCleared) return RuntimeDataCleanupExecution.Rejected(RuntimeDataCleanupResult.Failed)
                     val removed = withContext(NonCancellable + Dispatchers.IO) { removeModeRecord(toolId) }
                     if (!removed) return RuntimeDataCleanupExecution.Rejected(RuntimeDataCleanupResult.Failed)
                     RuntimeDataCleanupResult.AlreadyAbsent
@@ -268,8 +274,11 @@ class RuntimeProfileManager(privateFilesDirectory: File) : RuntimeDataCleaner, R
         }
         if (cleanupLeases == null) return RuntimeDataCleanupResult.Failed
         try {
+            val statelessToolIds = orphanRecords
+                .filter { it.mode == RuntimeIsolationMode.ORIGIN_ONLY_STATELESS }
+                .map { it.toolId }
             val deleted = withContext(Dispatchers.Main.immediate) {
-                dedicatedToolIds.all { toolId ->
+                statelessToolIds.all { deleteStatelessOrigin(it) } && dedicatedToolIds.all { toolId ->
                     when (deleteProfile(toolId)) {
                         PhysicalDeleteResult.Deleted,
                         PhysicalDeleteResult.Absent,
@@ -327,13 +336,29 @@ class RuntimeProfileManager(privateFilesDirectory: File) : RuntimeDataCleaner, R
                 }
             }
         }
+        if (
+            priorMode == RuntimeIsolationMode.ORIGIN_ONLY_STATELESS &&
+            desiredMode == RuntimeIsolationMode.DEDICATED_PROFILE
+        ) {
+            // Later cleanup follows the new mode only; drop the default-profile origin data now (best effort).
+            withContext(Dispatchers.Main.immediate) { deleteStatelessOrigin(toolId) }
+        }
         if (priorMode != desiredMode) {
-            val recorded = withContext(NonCancellable + Dispatchers.IO) {
+            val recorded =withContext(NonCancellable + Dispatchers.IO) {
                 writeModeRecord(toolId, desiredMode)
             }
             if (!recorded) return IsolationModeSelection.Rejected(RuntimeDataCleanupResult.Failed)
         }
         return IsolationModeSelection.Ready(desiredMode)
+    }
+
+    /** ORIGIN_ONLY_STATELESS runs in the default profile; clear its exact origin's web storage. */
+    @UiThread
+    private fun deleteStatelessOrigin(toolId: String): Boolean = try {
+        WebStorage.getInstance().deleteOrigin(RuntimeIdentity.origin(toolId).removeSuffix("/"))
+        true
+    } catch (_: RuntimeException) {
+        false
     }
 
     @UiThread
