@@ -647,6 +647,7 @@ test("the overlay janitor leaves an open long-press menu and its scrim alone", a
     const menu = document.createElement("div");
     menu.className = "nextflux-context-menu";
     menu.style.cssText = "position:fixed;left:20px;top:200px;width:220px;height:120px;z-index:9999";
+    menu.append(Object.assign(document.createElement("button"), { textContent: "标为已读" }));
     document.body.append(scrim, menu);
   });
   expect(await page.evaluate(() => window.controlsOverlayJanitor.check())).toEqual([]);
@@ -654,6 +655,23 @@ test("the overlay janitor leaves an open long-press menu and its scrim alone", a
   expect(await page.evaluate(() => document.querySelector("[data-nextflux-released]"))).toBe(null);
   await page.mouse.click(300, 600); // a tap outside still closes the menu
   await expect(page.locator(".nextflux-context-scrim")).toHaveCount(0);
+});
+
+test("a leftover empty long-press menu no longer shields a stranded scrim", async ({ page }) => {
+  await open(page, 393);
+  await page.evaluate(() => {
+    const scrim = document.createElement("div");
+    scrim.className = "nextflux-context-scrim";
+    scrim.style.cssText = "position:fixed;inset:0;z-index:9998";
+    const menu = document.createElement("div");
+    menu.className = "nextflux-context-menu";
+    // Like the real portal emptied: it keeps its min width and padding.
+    menu.style.cssText = "position:fixed;left:20px;top:200px;min-width:220px;padding:6px";
+    document.body.append(scrim, menu);
+  });
+  const released = await page.evaluate(() => window.controlsOverlayJanitor.check());
+  expect(released.join(" ")).toContain("nextflux-context-scrim");
+  await expectUncovered(page);
 });
 
 test("the overlay janitor never touches an open sheet", async ({ page }) => {

@@ -4,7 +4,7 @@
   // Ledger money is integer cents. DOM content originating from users is escaped.
   const KEY = 'ledger.v1';
   const runtime = window.ZZRuntime;
-  const VERSION = '1.3.0';
+  const VERSION = '1.5.0';
   const MAX_CENTS = 100000000000;
   const $ = s => document.querySelector(s);
   const $$ = s => [...document.querySelectorAll(s)];
@@ -35,8 +35,9 @@
     {id:'furniture',name:'家具家电',icon:'sofa',color:'#c5ab8a'},
     {id:'soft',name:'软装杂项',icon:'lamp',color:'#cbd4c3'}
   ];
-  const ROOMS=['全屋','客餐厅','厨房','主卧','次卧','卫生间','阳台'];
-  const NAV=[['overview','grid','总览','预算总览'],['ledger','list','清单','费用清单'],['statistics','chart','统计','预算统计'],['calculator','calc','测算','费用测算']];
+  const ROOMS=['全屋','客餐厅','厨房','主卧','次卧','次卧2','卫生间','阳台'];
+  const HM=window.ZZHomeModel; // 1.4.0 我的家: templates, saved-shape sanitizers, placement math (home-model.js)
+  const NAV=[['overview','grid','总览','预算总览'],['ledger','list','清单','费用清单'],['statistics','chart','统计','预算统计'],['calculator','calc','测算','费用测算'],['home','home','我的家','我的家']];
   const cat = id => CATS.find(c=>c.id===id) || CATS[0];
 
   // Rebuild a whitelisted shape on restore; reject dangling references and invalid amounts.
@@ -48,6 +49,8 @@
     const cents=(v,positive=false)=>{if(!Number.isSafeInteger(v)||v<0||v>MAX_CENTS||(positive&&v===0))fail('备份中存在无效金额。');return v;};
     const p=source.project;
     const out={schemaVersion:2,project:{name:string(p.name,60,false),area:string(p.area??'',20),layout:string(p.layout??'',60),budget:cents(p.budget),initialBudget:cents(p.initialBudget??p.budget)},revision:Number.isSafeInteger(source.revision)&&source.revision>=0?source.revision:0,completedDrafts:[],items:[],payments:[],changes:[]};
+    // 1.4.0: optional floor plan. Unknown template → dropped (the plan is derived from 户型 again); sizes clamped.
+    const home=HM.sanitizeHome(p.home);if(home)out.project.home=home;
     if(source.completedDrafts!==undefined){if(!Array.isArray(source.completedDrafts))fail('草稿提交记录无效。');out.completedDrafts=[...new Set(source.completedDrafts.map(id=>string(id,100,false)))];}
     const ids=new Set();
     for(const i of source.items){
@@ -56,6 +59,8 @@
       if(!CATS.some(c=>c.id===i.category)||!['estimate','confirmed','settled'].includes(i.status))fail('备份中存在不支持的分类或状态。');
       if(i.due&&!validDate(i.due))fail('备份中付款日期无效。');
       out.items.push({id,name:string(i.name,100,false),category:i.category,room:string(i.room,50,false),budget:i.budget===null?null:cents(i.budget),price:i.price===null?null:cents(i.price),costMode:source.schemaVersion===1?'estimated':(i.costMode||'estimated'),status:i.status,merchant:string(i.merchant??'',100),due:string(i.due??'',10),note:string(i.note??'',1500)});
+      // 1.4.0: optional look and position in 我的家. Unknown look → dropped; fractions and quarter turns clamped.
+      const model=HM.sanitizeModel(i.model);if(model)out.items[out.items.length-1].model=model;
     }
     const pids=new Set();
     for(const t of source.payments){
@@ -81,29 +86,30 @@
   let activeDraftWritten=false,draftsUnreadable=false,drafts=[],storedDraftIds=new Set(),activeDraftOriginal=null,activeDraftId='',activeDraftBase=null,activeDraftReview=false,pendingNavigation=null,draftBusy=false;
   let draftTimer=null,draftQueue=Promise.resolve(),draftSnapshot='',calcTimer=null,calcQueue=Promise.resolve(),calcSaving=Promise.resolve(true);
 
-  let page=['overview','ledger','calculator','statistics'].includes(location.hash.slice(1))?location.hash.slice(1):'overview';
+  let page=['overview','ledger','calculator','statistics','home'].includes(location.hash.slice(1))?location.hash.slice(1):'overview';
   const ui={page,ledgerTab:'items',category:'all',room:'all',merchant:null,query:'',statsGroup:'category',calcMode:'area',calc:{quantity:'',price:'',loss:'0',labor:'0',auxiliary:'0',freight:'0',install:'0',pack:'',packing:false,fixed:''},baseline:null};
   let pickerState=null, pendingImport=null, applyResult=null, toastTimer;
-  async function write(next){
+  // background: a 我的家 change (moving furniture, the floor plan) that is not the open form's submission.
+  async function write(next,{background=false}={}){
     if(busy)return false;
     busy=true;
-    document.body.classList.add('saving');
-    const submit=$('#sheet [type="submit"]');
+    if(!background)document.body.classList.add('saving');
+    const submit=background?null:$('#sheet [type="submit"]');
     const label=submit?.innerHTML;
-    const controls=$$('#sheet input,#sheet button,#sheet textarea').map(el=>[el,el.disabled]);
+    const controls=background?[]:$$('#sheet input,#sheet button,#sheet textarea').map(el=>[el,el.disabled]);
     controls.forEach(([el])=>el.disabled=true);
     if(submit){submit.disabled=true;submit.textContent='正在保存…';}
     try{
       if(!storageOK)throw new Error(bootError||'存储未就绪；记录未保存，请重试连接。');
       if(restoreError)throw new Error('原始账本无法解析。请先导出原始数据，再导入有效备份。');
-      if(activeDraftId&&$('#sheet').open&&$('#sheet form[data-form]'))next.completedDrafts=[...new Set([...(next.completedDrafts||[]),activeDraftId])];
+      if(!background&&activeDraftId&&$('#sheet').open&&$('#sheet form[data-form]'))next.completedDrafts=[...new Set([...(next.completedDrafts||[]),activeDraftId])];
       if(!draftsUnreadable)next.completedDrafts=(next.completedDrafts||[]).filter(id=>id===activeDraftId||storedDraftIds.has(id));
       next=validate(next);next.revision=(data.revision||0)+1;
       await runtime.set(KEY,next);
       data=next;
       return true;
     }catch(error){showError(runtime.explain(error));return false;}
-    finally{busy=false;document.body.classList.remove('saving');controls.forEach(([el,wasDisabled])=>{if(el.isConnected)el.disabled=wasDisabled;});if(submit?.isConnected){submit.disabled=false;submit.innerHTML=label;}}
+    finally{busy=false;if(!background)document.body.classList.remove('saving');controls.forEach(([el,wasDisabled])=>{if(el.isConnected)el.disabled=wasDisabled;});if(submit?.isConnected){submit.disabled=false;submit.innerHTML=label;}}
   }
   const paymentIndex = new WeakMap();
   function cashIndex(source){
@@ -140,12 +146,16 @@
   function badge(i){return `<span class="badge ${missingPrice(i)?'warn':i.status==='estimate'?'gray':''}">${statusText(i)}</span>`;}
   function comparisonLabel(g){return g.unbudgeted?'预算未齐':g.expected>g.budget?(g.unknown?'至少超出 ':'超出 ')+money(g.expected-g.budget):g.unknown?'待补估价':signed(g.expected-g.budget);}
 
-  function toast(text){
-    const el=$('#toast');clearTimeout(toastTimer);el.innerHTML=icon('check')+esc(text);
+  // action: {label, run} adds one button (1.5.0 「去摆放」); the toast then stays a little longer and takes taps.
+  function toast(text,action){
+    const el=$('#toast');clearTimeout(toastTimer);el.innerHTML=icon('check')+`<span class="toast-text">${esc(text)}</span>`+(action?`<button type="button" class="toast-action">${esc(action.label)}</button>`:'');
+    el.classList.toggle('has-action',Boolean(action));
+    const hide=()=>{clearTimeout(toastTimer);el.classList.remove('show');try{if(el.hidePopover&&el.matches(':popover-open'))el.hidePopover();}catch(_){}};
+    if(action)el.querySelector('.toast-action').onclick=()=>{hide();action.run();};
     try{if(el.showPopover&&!el.matches(':popover-open'))el.showPopover();}catch(_){}
-    el.classList.add('show');toastTimer=setTimeout(()=>{el.classList.remove('show');try{if(el.hidePopover&&el.matches(':popover-open'))el.hidePopover();}catch(_){}},3000);
+    el.classList.add('show');toastTimer=setTimeout(hide,action?5200:3000);
   }
-  function showError(message){const body=$('#guard').open?$('#guard .guard-content'):$('#sheet').open?$('#sheet-body'):$('#main');let box=body.querySelector('.error-message');if(!box){box=document.createElement('div');box.className='error-message';box.setAttribute('role','alert');body.prepend(box);}box.textContent=message;box.scrollIntoView({block:'nearest',behavior:'smooth'});}
+  function showError(message){if(ui.page==='home'&&!$('#guard').open&&!$('#sheet').open&&matchMedia('(max-width:700px)').matches){toast(message);return;}const body=$('#guard').open?$('#guard .guard-content'):$('#sheet').open?$('#sheet-body'):$('#main');let box=body.querySelector('.error-message');if(!box){box=document.createElement('div');box.className='error-message';box.setAttribute('role','alert');body.prepend(box);}box.textContent=message;box.scrollIntoView({block:'nearest',behavior:'smooth'});}
   function dialog(title,html){
     clearTimeout(draftTimer);
     $('#sheet-title').textContent=title;$('#sheet-body').innerHTML=html;
@@ -166,8 +176,8 @@
     if($('#sheet').open)$('#sheet').close();
   }
 
-  function done(message){
-    const committed=activeDraftId;draftSnapshot=formSnapshot();closeDialog(true);entryValues={};render();toast(message);
+  function done(message,after){
+    const committed=activeDraftId;draftSnapshot=formSnapshot();closeDialog(true);entryValues={};render();if(after)after(message);else toast(message);
     if(committed)clearDraft(committed).catch(()=>{showError('记录已保存，草稿清理未完成。该草稿不会重复记账。');});
   }
   function openPicker(title,options,current,onPick){pickerState={options,current,onPick};$('#picker-title').textContent=title;$('#picker-search').value='';renderPicker();if(!$('#picker').open)$('#picker').showModal();$('#picker [data-action="close-picker"]').focus({preventScroll:true});}
@@ -183,7 +193,7 @@
     const t=totals(),hasBudget=data.project.budget>0,pct=hasBudget?t.expected/data.project.budget*100:0,balance=data.project.budget-t.expected;
     const over=hasBudget&&balance<0,due=dueItems(),first=due[0],recent=[...data.payments].sort((a,b)=>b.date.localeCompare(a.date)).slice(0,3),groups=groupItems(),overs=overshoots();
     const reserveText=!hasBudget?'尚未设置总预算，可继续记录费用与支出。':t.unknown?`${t.unknown} 项待估价，暂不判断最终结余。`:t.unbudgeted?`${t.unbudgeted} 项未设置项目预算，未计入分项超支比较。`:t.budget>data.project.budget?`项目预算超额分配 ${money(t.budget-data.project.budget)}。`:t.expected>t.budget?`预计需使用预备金 ${money(t.expected-t.budget)}。`:'预计费用未超出已分配预算。';
-    return heading('装修预算','项目预算、费用预计与实际支出',`<button class="button outline desktop-action" data-action="export">${icon('download','small-icon')}导出备份</button>`)+`
+    return heading('装修预算','项目预算、费用预计与实际支出',`<button class="button outline desktop-action" data-action="export">${icon('download','small-icon')}导出备份</button>`)+homeCard()+`
       <div class="home-grid"><div class="home-left">
       <section class="card budget-card" aria-label="预算概览"><div class="between"><div><div class="budget-label">${t.unknown?'已知费用合计':'预计总费用'}</div><div class="hero-amount num"><span class="currency">¥</span>${fmt(t.expected)}</div></div><span class="badge ${over?'danger':t.unknown?'warn':''}">${!hasBudget?'未设总预算':over?(t.unknown?'已知费用超预算':'预计超支'):t.unknown?'待补估价':'预算内'}</span></div>
       <div class="budget-progress-label"><button class="budget-limit-link" data-action="project">总预算 ${hasBudget?money(data.project.budget):'未设置'}</button><span>${hasBudget?pct.toFixed(1)+'%':'—'}</span></div><div class="progress-track" role="progressbar" aria-label="预计费用占总预算" aria-valuenow="${Math.min(pct,100).toFixed(1)}" aria-valuemin="0" aria-valuemax="100"><div class="progress-fill" style="width:${Math.min(pct,100)}%;${over?'background:var(--red)':''}"></div></div>
@@ -273,14 +283,143 @@
 
   function render(){
     document.title='筑账 · '+NAV.find(n=>n[0]===ui.page)[3];
-    const navHtml=mobile=>NAV.map(([p,i,l,full])=>`<button class="${mobile?'':'nav-button '}${ui.page===p?'active':''}" data-action="nav" data-page="${p}" ${ui.page===p?'aria-current="page"':''}>${icon(i)}<span>${mobile?l:full}</span></button>`).join('');
-    $('#side-nav').innerHTML=navHtml(false);$('#bottom-nav').innerHTML=navHtml(true);const quick=document.createElement('button');quick.className='nav-quick';quick.dataset.action='payment';quick.setAttribute('aria-label','记一笔付款或退款');quick.innerHTML='<span class="nav-quick-icon">'+icon('plus')+'</span><span>记一笔</span>';$('#bottom-nav').insertBefore(quick,$('#bottom-nav').children[2]);$('#crumb-page').textContent=NAV.find(n=>n[0]===ui.page)[3];
+    paintNav();$('#crumb-page').textContent=NAV.find(n=>n[0]===ui.page)[3];
     $$('.project-name').forEach(el=>el.textContent=data.project.name);$$('.project-meta').forEach(el=>el.textContent=[data.project.area?data.project.area+'㎡':'',data.project.layout].filter(Boolean).join(' · ')||'项目与预算');
-    $('#main').innerHTML=`<div class="page-content">${({overview:renderOverview,ledger:renderLedger,calculator:renderCalculator,statistics:renderStatistics}[ui.page])()}</div>`;
+    $('#main').innerHTML=`<div class="page-content">${({overview:renderOverview,ledger:renderLedger,calculator:renderCalculator,statistics:renderStatistics,home:renderHome}[ui.page])()}</div>`;
     $('#fab').classList.add('hidden');document.body.dataset.page=ui.page;updateChrome();updateDraftBanner();
     const warning=restoreError||bootError;$('#storage-warning').textContent=warning;$('#storage-warning').classList.toggle('hidden',!warning);
+    mountHome();
+  }
+  // 1.4.0 · bottom bar: five tabs in one glass capsule (built once, so the active pill can slide); 记一笔 is the round + beside it.
+  function paintNav(){
+    $('#side-nav').innerHTML=NAV.map(([p,i,,full])=>`<button class="nav-button ${ui.page===p?'active':''}" data-action="nav" data-page="${p}" ${ui.page===p?'aria-current="page"':''}>${icon(i)}<span>${full}</span></button>`).join('');
+    const bar=$('#bottom-nav');
+    if(!bar.querySelector('.nav-pill'))bar.innerHTML='<span class="nav-pill" aria-hidden="true"></span>'+NAV.map(([p,i,l])=>`<button data-action="nav" data-page="${p}">${icon(i)}<span>${l}</span></button>`).join('');
+    for(const b of bar.querySelectorAll('button')){const on=b.dataset.page===ui.page;b.classList.toggle('active',on);if(on)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current');}
+    movePill();
+  }
+  function movePill(){
+    const bar=$('#bottom-nav'),pill=bar.querySelector('.nav-pill'),on=bar.querySelector('button.active');if(!pill)return;
+    if(!on||!on.offsetWidth){pill.style.opacity='0';return;}
+    pill.style.opacity='1';pill.style.width=on.offsetWidth+'px';pill.style.transform=`translateX(${on.offsetLeft}px)`;
+    if(!pill.dataset.ready)requestAnimationFrame(()=>{pill.dataset.ready='1';});
+  }
+  window.addEventListener('resize',()=>{movePill();if(ui.page==='home')homeTop();});
+
+  /* ---------- 1.4.0 · 我的家 bridge: the 3D module is imported only when the card or the tab is shown ---------- */
+  const homeState={mod:null,loading:null,failed:false,ui:{labels:true}};
+  const placedItems=()=>{const t=HM.planOf(data.project.home,data.project.layout),{rects}=HM.makeRects(t),rooms=new Set(HM.roomNames(rects));return {t,rects,rooms,list:data.items.filter(i=>i.category===HM.FURNITURE&&i.room!=='全屋'&&i.model&&rooms.has(i.room))};};
+  function homeCard(){
+    const {t,rooms,list}=placedItems();
+    return `<section class="home-card" data-action="nav" data-page="home" aria-label="我的家"><div class="home-card-slot" id="home-card-slot">${homeState.mod?'':HM.planSvg(t)}</div><div class="home-card-cap"><b>我的家</b><span>${list.length} 件 · ${rooms.size} 个空间</span></div><button class="home-card-go hg gbtn gchip" data-action="nav" data-page="home">进入我的家 ${icon('right','small-icon')}</button></section>`;
+  }
+  function renderHome(){
+    if(!homeState.failed)return `<div class="home-host" id="home-host"><div class="home-loading">${HM.planSvg(placedItems().t)}<span>正在搭建我的家…</span></div></div>`;
+    const {t,rects,list}=placedItems(),counts={};for(const i of list)counts[i.room]=(counts[i.room]||0)+1;
+    return heading('我的家','这台设备暂不支持 3D 显示，下面是户型平面')+`<section class="card card-pad home-fallback">${HM.planSvg(t,counts,{text:true,label:t.n+'平面图'})}<p class="form-hint">${esc(t.n)} · ${HM.roomNames(rects).length} 个空间 · 已放进 ${list.length} 件家具家电。账本的记录与统计不受影响。</p></section>`;
+  }
+  function homeTop(){const bar=$('.topbar');if(bar)document.documentElement.style.setProperty('--home-top',Math.max(0,bar.getBoundingClientRect().bottom)+'px');}
+  function homeWrite(mutate){
+    const run=async()=>{
+      for(let n=0;n<40;n++){
+        if(!busy&&!draftBusy){const next=clone(data);if(mutate(next)===false)return false;return await write(next,{background:true});}
+        await new Promise(r=>setTimeout(r,250));
+      }
+      return false;
+    };
+    return homeQueue=homeQueue.then(run,run);
+  }
+  let homeQueue=Promise.resolve(true);
+  const homeApi=Object.freeze({
+    data:()=>data,paid:i=>paid(i),money,esc,toast,
+    saveModel:(id,model)=>homeWrite(next=>{const i=next.items.find(x=>x.id===id);if(!i)return false;i.model=model;}),
+    saveHome:home=>homeWrite(next=>{next.project.home=home;}),
+    saveUi:value=>{homeState.ui=value;if(storageOK)runtime.set('home.ui.v1',value).catch(()=>{});}
+  });
+  // Probe WebGL before importing three.js: without it the tab shows the static plan, with no error from the renderer.
+  function webglAvailable(){
+    try{const c=document.createElement('canvas'),gl=c.getContext('webgl2')||c.getContext('webgl');if(!gl)return false;gl.getExtension('WEBGL_lose_context')?.loseContext();return true;}catch(_){return false;}
+  }
+  function loadHome(){
+    if(!homeState.loading&&!webglAvailable()){homeState.failed=true;homeState.loading=Promise.resolve(null);if(ui.page==='home')render();}
+    if(!homeState.loading)homeState.loading=import('./home3d.js').then(m=>{homeState.mod=m.createHome(homeApi);homeState.mod.setUi(homeState.ui);window.ZZHomeDebug=homeState.mod.debug;return homeState.mod;}).catch(error=>{
+      homeState.failed=true;console.warn('筑账：我的家 3D 不可用，改用平面图。',error);if(ui.page==='home')render();return null;
+    });
+    return homeState.loading;
+  }
+  function mountHome(){
+    const target=ui.page==='home'?$('#home-host'):ui.page==='overview'?$('#home-card-slot'):null;
+    if(!target||homeState.failed){homeState.mod?.hide();return;}
+    if(!homeState.mod){loadHome().then(mod=>{if(mod&&target.isConnected)mountHome();});return;}
+    if(ui.page==='home')homeTop();
+    target.textContent='';homeState.mod.mount(target,ui.page==='home'?'home':'mini');
   }
 
+  /* ---------- 1.5.0 · record-time look: 家具家电 picks a look in the ledger form and lands in 我的家 on save ---------- */
+  const CUBE='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 4 7.5v9L12 21l8-4.5v-9z"/><path d="M4 7.5 12 12l8-4.5M12 12v9"/></svg>';
+  const planRects=source=>HM.makeRects(HM.planOf(source.project.home,source.project.layout)).rects;
+  // The look is a form field, so drafts, mode switches and the unsaved-changes guard carry it like any other.
+  function lookRow(kind=''){
+    const value=typeof kind==='string'&&Object.prototype.hasOwnProperty.call(HM.KINDS,kind)?kind:'';
+    return `<input type="hidden" name="model-kind" id="model-kind" value="${value}"><button type="button" class="model-row form-row" id="look-row" data-action="pick-look" hidden><span class="th" id="look-th">${CUBE}</span><span class="look-text"><b id="look-t">选一个外观</b><small id="look-s"></small></span><span class="look-go" aria-hidden="true">${icon('right')}</span></button>`;
+  }
+  // Applies the form's look to the item about to be saved; true when it now stands somewhere new or looks different.
+  function lookOnSave(next,item,kind){return HM.applyLook(item,String(kind||''),planRects(next),next.items);}
+  function lookContext(){
+    const form=$('#sheet form[data-form]');if(!form||!$('#look-row'))return null;
+    let category,room,existing=null;
+    if(form.dataset.form==='payment'){
+      if($('#payment-kind').value==='refund')return {state:'hidden'};
+      if($('#payment-target').value==='linked'){const i=data.items.find(x=>x.id===$('#payment-item').value);if(!i)return {state:'hidden'};category=i.category;room=i.room;existing=HM.sanitizeModel(i.model);}
+      else{category=$('#item-category').value;room=$('#item-room').value;}
+    }else if(form.dataset.form==='item'){
+      category=$('#item-category').value;room=$('#item-room').value;
+      const old=data.items.find(x=>x.id===form.elements.namedItem('id')?.value);existing=old?HM.sanitizeModel(old.model):null;
+    }else return null;
+    let state=HM.lookState(category,room,planRects(data));
+    if(state==='ok'&&homeState.failed)state='no3d';
+    return {state,room,existing};
+  }
+  function refreshLook(){
+    const c=lookContext(),row=$('#look-row');if(!c||!row)return;
+    row.hidden=c.state==='hidden';if(row.hidden)return;
+    const off=c.state!=='ok',picked=$('#model-kind').value,kind=off?'':picked||c.existing?.kind||'';
+    row.classList.toggle('off',off);row.classList.toggle('has',Boolean(kind));
+    if(off)row.setAttribute('aria-disabled','true');else row.removeAttribute('aria-disabled');
+    const thumb=kind&&homeState.mod?homeState.mod.thumbs()[kind]:'';
+    $('#look-th').innerHTML=thumb?`<img alt="" src="${thumb}">`:CUBE;
+    const [t,sub]=c.state==='whole'?['全屋的东西不放进模型','像全屋灯具这类不好定位的，只记账不显示']
+      :c.state==='missing'?[`户型里没有「${c.room}」`,'先记账；换个户型后，可在「我的家」摆放里放进去']
+      :c.state==='no3d'?['这台设备暂不显示 3D 外观','先记账；外观可以以后在支持的设备上挑']
+      :kind?['已选外观 · 可更换',c.existing&&!picked?`已在${c.room}，换外观不挪位置`:`记完放进${c.room}`]
+      :['选一个外观',`挑一个样子相近的，记完放进${c.room}`];
+    $('#look-t').textContent=t;$('#look-s').textContent=sub;
+    row.setAttribute('aria-label',`${t}，${sub}`);
+    // A restored draft can name a look before the 3D module (and its thumbnails) has loaded.
+    if(kind&&!homeState.mod&&!homeState.failed)loadHome().then(mod=>{if(mod)refreshLook();});
+  }
+  async function openLook(){
+    const c=lookContext();if(!c||c.state!=='ok')return;
+    if(!homeState.mod&&!webglAvailable()){homeState.failed=true;refreshLook();toast('这台设备暂不显示 3D 外观，可以先记账');return;}
+    const row=$('#look-row');row.setAttribute('aria-busy','true');
+    const mod=await loadHome();if(row.isConnected)row.removeAttribute('aria-busy');
+    if(!mod){refreshLook();toast('这台设备暂不显示 3D 外观，可以先记账');return;}
+    if(!$('#sheet').open||!row.isConnected)return;
+    mod.lendPicker($('#look-dialog'),{sel:$('#model-kind').value||c.existing?.kind||null,hint:`挑一个样子相近的，记完放进${c.room}。`,
+      cb:kind=>{const input=$('#model-kind');if(!input||!row.isConnected)return;input.value=kind;refreshLook();markDraft();},
+      onClose:()=>{if(row.isConnected)row.focus({preventScroll:true});}});
+  }
+  // After a save that put a look into a room: open 我的家 on that room, drop it in, offer 摆放.
+  function revealLook(id){
+    const i=data.items.find(x=>x.id===id);if(!i)return;
+    navigate('home');
+    const show=mod=>{
+      if(!mod||ui.page!=='home'){toast('已保存，外观会显示在「我的家」');return;}
+      if(mod.reveal(id))toast(`已放进${i.room}`,{label:'去摆放',run:()=>mod.arrange(id)});
+      else toast(`已保存。「${i.room}」放满了，这件计入房间标签的 +N`);
+    };
+    if(homeState.mod)requestAnimationFrame(()=>show(homeState.mod));else loadHome().then(mod=>requestAnimationFrame(()=>show(mod)));
+  }
   function entryTabs(mode,editing=false){
     const modes=editing?[['plan','项目策划'],['estimate','费用预算']]:[['plan','项目策划'],['estimate','费用预算'],['expense','直接记账']];
     return `<div class="segmented entry-tabs" role="group" aria-label="记录类型">${modes.map(([v,l])=>`<button type="button" class="seg ${mode===v?'active':''}" data-action="entry-mode" data-mode="${v}" aria-pressed="${mode===v}">${l}</button>`).join('')}</div>`;
@@ -313,7 +452,8 @@
     const legacy=fresh?(mode==='plan'?'price':'budget'):'';
     const retained=legacy&&carry[legacy]!==undefined&&carry[legacy]!==''?String(carry[legacy]):'';
     const title=mode==='info'?'编辑资料':fresh?(mode==='plan'?'新增项目预算':'新增费用预算'):(mode==='plan'?'修改项目预算':'修改预计费用');
-    dialog(title,`<form id="item-form" data-form="item" novalidate><input type="hidden" name="id" value="${esc(v.id)}"><input type="hidden" name="record-mode" value="${mode}">${mode==='info'?'':entryTabs(mode,!fresh)}${baseFields(v)}${mode==='info'?'':`<label class="field entry-money-field"><span>${label}（元）${mode==='estimate'?'<small>可留空</small>':''}</span><div class="money-field"><span aria-hidden="true">¥</span><input inputmode="decimal" name="${field}" value="${esc(amount)}" aria-label="${label}（元）" placeholder="${mode==='plan'?'0.00':'待估价'}" autocomplete="off"></div><small class="field-note">${mode==='plan'?'用于规划该项目的支出上限。':'填写估价或报价，保存后不计入实际支出。'}</small></label>${retained?`<input type="hidden" name="retained-${legacy}" value="${esc(retained)}"><p class="form-hint">同时保存另一页填写的${legacy==='budget'?'项目预算':'预计费用'} ${esc(retained)} 元。</p>`:''}${mode==='estimate'?`<label class="check-row"><input type="checkbox" name="quote-confirmed" ${carry['quote-confirmed']==='on'||(!('quote-confirmed' in carry)&&v.status!=='estimate')?'checked':''}><span>报价已确认</span></label>`:''}`}${optionalFields(v)}<div class="dialog-actions"><button type="submit" class="button primary">${mode==='info'?'保存资料':mode==='plan'?'保存项目预算':'保存预计费用'}</button></div></form>`);
+    dialog(title,`<form id="item-form" data-form="item" novalidate><input type="hidden" name="id" value="${esc(v.id)}"><input type="hidden" name="record-mode" value="${mode}">${mode==='info'?'':entryTabs(mode,!fresh)}${baseFields(v)}${mode==='info'?'':`<label class="field entry-money-field"><span>${label}（元）${mode==='estimate'?'<small>可留空</small>':''}</span><div class="money-field"><span aria-hidden="true">¥</span><input inputmode="decimal" name="${field}" value="${esc(amount)}" aria-label="${label}（元）" placeholder="${mode==='plan'?'0.00':'待估价'}" autocomplete="off"></div><small class="field-note">${mode==='plan'?'用于规划该项目的支出上限。':'填写估价或报价，保存后不计入实际支出。'}</small></label>${retained?`<input type="hidden" name="retained-${legacy}" value="${esc(retained)}"><p class="form-hint">同时保存另一页填写的${legacy==='budget'?'项目预算':'预计费用'} ${esc(retained)} 元。</p>`:''}${mode==='estimate'?`<label class="check-row"><input type="checkbox" name="quote-confirmed" ${carry['quote-confirmed']==='on'||(!('quote-confirmed' in carry)&&v.status!=='estimate')?'checked':''}><span>报价已确认</span></label>`:''}`}${lookRow(carry['model-kind'])}${optionalFields(v)}<div class="dialog-actions"><button type="submit" class="button primary">${mode==='info'?'保存资料':mode==='plan'?'保存项目预算':'保存预计费用'}</button></div></form>`);
+    refreshLook();draftSnapshot=formSnapshot();
   }
   async function submitItem(form){
     const f=new FormData(form),id=String(f.get('id')||''),old=data.items.find(i=>i.id===id),mode=String(f.get('record-mode')||'estimate');
@@ -333,18 +473,19 @@
     if(!old&&f.has('retained-price'))item.price=fixed(f.get('retained-price'),2,'预计费用');
     const next=clone(data);
     if(old){next.items=next.items.map(i=>i.id===id?item:i);next.changes.push({date:new Date().toISOString(),itemId:id,note:mode==='plan'?`项目预算：${budgetText(old)} → ${budgetText(item)}`:mode==='estimate'?`预计费用：${priceText(old)} → ${priceText(item)}`:'项目资料已更新'});}else next.items.push(item);
-    if(await write(next))done(mode==='info'?'资料已保存':mode==='plan'?'项目预算已保存':'费用预算已保存');
+    const placed=lookOnSave(next,item,f.get('model-kind'));
+    if(await write(next))done(mode==='info'?'资料已保存':mode==='plan'?'项目预算已保存':'费用预算已保存',placed?()=>revealLook(item.id):null);
   }
   function openPayment(itemId='',full=false,carry={}){
     const i=data.items.find(i=>i.id===itemId),v={name:carry.name||'',category:carry['item-category']||(ui.category==='all'?'construction':ui.category),room:carry['item-room']||(ui.room==='all'?'全屋':ui.room),merchant:carry.merchant||'',note:carry.note||''};
     const linked=Boolean(i)||carry['payment-target']==='linked',amount=carry.amount??(full&&i?rawMoney(remaining(i)):'');
     dialog('记录实际支出',`<form id="payment-form" data-form="payment" novalidate><input type="hidden" name="record-mode" value="expense">${i?'':entryTabs('expense')}<div class="segmented payment-types" aria-label="资金类型"><button type="button" class="seg active" data-action="payment-kind" data-kind="payment" aria-pressed="true">支出</button><button type="button" class="seg" data-action="payment-kind" data-kind="refund" aria-pressed="false">退款</button></div><input type="hidden" name="kind" id="payment-kind" value="payment"><label class="field entry-money-field"><span id="payment-amount-label">实际支出（元）</span><div class="money-field"><span aria-hidden="true">¥</span><input name="amount" id="payment-amount" inputmode="decimal" placeholder="0.00" value="${esc(amount)}" aria-labelledby="payment-amount-label" autocomplete="off"></div></label>
-    <input type="hidden" name="payment-target" id="payment-target" value="${linked?'linked':'new'}"><div class="payment-target-row" aria-label="费用归属"><button type="button" data-action="payment-target" data-target="new" class="target-option">新增费用</button><button type="button" data-action="payment-target" data-target="linked" class="target-option">关联预算</button></div><div id="payment-new-fields">${baseFields(v)}<label class="field form-row"><span>商家或施工方 <small>选填</small></span><input class="plain" name="merchant" value="${esc(v.merchant)}" placeholder="填写商家或施工方" maxlength="100"></label></div><div id="payment-linked-fields">${pickerField('payment-item','关联项目',i?.id||'',i?.name||'选择预算项目','item')}<div id="payment-item-info">${paymentInfo(i)}</div></div><div class="field-grid form-row">${dateField('date','支出日期',carry.date||nowDate(),true)}<label class="field"><span>备注 <small>选填</small></span><input class="plain" name="note" value="${esc(v.note)}" placeholder="填写款项用途" maxlength="1000"></label></div><div id="refund-adjustment" class="refund-adjustment" hidden><label class="check-row"><input type="checkbox" id="refund-adjust" name="refund-adjust"><span>同时修改该项目的预计费用</span></label><div id="refund-price-row" hidden><label class="field form-row"><span>调整后预计费用（元）</span><input class="plain" inputmode="decimal" name="refund-price" id="refund-price" placeholder="填写新的项目总费用"></label><p class="form-hint">适用于退货或减项。请填写调整后的总费用，不是本次退款额。</p></div></div><p class="form-hint" id="payment-hint"></p><div class="dialog-actions"><button type="submit" class="button primary" id="payment-save">保存支出</button></div></form>`);
+    <input type="hidden" name="payment-target" id="payment-target" value="${linked?'linked':'new'}"><div class="payment-target-row" aria-label="费用归属"><button type="button" data-action="payment-target" data-target="new" class="target-option">新增费用</button><button type="button" data-action="payment-target" data-target="linked" class="target-option">关联预算</button></div><div id="payment-new-fields">${baseFields(v)}<label class="field form-row"><span>商家或施工方 <small>选填</small></span><input class="plain" name="merchant" value="${esc(v.merchant)}" placeholder="填写商家或施工方" maxlength="100"></label></div><div id="payment-linked-fields">${pickerField('payment-item','关联项目',i?.id||'',i?.name||'选择预算项目','item')}<div id="payment-item-info">${paymentInfo(i)}</div></div>${lookRow(carry['model-kind'])}<div class="field-grid form-row">${dateField('date','支出日期',carry.date||nowDate(),true)}<label class="field"><span>备注 <small>选填</small></span><input class="plain" name="note" value="${esc(v.note)}" placeholder="填写款项用途" maxlength="1000"></label></div><div id="refund-adjustment" class="refund-adjustment" hidden><label class="check-row"><input type="checkbox" id="refund-adjust" name="refund-adjust"><span>同时修改该项目的预计费用</span></label><div id="refund-price-row" hidden><label class="field form-row"><span>调整后预计费用（元）</span><input class="plain" inputmode="decimal" name="refund-price" id="refund-price" placeholder="填写新的项目总费用"></label><p class="form-hint">适用于退货或减项。请填写调整后的总费用，不是本次退款额。</p></div></div><p class="form-hint" id="payment-hint"></p><div class="dialog-actions"><button type="submit" class="button primary" id="payment-save">保存支出</button></div></form>`);
     updatePaymentTarget(linked?'linked':'new');
     if(carry.kind==='refund')updatePaymentKind('refund');
     if(carry['refund-adjust']==='on')$('#refund-adjust').checked=true;
     if(carry['refund-price']!==undefined)$('#refund-price').value=carry['refund-price'];
-    updateRefundAdjustment();draftSnapshot=formSnapshot();
+    updateRefundAdjustment();refreshLook();draftSnapshot=formSnapshot();
   }
   function paymentInfo(i){
     if(!i)return '<p class="form-hint">选择项目后，支出将自动关联该项目。</p>';
@@ -368,7 +509,7 @@
     $('#payment-save').textContent=refund?'保存退款':'保存支出';
     $('#sheet-title').textContent=refund?'记录退款':'记录实际支出';
     if(i?.status==='settled')$('#payment-hint').textContent+=' 该项目已结算，新增收支后将重新核对结算。';
-    updateRefundAdjustment();
+    updateRefundAdjustment();refreshLook();
   }
 
   function updateRefundAdjustment(){
@@ -416,8 +557,9 @@
       next.changes.push({date:new Date().toISOString(),itemId:item.id,note:`退款时调整预计费用：${before} → ${money(revised)}`});
     }
     assertCashTimeline(next,item.id);
+    const placed=kind==='payment'&&lookOnSave(next,item,f.get('model-kind'));
     // A direct expense creates its item and transaction in one validated snapshot.
-    if(await write(next))done(kind==='refund'?'退款已保存':'支出已保存');
+    if(await write(next))done(kind==='refund'?'退款已保存':'支出已保存',placed?()=>revealLook(item.id):null);
   }
   function openDetail(id){
     const i=data.items.find(x=>x.id===id);if(!i)return;
@@ -481,7 +623,7 @@
     if(kind==='category'){title='费用类别';options=CATS.map(c=>({value:c.id,label:c.name}));}
     if(kind==='room'){title='所在空间';options=[...new Set([...ROOMS,...data.items.map(i=>i.room)])].map(r=>({value:r,label:r}));}
     if(kind==='apply'){title='应用到费用项';options=[{value:'new',label:'新增费用项',sub:'不修改现有项目'},...data.items.filter(i=>i.status==='estimate'&&!data.payments.some(t=>t.itemId===i.id)).map(i=>({value:i.id,label:i.name,sub:'当前预计 '+(i.price===null?'待估价':money(i.price))}))];}
-    openPicker(title,options,current,o=>{field.value=o.value;$('#'+button.dataset.field+'-label').textContent=o.label;if(kind==='item'){if(o.value!==current){$('#refund-adjust').checked=false;$('#refund-price').value='';}$('#payment-item-info').innerHTML=paymentInfo(data.items.find(i=>i.id===o.value));updatePaymentHint();}if(kind==='apply')updateApplyDiff();markDraft();});
+    openPicker(title,options,current,o=>{field.value=o.value;$('#'+button.dataset.field+'-label').textContent=o.label;if(kind==='item'){if(o.value!==current){$('#refund-adjust').checked=false;$('#refund-price').value='';}$('#payment-item-info').innerHTML=paymentInfo(data.items.find(i=>i.id===o.value));updatePaymentHint();}if(kind==='apply')updateApplyDiff();if(['category','room'].includes(kind))refreshLook();markDraft();});
   }
   // Delegated events keep dynamically rendered pages and bottom sheets consistent.
   document.addEventListener('click',async e=>{
@@ -505,6 +647,7 @@
       else if(a==='close-dialog')closeDialog();
       else if(a==='close-picker')$('#picker').close();
       else if(a==='form-picker')formPicker(b);
+      else if(a==='pick-look')await openLook();
       else if(a==='pick'){const o=pickerState.options[Number(b.dataset.index)];if(o){const fn=pickerState.onPick;$('#picker').close();fn(o);}}
       else if(a==='ledger-tab'){ui.ledgerTab=b.dataset.tab;render();}
       else if(a==='due-list')navigate('ledger',{ledgerTab:'due',category:'all',room:'all',query:''});
@@ -564,7 +707,7 @@
       if(form.dataset.form==='item')await submitItem(form);
       if(form.dataset.form==='settlement')await submitSettlement(form);
       if(form.dataset.form==='project'){
-        const f=new FormData(form),budget=String(f.get('budget')||'').trim()===''?0:fixed(f.get('budget'),2,'总预算');const name=String(f.get('name')).trim();if(!name)throw new Error('请填写项目名称。');const area=String(f.get('area')||'').trim();if(area.length>20)throw new Error('面积最多 20 个字符。');if(area)fixed(area,2,'面积');const next=clone(data);next.project={name,area,layout:String(f.get('layout')||'').trim(),budget,initialBudget:data.project.initialBudget||data.project.budget||budget};next.changes.push({date:new Date().toISOString(),itemId:'project',note:`总预算 ${money(data.project.budget)} → ${money(budget)}`});if(await write(next))done('项目设置已保存');
+        const f=new FormData(form),budget=String(f.get('budget')||'').trim()===''?0:fixed(f.get('budget'),2,'总预算');const name=String(f.get('name')).trim();if(!name)throw new Error('请填写项目名称。');const area=String(f.get('area')||'').trim();if(area.length>20)throw new Error('面积最多 20 个字符。');if(area)fixed(area,2,'面积');const next=clone(data);next.project={...data.project,name,area,layout:String(f.get('layout')||'').trim(),budget,initialBudget:data.project.initialBudget||data.project.budget||budget};next.changes.push({date:new Date().toISOString(),itemId:'project',note:`总预算 ${money(data.project.budget)} → ${money(budget)}`});if(await write(next))done('项目设置已保存');
       }
       if(form.dataset.form==='apply'){
         const f=new FormData(form),id=String(f.get('apply-target')),next=clone(data),item=next.items.find(i=>i.id===id);if(!applyResult)throw new Error('测算结果已失效，请重新计算。');
@@ -700,7 +843,7 @@
       updatePaymentTarget(values['payment-target']||(values['payment-item']?'linked':'new'));updatePaymentKind(values.kind||'payment');
       $('#payment-item-info').innerHTML=paymentInfo(data.items.find(i=>i.id===values['payment-item']));
     }
-    if(draft.type==='apply')updateApplyDiff();refreshDateFields();
+    if(draft.type==='apply')updateApplyDiff();refreshDateFields();refreshLook();
     const baseNow=draft.type==='apply'?draftBase():activeDraftBase,conflict=Boolean(draft.requiresReview||(draft.baseEntity?JSON.stringify(draft.baseEntity)!==JSON.stringify(baseNow):(baseNow&&draft.baseRevision!==data.revision)));
     activeDraftId=draft.id;activeDraftOriginal=clone(source);activeDraftBase=baseNow;activeDraftReview=conflict;
     if(conflict)appendDraftReview();
@@ -770,9 +913,12 @@
       else data=emptyLedger();
       try{loadDrafts(await runtime.get('draft.v1'));}catch(_){drafts=[];draftsUnreadable=true;}
       try{loadCalc(await runtime.get('calculator.v1'));}catch(_){}
+      try{const v=await runtime.get('home.ui.v1');if(v&&typeof v.labels==='boolean'){homeState.ui={labels:v.labels};homeState.mod?.setUi(homeState.ui);}}catch(_){}
     }catch(error){bootError=runtime.explain(error);}
     render();
   }
 
+  // validate() is exposed for the unit tests; the 3D module talks to the ledger only through homeApi.
+  window.ZZApp=Object.freeze({validate,lookOnSave,lookRow,version:VERSION});
   boot();
 })();

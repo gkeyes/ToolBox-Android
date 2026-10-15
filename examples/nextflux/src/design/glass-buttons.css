@@ -177,3 +177,12 @@
 html[data-reduce-motion="true"] .button:not(.nf-set-row):is(:active, [data-pressed="true"], [data-nf-pressed="true"]),
 html[data-reduce-motion="true"] .tabs__list .tabs__indicator,
 html[data-reduce-motion="true"] .switch .switch__thumb { scale: 1 !important; }
+/* Reduced motion snaps every press effect, not only the size. */
+@media (prefers-reduced-motion: reduce) {
+  .button:not(.nf-set-row),
+  .button:not(.nf-set-row)::before,
+  .switch .switch__thumb { transition-duration: 0s !important; }
+}
+html[data-reduce-motion="true"] .button:not(.nf-set-row),
+html[data-reduce-motion="true"] .button:not(.nf-set-row)::before,
+html[data-reduce-motion="true"] .switch .switch__thumb { transition-duration: 0s !important; }
