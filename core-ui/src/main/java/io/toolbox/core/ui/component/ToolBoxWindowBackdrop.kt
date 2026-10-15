@@ -15,12 +15,32 @@ import androidx.compose.ui.window.DialogWindowProvider
 import kotlin.coroutines.resume
 import kotlin.math.roundToInt
 import kotlinx.coroutines.suspendCancellableCoroutine
+import androidx.compose.ui.graphics.luminance
 
 /**
  * A downscaled copy of the window under an overlay; [scale] maps it back to window pixels and
  * [rootOnScreen] is where that window's content sits on screen.
  */
-internal class WindowBackdrop(val image: ImageBitmap, val scale: Float, val rootOnScreen: Offset)
+internal class WindowBackdrop(
+    val image: ImageBitmap,
+    val scale: Float,
+    val rootOnScreen: Offset,
+    /** Mean relative luminance of the page, so glass over a page of the opposite tone stays legible. */
+    val luminance: Float = 0.5f,
+)
+
+/** Mean relative luminance of a 16x16 grid of samples. */
+private fun Bitmap.meanLuminance(): Float {
+    var total = 0f
+    val steps = 16
+    for (y in 0 until steps) {
+        for (x in 0 until steps) {
+            val pixel = getPixel(x * (width - 1) / (steps - 1), y * (height - 1) / (steps - 1))
+            total += androidx.compose.ui.graphics.Color(pixel).luminance()
+        }
+    }
+    return total / (steps * steps)
+}
 
 /**
  * Copies the window that hosts [view] (the page under a sheet). Overlay windows cannot sample
@@ -43,7 +63,7 @@ internal suspend fun captureWindowBackdrop(view: View, scale: Float = 0.25f): Wi
             PixelCopy.request(window, bitmap, { result ->
                 if (continuation.isActive) {
                     continuation.resume(
-                        if (result == PixelCopy.SUCCESS) WindowBackdrop(bitmap.asImageBitmap(), bitmap.width.toFloat() / root.width, rootOnScreen) else null,
+                        if (result == PixelCopy.SUCCESS) WindowBackdrop(bitmap.asImageBitmap(), bitmap.width.toFloat() / root.width, rootOnScreen, bitmap.meanLuminance()) else null,
                     )
                 }
             }, Handler(Looper.getMainLooper()))

@@ -658,7 +658,7 @@ internal fun CatalogGroupFolderOverlay(
                                 verticalArrangement = Arrangement.spacedBy(10.dp),
                             ) {
                                 CatalogGroupStyleIcon(group, 64.dp, 32.dp)
-                                AppText("这个分组还没有工具", color = colors.textPrimary.copy(alpha = 0.72f), align = TextAlign.Center,
+                                AppText("这个分组还没有工具", color = colors.textPrimary.copy(alpha = 0.8f), align = TextAlign.Center,
                                     textStyle = ToolBoxThemeTokens.textStyles.metadata)
                                 ToolBoxTextButton("添加工具", onEdit, Modifier.testTag("catalog_group_folder_add"), outlined = false)
                             }

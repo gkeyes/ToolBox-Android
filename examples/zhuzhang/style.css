@@ -365,3 +365,16 @@ input::placeholder,.plain::placeholder{color:#6c7c6d}
  .calc-dock{border-top:1px solid var(--glass-line)!important}
  #toast,.toast{color:var(--ink)!important;border:1px solid var(--glass-line)!important;box-shadow:var(--glass-shadow)!important}
 }
+
+/* 1.3.0 · liquid glass: floating capsules with a specular rim; lens.js sets --zz-lens to bend the page behind their edges */
+:root{--rim:inset 0 1px 0 #ffffffe6,inset 0 -1px 0 #ffffff59,inset 1px 0 0 #ffffff66,inset -1px 0 0 #ffffff40}
+@media (prefers-color-scheme:dark){:root{--rim:inset 0 1px 0 #ffffff38,inset 0 -1px 0 #ffffff12,inset 1px 0 0 #ffffff1a,inset -1px 0 0 #ffffff12}}
+@media(max-width:700px){
+ .bottom-nav{left:12px;right:12px;bottom:calc(10px + env(safe-area-inset-bottom));border-radius:32px;padding:6px 8px;min-height:68px;border:1px solid var(--glass-line)!important;box-shadow:var(--rim),var(--glass-shadow)!important}
+ .bottom-nav button{min-height:54px}
+ .calc-dock{left:12px;right:12px;bottom:calc(88px + env(safe-area-inset-bottom));border-radius:26px;border:1px solid var(--glass-line)!important;min-height:70px;box-shadow:var(--rim),var(--glass-shadow)!important}
+ .workspace:has(.calc-grid){padding-bottom:calc(190px + env(safe-area-inset-bottom))}
+ .top-actions>.icon-button{border-radius:50%;border:1px solid var(--glass-line)!important;background:var(--glass);box-shadow:var(--rim),var(--glass-shadow)}
+ @supports (backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px)){.top-actions>.icon-button{-webkit-backdrop-filter:blur(18px) saturate(180%);backdrop-filter:blur(18px) saturate(180%)}}
+ @supports (backdrop-filter:url(#zz) blur(2px)){.bottom-nav,.calc-dock,.top-actions>.icon-button{backdrop-filter:var(--zz-lens,) blur(8px) saturate(180%) brightness(1.04)}}
+}
