@@ -41,7 +41,6 @@ import io.toolbox.core.ui.component.ToolBoxGroupDivider
 import io.toolbox.core.ui.component.ToolBoxGroupedSurface
 import io.toolbox.core.ui.component.ToolBoxIconKey
 import io.toolbox.core.ui.component.ToolBoxPrimaryButton
-import io.toolbox.core.ui.component.ToolBoxSearchField
 import io.toolbox.host.settings.SettingsIconTint
 import io.toolbox.host.settings.SettingsSwitchRow
 import io.toolbox.core.ui.component.ToolBoxText
@@ -66,6 +65,15 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import io.toolbox.core.ui.component.ToolBoxPinnedSearchField
+import io.toolbox.core.ui.component.rememberToolBoxListBackdrop
+import io.toolbox.core.ui.component.glassRendersLive
+import com.kyant.backdrop.backdrops.layerBackdrop
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.calculateStartPadding
+import androidx.compose.foundation.layout.calculateEndPadding
 
 internal object DeveloperHelpTestTags {
     const val Screen = "developer_help_screen"
@@ -242,130 +250,161 @@ internal fun DeveloperHelpContent(
         }
     }
     val entrance = rememberToolBoxEntrance("developer-help")
-    LazyColumn(
-        modifier = modifier.testTag(DeveloperHelpTestTags.List),
-        state = rememberTitleBoundListState(),
-        contentPadding = contentPadding,
-    ) {
-        header?.let { content ->
-            item("debugging", contentType = "help-debugging") {
-                Box(Modifier.toolBoxEntrance(entrance, 0).padding(bottom = ToolBoxThemeTokens.spacing.lg)) { content() }
-            }
-        }
-        item("intro", contentType = "help-intro") {
-            Column(Modifier.toolBoxEntrance(entrance, 1).padding(bottom = ToolBoxThemeTokens.spacing.sm),
-                verticalArrangement = Arrangement.spacedBy(ToolBoxThemeTokens.spacing.xs)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    AppText(
-                        "离线手册 · API " + ToolBoxApiV1.API_VERSION,
-                        modifier = Modifier.weight(1f),
-                        textStyle = ToolBoxThemeTokens.textStyles.metadata,
-                        color = ToolBoxThemeTokens.colors.textSecondary,
-                    )
-                    ToolBoxTextButton(
-                        label = if (copiedKey == "all") "已复制" else "复制全部",
-                        onClick = { copyText("all", document.source) },
-                        modifier = Modifier.testTag(DeveloperHelpTestTags.CopyAll),
-                    )
-                }
-                AppText(document.introduction, textStyle = ToolBoxThemeTokens.textStyles.metadata,
-                    color = ToolBoxThemeTokens.colors.textSecondary)
-                ToolBoxSearchField(
-                    value = query,
-                    onValueChange = {
-                        query = it
-                        expandedArticle = null
-                    },
-                    placeholder = "搜索接口、打包或错误码",
-                    modifier = Modifier.testTag(DeveloperHelpTestTags.Search),
+    val listState = rememberTitleBoundListState()
+    // The search field is chrome: right under the large title, then pinned under the top bar as
+    // glass over the manual scrolling beneath it.
+    val listBackdrop = rememberToolBoxListBackdrop()
+    val searchGlassLive = glassRendersLive()
+    val density = LocalDensity.current
+    var searchHeightPx by remember { mutableIntStateOf(0) }
+    val direction = LocalLayoutDirection.current
+    // A new query reshapes the list: start it from the top, not wherever the old anchor clamps to.
+    LaunchedEffect(query) {
+        if (listState.firstVisibleItemIndex > 0) listState.scrollToItem(0)
+    }
+    Box(modifier) {
+        ToolBoxPinnedSearchField(
+            value = query,
+            onValueChange = {
+                query = it
+                expandedArticle = null
+            },
+            placeholder = "搜索接口与错误码",
+            listState = listState,
+            listBackdrop = listBackdrop,
+            contentTop = contentPadding.calculateTopPadding(),
+            onHeightChanged = { searchHeightPx = it },
+            modifier = Modifier
+                .padding(
+                    start = contentPadding.calculateStartPadding(direction),
+                    end = contentPadding.calculateEndPadding(direction),
                 )
+                .toolBoxEntrance(entrance, 0)
+                .testTag(DeveloperHelpTestTags.Search),
+        )
+        LazyColumn(
+            modifier = Modifier.fillMaxSize()
+                .testTag(DeveloperHelpTestTags.List)
+                .then(if (searchGlassLive) Modifier.layerBackdrop(listBackdrop) else Modifier),
+            state = listState,
+            contentPadding = contentPadding,
+        ) {
+            // Holds the place of the pinned search field drawn over the list.
+            item("search", contentType = "help-search") {
+                val height = if (searchHeightPx > 0) with(density) { searchHeightPx.toDp() } else ToolBoxThemeTokens.sizes.touchTarget
+                Spacer(Modifier.fillMaxWidth().height(height + ToolBoxThemeTokens.spacing.sm))
             }
-        }
-        if (copyError) {
-            item("copy-error", contentType = "help-message") {
-                AppText(
-                    "复制失败，请重试；正文也可以长按选择。",
-                    modifier = Modifier
-                        .padding(vertical = ToolBoxThemeTokens.spacing.one)
-                        .semantics { liveRegion = LiveRegionMode.Polite },
-                    color = ToolBoxThemeTokens.colors.danger,
-                )
-            }
-        }
-        // Each chapter reads as one rounded card: header, any open content, then an end cap.
-        if (searching) {
-            item("search-summary", contentType = "help-message") {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    AppText(
-                        if (chapters.isEmpty()) "没有找到相关内容" else "找到 " +
-                            chapters.sumOf { it.articles.size } + " 项内容",
-                        modifier = Modifier.weight(1f).semantics { liveRegion = LiveRegionMode.Polite },
-                        textStyle = ToolBoxThemeTokens.textStyles.metadata,
-                    )
-                    ToolBoxTextButton("清除搜索", onClick = { query = ""; expandedArticle = null })
+            header?.let { content ->
+                item("debugging", contentType = "help-debugging") {
+                    Box(Modifier.toolBoxEntrance(entrance, 0).padding(bottom = ToolBoxThemeTokens.spacing.lg)) { content() }
                 }
             }
-        }
-        chapters.forEachIndexed { chapterIndex, chapter ->
-            val open = searching || expandedChapter == chapter.id
-            if (searching) {
-                item("chapter-top:" + chapter.id, contentType = "help-cap") { HelpCardCap(top = true, Modifier.padding(top = ToolBoxThemeTokens.spacing.xs)) }
-            } else {
-                item("chapter:" + chapter.id, contentType = "help-chapter") {
-                    val radius = ToolBoxThemeTokens.radii.denseSurface
-                    ToolBoxDisclosureRow(
-                        title = chapter.title,
-                        summary = chapter.summary,
-                        expanded = expandedChapter == chapter.id,
-                        sectionHeading = true,
-                        onClick = {
-                            expandedChapter = if (expandedChapter == chapter.id) null else chapter.id
-                            expandedArticle = null
-                        },
+            item("intro", contentType = "help-intro") {
+                Column(Modifier.toolBoxEntrance(entrance, 1).padding(bottom = ToolBoxThemeTokens.spacing.sm),
+                    verticalArrangement = Arrangement.spacedBy(ToolBoxThemeTokens.spacing.xs)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        AppText(
+                            "离线手册 · API " + ToolBoxApiV1.API_VERSION,
+                            modifier = Modifier.weight(1f),
+                            textStyle = ToolBoxThemeTokens.textStyles.metadata,
+                            color = ToolBoxThemeTokens.colors.textSecondary,
+                        )
+                        ToolBoxTextButton(
+                            label = if (copiedKey == "all") "已复制" else "复制全部",
+                            onClick = { copyText("all", document.source) },
+                            modifier = Modifier.testTag(DeveloperHelpTestTags.CopyAll),
+                        )
+                    }
+                    AppText(document.introduction, textStyle = ToolBoxThemeTokens.textStyles.metadata,
+                        color = ToolBoxThemeTokens.colors.textSecondary)
+                }
+            }
+            if (copyError) {
+                item("copy-error", contentType = "help-message") {
+                    AppText(
+                        "复制失败，请重试；正文也可以长按选择。",
                         modifier = Modifier
-                            .toolBoxEntrance(entrance, chapterIndex + 2)
-                            .padding(top = ToolBoxThemeTokens.spacing.xs)
-                            .clip(ToolBoxContinuousShape(radius, radius, if (open) 0.dp else radius, if (open) 0.dp else radius))
-                            .background(ToolBoxThemeTokens.colors.surface)
-                            .testTag(DeveloperHelpTestTags.chapter(chapter.id)),
+                            .padding(vertical = ToolBoxThemeTokens.spacing.one)
+                            .semantics { liveRegion = LiveRegionMode.Polite },
+                        color = ToolBoxThemeTokens.colors.danger,
                     )
                 }
             }
-            if (open) {
-                chapter.articles.forEach { article ->
-                    item("article:" + article.id, contentType = "help-article") {
-                        Column(Modifier.animateItem(
-                            fadeInSpec = ToolBoxMotion.effects(), placementSpec = ToolBoxMotion.ItemPlacement, fadeOutSpec = null,
-                        ).background(ToolBoxThemeTokens.colors.surface)) {
-                            ToolBoxDisclosureRow(
-                                title = article.title,
-                                summary = chapter.title.takeIf { searching },
-                                expanded = expandedArticle == article.id,
-                                onClick = {
-                                    expandedArticle = if (expandedArticle == article.id) null else article.id
-                                },
-                                modifier = Modifier
-                                    .padding(start = ToolBoxThemeTokens.spacing.one)
-                                    .testTag(DeveloperHelpTestTags.article(article.id)),
-                            )
+            // Each chapter reads as one rounded card: header, any open content, then an end cap.
+            if (searching) {
+                item("search-summary", contentType = "help-message") {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        AppText(
+                            if (chapters.isEmpty()) "没有找到相关内容" else "找到 " +
+                                chapters.sumOf { it.articles.size } + " 项内容",
+                            modifier = Modifier.weight(1f).semantics { liveRegion = LiveRegionMode.Polite },
+                            textStyle = ToolBoxThemeTokens.textStyles.metadata,
+                        )
+                        ToolBoxTextButton("清除搜索", onClick = { query = ""; expandedArticle = null })
+                    }
+                }
+            }
+            chapters.forEachIndexed { chapterIndex, chapter ->
+                val open = searching || expandedChapter == chapter.id
+                if (searching) {
+                    item("chapter-top:" + chapter.id, contentType = "help-cap") { HelpCardCap(top = true, Modifier.padding(top = ToolBoxThemeTokens.spacing.xs)) }
+                } else {
+                    item("chapter:" + chapter.id, contentType = "help-chapter") {
+                        val radius = ToolBoxThemeTokens.radii.denseSurface
+                        ToolBoxDisclosureRow(
+                            title = chapter.title,
+                            summary = chapter.summary,
+                            expanded = expandedChapter == chapter.id,
+                            sectionHeading = true,
+                            onClick = {
+                                expandedChapter = if (expandedChapter == chapter.id) null else chapter.id
+                                expandedArticle = null
+                            },
+                            modifier = Modifier
+                                .toolBoxEntrance(entrance, chapterIndex + 2)
+                                .padding(top = ToolBoxThemeTokens.spacing.xs)
+                                .clip(ToolBoxContinuousShape(radius, radius, if (open) 0.dp else radius, if (open) 0.dp else radius))
+                                .background(ToolBoxThemeTokens.colors.surface)
+                                .testTag(DeveloperHelpTestTags.chapter(chapter.id)),
+                        )
+                    }
+                }
+                if (open) {
+                    chapter.articles.forEach { article ->
+                        item("article:" + article.id, contentType = "help-article") {
+                            Column(Modifier.animateItem(
+                                fadeInSpec = ToolBoxMotion.effects(), placementSpec = ToolBoxMotion.ItemPlacement, fadeOutSpec = null,
+                            ).background(ToolBoxThemeTokens.colors.surface)) {
+                                ToolBoxDisclosureRow(
+                                    title = article.title,
+                                    summary = chapter.title.takeIf { searching },
+                                    expanded = expandedArticle == article.id,
+                                    onClick = {
+                                        expandedArticle = if (expandedArticle == article.id) null else article.id
+                                    },
+                                    modifier = Modifier
+                                        .padding(start = ToolBoxThemeTokens.spacing.one)
+                                        .testTag(DeveloperHelpTestTags.article(article.id)),
+                                )
+                            }
+                        }
+                        if (expandedArticle == article.id) {
+                            helpArticleBlocks(article, copiedKey, copyText)
                         }
                     }
-                    if (expandedArticle == article.id) {
-                        helpArticleBlocks(article, copiedKey, copyText)
-                    }
+                    item("chapter-end:" + chapter.id, contentType = "help-cap") { HelpCardCap(top = false, Modifier.animateItem(fadeInSpec = null, placementSpec = ToolBoxMotion.ItemPlacement, fadeOutSpec = null)) }
                 }
-                item("chapter-end:" + chapter.id, contentType = "help-cap") { HelpCardCap(top = false, Modifier.animateItem(fadeInSpec = null, placementSpec = ToolBoxMotion.ItemPlacement, fadeOutSpec = null)) }
             }
-        }
-        item("examples", contentType = "help-action") {
-            ToolBoxPrimaryButton(
-                label = "安装四个范例",
-                onClick = onInstallExamples,
-                modifier = Modifier
-                    .padding(top = ToolBoxThemeTokens.spacing.lg)
-                    .fillMaxWidth()
-                    .testTag(DeveloperHelpTestTags.InstallExamples),
-            )
+            item("examples", contentType = "help-action") {
+                ToolBoxPrimaryButton(
+                    label = "安装四个范例",
+                    onClick = onInstallExamples,
+                    modifier = Modifier
+                        .padding(top = ToolBoxThemeTokens.spacing.lg)
+                        .fillMaxWidth()
+                        .testTag(DeveloperHelpTestTags.InstallExamples),
+                )
+            }
         }
     }
 }

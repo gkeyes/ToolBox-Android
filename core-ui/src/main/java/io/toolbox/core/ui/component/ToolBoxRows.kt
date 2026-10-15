@@ -80,14 +80,18 @@ fun ToolBoxSearchField(
     placeholder: String,
     modifier: Modifier = Modifier,
     contentDescription: String = placeholder,
-    /** Unspecified: clear glass, as iOS search fields. Transparent when [modifier] already draws a glass surface. */
+    /** Unspecified: search-field glass, as on iOS. Transparent when [modifier] already draws a glass surface. */
     containerColor: Color = Color.Unspecified,
 ) {
     val focusRequester = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
     val colors = ToolBoxThemeTokens.colors
     val spacing = ToolBoxThemeTokens.spacing
-    val shape = toolBoxShape(ToolBoxThemeTokens.radii.control)
+    // iOS 26 search field: a capsule.
+    val shape = CircleShape
+    val dark = colors.surface.luminance() < 0.5f
+    // Over glass the page shows through the field, so grey text drops under 4.5:1 on colour.
+    val hint = colors.textPrimary.copy(alpha = if (dark) 0.7f else 0.6f)
     var focused by remember { mutableStateOf(false) }
     val focusColor = animateColorAsState(
         targetValue = if (focused) colors.primary.copy(alpha = 0.55f) else colors.primary.copy(alpha = 0f),
@@ -100,7 +104,7 @@ fun ToolBoxSearchField(
                 if (containerColor.isSpecified) {
                     Modifier.clip(shape).background(containerColor)
                 } else {
-                    Modifier.toolBoxClearGlass(shape, solid = colors.surfaceMuted).clip(shape)
+                    Modifier.toolBoxClearGlass(shape, tint = toolBoxSearchGlassTint(), solid = colors.surfaceMuted).clip(shape)
                 },
             )
             .border(1.5.dp, focusColor.value, shape)
@@ -109,7 +113,7 @@ fun ToolBoxSearchField(
     ) {
         ToolBoxIcon(
             ToolBoxIconKey.Search, null, Modifier.size(18.dp),
-            tint = if (focused) colors.primary else colors.textSecondary,
+            tint = if (focused) colors.primary else hint,
         )
         Spacer(Modifier.width(spacing.one))
         BasicTextField(
@@ -126,7 +130,7 @@ fun ToolBoxSearchField(
                     if (value.isEmpty()) {
                         ToolBoxText(
                             placeholder,
-                            style = ToolBoxThemeTokens.textStyles.body.copy(color = colors.textSecondary),
+                            style = ToolBoxThemeTokens.textStyles.body.copy(color = hint),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
