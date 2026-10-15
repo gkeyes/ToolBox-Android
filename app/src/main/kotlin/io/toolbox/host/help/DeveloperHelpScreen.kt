@@ -415,6 +415,9 @@ internal fun DeveloperHelpContent(
                         .testTag(DeveloperHelpTestTags.InstallExamples),
                 )
             }
+            // A short (or empty) result list could not scroll far enough to keep the field pinned:
+            // leave a screen of room below the page while searching.
+            if (searching) item("search-room", contentType = "help-room") { Spacer(Modifier.fillParentMaxHeight()) }
         }
     }
 }
