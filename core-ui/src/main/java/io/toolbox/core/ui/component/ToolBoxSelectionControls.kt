@@ -59,14 +59,12 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.semantics.disabled
-import androidx.compose.ui.semantics.onClick
-import androidx.compose.ui.semantics.role
-import androidx.compose.ui.semantics.selected
 import kotlinx.coroutines.launch
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.gestures.awaitHorizontalTouchSlopOrCancellation
+import androidx.compose.foundation.gestures.horizontalDrag
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 import kotlin.math.roundToInt
 
@@ -75,7 +73,7 @@ import kotlin.math.roundToInt
  * the spatial spring. Press the thumb and it lifts under the finger: it grows about 10%, overflows
  * the track and turns to clear glass that refracts the labels beneath it; drag it along the track
  * and release on a segment to pick it. Tapping another segment picks it too. Each change ticks.
- * Segments stay radio buttons inside a selectable group for accessibility.
+ * Segments stay selectable radio buttons in a group, so keys and accessibility work as before.
  */
 @Composable
 fun ToolBoxSegmentedControl(
@@ -125,45 +123,37 @@ fun ToolBoxSegmentedControl(
         val thumbIndex by remember(segmentPx, lastIndex) {
             derivedStateOf { (thumbX.value / segmentPx).roundToInt().coerceIn(0, lastIndex) }
         }
+        // Only a press on the thumb is ours: it lifts under the finger, follows a horizontal drag
+        // (a vertical one is left to the scrolling parent) and picks the segment it's released
+        // on. Taps elsewhere, keys and accessibility go through each segment's selectable.
         val gestures = if (!enabled) Modifier else Modifier.pointerInput(segmentPx, lastIndex) {
             awaitEachGesture {
                 val down = awaitFirstDown()
-                val onThumb = (down.position.x / segmentPx).toInt().coerceIn(0, lastIndex) == currentSelected
+                if ((down.position.x / segmentPx).toInt().coerceIn(0, lastIndex) != currentSelected) return@awaitEachGesture
                 var under = currentSelected
-                var release: Offset? = null
-                if (onThumb) dragging = true
-                try {
-                    while (true) {
-                        val change = awaitPointerEvent().changes.firstOrNull { it.id == down.id } ?: break
-                        if (!change.pressed) {
-                            release = change.position
-                            break
-                        }
-                        if (onThumb) {
+                fun follow(fingerX: Float) {
+                    val x = (fingerX - segmentPx / 2f).coerceIn(0f, segmentPx * lastIndex)
+                    scope.launch { thumbX.snapTo(x) }
+                    val now = (x / segmentPx).roundToInt().coerceIn(0, lastIndex)
+                    if (now != under) {
+                        under = now
+                        haptics.tick()
+                    }
+                }
+                dragging = true
+                val completed = try {
+                    val start = awaitHorizontalTouchSlopOrCancellation(down.id) { change, _ -> change.consume() }
+                    start != null && run {
+                        follow(start.position.x)
+                        horizontalDrag(start.id) { change ->
                             change.consume()
-                            val x = (change.position.x - segmentPx / 2f).coerceIn(0f, segmentPx * lastIndex)
-                            scope.launch { thumbX.snapTo(x) }
-                            val now = (x / segmentPx).roundToInt().coerceIn(0, lastIndex)
-                            if (now != under) {
-                                under = now
-                                haptics.tick()
-                            }
+                            follow(change.position.x)
                         }
                     }
                 } finally {
                     dragging = false
                 }
-                val up = release ?: return@awaitEachGesture
-                val target = when {
-                    onThumb -> under
-                    up.x in 0f..size.width.toFloat() && up.y in 0f..size.height.toFloat() ->
-                        (up.x / segmentPx).toInt().coerceIn(0, lastIndex)
-                    else -> null
-                }
-                if (target != null && target != currentSelected) {
-                    if (!onThumb) haptics.tick()
-                    currentOnSelect(target)
-                }
+                if (completed && under != currentSelected) currentOnSelect(under)
             }
         }
         Row(
@@ -183,18 +173,19 @@ fun ToolBoxSegmentedControl(
                         .weight(1f)
                         .heightIn(min = 38.dp)
                         .then(segmentTestTags.getOrNull(index)?.let(Modifier::testTag) ?: Modifier)
-                        .semantics(mergeDescendants = true) {
-                            role = Role.RadioButton
-                            this.selected = isSelected
-                            if (!enabled) disabled()
-                            onClick {
-                                if (enabled && !isSelected) {
+                        .selectable(
+                            selected = isSelected,
+                            enabled = enabled,
+                            role = Role.RadioButton,
+                            interactionSource = null,
+                            indication = null,
+                            onClick = {
+                                if (!isSelected) {
                                     haptics.tick()
                                     currentOnSelect(index)
                                 }
-                                enabled
-                            }
-                        },
+                            },
+                        ),
                     contentAlignment = Alignment.Center,
                 ) {
                     ToolBoxText(
