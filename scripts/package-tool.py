@@ -220,12 +220,13 @@ def validate_manifest(raw):
             raise ValueError("manifest.categories must contain unique values")
     if "ui" in manifest:
         ui = manifest["ui"]
-        _only(ui, "manifest.ui", {"orientation", "allowFullscreen", "statusBarStyle", "showHostToolbar"})
+        _only(ui, "manifest.ui", {"orientation", "allowFullscreen", "statusBarStyle", "edgeToEdge", "showHostToolbar"})
         if "orientation" in ui and ui["orientation"] not in ("unspecified", "portrait", "landscape"):
             raise ValueError("Invalid manifest.ui.orientation")
         if "statusBarStyle" in ui and ui["statusBarStyle"] not in ("auto", "light", "dark"):
             raise ValueError("Invalid manifest.ui.statusBarStyle")
         _boolean(ui, "allowFullscreen", "manifest.ui.allowFullscreen")
+        _boolean(ui, "edgeToEdge", "manifest.ui.edgeToEdge")
         _boolean(ui, "showHostToolbar", "manifest.ui.showHostToolbar")
     return entry, icon
 

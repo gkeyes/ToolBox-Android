@@ -47,6 +47,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -84,6 +85,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.webkit.WebViewCompat
+import androidx.webkit.WebViewFeature
 import io.toolbox.core.ui.component.ToolBoxBusyIndicator
 import io.toolbox.core.ui.component.ToolBoxIcon
 import io.toolbox.core.ui.component.ToolBoxIconKey
@@ -123,7 +126,7 @@ internal fun RuntimeShellScreen(
     val ready = state as? RuntimeUiState.Ready
     ApplyRetainedRuntimeManifestUi(ready?.runtime?.installedManifest?.ui)
     val edgeToEdge = ready?.runtime?.installedManifest?.ui?.edgeToEdge == true
-    if (ready != null && edgeToEdge) PublishRuntimeSafeAreaTop(ready.webView, ready.mainEntryLoaded)
+    if (ready != null && edgeToEdge) PublishRuntimeSafeAreaTop(ready.webView, ready.runtime.origin)
 
     closeState?.let { saving ->
         key(exitRevision) {
@@ -182,21 +185,25 @@ internal fun RuntimeShellScreen(
 
 /**
  * An edge-to-edge tool draws under the status bar, so it is told the bar's height as the CSS variable
- * `--toolbox-safe-area-top` (CSS px equal dp at the runtime's 100% zoom). Set again after every main
- * entry load, since a reload starts a fresh document, and whenever the inset changes.
+ * `--toolbox-safe-area-top` (CSS px equal dp at the runtime's 100% zoom). A document-start script
+ * sets it in every document the tool loads (reloads, other local pages); the current document is set
+ * directly. Both are replaced whenever the inset changes.
  */
 @Composable
-private fun PublishRuntimeSafeAreaTop(webView: android.webkit.WebView, mainEntryLoaded: Boolean) {
+private fun PublishRuntimeSafeAreaTop(webView: android.webkit.WebView, origin: String) {
     val density = LocalDensity.current
     val topPx = WindowInsets.statusBars.union(WindowInsets.displayCutout).getTop(density)
     val topDp = with(density) { topPx.toDp().value }
-    LaunchedEffect(webView, mainEntryLoaded, topDp) {
-        if (!mainEntryLoaded) return@LaunchedEffect
+    DisposableEffect(webView, origin, topDp) {
         val value = String.format(java.util.Locale.ROOT, "%.2fpx", topDp)
-        webView.evaluateJavascript(
-            "document.documentElement.style.setProperty('--toolbox-safe-area-top','$value')",
-            null,
-        )
+        val script = "document.documentElement.style.setProperty('--toolbox-safe-area-top','$value')"
+        val handler = if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
+            runCatching { WebViewCompat.addDocumentStartJavaScript(webView, script, setOf(origin.removeSuffix("/"))) }.getOrNull()
+        } else {
+            null
+        }
+        webView.evaluateJavascript(script, null)
+        onDispose { runCatching { handler?.remove() } }
     }
 }
 
