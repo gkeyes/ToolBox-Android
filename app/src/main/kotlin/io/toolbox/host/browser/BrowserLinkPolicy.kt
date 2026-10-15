@@ -1,6 +1,5 @@
 package io.toolbox.host.browser
 
-import io.toolbox.tool.runtime.validateRuntimeBrowserUrl
 import java.net.URI
 import java.util.Locale
 
@@ -12,7 +11,7 @@ internal object BrowserLinkPolicy {
         if (url.any { it.isISOControl() }) return BrowserLinkKind.Unsupported
         val scheme = url.substringBefore(':', "").lowercase(Locale.ROOT)
         return when (scheme) {
-            "http", "https" -> if (runCatching { validateRuntimeBrowserUrl(url) }.isSuccess) {
+            "http", "https" -> if (BrowserWebUrl.host(url) != null) {
                 BrowserLinkKind.Web
             } else BrowserLinkKind.Unsupported
             "about" -> if (url == "about:blank") BrowserLinkKind.Web else BrowserLinkKind.Unsupported

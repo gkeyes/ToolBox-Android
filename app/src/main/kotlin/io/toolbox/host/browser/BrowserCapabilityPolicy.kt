@@ -1,6 +1,7 @@
 package io.toolbox.host.browser
 
-import java.net.URI
+import java.net.IDN
+import java.util.Locale
 
 /** One-shot identities survive queue cancellation, so late Activity results cannot target a successor. */
 internal class BrowserCapabilityQueue<T> {
@@ -23,11 +24,11 @@ internal class BrowserCapabilityQueue<T> {
 }
 
 internal object BrowserCapabilityPolicy {
+    /** Same address grammar as navigation, so pages the browser opens (underscore hosts, `|^{}`) keep their capabilities. */
     fun origin(value: String): String? = runCatching {
-        val uri = URI(value)
-        val scheme = uri.scheme?.lowercase()
-        if (scheme !in setOf("https", "http") || uri.userInfo != null || uri.host.isNullOrBlank()) return null
-        URI(scheme, null, uri.host.lowercase(), uri.port, null, null, null).toASCIIString()
+        val parts = BrowserWebUrl.parse(value) ?: return null
+        val host = if (parts.host.startsWith('[')) parts.host else IDN.toASCII(parts.host).lowercase(Locale.ROOT)
+        "${parts.scheme}://$host" + (parts.port?.let { ":$it" } ?: "")
     }.getOrNull()
 
     fun mimeTypes(values: Array<String>): List<String> = values.flatMap { it.split(',') }

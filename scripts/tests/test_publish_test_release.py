@@ -27,7 +27,7 @@ exit 0
 
 
 class PublishTestReleaseTest(unittest.TestCase):
-    def publish(self, kind, files, assets, current="a" * 40, order="ahead", digest="sha256:other"):
+    def publish(self, kind, files, assets, current="a" * 40, order="ahead", digest="sha256:other", contents=None):
         with tempfile.TemporaryDirectory() as temporary:
             temporary = Path(temporary)
             bin_dir, delivery = temporary / "bin", temporary / "delivery"
@@ -38,7 +38,7 @@ class PublishTestReleaseTest(unittest.TestCase):
             (bin_dir / "sleep").write_text("#!/bin/sh\nexit 0\n")
             (bin_dir / "sleep").chmod(0o755)
             for name in files:
-                (delivery / name).write_text(name)
+                (delivery / name).write_text((contents or {}).get(name, name))
             log = temporary / "gh.log"
             log.write_text("")
             environment = os.environ | {
@@ -67,6 +67,19 @@ class PublishTestReleaseTest(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertTrue(any("toolbox-v0.9.0-dev.apk" in call for call in calls if call.startswith("release upload")))
         self.assertTrue(any("git/refs/tags/dev" in call for call in calls))
+
+    def test_release_notes_list_the_receipts_changelog_lines(self):
+        receipt = "VERSION_NAME=0.14.0\nVERSION_BASE=0.13.14 (90)\nCHANGELOG_1=修正甲。\nCHANGELOG_2=新增乙。\n"
+        result, calls = self.publish("app", ["toolbox-v0.14.0-release.apk", "BUILD_RECEIPT.txt"],
+                                     ["toolbox-v0.13.14-dev.apk", "BUILD_RECEIPT.txt"],
+                                     contents={"BUILD_RECEIPT.txt": receipt})
+        self.assertEqual(0, result.returncode, result.stderr)
+        log = "\n".join(calls)
+        self.assertIn("本次更新（相对 0.13.14 (90)）：\n\n- 修正甲。\n- 新增乙。", log)
+        result, calls = self.publish("app", ["toolbox-v0.14.0-release.apk", "BUILD_RECEIPT.txt"],
+                                     ["toolbox-v0.13.14-dev.apk", "BUILD_RECEIPT.txt"])
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertNotIn("本次更新", "\n".join(calls))
 
     def test_lower_app_version_is_refused(self):
         result, calls = self.publish("app", ["toolbox-v0.8.33-release.apk", "BUILD_RECEIPT.txt"],

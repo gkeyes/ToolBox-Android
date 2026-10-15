@@ -23,7 +23,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.webkit.WebStorageCompat
 import androidx.webkit.WebViewFeature
 import io.toolbox.core.ui.theme.ToolBoxTheme
-import io.toolbox.host.runtime.browserViewIntent
+import io.toolbox.host.runtime.systemBrowserIntent
 import io.toolbox.host.ui.applyHyperOsGestureNavigationImmersion
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -399,7 +399,9 @@ class BrowserActivity : ComponentActivity() {
     }
 
     private fun openSystemBrowser() {
-        try { startActivity(browserViewIntent(state.address)) }
+        // The address may hold characters only the page grammar accepts (underscore hosts, `|^{}`).
+        val address = validBrowserUrl(state.address) ?: return unsupported("此链接不是可浏览的网页地址。")
+        try { startActivity(systemBrowserIntent(address)) }
         catch (_: android.content.ActivityNotFoundException) { unsupported("没有可用的系统浏览器。") }
         catch (_: SecurityException) { unsupported("系统阻止了外部浏览器启动。") }
     }
@@ -435,7 +437,7 @@ class BrowserActivity : ComponentActivity() {
             state.clearConfirmation = false
             state.canBack = false
             state.canForward = false
-            state.error = "浏览器网站数据已清除。重新加载后可重新登录。"
+            state.showNotice("浏览器网站数据已清除。重新加载后可重新登录。")
         }
         if (WebViewFeature.isFeatureSupported(WebViewFeature.DELETE_BROWSING_DATA)) {
             // Includes cookies, IndexedDB, service worker storage and network cache.
@@ -445,7 +447,7 @@ class BrowserActivity : ComponentActivity() {
             CookieManager.getInstance().removeAllCookies {
                 completed.run()
                 if (!isFinishing && !isDestroyed) {
-                    state.error = "网站登录、缓存及常规存储已清除。当前系统 WebView 不支持完整清除，请更新 WebView 后再次清除。"
+                    state.showNotice("网站登录、缓存及常规存储已清除。当前系统 WebView 不支持完整清除，请更新 WebView 后再次清除。")
                 }
             }
         }
