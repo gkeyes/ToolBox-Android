@@ -620,16 +620,19 @@ fieldset, .fieldset { min-inline-size: 0; max-inline-size: 100%; }
 .article-list-scoped-tabs .tabs__tab { flex: 1 1 0; justify-content: center; }
 
 /* Card meta at large text: the feed icon and a few characters of the feed name
-   stay; the time gives way first. */
+   always stay, ending in an ellipsis; when that and the time don't fit on one
+   line, the time moves to the next line instead of being cut. */
+.card-meta { flex-wrap: wrap; row-gap: 2px; }
 .card-source-content > :not(.card-source-title) { flex-shrink: 0; max-inline-size: none; }
-.card-source-title { min-inline-size: 3em; }
+.card-source-content { flex: 1 1 auto; }
+.card-source-title { display: block; min-inline-size: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .card-meta > .card-source {
-  flex: 1 1000 auto;
-  min-inline-size: min(50%, 8em);
+  flex: 1 1 0;
+  min-inline-size: min(100%, calc(2.25rem + 4em));
   overflow: clip;
   overflow-clip-margin: 4px;
 }
-.card-time-wrapper { flex: 0 1 auto; min-inline-size: 0; }
+.card-time-wrapper { flex: 0 1 auto; min-inline-size: 0; max-inline-size: 100%; }
 .card-time { overflow: hidden; text-overflow: ellipsis; }
 
 /* Long-press menu, iOS style: the page blurs, the pressed row lifts, the menu
@@ -660,7 +663,8 @@ fieldset, .fieldset { min-inline-size: 0; max-inline-size: 100%; }
 .dropdown__popover [role="menuitem"] > svg { order: 2; margin-inline-start: auto; }
 
 /* Form sheets (add / edit feed, title filter, rename) float on glass like the
-   boards: 8px from the edges, every corner round; fields stay on solid cards. */
+   boards: 8px from the edges, every corner round. Fields keep their light
+   translucent fill. */
 html .nextflux-modal-surface.nextflux-floating-sheet {
   background: var(--nf-menu);
   -webkit-backdrop-filter: blur(30px) saturate(190%);
@@ -674,6 +678,11 @@ html .nextflux-modal-surface.nextflux-floating-sheet {
   max-block-size: calc(var(--visual-viewport-height, 100dvh) - 2rem - 8px - env(safe-area-inset-bottom, 0px));
   border-radius: 38px;
 }
+/* Secondary grey drops below 4.5:1 once busy content shows through the glass;
+   the disclosure label uses a stronger grey there. */
+.nextflux-floating-sheet .nf-advanced-toggle { color: #48484A; }
+.dark .nextflux-floating-sheet .nf-advanced-toggle,
+[data-theme="dark"] .nextflux-floating-sheet .nf-advanced-toggle { color: #C7C7CC; }
 @media (prefers-reduced-transparency: reduce) {
   .nextflux-context-scrim { background: rgb(0 0 0 / 0.32); -webkit-backdrop-filter: none; backdrop-filter: none; }
   html .nextflux-modal-surface.nextflux-floating-sheet { background: var(--nf-sheet-bg); -webkit-backdrop-filter: none; backdrop-filter: none; }
