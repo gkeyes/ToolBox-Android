@@ -235,7 +235,7 @@ private fun SettingsHeroCard(onClick: () -> Unit, modifier: Modifier = Modifier)
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        SettingsIconTile(ToolBoxIconKey.Tools, SettingsIconTint.Graphite, size = 64.dp)
+        AppLauncherMark(size = 64.dp)
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             AppText("ToolBox", textStyle = ToolBoxThemeTokens.textStyles.detailTitle)
             AppText(

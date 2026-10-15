@@ -40,7 +40,11 @@
     if (!raw) throw new Error("请输入 GitHub 仓库链接");
     let url;
     try {
-      url = new URL(raw.includes("://") ? raw : `https://github.com/${raw.replace(/^\/+/, "")}`);
+      // "github.com/owner/repo" without a scheme is a link, not an owner named "github.com".
+      const link = raw.includes("://") ? raw
+        : /^(www\.)?github\.com\//i.test(raw) ? `https://${raw}`
+        : `https://github.com/${raw.replace(/^\/+/, "")}`;
+      url = new URL(link);
     } catch (_error) {
       throw new Error("仓库链接格式不正确");
     }
@@ -53,7 +57,8 @@
     const owner = parts[0];
     const repo = parts[1].replace(/\.git$/i, "");
     const safeSegment = /^[A-Za-z0-9_.-]+$/;
-    if (!safeSegment.test(owner) || !safeSegment.test(repo) || !repo) {
+    // GitHub user and organization names never contain a dot; repository names may.
+    if (!safeSegment.test(owner) || owner.includes(".") || !safeSegment.test(repo) || !repo) {
       throw new Error("仓库 owner 或名称不正确");
     }
     return { owner, repo, fullName: `${owner}/${repo}` };

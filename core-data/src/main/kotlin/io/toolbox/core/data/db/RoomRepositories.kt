@@ -19,7 +19,9 @@ import io.toolbox.core.data.InstallTransactionState
 import io.toolbox.core.data.InstalledTool
 import io.toolbox.core.data.PermissionGrant
 import io.toolbox.core.data.PermissionGrantRepository
+import io.toolbox.core.data.TASK_RESULT_PREVIEW_CHARS
 import io.toolbox.core.data.TaskRunResult
+import io.toolbox.core.data.TaskRunResultPreview
 import io.toolbox.core.data.TaskState
 import io.toolbox.core.data.ToolKvSnapshot
 import io.toolbox.core.data.ToolKvRepository
@@ -116,7 +118,8 @@ internal class RoomCatalogLifecycleRepository(
                 } else {
                     val previousGrants = database.grants().getForTool(attempt.metadata.id).associateBy { it.capability }
                     attempt.initialGrants.map { declared ->
-                        previousGrants[declared.capability] ?: declared.copy(granted = false).toEntity()
+                        // A capability new in this version keeps the install default (basic capabilities are on).
+                        previousGrants[declared.capability] ?: declared.toEntity()
                     }
                 }
                 database.grants().deleteAll(attempt.metadata.id)
@@ -378,6 +381,17 @@ internal class RoomBackgroundTaskRepository(
 
     override fun observeResult(taskId: String): Flow<TaskRunResult?> =
         database.taskResults().observeHeader(taskId).map { header -> header?.let { readResult(taskId) } }
+
+    // Reads only the payload's first characters in SQL, so a list row never loads a many-MB result.
+    override fun observeResultPreview(taskId: String): Flow<TaskRunResultPreview?> =
+        database.taskResults().observePreview(taskId, TASK_RESULT_PREVIEW_CHARS).map { row ->
+            row?.let {
+                TaskRunResultPreview(
+                    it.taskId, io.toolbox.core.data.RunOutcome.valueOf(it.outcome), it.completedAt,
+                    it.payloadPrefix, it.errorCode, it.attemptCount,
+                )
+            }
+        }
 
     // One transaction, so a result replaced between slices can't mix two payloads.
     private suspend fun readResult(taskId: String): TaskRunResult? = database.withTransaction {

@@ -36,7 +36,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.toolbox.core.data.BackgroundOperation
 import io.toolbox.core.data.BackgroundTask
 import io.toolbox.core.data.RunOutcome
-import io.toolbox.core.data.TaskRunResult
 import io.toolbox.core.data.TaskState
 import io.toolbox.core.ui.component.ToolBoxDestructiveButton
 import io.toolbox.core.ui.component.ToolBoxTextButton
@@ -45,7 +44,7 @@ import io.toolbox.host.runtime.RuntimeBackgroundSessionUi
 import io.toolbox.host.ui.AppText
 import io.toolbox.host.ui.CatalogLazyGroupItem
 import io.toolbox.host.ui.DetailScreen
-import io.toolbox.host.ui.SectionHeader
+import io.toolbox.host.ui.ContentSectionHeader
 import io.toolbox.host.ui.SurfaceCard
 import io.toolbox.host.ui.mergePadding
 import java.text.DateFormat
@@ -71,7 +70,7 @@ internal fun BackgroundTasksScreen(
         stoppingSessionId = actionState.stoppingSessionId,
         onBack = onBack,
         resultFor = { task ->
-            val resultFlow = remember(viewModel, task.taskId) { viewModel.result(task.taskId) }
+            val resultFlow = remember(viewModel, task.taskId) { viewModel.resultSummary(task.taskId) }
             val result by resultFlow.collectAsStateWithLifecycle(null)
             result
         },
@@ -92,7 +91,7 @@ internal fun BackgroundTasksContent(
     cancellingTaskId: String?,
     stoppingSessionId: String?,
     onBack: () -> Unit,
-    resultFor: @Composable (BackgroundTask) -> TaskRunResult?,
+    resultFor: @Composable (BackgroundTask) -> TaskResultSummaryUi?,
     onStopSession: (RuntimeBackgroundSessionUi) -> Unit,
     onCancelTask: (BackgroundTask) -> Unit,
     onRetry: (() -> Unit)? = null,
@@ -141,7 +140,7 @@ internal fun BackgroundTasksContent(
                 if (page.runtimeSessions.isNotEmpty()) {
                     item("runtime-title") {
                         Column(Modifier.padding(bottom = ToolBoxThemeTokens.spacing.one)) {
-                            SectionHeader("持续运行 · ${page.runtimeSessions.size}")
+                            ContentSectionHeader("持续运行 · ${page.runtimeSessions.size}")
                         }
                     }
                     itemsIndexed(
@@ -150,7 +149,7 @@ internal fun BackgroundTasksContent(
                         contentType = { _, _ -> "runtime-session" },
                     ) { index, session ->
                         CatalogLazyGroupItem(index = index, count = page.runtimeSessions.size,
-                            modifier = Modifier.toolBoxEntrance(entrance, index)) {
+                            modifier = Modifier.toolBoxEntrance(entrance, index), dividerStart = EntryTextInset) {
                             RuntimeSessionCard(
                                 session = session,
                                 stopping = stoppingSessionId == session.sessionId,
@@ -166,7 +165,7 @@ internal fun BackgroundTasksContent(
                             top = if (page.runtimeSessions.isNotEmpty()) ToolBoxThemeTokens.spacing.section else 0.dp,
                             bottom = ToolBoxThemeTokens.spacing.one,
                         )) {
-                            SectionHeader("已登记任务 · ${page.tasks.size}")
+                            ContentSectionHeader("已登记任务 · ${page.tasks.size}")
                         }
                     }
                     itemsIndexed(
@@ -179,7 +178,7 @@ internal fun BackgroundTasksContent(
                                 fadeInSpec = io.toolbox.core.ui.component.ToolBoxMotion.effects(),
                                 placementSpec = io.toolbox.core.ui.component.ToolBoxMotion.ItemPlacement,
                                 fadeOutSpec = io.toolbox.core.ui.component.ToolBoxMotion.effects(),
-                            ).toolBoxEntrance(entrance, page.runtimeSessions.size + index + 1)) {
+                            ).toolBoxEntrance(entrance, page.runtimeSessions.size + index + 1), dividerStart = EntryTextInset) {
                             BackgroundTaskCard(
                                 task = task,
                                 result = resultFor(task),
@@ -256,7 +255,7 @@ private fun RuntimeSessionCard(
 @Composable
 private fun BackgroundTaskCard(
     task: BackgroundTask,
-    result: TaskRunResult?,
+    result: TaskResultSummaryUi?,
     cancelling: Boolean,
     canCancel: Boolean,
     onCancel: () -> Unit,
@@ -299,6 +298,9 @@ private fun BackgroundTaskCard(
     }
 }
 
+/** Separators start under the text: 16dp padding + 30dp tile + 12dp gap. */
+private val EntryTextInset = 58.dp
+
 @Composable
 private fun BackgroundEntryLayout(
     icon: io.toolbox.core.ui.component.ToolBoxIconKey,
@@ -339,7 +341,7 @@ private fun BackgroundEntryLayout(
 }
 
 @Composable
-private fun TaskResultSummary(result: TaskRunResult?) {
+private fun TaskResultSummary(result: TaskResultSummaryUi?) {
     if (result == null) {
         AppText(
             "尚无执行结果",
@@ -361,7 +363,7 @@ private fun TaskResultSummary(result: TaskRunResult?) {
             textStyle = ToolBoxThemeTokens.textStyles.metadata,
         )
     }
-    result.payloadJson?.resultPreview()?.let { preview ->
+    result.preview?.let { preview ->
         AppText(
             preview,
             color = ToolBoxThemeTokens.colors.textSecondary,
@@ -402,6 +404,3 @@ private fun RunOutcome.displayColor() = when (this) {
     RunOutcome.FAILED -> ToolBoxThemeTokens.colors.danger
     RunOutcome.CANCELLED -> ToolBoxThemeTokens.colors.textSecondary
 }
-
-private fun String.resultPreview(): String? =
-    replace(Regex("\\s+"), " ").trim().take(320).takeIf(String::isNotBlank)

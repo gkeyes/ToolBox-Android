@@ -40,6 +40,7 @@ const dict = {
   home_first_report: { zh: "第一份复盘，从一次开口开始。", en: "Your first debrief starts with a conversation." },
   home_first_report_body: { zh: "练完后，在这里回看你的原话、目标完成情况和下一步。", en: "After practice, revisit your own words, the goals you reached, and what comes next." },
   home_resume: { zh: "还有一场对话没说完", en: "A conversation to come back to" },
+  home_resume_debrief: { zh: "这场练习还没生成复盘", en: "A practice still waiting for its debrief" },
   home_browse: { zh: "自己选个场景", en: "Choose a scenario" },
   home_swap_error: { zh: "这次没能换好，原来的场景还在。", en: "Couldn’t find a new pick. Your current scenario is still here." },
   arena_heading: { zh: "哪场对话，让你难开口？", en: "Which conversation is on your mind?" },

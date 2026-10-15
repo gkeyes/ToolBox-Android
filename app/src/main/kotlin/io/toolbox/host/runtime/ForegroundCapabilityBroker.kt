@@ -12,6 +12,7 @@ import android.database.Cursor
 import android.graphics.drawable.Icon
 import android.location.LocationManager
 import android.net.Uri
+import android.os.Bundle
 import android.os.CancellationSignal
 import android.provider.OpenableColumns
 import androidx.activity.ComponentActivity
@@ -111,46 +112,84 @@ internal fun locationResult(value: android.location.Location?): Result<android.l
     value?.let(Result.Companion::success)
         ?: Result.failure(RuntimeHandlerException(RuntimeRpcErrorCode.NOT_FOUND, "Location is unavailable"))
 
+/**
+ * Picker and camera requests waiting on the system UI. They belong to the process, not to one
+ * MainActivity: rotating or switching dark mode while the picker is open recreates the activity,
+ * and the new activity's launchers (same registration keys) receive the result. Main thread only.
+ */
+internal object PendingForegroundRequests {
+    val mutex = Mutex()
+    var open: CompletableDeferred<Uri?>? = null
+    var save: CompletableDeferred<Uri?>? = null
+    var camera: CompletableDeferred<Boolean>? = null
+    var cameraFile: File? = null
+
+    /** Ends every waiting request and returns the camera file left to delete. */
+    fun fail(failure: Throwable): File? {
+        open?.completeExceptionally(failure)
+        save?.completeExceptionally(failure)
+        camera?.completeExceptionally(failure)
+        val file = cameraFile
+        open = null
+        save = null
+        camera = null
+        cameraFile = null
+        return file
+    }
+}
+
 internal class ForegroundCapabilityBroker private constructor(
     private val activity: ComponentActivity,
 ) {
     private val active = AtomicBoolean(true)
-    private val pickerMutex = Mutex()
-    private var openResult: CompletableDeferred<Uri?>? = null
-    private var saveResult: CompletableDeferred<Uri?>? = null
-    private var cameraResult: CompletableDeferred<Boolean>? = null
-    private var pendingCameraFile: File? = null
     private val cleanupScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     private val openLauncher = activity.registerForActivityResult(OpenDocumentContract()) { uri ->
-        openResult?.complete(uri)
-        openResult = null
+        PendingForegroundRequests.open?.complete(uri)
+        PendingForegroundRequests.open = null
     }
     private val saveLauncher = activity.registerForActivityResult(CreateDocumentContract()) { uri ->
-        saveResult?.complete(uri)
-        saveResult = null
+        PendingForegroundRequests.save?.complete(uri)
+        PendingForegroundRequests.save = null
     }
     private val cameraLauncher = activity.registerForActivityResult(ActivityResultContracts.TakePicture()) { saved ->
-        cameraResult?.complete(saved)
-        cameraResult = null
+        PendingForegroundRequests.camera?.complete(saved)
+        PendingForegroundRequests.camera = null
     }
 
-    fun close() {
+    init {
+        // The camera file path survives process death in saved state; the request waiting for it does not.
+        val savedCameraPath = activity.savedStateRegistry.consumeRestoredStateForKey(STATE_CAMERA_FILE)
+            ?.getString(STATE_CAMERA_FILE)
+        if (savedCameraPath != null && PendingForegroundRequests.cameraFile?.path != savedCameraPath) {
+            discardOrphanCapture(File(savedCameraPath))
+        }
+        activity.savedStateRegistry.registerSavedStateProvider(STATE_CAMERA_FILE) {
+            Bundle().apply { PendingForegroundRequests.cameraFile?.let { putString(STATE_CAMERA_FILE, it.path) } }
+        }
+    }
+
+    /**
+     * [keepPendingRequests] is true while the activity is recreated for a configuration change:
+     * the open picker or camera then reports to the next activity instead of failing.
+     */
+    fun close(keepPendingRequests: Boolean = false) {
         if (!active.compareAndSet(true, false)) return
-        val failure = RuntimeHandlerException(RuntimeRpcErrorCode.SESSION_ENDED, "The host activity closed")
-        openResult?.completeExceptionally(failure)
-        saveResult?.completeExceptionally(failure)
-        cameraResult?.completeExceptionally(failure)
-        val filesToDelete = listOfNotNull(pendingCameraFile)
-        openResult = null
-        saveResult = null
-        cameraResult = null
-        pendingCameraFile = null
+        val fileToDelete = if (keepPendingRequests) {
+            null
+        } else {
+            PendingForegroundRequests.fail(RuntimeHandlerException(RuntimeRpcErrorCode.SESSION_ENDED, "The host activity closed"))
+        }
         synchronized(companionLock) {
             if (activeBroker.get() === this) activeBroker = WeakReference(null)
         }
+        if (fileToDelete != null) cleanupScope.launch { fileToDelete.delete() }
+    }
+
+    private fun discardOrphanCapture(file: File) {
+        val captureDirectory = File(activity.cacheDir, CAPTURE_DIRECTORY)
         cleanupScope.launch {
-            filesToDelete.forEach(File::delete)
+            if (file.parentFile?.canonicalPath == captureDirectory.canonicalPath) file.delete()
         }
     }
 
@@ -212,19 +251,19 @@ internal class ForegroundCapabilityBroker private constructor(
         }
     }
 
-    private suspend fun capturePhoto(owner: ToolFilesHandler, requireForegroundRuntime: () -> Unit): RuntimeFileToken? = pickerMutex.withLock {
+    private suspend fun capturePhoto(owner: ToolFilesHandler, requireForegroundRuntime: () -> Unit): RuntimeFileToken? = PendingForegroundRequests.mutex.withLock {
         ensureActive()
         val file = withContext(Dispatchers.IO) {
-            val captureDirectory = File(activity.cacheDir, "toolbox-captures").apply { mkdirs() }
+            val captureDirectory = File(activity.cacheDir, CAPTURE_DIRECTORY).apply { mkdirs() }
             File.createTempFile("capture-", ".jpg", captureDirectory)
         }
         var retained = false
         try {
             owner.trackTemporary(file)
-            pendingCameraFile = file
+            PendingForegroundRequests.cameraFile = file
             val uri = FileProvider.getUriForFile(activity, "${activity.packageName}.fileprovider", file)
             val deferred = CompletableDeferred<Boolean>()
-            cameraResult = deferred
+            PendingForegroundRequests.camera = deferred
             ensureActive()
             requireForegroundRuntime()
             cameraLauncher.launch(uri)
@@ -238,8 +277,8 @@ internal class ForegroundCapabilityBroker private constructor(
                 temporaryFile = file,
             ).also { retained = true }
         } finally {
-            cameraResult = null
-            pendingCameraFile = null
+            PendingForegroundRequests.camera = null
+            PendingForegroundRequests.cameraFile = null
             if (!retained) {
                 owner.removeTemporary(file)
                 withContext(NonCancellable + Dispatchers.IO) { file.delete() }
@@ -286,29 +325,29 @@ internal class ForegroundCapabilityBroker private constructor(
         )
     }
 
-    private suspend fun openDocument(mimeTypes: List<String>, requireForegroundRuntime: () -> Unit): Uri? = pickerMutex.withLock {
+    private suspend fun openDocument(mimeTypes: List<String>, requireForegroundRuntime: () -> Unit): Uri? = PendingForegroundRequests.mutex.withLock {
         ensureActive()
         val deferred = CompletableDeferred<Uri?>()
-        openResult = deferred
+        PendingForegroundRequests.open = deferred
         try {
             requireForegroundRuntime()
             openLauncher.launch(mimeTypes)
             deferred.await()
         } finally {
-            openResult = null
+            PendingForegroundRequests.open = null
         }
     }
 
-    private suspend fun saveDocument(name: String, mimeType: String, requireForegroundRuntime: () -> Unit): Uri? = pickerMutex.withLock {
+    private suspend fun saveDocument(name: String, mimeType: String, requireForegroundRuntime: () -> Unit): Uri? = PendingForegroundRequests.mutex.withLock {
         ensureActive()
         val deferred = CompletableDeferred<Uri?>()
-        saveResult = deferred
+        PendingForegroundRequests.save = deferred
         try {
             requireForegroundRuntime()
             saveLauncher.launch(CreateDocumentRequest(name, mimeType))
             deferred.await()
         } finally {
-            saveResult = null
+            PendingForegroundRequests.save = null
         }
     }
 
@@ -470,6 +509,8 @@ internal class ForegroundCapabilityBroker private constructor(
         const val SHORTCUT_ACTION = "io.toolbox.host.action.OPEN_TOOL_SHORTCUT"
         const val EXTRA_SHORTCUT_TOKEN = "io.toolbox.host.extra.SHORTCUT_TOKEN"
         private const val SHORTCUT_PREFERENCES = "toolbox_shortcut_routes"
+        private const val CAPTURE_DIRECTORY = "toolbox-captures"
+        private const val STATE_CAMERA_FILE = "io.toolbox.host.pendingCameraFile"
         private val companionLock = Any()
         private var activeBroker = WeakReference<ForegroundCapabilityBroker>(null)
         private val random = SecureRandom()

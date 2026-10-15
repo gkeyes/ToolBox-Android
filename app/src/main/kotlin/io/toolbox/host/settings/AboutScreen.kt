@@ -20,7 +20,8 @@ internal fun AboutScreen(onBack: () -> Unit, onReady: () -> Unit) {
     LaunchedEffect(Unit) { onReady() }
     val entrance = rememberToolBoxEntrance("about")
     val colors = ToolBoxThemeTokens.colors
-    DetailScreen("关于 ToolBox", onBack) { padding ->
+    // The hero names the app, so the page keeps only the small bar title.
+    DetailScreen("关于 ToolBox", onBack, largeTitle = false) { padding ->
         LazyColumn(
             state = rememberTitleBoundListState(),
             modifier = Modifier.fillMaxSize(),
@@ -32,7 +33,7 @@ internal fun AboutScreen(onBack: () -> Unit, onReady: () -> Unit) {
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
-                    SettingsIconTile(ToolBoxIconKey.Tools, SettingsIconTint.Graphite, size = 96.dp)
+                    AppLauncherMark(size = 112.dp)
                     Spacer(Modifier.height(10.dp))
                     AppText("ToolBox", textStyle = ToolBoxThemeTokens.textStyles.detailTitle)
                     AppText(

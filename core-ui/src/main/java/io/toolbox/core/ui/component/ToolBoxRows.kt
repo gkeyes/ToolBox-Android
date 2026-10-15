@@ -246,6 +246,8 @@ fun ToolBoxSwitchSettingRow(
     summary: String? = null,
     icon: ToolBoxIconKey? = null,
     enabled: Boolean = true,
+    /** Custom artwork in place of [icon], inside the toggle target and aligned like a nav row's tile. */
+    leading: (@Composable () -> Unit)? = null,
 ) {
     val haptics = rememberToolBoxHaptics()
     val latestOnCheckedChange by rememberUpdatedState(onCheckedChange)
@@ -273,9 +275,14 @@ fun ToolBoxSwitchSettingRow(
             .toolBoxRowPadding(),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        icon?.let {
-            ToolBoxPreferenceIcon(it, enabled)
+        if (leading != null) {
+            leading()
             Spacer(Modifier.width(ToolBoxRowIconGap))
+        } else {
+            icon?.let {
+                ToolBoxPreferenceIcon(it, enabled)
+                Spacer(Modifier.width(ToolBoxRowIconGap))
+            }
         }
         ToolBoxRowLabels(title, summary, enabled, Modifier.weight(1f))
         Spacer(Modifier.width(ToolBoxThemeTokens.spacing.oneHalf))

@@ -195,6 +195,8 @@ fun ToolBoxPrimaryButton(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     destructive: Boolean = false,
+    /** The 44dp inline capsule, for top bars where it sits beside 44dp round buttons. */
+    compact: Boolean = false,
 ) {
     ToolBoxActionButton(
         label = label,
@@ -202,6 +204,7 @@ fun ToolBoxPrimaryButton(
         modifier = modifier,
         enabled = enabled,
         tone = if (destructive) ToolBoxActionTone.DangerConfirmation else ToolBoxActionTone.Primary,
+        compact = compact,
     )
 }
 

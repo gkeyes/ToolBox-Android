@@ -57,8 +57,10 @@ const FeedsGroupContent = ({ category, active, activeFeedId }) => {
       position: {
         x: e.clientX,
         y: e.clientY,
-        // The whole row, with its count and chevron, not just the link.
+        // The item carries the chevron and count; only its row (the link's
+        // box) lifts, not the feeds nested under it.
         anchor: e.currentTarget.closest('[data-sidebar="menu-item"]') || e.currentTarget,
+        row: e.currentTarget,
       },
     });
   };

@@ -36,7 +36,7 @@ internal data class AppPackage(
 
 internal data class ToolPackage(val slug: String, val version: String, val asset: ReleaseAsset) {
     /** Release files are named after the example directory; tool ids are `io.toolbox.<directory without dashes>`. */
-    fun matches(toolId: String): Boolean = toolId.substringAfterLast('.') == slug.replace("-", "")
+    fun matches(toolId: String): Boolean = toolId == "io.toolbox." + slug.replace("-", "")
 }
 
 internal data class ChannelFeed(val channel: UpdateChannel, val app: AppPackage?, val tools: List<ToolPackage>)

@@ -140,7 +140,9 @@ fun ToolBoxTopBar(
             .fillMaxWidth()
             .windowInsetsPadding(windowInsets)
             .heightIn(min = ToolBoxThemeTokens.sizes.topBar)
-            .padding(horizontal = ToolBoxThemeTokens.spacing.xs, vertical = ToolBoxThemeTokens.spacing.xxs),
+            // 14dp plus the buttons' own 2dp ring puts the round buttons 16dp from the edge, in line
+            // with the page title and cards.
+            .padding(horizontal = ToolBoxThemeTokens.spacing.md - 2.dp, vertical = ToolBoxThemeTokens.spacing.xxs),
         content = {
             Box {
                 if (navigationIcon != null && onNavigationClick != null) {

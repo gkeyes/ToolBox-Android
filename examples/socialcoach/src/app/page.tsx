@@ -31,7 +31,8 @@ export default function Home() {
     [sessions, todaySessionId, todayDate, today],
   );
   const streak = computeStreak(practiceDays);
-  const unfinished = sessions.find((s) => s.id !== todaySessionId && s.status === "active");
+  /** Every practice left open outside today's card: paused mid-conversation, or ended before its debrief was written. */
+  const unfinished = sessions.filter((s) => s.id !== todaySession?.id && (s.status === "active" || (s.status === "ended" && !s.report)));
   /** Last session's verdict, to fill today's wait with something worth reading. */
   const lastVerdict = useMemo(() => {
     const last = sessions.find((x) => x.status === "assessed" && x.report?.verdict && x.report.verdictEvidence);
@@ -103,18 +104,23 @@ export default function Home() {
         </header>
         <div className="flex flex-col gap-8 xl:grid xl:grid-cols-[minmax(0,1fr)_var(--margin-w)] xl:gap-8 xl:items-start">
           <div className="flex flex-col gap-6 min-w-0">
-            {unfinished && (
-              <Link
-                href={`/practice/${unfinished.id}`}
-                className="press flex items-center gap-3 rounded-[var(--radius-sm)] border border-line px-4 py-3 hover:bg-inset"
-              >
-                <Clock3 size={18} className="text-accent-deep shrink-0" />
-                <span className="min-w-0 flex-1">
-                  <span className="block text-[11px] text-ink-3">{t(lang, "home_resume")}</span>
-                  <span className="block text-[14px] font-medium truncate">{unfinished.scenario.title[lang]}</span>
-                </span>
-                <ArrowRight size={16} />
-              </Link>
+            {unfinished.length > 0 && (
+              <div className="flex flex-col gap-2">
+                {unfinished.map((open) => (
+                  <Link
+                    key={open.id}
+                    href={`/practice/${open.id}`}
+                    className="press flex items-center gap-3 rounded-[var(--radius-sm)] border border-line px-4 py-3 hover:bg-inset"
+                  >
+                    <Clock3 size={18} className="text-accent-deep shrink-0" />
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-[11px] text-ink-3">{t(lang, open.status === "active" ? "home_resume" : "home_resume_debrief")}</span>
+                      <span className="block text-[14px] font-medium truncate">{open.scenario.title[lang]}</span>
+                    </span>
+                    <ArrowRight size={16} />
+                  </Link>
+                ))}
+              </div>
             )}
 
             {/* Today card */}

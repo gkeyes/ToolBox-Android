@@ -72,6 +72,8 @@ fun CoreDataRepositories.withMutationLock(): CoreDataRepositories {
             override suspend fun fail(transactionId: String, updatedAt: Long, failureCode: String) = lock.write { raw.installs.fail(transactionId, updatedAt, failureCode) }
         },
         backgroundTasks = object : BackgroundTaskRepository by raw.backgroundTasks {
+            // Spelled out so the raw prefix query is used, not the interface's full-result default.
+            override fun observeResultPreview(taskId: String) = raw.backgroundTasks.observeResultPreview(taskId)
             override suspend fun create(task: BackgroundTask) = lock.write { raw.backgroundTasks.create(task) }
             override suspend fun claimExecution(taskId: String, versionCode: Int, previousToken: String?, executionToken: String, updatedAt: Long, runAttempt: Int) = lock.write { raw.backgroundTasks.claimExecution(taskId, versionCode, previousToken, executionToken, updatedAt, runAttempt) }
             override suspend fun deferRetry(taskId: String, updatedAt: Long, nextRunAt: Long, runAttempt: Int, executionToken: String?) = lock.write { raw.backgroundTasks.deferRetry(taskId, updatedAt, nextRunAt, runAttempt, executionToken) }

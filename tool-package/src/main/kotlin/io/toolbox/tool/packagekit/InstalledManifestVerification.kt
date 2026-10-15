@@ -14,6 +14,7 @@ data class InstalledManifest(
     val network: InstalledManifestNetwork?,
     val icon: String? = null,
     val description: String? = null,
+    val ui: ManifestUi = ManifestUi(),
 )
 
 data class InstalledManifestPermission(
@@ -82,6 +83,7 @@ object InstalledManifestVerifier {
                 },
                 icon = parsed.icon,
                 description = parsed.description,
+                ui = parsed.ui,
             ),
         )
     }

@@ -326,3 +326,65 @@ test('stock monitoring started after the close replaces the loading live notific
   assert.equal(host.calls.length, 0, 'closed-market quote not fetched again');
   assert.notEqual(live.at(-1).shortText, '获取中', 'live notification no longer shows loading');
 });
+
+test('stock A-share codes map to their exchange by code range', () => {
+  const h = loadApp('stock-monitor', stockHost().toolbox, { StockMonitorLive: require(path.join(examples, 'stock-monitor', 'live-summary.js')) });
+  const cases = {
+    '600550': 'sh', '688981': 'sh', '510300': 'sh', '900901': 'sh',
+    '000001': 'sz', '300750': 'sz', '159915': 'sz', '200002': 'sz',
+    '920001': 'bj', '430047': 'bj', '830799': 'bj',
+  };
+  for (const [symbol, exchange] of Object.entries(cases)) assert.equal(h.api.tencentCode(symbol), `${exchange}${symbol}`, symbol);
+  assert.throws(() => h.api.tencentCode('700001'));
+  assert.equal(h.api.marketLabel({ provider: 'tencent', symbol: '920001' }), '北交所');
+  assert.equal(h.api.marketLabel({ provider: 'tencent', symbol: '510300' }), '上交所');
+  assert.equal(h.api.marketLabel({ provider: 'tencent', symbol: '159915' }), '深交所');
+});
+
+test('stock editor changing a row to another symbol drops the old quote and alert latches', async () => {
+  const host = stockHost();
+  host.toolbox.storage.get = async () => ({ version: 1, intervalMs: 300000, monitoring: false, sessionId: null,
+    items: [{ id: 'saved', provider: 'tencent', symbol: '000001', name: '旧股', upper: 12, lower: 8, price: 13, previousClose: 12.5,
+      changePct: 4, quoteAt: 1, fetchedAt: 1, aboveLatched: true, belowLatched: true }] });
+  host.toolbox.background.listSessions = async () => [];
+  host.toolbox.network.request = async () => { throw Object.assign(new Error('offline'), { code: 'NETWORK_ERROR' }); };
+  const stockLive = require(path.join(examples, 'stock-monitor', 'live-summary.js'));
+  const h = loadApp('stock-monitor', host.toolbox, { StockMonitorLive: stockLive }, { boot: true });
+  await settleMany(20);
+  h.node('stock-form').elements = { provider: { value: 'tencent' } };
+  Object.assign(h.node('symbol'), { value: '000002' });
+  Object.assign(h.node('stock-name'), { value: '新股' });
+  h.node('upper-price').value = '12';
+  h.node('lower-price').value = '8';
+  h.node('interval').value = '300000';
+  h.node('enabled').checked = true;
+  h.node('api-token').value = '';
+  h.api.edit('saved');
+  await h.api.saveEditor({ preventDefault() {} });
+  await settleMany(20);
+  const [item] = h.api.state.items;
+  assert.equal(item.id, 'saved');
+  assert.equal(item.symbol, '000002');
+  assert.deepEqual([item.price, item.previousClose, item.changePct, item.quoteAt, item.fetchedAt], [null, null, null, null, null]);
+  assert.deepEqual([item.aboveLatched, item.belowLatched], [false, false]);
+});
+
+test('stock failed stop keeps the poll timer and live notification', async () => {
+  const calls = [];
+  const host = stockHost();
+  Object.assign(host.toolbox.background, {
+    stop: async () => { calls.push('stop'); throw Object.assign(new Error('busy'), { code: 'INTERNAL' }); },
+    cancelTimer: async () => { calls.push('cancelTimer'); },
+  });
+  host.toolbox.notifications.live.end = async () => { calls.push('end'); };
+  const h = loadApp('stock-monitor', host.toolbox, { StockMonitorLive: require(path.join(examples, 'stock-monitor', 'live-summary.js')) });
+  h.api.loaded();
+  Object.assign(h.api.state, { monitoring: true, sessionId: 'session-1' });
+  await h.api.stopMonitoring();
+  assert.deepEqual(calls, ['stop']);
+  assert.equal(h.api.state.monitoring, true);
+  host.toolbox.background.stop = async () => { calls.push('stop'); };
+  await h.api.stopMonitoring();
+  assert.deepEqual(calls, ['stop', 'stop', 'end', 'cancelTimer']);
+  assert.equal(h.api.state.monitoring, false);
+});

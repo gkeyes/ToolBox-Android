@@ -147,4 +147,15 @@ class BackgroundRuntimeRecoveryTest {
         assertFalse(backgroundRestoreOptedIn("reboot", processDeath = true, reboot = false))
         assertFalse(backgroundRestoreOptedIn("unknown", processDeath = true, reboot = true))
     }
+
+    @Test
+    fun appUpdateRecoversLikeProcessDeathAndOnlyBootIsAReboot() {
+        assertEquals("process", RuntimeRestoreReceiver.recoveryReason(android.content.Intent.ACTION_MY_PACKAGE_REPLACED))
+        assertEquals("reboot", RuntimeRestoreReceiver.recoveryReason(android.content.Intent.ACTION_BOOT_COMPLETED))
+        // Default sessions opt in to process-death restore only; an update must keep them.
+        assertTrue(backgroundRestoreOptedIn(
+            RuntimeRestoreReceiver.recoveryReason(android.content.Intent.ACTION_MY_PACKAGE_REPLACED),
+            processDeath = true, reboot = false,
+        ))
+    }
 }

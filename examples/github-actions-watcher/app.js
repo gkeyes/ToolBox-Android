@@ -4,7 +4,7 @@
   const API_ROOT = "https://api.github.com";
   const API_VERSION = "2026-03-10";
   // Keep in sync with manifest.json "version" (checked by watcher-reliability tests).
-  const TOOL_VERSION = "1.1.11";
+  const TOOL_VERSION = "1.1.13";
   const USER_AGENT = `ToolBox-GitHub-Actions-Watcher/${TOOL_VERSION}`;
   const STORAGE_KEY = "github-actions-watcher-state-v1";
   const TOKEN_KEY = "github-actions-watcher-token";
@@ -577,6 +577,7 @@
       const activeWorkflows = workflows.filter((workflow) => workflow.state === "active");
       if (!activeWorkflows.length) throw createError("github", "仓库没有启用中的 GitHub Actions workflow");
       const repo = repositoryResponse.data;
+      const previousRepository = String(state.repository?.fullName || state.config?.fullName || "").toLowerCase();
       state.repository = {
         owner: parsed.owner,
         repo: parsed.repo,
@@ -585,6 +586,13 @@
         private: repo.private === true,
         description: cleanText(repo.description || "")
       };
+      // A watch setup (branch, mode, workflows) belongs to its repository; a different one starts from its own defaults.
+      if (!state.monitoring && state.config && String(state.config.fullName || "").toLowerCase() !== state.repository.fullName.toLowerCase()) {
+        state.config = null;
+      }
+      // A manually typed branch also belongs to the previous repository: startWatching() prefers it over the
+      // branch picker, so leaving it would silently watch that branch name in the new repository.
+      if (previousRepository !== state.repository.fullName.toLowerCase()) $("branch-manual").value = "";
       state.workflows = activeWorkflows.map((workflow) => ({
         id: Number(workflow.id),
         name: cleanText(workflow.name || workflow.path || "Workflow"),
@@ -1302,11 +1310,12 @@
       state.warning = null;
       state.warningMessage = "";
       await bounded(persist(true), null, 5_000);
-      renderAll();
       showToast(cleanupError ? `守望已停止；部分清理失败：${errorLabel(cleanupError)}` : "守望已停止，后台资源已清理");
     } catch (error) {
       showToast(`停止失败：${errorLabel(error)}`);
     } finally {
+      // The watch is already off even when the final save fails; show the setup screen so it is not stuck.
+      renderAll();
       setLoading(false);
       setBusy(false);
     }
@@ -1767,6 +1776,7 @@
     state.discoveryRuns = [];
     state.config = null;
     $("repo-input").value = "";
+    $("branch-manual").value = "";
     renderAll();
     persist().catch((error) => showToast(errorLabel(error)));
     $("repo-input").focus();
@@ -1868,7 +1878,7 @@
       renderDashboard, renderDashboardClock, renderAll, showToast, ...testHook.stubs });
     testHook.api = {
       state, model, viewState, renderDashboard, renderAll, chooseDisplayedRun, friendlyName, pollGitHub, clockTick, retireWork, processTerminalResults, liveRequestFor,
-      saveEnteredToken, persist, restoreObject, acceptRuns, userAgent: USER_AGENT,
+      saveEnteredToken, persist, restoreObject, acceptRuns, readRepository, stopWatching, userAgent: USER_AGENT,
       ageFrontPage: () => { lastFrontPageAt = 0; },
       setForeground: (value) => { runtimeForeground = value; },
       expire: () => activePoll?.invalidate(reliability.timeoutError()),

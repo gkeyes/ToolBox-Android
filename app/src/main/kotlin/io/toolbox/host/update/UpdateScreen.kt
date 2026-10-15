@@ -37,7 +37,7 @@ import io.toolbox.core.ui.component.ToolBoxBanner
 import io.toolbox.core.ui.component.ToolBoxBusyIndicator
 import io.toolbox.core.ui.component.ToolBoxGroupedSurface
 import io.toolbox.core.ui.component.ToolBoxIcon
-import io.toolbox.core.ui.component.ToolBoxIconButton
+import io.toolbox.core.ui.component.ToolBoxGlassIconButton
 import io.toolbox.core.ui.component.ToolBoxIconKey
 import io.toolbox.core.ui.component.ToolBoxMotion
 import io.toolbox.core.ui.component.ToolBoxPrimaryButton
@@ -55,10 +55,12 @@ import io.toolbox.host.settings.SettingsNavRow
 import io.toolbox.host.settings.SettingsRowSeparator
 import io.toolbox.host.settings.SettingsSwitchRow
 import io.toolbox.host.ui.AppText
+import io.toolbox.host.ui.CatalogToolGlyph
 import io.toolbox.host.ui.DetailScreen
-import io.toolbox.host.ui.SectionHeader
+import io.toolbox.host.ui.ContentSectionHeader
 import io.toolbox.host.ui.mergePadding
 import io.toolbox.host.ui.rememberTitleBoundListState
+import io.toolbox.host.ui.toolVisual
 
 @Composable
 internal fun UpdateScreen(viewModel: UpdateViewModel, onBack: () -> Unit, onReady: () -> Unit) {
@@ -73,8 +75,9 @@ internal fun UpdateScreen(viewModel: UpdateViewModel, onBack: () -> Unit, onRead
     LaunchedEffect(Unit) { onReady() }
     LaunchedEffect(state.pendingApk) {
         val apk = state.pendingApk ?: return@LaunchedEffect
-        viewModel.apkHandedOff()
         runCatching { ApkInstaller.install(context, apk) }
+            .onSuccess { viewModel.apkHandedOff() }
+            .onFailure { viewModel.apkHandOffFailed() }
     }
     UpdateContent(
         state = state,
@@ -83,7 +86,10 @@ internal fun UpdateScreen(viewModel: UpdateViewModel, onBack: () -> Unit, onRead
         onRefresh = viewModel::refresh,
         onSelectChannel = viewModel::selectChannel,
         onInstallApp = viewModel::downloadApp,
-        onGrantInstall = { runCatching { ApkInstaller.openInstallPermissionSettings(context) } },
+        onGrantInstall = {
+            runCatching { ApkInstaller.openInstallPermissionSettings(context) }
+                .onFailure { viewModel.installSettingsUnavailable() }
+        },
         onInstallTool = viewModel::installTool,
         onUpdateAll = viewModel::updateAllTools,
         onCheckOnLaunchChange = viewModel::setCheckOnLaunch,
@@ -109,8 +115,16 @@ internal fun UpdateContent(
     DetailScreen(
         title = "软件更新",
         onBack = onBack,
-        actions = {
-            ToolBoxIconButton(ToolBoxIconKey.Refresh, "重新检查", onRefresh, Modifier.testTag("update_refresh"), enabled = !state.loading)
+        actions = { glassState ->
+            // Refresh is disabled while a check is already running.
+            ToolBoxGlassIconButton(
+                icon = ToolBoxIconKey.Refresh,
+                contentDescription = "重新检查",
+                onClick = onRefresh,
+                glassState = glassState,
+                modifier = Modifier.testTag("update_refresh"),
+                enabled = !state.loading,
+            )
         },
     ) { padding ->
         LazyColumn(
@@ -225,10 +239,10 @@ internal fun UpdateContent(
     }
 }
 
-/** Section title spaced like the other settings pages (26dp above, 7dp to the card). */
+/** Content-screen section heading, spaced 26dp above and 7dp to the card. */
 @Composable
 private fun GroupHeader(title: String, first: Boolean = false) {
-    Box(Modifier.padding(top = if (first) 4.dp else 26.dp, bottom = 7.dp)) { SectionHeader(title) }
+    Box(Modifier.padding(top = if (first) 4.dp else 26.dp, bottom = 7.dp)) { ContentSectionHeader(title) }
 }
 
 /** iOS Settings choice row: coloured tile, title and summary, accent checkmark when chosen. */
@@ -337,6 +351,8 @@ private fun AppSection(state: UpdateUiState, canInstallApk: Boolean, onInstallAp
 @Composable
 private fun ToolRow(row: ToolUpdateRow, progress: Map<String, Float?>, onInstall: (String) -> Unit) {
     val slug = row.available.slug
+    // Installed tools use their own icon; a tool not installed yet uses the id it will install under.
+    val toolId = row.toolId ?: "io.toolbox." + slug.replace("-", "")
     SettingsNavRow(
         title = row.name,
         icon = ToolBoxIconKey.Tools,
@@ -351,6 +367,9 @@ private fun ToolRow(row: ToolUpdateRow, progress: Map<String, Float?>, onInstall
             ToolRowState.NOT_INSTALLED -> "可安装 ${row.available.version}"
         },
         modifier = Modifier.testTag("update_tool_$slug"),
+        leading = {
+            CatalogToolGlyph(toolId, null, toolVisual(toolId, row.name, ToolBoxThemeTokens.colors.primary), size = 30.dp)
+        },
         trailing = {
             when {
                 slug in progress -> ToolBoxBusyIndicator(Modifier.size(24.dp))
@@ -363,8 +382,8 @@ private fun ToolRow(row: ToolUpdateRow, progress: Map<String, Float?>, onInstall
 }
 
 /**
- * Version row: the title always shows in full, and the version with its build number sits in
- * the remaining width as one line that scrolls sideways when it does not fit. The status note
+ * Version row: the title always shows in full, and the version with its build number sits beside
+ * it when it fits, otherwise on its own line that scrolls sideways if still too long. The status note
  * runs under the title across the whole row.
  */
 @Composable
@@ -378,15 +397,25 @@ private fun VersionRow(
 ) {
     val colors = ToolBoxThemeTokens.colors
     val textStyles = ToolBoxThemeTokens.textStyles
-    Column(
+    val measurer = androidx.compose.ui.text.rememberTextMeasurer()
+    val density = LocalDensity.current
+    androidx.compose.foundation.layout.BoxWithConstraints(
         Modifier
             .fillMaxWidth()
             .heightIn(min = if (summary == null) 52.dp else 60.dp)
             .padding(start = 16.dp, end = 14.dp, top = 10.dp, bottom = 10.dp),
-        verticalArrangement = Arrangement.Center,
+        contentAlignment = Alignment.CenterStart,
     ) {
+    // The version moves to its own line whenever it would not fit beside the title, so the build
+    // number (what tells test builds apart) is never cut mid-glyph; that line still scrolls sideways.
+    val fitsBeside = with(density) {
+        val titleWidth = measurer.measure(title, textStyles.body, maxLines = 1).size.width.toDp()
+        val valueWidth = measurer.measure(value, textStyles.body, maxLines = 1).size.width.toDp()
+        30.dp + 12.dp + titleWidth + 12.dp + valueWidth <= maxWidth
+    }
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.Center) {
         // Large text on a narrow phone: the version gets its own line so most of it stays visible.
-        val stacked = LocalConfiguration.current.screenWidthDp / LocalDensity.current.fontScale < 260f
+        val stacked = !fitsBeside || LocalConfiguration.current.screenWidthDp / LocalDensity.current.fontScale < 260f
         val valueText = @Composable { modifier: Modifier ->
             ToolBoxText(
                 value,
@@ -415,6 +444,7 @@ private fun VersionRow(
                 style = textStyles.sectionTitle.copy(color = colors.textSecondary),
             )
         }
+    }
     }
 }
 

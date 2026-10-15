@@ -165,3 +165,13 @@ internal data class TaskResultHeader(
     val attemptCount: Int,
     val payloadLength: Int?,
 )
+
+/** A task_results row with only the start of its payload. */
+internal data class TaskResultPreviewRow(
+    val taskId: String,
+    val outcome: String,
+    val completedAt: Long,
+    val errorCode: String?,
+    val attemptCount: Int,
+    val payloadPrefix: String?,
+)

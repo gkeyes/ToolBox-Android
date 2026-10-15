@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import { loadScripts } from './helpers.mjs';
 
 const ctx = loadScripts(['core.js', 'rules.js']);
@@ -34,4 +35,36 @@ test('stopping during the private rule fetch is reported as an abort', async () 
     ctx.RSSScoutRules.sync(slow, { ...settings, privateRuleUrl: 'https://rules.example/r.json' }, '', controller.signal),
     { name: 'AbortError' }
   );
+});
+
+test('a sync that loads only one half of the rules says which half is missing', async () => {
+  const signal = new AbortController().signal;
+  const failedPrivate = await ctx.RSSScoutRules.sync(network, { ...settings, privateRuleUrl: 'https://rules.example/r.json' }, '', signal);
+  assert.equal(failedPrivate.partial, 'private');
+  const noPrivate = await ctx.RSSScoutRules.sync(network, { ...settings, usePrivateRules: false }, '', signal);
+  assert.equal(noPrivate.partial, '');
+  const privateRules = fs.readFileSync(new URL('../private-rules.json', import.meta.url), 'utf8');
+  const privateOnly = { request: async url => (url.includes('rules.example') ? { status: 200, text: privateRules } : { status: 503, text: '' }) };
+  const cache = await ctx.RSSScoutRules.sync(privateOnly, { ...settings, privateRuleUrl: 'https://rules.example/r.json' }, '', signal);
+  assert.ok(cache.rules.length > 0);
+  assert.equal(cache.partial, 'base');
+});
+
+test('a partial sync keeps the half the previous cache already had', () => {
+  const { keepCachedHalf } = ctx.RSSScoutRules;
+  const radarOnly = { sourceKey: 'k', partial: 'private', privateCount: 0, rules: [{ id: 'radar' }] };
+  const privateOnly = { sourceKey: 'k', partial: 'base', privateCount: 1, rules: [{ id: 'private' }] };
+  const merged = keepCachedHalf(privateOnly, radarOnly);
+  assert.deepEqual(Array.from(merged.rules, r => r.id), ['private', 'radar']);
+  assert.equal(merged.privateCount, 1);
+  assert.equal(merged.partial, 'base');
+  const back = keepCachedHalf(radarOnly, merged);
+  assert.deepEqual(Array.from(back.rules, r => r.id), ['private', 'radar']);
+  assert.equal(back.privateCount, 1);
+  assert.equal(keepCachedHalf(privateOnly, { ...radarOnly, sourceKey: 'other' }), privateOnly);
+  assert.equal(keepCachedHalf(privateOnly, privateOnly), privateOnly);
+  const again = keepCachedHalf(privateOnly, merged);
+  assert.deepEqual(Array.from(again.rules, r => r.id), ['private', 'radar'], 'a second private-only retry keeps the cached Radar half');
+  const complete = { ...privateOnly, partial: '' };
+  assert.equal(keepCachedHalf(complete, radarOnly), complete);
 });

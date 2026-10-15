@@ -31,6 +31,14 @@ class ModelsTest {
     }
 
     @Test
+    fun resultPreviewKeepsOnlyThePayloadStart() {
+        val payload = "x".repeat(TASK_RESULT_PREVIEW_CHARS * 3)
+        val preview = TaskRunResult("t", RunOutcome.SUCCEEDED, 7, payload, null, 2).preview()
+        assertEquals(TaskRunResultPreview("t", RunOutcome.SUCCEEDED, 7, payload.take(TASK_RESULT_PREVIEW_CHARS), null, 2), preview)
+        assertEquals(null, TaskRunResult("t", RunOutcome.FAILED, 7, null, "E", 1).preview().payloadPrefix)
+    }
+
+    @Test
     fun capacityChecksRejectNegativeAndUnavailableSizesWithStableCodes() {
         val heap = assertThrows(IllegalArgumentException::class.java) { ResourceCapacity.requireHeapBytes(-1) }
         assertEquals("INSUFFICIENT_MEMORY", heap.message)

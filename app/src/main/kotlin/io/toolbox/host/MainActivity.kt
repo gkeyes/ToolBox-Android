@@ -168,10 +168,8 @@ class MainActivity : ComponentActivity() {
                         }
                         LaunchedEffect(pendingShortcutIntent) {
                             val launchIntent = pendingShortcutIntent ?: return@LaunchedEffect
-                            val requestedToolId = launchIntent.takeIf { it.action == ACTION_OPEN_TOOL }
-                                ?.getStringExtra(EXTRA_TOOL_ID)
-                            val shortcutToolId = requestedToolId ?: withContext(Dispatchers.IO) {
-                                ForegroundCapabilityBroker.resolveShortcutToolId(this@MainActivity, launchIntent)
+                            val shortcutToolId = withContext(Dispatchers.IO) {
+                                resolveLaunchToolId(this@MainActivity, launchIntent)
                             }
                             shortcutIntent.value = null
                             if (shortcutToolId != null) {
@@ -210,21 +208,18 @@ class MainActivity : ComponentActivity() {
     override fun onDestroy() {
         runtimeSessions?.setHostActivityResumed(false)
         runtimeSessions = null
-        foregroundCapabilityBroker?.close()
+        // A rotation or theme switch keeps an open picker or camera waiting for the next instance.
+        foregroundCapabilityBroker?.close(keepPendingRequests = isChangingConfigurations)
         foregroundCapabilityBroker = null
         super.onDestroy()
     }
 
     companion object {
-        private const val ACTION_OPEN_TOOL = "io.toolbox.host.OPEN_TOOL"
-        private const val EXTRA_TOOL_ID = "toolId"
         private const val STATE_LAUNCH_INTENT_PENDING = "io.toolbox.host.launchIntentPending"
 
+        /** For the host's own notifications and alarms; goes through the non-exported [ToolLaunchActivity]. */
         internal fun openToolIntent(context: Context, toolId: String): Intent =
-            Intent(context, MainActivity::class.java)
-                .setAction(ACTION_OPEN_TOOL)
-                .putExtra(EXTRA_TOOL_ID, toolId)
-                .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            ToolLaunchActivity.openToolIntent(context, toolId)
     }
 
     @Composable
@@ -270,6 +265,14 @@ private fun ComponentActivity.applyLaunchNightMode(mode: ToolBoxThemeMode) {
  */
 internal fun shouldOpenLaunchIntent(restored: Boolean, pendingWhenSaved: Boolean, intentFlags: Int): Boolean =
     if (restored) pendingWhenSaved else (intentFlags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) == 0
+
+/**
+ * The tool a launch intent asks for. MainActivity is exported, so it only trusts a pinned shortcut's
+ * token or a one-time token from [ToolLaunchActivity]; a bare tool id from another app opens nothing.
+ */
+internal fun resolveLaunchToolId(context: Context, intent: Intent): String? =
+    ToolLaunchActivity.consumeLaunchToken(intent)
+        ?: ForegroundCapabilityBroker.resolveShortcutToolId(context, intent)
 
 private fun ThemeMode.toToolBoxThemeMode(): ToolBoxThemeMode = when (this) {
     ThemeMode.SYSTEM -> ToolBoxThemeMode.System

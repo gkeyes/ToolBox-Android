@@ -427,7 +427,7 @@ internal fun groupCapsuleMetrics(width: Dp): GroupCapsuleMetrics {
     val padding = 10.dp
     val slot = ((width - padding * 2 - GROUP_SLOT_GAP * 2) / 3).coerceIn(36.dp, 56.dp)
     val height = slot + padding * 2
-    return GroupCapsuleMetrics(slot, padding, height, height * 0.32f)
+    return GroupCapsuleMetrics(slot, padding, height, height / 2)
 }
 
 private val GROUP_SLOT_GAP = 10.dp

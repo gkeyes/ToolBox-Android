@@ -2,6 +2,7 @@ package io.toolbox.host.background
 
 import android.content.Context
 import androidx.work.CoroutineWorker
+import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import io.toolbox.core.data.BackgroundOperation
 import io.toolbox.core.data.BackgroundTask
@@ -54,15 +55,20 @@ class ToolBoxBackgroundWorker(
         io.toolbox.host.backup.BackupRuntimeGate.worker { admittedWork() } ?: Result.retry()
 
     private suspend fun admittedWork(): Result {
-        val dependencies = ToolBoxBackgroundRuntime.resolve(applicationContext) ?: return Result.failure()
         val taskId = inputData.getString(KEY_TASK_ID) ?: return Result.failure()
+        // Start-up and storage failures are transient; failure() would strand a one-time task in QUEUED.
+        val dependencies = ToolBoxBackgroundRuntime.resolve(applicationContext) ?: return Result.retry()
         val repository = dependencies.repositories.backgroundTasks
         val storedTask = when (val found = repository.getTask(taskId)) {
-            is DataResult.Success -> found.value ?: return Result.success()
-            is DataResult.Failure -> return Result.failure()
+            is DataResult.Success -> found.value ?: return retireWork()
+            is DataResult.Failure -> return Result.retry()
         }
-        if (storedTask.state == TaskState.COMPLETED || storedTask.state == TaskState.CANCELLED) return Result.success()
-        val attempt = maxOf(runAttemptCount + 1, storedTask.runAttempt + 1)
+        if (storedTask.state == TaskState.COMPLETED || storedTask.state == TaskState.CANCELLED) {
+            return if (storedTask.periodic) retireWork() else Result.success()
+        }
+        // Count only claimed runs: claimExecution persists the attempt, so process death mid-run still counts, while
+        // the start-up and storage retries above (which bump WorkManager's runAttemptCount) do not eat the budget.
+        val attempt = storedTask.runAttempt + 1
         val task = storedTask.copy(executionToken = BackgroundExecutionLimiter.newToken())
         return BackgroundExecutionLimiter.run(task.taskId, requireNotNull(task.executionToken)) {
         try {
@@ -118,6 +124,19 @@ class ToolBoxBackgroundWorker(
             finish(task, dependencies, RunOutcome.FAILED, null, "BACKGROUND_EXECUTION_FAILED", attempt)
         }
         } ?: Result.success()
+    }
+
+    /**
+     * A removed or finished row never runs again. Periodic work outlives a row cancelled by a tool update, so stop
+     * this request instead of letting it wake the device every period.
+     */
+    private fun retireWork(): Result {
+        try {
+            WorkManager.getInstance(applicationContext).cancelWorkById(id)
+        } catch (_: IllegalStateException) {
+            // WorkManager is not initialised (only in isolated worker tests); nothing is scheduled then.
+        }
+        return Result.success()
     }
 
     private suspend fun claim(
