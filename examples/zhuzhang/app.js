@@ -4,7 +4,7 @@
   // Ledger money is integer cents. DOM content originating from users is escaped.
   const KEY = 'ledger.v1';
   const runtime = window.ZZRuntime;
-  const VERSION = '1.5.5';
+  const VERSION = '1.5.6';
   const MAX_CENTS = 100000000000;
   const $ = s => document.querySelector(s);
   const $$ = s => [...document.querySelectorAll(s)];
@@ -81,7 +81,7 @@
   }
   function emptyLedger(){return {schemaVersion:2,revision:0,completedDrafts:[],project:{name:'装修项目',area:'',layout:'',budget:0,initialBudget:0},items:[],payments:[],changes:[]};}
   let storageOK=false,restoreError='',bootError='',rawBackup=null;
-  let data=emptyLedger(),busy=false,busyBackground=false,actionWaiting=false;
+  let data=emptyLedger(),busy=false,busyBackground=false,actionWaiting=false,waitCancelled=false;
   let entryValues={};
   let activeDraftWritten=false,draftsUnreadable=false,drafts=[],storedDraftIds=new Set(),activeDraftOriginal=null,activeDraftId='',activeDraftBase=null,activeDraftReview=false,pendingNavigation=null,draftBusy=false;
   let draftTimer=null,draftQueue=Promise.resolve(),draftSnapshot='',calcTimer=null,calcQueue=Promise.resolve(),calcSaving=Promise.resolve(true);
@@ -115,8 +115,10 @@
       if(!draftsUnreadable)next.completedDrafts=(next.completedDrafts||[]).filter(id=>id===activeDraftId||storedDraftIds.has(id));
       next=validate(next);next.revision=(data.revision||0)+1;
       // A slow store gets a word after 10 s, but the write keeps the lock until it settles so nothing can overtake it.
-      const slow=setTimeout(()=>{const m='存储响应很慢，仍在等待保存完成，请不要关闭。';showError(m);},10000);
-      try{await runtime.set(KEY,next);}finally{clearTimeout(slow);}
+      const slowMsg='存储响应很慢，仍在等待保存完成，请不要关闭。';let slowShown=false;
+      const slow=setTimeout(()=>{slowShown=true;showError(slowMsg);},10000);
+      // Once the write settles the warning is stale, wherever it landed.
+      try{await runtime.set(KEY,next);}finally{clearTimeout(slow);if(slowShown)$$('.error-message').forEach(x=>{if(x.textContent===slowMsg)x.remove();});}
       data=next;
       return true;
     }catch(error){if(!background)showError(runtime.explain(error));return false;}
@@ -641,8 +643,15 @@
   document.addEventListener('click',async e=>{
     const b=e.target.closest('[data-action]');if(!b||b.disabled||(busy&&!busyBackground)||draftBusy)return;const a=b.dataset.action,id=b.dataset.id||'';
     // One tap waits for a background save; further taps meanwhile are dropped so nothing runs twice.
-    if(actionWaiting)return;
-    if(busy&&a!=='nav'){actionWaiting=true;try{for(let n=0;n<200&&busy;n++)await new Promise(r=>setTimeout(r,50));}finally{actionWaiting=false;}if(busy){showError('我的家还在保存，请稍后再试。');return;}}
+    // Switching tabs always works and drops a tap that is still waiting; other taps meanwhile are ignored.
+    if(a==='nav'&&actionWaiting)waitCancelled=true;
+    else if(actionWaiting)return;
+    if(busy&&a!=='nav'){
+      actionWaiting=true;waitCancelled=false;b.classList.add('pending');b.setAttribute('aria-busy','true');toast('我的家正在保存，稍等一下…');
+      try{for(let n=0;n<200&&busy&&!waitCancelled;n++)await new Promise(r=>setTimeout(r,50));}finally{actionWaiting=false;b.classList.remove('pending');b.removeAttribute('aria-busy');}
+      if(waitCancelled)return;
+      if(busy){showError('我的家还在保存，请稍后再试。');return;}
+    }
     if(['nav','detail','transaction','payment','add-item','edit-item','edit-plan','edit-estimate','settle-item','project','settings','apply-preview'].includes(a)&&isFormDirty()){pendingNavigation=()=>{if(b.isConnected)b.click();};closeDialog();return;}
     try{
       if(a==='nav')navigate(b.dataset.page);

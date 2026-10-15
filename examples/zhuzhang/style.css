@@ -543,3 +543,7 @@ body[data-page="home"] #toast.has-action{top:calc(var(--home-top,64px) + 78px);b
 @media(max-width:700px){body[data-page="home"] #toast{top:calc(var(--home-top,81px) + 62px);bottom:auto;transform:translate(-50%,-15px)}body[data-page="home"] #toast.show{transform:translate(-50%,0)}}
 .hv[data-mode="resize"] .hv-label{color:var(--ink)}
 @media (prefers-color-scheme:dark){.hv[data-mode="resize"] .hv-label{color:#f2f6f2;background:#17201cdb!important}.hv[data-mode="resize"] .hv-label small{color:#d2dbd4}}
+/* 1.5.6: a tap waiting for a 我的家 background save shows it is in progress. */
+[data-action].pending{opacity:.55;cursor:progress;animation:zz-pending 1s ease-in-out infinite alternate}
+@keyframes zz-pending{to{opacity:.85}}
+@media (prefers-reduced-motion:reduce){[data-action].pending{animation:none}}
