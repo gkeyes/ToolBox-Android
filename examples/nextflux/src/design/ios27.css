@@ -11,14 +11,17 @@
 :root {
   --nf-sans: -apple-system, "SF Pro Text", system-ui, "PingFang SC", "Noto Sans CJK SC", "Noto Sans SC", sans-serif;
   --nf-list-scale: 1;
-  --nf-glass: rgb(255 255 255 / 0.58);
+  --nf-glass: rgb(255 255 255 / 0.48);
   --nf-glass-rim: inset 0 1px 1px rgb(255 255 255 / 0.95), inset 0 -1px 1px rgb(255 255 255 / 0.45),
     inset 0 0 0 0.5px rgb(255 255 255 / 0.6), 0 6px 18px rgb(0 0 0 / 0.14);
   /* Small floating controls (the reader close disc): same glass rims, but only
      a faint contact shadow, like iOS's round close button. */
   --nf-glass-rim-soft: inset 0 1px 1px rgb(255 255 255 / 0.95), inset 0 -1px 1px rgb(255 255 255 / 0.45),
     inset 0 0 0 0.5px rgb(0 0 0 / 0.06), 0 1px 3px rgb(0 0 0 / 0.08);
-  --nf-glass-filter: blur(14px) saturate(180%);
+  /* Chrome glass, as on the boards: the edge lens (--nf-lens, set per element
+     by design/lens.js) then a light blur. Without a lens it falls back to
+     plain frosted glass. Use it as `var(--nf-lens, blur(12px)) var(--nf-glass-filter)`. */
+  --nf-glass-filter: blur(2px) saturate(180%) brightness(1.05);
   --nf-menu: rgb(255 255 255 / 0.84);
   --nf-menu-shadow: 0 18px 50px rgb(0 0 0 / 0.20), inset 0 1px 1px rgb(255 255 255 / 0.75), inset 0 0 0 0.5px rgb(255 255 255 / 0.75);
   --nf-seg-pill: rgb(255 255 255 / 0.94);
@@ -31,7 +34,7 @@
 }
 .dark,
 [data-theme="dark"] {
-  --nf-glass: rgb(40 40 44 / 0.52);
+  --nf-glass: rgb(40 40 44 / 0.46);
   --nf-glass-rim: inset 0 1px 1px rgb(255 255 255 / 0.28), inset 0 -1px 1px rgb(255 255 255 / 0.10),
     inset 0 0 0 0.5px rgb(255 255 255 / 0.18), 0 6px 18px rgb(0 0 0 / 0.45);
   --nf-glass-rim-soft: inset 0 1px 1px rgb(255 255 255 / 0.28), inset 0 -1px 1px rgb(255 255 255 / 0.10),
@@ -47,7 +50,7 @@
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme]) {
-    --nf-glass: rgb(40 40 44 / 0.52);
+    --nf-glass: rgb(40 40 44 / 0.46);
     --nf-glass-rim: inset 0 1px 1px rgb(255 255 255 / 0.28), inset 0 -1px 1px rgb(255 255 255 / 0.10),
       inset 0 0 0 0.5px rgb(255 255 255 / 0.18), 0 6px 18px rgb(0 0 0 / 0.45);
     --nf-glass-rim-soft: inset 0 1px 1px rgb(255 255 255 / 0.28), inset 0 -1px 1px rgb(255 255 255 / 0.10),
@@ -71,8 +74,8 @@ body { font-family: var(--nf-sans); -webkit-tap-highlight-color: transparent; }
 .article-list-scoped-tabs .tabs__list,
 .article-list-actions {
   background: var(--nf-glass);
-  -webkit-backdrop-filter: var(--nf-glass-filter);
-  backdrop-filter: var(--nf-glass-filter);
+  -webkit-backdrop-filter: var(--nf-lens, blur(12px)) var(--nf-glass-filter);
+  backdrop-filter: var(--nf-lens, blur(12px)) var(--nf-glass-filter);
   box-shadow: var(--nf-glass-rim);
 }
 @media (prefers-reduced-transparency: reduce) {
@@ -297,7 +300,7 @@ body { font-family: var(--nf-sans); -webkit-tap-highlight-color: transparent; }
 .article-card .card-content > .card-image,
 .article-card .card-content > * > .card-image { border-radius: 14px; }
 
-.article-list-indicator { background: var(--nf-glass); -webkit-backdrop-filter: var(--nf-glass-filter); backdrop-filter: var(--nf-glass-filter); box-shadow: var(--nf-glass-rim); color: var(--ds-on-surface); }
+.article-list-indicator { background: var(--nf-glass); -webkit-backdrop-filter: var(--nf-lens, blur(12px)) var(--nf-glass-filter); backdrop-filter: var(--nf-lens, blur(12px)) var(--nf-glass-filter); box-shadow: var(--nf-glass-rim); color: var(--ds-on-surface); }
 
 /* ---------------------------------------------------------------- sidebar */
 .sidebar-panel,
@@ -344,8 +347,8 @@ body { font-family: var(--nf-sans); -webkit-tap-highlight-color: transparent; }
     block-size: 64px;
     border-radius: 32px;
     background: var(--nf-glass);
-    -webkit-backdrop-filter: var(--nf-glass-filter);
-    backdrop-filter: var(--nf-glass-filter);
+    -webkit-backdrop-filter: var(--nf-lens, blur(12px)) var(--nf-glass-filter);
+    backdrop-filter: var(--nf-lens, blur(12px)) var(--nf-glass-filter);
     box-shadow: var(--nf-glass-rim);
   }
   .dark .action-buttons .reader-dock { box-shadow: var(--nf-glass-rim); }
@@ -370,8 +373,8 @@ body { font-family: var(--nf-sans); -webkit-tap-highlight-color: transparent; }
     z-index: -1;
     border-radius: 50%;
     background: var(--nf-glass);
-    -webkit-backdrop-filter: var(--nf-glass-filter);
-    backdrop-filter: var(--nf-glass-filter);
+    -webkit-backdrop-filter: var(--nf-lens, blur(12px)) var(--nf-glass-filter);
+    backdrop-filter: var(--nf-lens, blur(12px)) var(--nf-glass-filter);
     box-shadow: var(--nf-glass-rim-soft);
     pointer-events: none;
   }
@@ -391,8 +394,8 @@ body { font-family: var(--nf-sans); -webkit-tap-highlight-color: transparent; }
   .nextflux-continuous-next-page .nextflux-article-header .nextflux-article-feed.justify-center { padding-inline: 44px; }
   .action-buttons .reader-speech-slot:has(.nextflux-speech-bar) {
     background: var(--nf-glass);
-    -webkit-backdrop-filter: var(--nf-glass-filter);
-    backdrop-filter: var(--nf-glass-filter);
+    -webkit-backdrop-filter: var(--nf-lens, blur(12px)) var(--nf-glass-filter);
+    backdrop-filter: var(--nf-lens, blur(12px)) var(--nf-glass-filter);
     box-shadow: var(--nf-glass-rim);
   }
 }
