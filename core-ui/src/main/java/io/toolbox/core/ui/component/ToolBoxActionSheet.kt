@@ -38,6 +38,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.DialogWindowProvider
+import android.view.View
 import android.view.ViewTreeObserver
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 import kotlin.math.roundToInt
@@ -56,10 +57,11 @@ private val LocalSheetHeaderDrag = staticCompositionLocalOf<Modifier> { Modifier
 internal val LocalToolBoxInGlassSheet = staticCompositionLocalOf { false }
 
 /**
- * False where another overlay window sits between the page and a sheet (a sheet opened over the
- * group folder): the sheet can only copy the page window, so it keeps the opaque panel there.
+ * The window a sheet copies for its glass when another overlay window sits between the page and
+ * the sheet (a sheet opened over the group folder): that overlay's view, so the sheet refracts the
+ * folder rather than the page under it. Null: the sheet's own page.
  */
-val LocalToolBoxFrostedSheets = staticCompositionLocalOf { true }
+val LocalToolBoxSheetBackdropView = staticCompositionLocalOf<View?> { null }
 
 /** Sheets float this far from the screen edges (iOS 26/27). */
 private val SheetInset = 12.dp
@@ -88,9 +90,9 @@ fun ToolBoxActionSheet(
     val materials = ToolBoxThemeTokens.materials
     val dark = colors.surface.luminance() < 0.5f
     // The sheet window cannot sample the page behind, so it blurs a copy taken on open.
-    val hostView = LocalView.current
+    val hostView = LocalToolBoxSheetBackdropView.current ?: LocalView.current
     // Pass frostedBackdrop = false over live content (a playing web page): the copy would freeze it.
-    val frosted = containerColor == null && frostedBackdrop && LocalToolBoxFrostedSheets.current &&
+    val frosted = containerColor == null && frostedBackdrop &&
         materials.realBlurEnabled
     var backdrop by remember { mutableStateOf<WindowBackdrop?>(null) }
     // Opaque until the copy lands, then eases into the lighter glass fill.

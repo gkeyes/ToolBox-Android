@@ -34,8 +34,8 @@ import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 
 @Composable
 internal fun BrowserMenuSheet(state: BrowserUiState, actions: BrowserScreenActions) {
-    // The page behind keeps playing, so a frozen frosted copy would not match it.
-    ToolBoxActionSheet(title = "浏览器菜单", onDismissRequest = { state.menu = false }, frostedBackdrop = false) {
+    // Glass over a still of the page; a playing video freezes behind the menu while it is open.
+    ToolBoxActionSheet(title = "浏览器菜单", onDismissRequest = { state.menu = false }) {
         Column(Modifier.fillMaxWidth()) {
             ToolBoxActionSheetHeader {
                 Spacer(Modifier.height(2.dp))
@@ -98,7 +98,6 @@ internal fun BrowserMediaDiagnosticsSheet(state: BrowserUiState, actions: Browse
     ToolBoxActionSheet(
         title = "媒体诊断",
         onDismissRequest = { state.mediaDiagnosticsSheet = false },
-        containerColor = colors.background,
     ) {
         Column(Modifier.fillMaxWidth()) {
             ToolBoxActionSheetHeader {
@@ -174,7 +173,6 @@ internal fun BrowserUserAgentSheet(state: BrowserUiState, actions: BrowserScreen
     ToolBoxActionSheet(
         title = "网站兼容性",
         onDismissRequest = { state.userAgentSheet = false },
-        containerColor = colors.background,
     ) {
         Column(Modifier.fillMaxWidth()) {
             ToolBoxActionSheetHeader {
@@ -238,7 +236,6 @@ internal fun BrowserAddressSheet(state: BrowserUiState, actions: BrowserScreenAc
     ToolBoxActionSheet(
         title = "网页地址",
         onDismissRequest = { state.fullAddress = false },
-        containerColor = colors.background,
     ) {
         Column(Modifier.fillMaxWidth()) {
             ToolBoxActionSheetHeader {

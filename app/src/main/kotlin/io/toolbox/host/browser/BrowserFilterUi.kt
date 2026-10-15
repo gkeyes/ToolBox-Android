@@ -111,7 +111,6 @@ fun BrowserFilterSheet(filters: BrowserFilterController, canPick: Boolean, resum
         title = "广告过滤",
         onDismissRequest = { filters.sheet = false },
         onBackRequest = closeOrBack,
-        containerColor = ToolBoxThemeTokens.colors.background,
     ) {
         Column(Modifier.heightIn(max = 620.dp)) {
             ToolBoxActionSheetHeader {

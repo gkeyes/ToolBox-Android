@@ -50,6 +50,14 @@ class ToolBoxWindowGlass internal constructor() {
 
     /** False until the page copy lands (and always with 实色材质 on): draw an opaque panel then. */
     val ready: Boolean get() = copy != null
+
+    /**
+     * Copies [hostView]'s window now, for glass drawn inside that same window (a toast over the
+     * page). Call it before the glass shows, so the copy doesn't hold the glass itself.
+     */
+    suspend fun capture(hostView: View) {
+        copy = if (hostView.isHardwareAccelerated) captureWindowBackdrop(hostView, scale = 0.5f) else null
+    }
 }
 
 /**
