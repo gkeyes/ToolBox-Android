@@ -50,11 +50,16 @@ fun rememberToolBoxListBackdrop(): LayerBackdrop {
 /** The colour fade the collapsed top bar draws below itself (ToolBoxCollapsingTitle). */
 private val TopBarFadeBand = 24.dp
 
+/** How far the list scrolls before a [ToolBoxPinnedSearchField] with [pinLift] pins. */
+@Composable
+fun toolBoxPinnedSearchScroll(pinLift: Dp = 0.dp): Dp = toolBoxLargeTitleHeight() - TopBarFadeBand + pinLift
+
 /**
  * A list page's search field as chrome: it scrolls with the list until it reaches the collapsed top
  * bar, then stays pinned just below the bar's fade band, as glass over [listBackdrop] (record the
  * list into it with `layerBackdrop` while [glassRendersLive]). The list holds its place with an
  * item keyed [itemKey] as tall as [onHeightChanged] reports; [contentTop] is the list's top padding.
+ * [pinLift] pins it that much higher, for a list whose top padding adds a gap under the title.
  */
 @Composable
 fun ToolBoxPinnedSearchField(
@@ -67,11 +72,12 @@ fun ToolBoxPinnedSearchField(
     onHeightChanged: (Int) -> Unit,
     modifier: Modifier = Modifier,
     itemKey: Any = "search",
+    pinLift: Dp = 0.dp,
 ) {
     val density = LocalDensity.current
     val live = glassRendersLive()
     val contentTopPx = with(density) { contentTop.roundToPx() }
-    val pinnedTopPx = contentTopPx - with(density) { (toolBoxLargeTitleHeight() - TopBarFadeBand).roundToPx() }
+    val pinnedTopPx = contentTopPx - with(density) { toolBoxPinnedSearchScroll(pinLift).roundToPx() }
     val tint = toolBoxSearchGlassTint()
     ToolBoxSearchField(
         value = value,

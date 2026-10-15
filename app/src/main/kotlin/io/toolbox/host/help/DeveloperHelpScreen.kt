@@ -258,9 +258,16 @@ internal fun DeveloperHelpContent(
     val density = LocalDensity.current
     var searchHeightPx by remember { mutableIntStateOf(0) }
     val direction = LocalLayoutDirection.current
-    // A new query reshapes the list: start it from the top, not wherever the old anchor clamps to.
+    // The page's top padding adds spacing.md under the title: pin that much higher, so the field
+    // meets the end of the top bar's fade with no sharp strip of text above it.
+    val pinLift = ToolBoxThemeTokens.spacing.md
+    val pinScrollPx = with(density) { toolBoxPinnedSearchScroll(pinLift).roundToPx() }
+    // A new query reshapes the list. If the field is pinned, keep it pinned and show the first
+    // result under it, instead of jumping back to the top and dropping the focused field.
     LaunchedEffect(query) {
-        if (listState.firstVisibleItemIndex > 0) listState.scrollToItem(0)
+        if (listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > pinScrollPx) {
+            listState.scrollToItem(0, pinScrollPx)
+        }
     }
     Box(modifier) {
         ToolBoxPinnedSearchField(
@@ -274,6 +281,7 @@ internal fun DeveloperHelpContent(
             listBackdrop = listBackdrop,
             contentTop = contentPadding.calculateTopPadding(),
             onHeightChanged = { searchHeightPx = it },
+            pinLift = pinLift,
             modifier = Modifier
                 .padding(
                     start = contentPadding.calculateStartPadding(direction),
@@ -294,12 +302,8 @@ internal fun DeveloperHelpContent(
                 val height = if (searchHeightPx > 0) with(density) { searchHeightPx.toDp() } else ToolBoxThemeTokens.sizes.touchTarget
                 Spacer(Modifier.fillMaxWidth().height(height + ToolBoxThemeTokens.spacing.sm))
             }
-            header?.let { content ->
-                item("debugging", contentType = "help-debugging") {
-                    Box(Modifier.toolBoxEntrance(entrance, 0).padding(bottom = ToolBoxThemeTokens.spacing.lg)) { content() }
-                }
-            }
-            item("intro", contentType = "help-intro") {
+            // Results come right under the search field: the introduction steps aside while searching.
+            if (!searching) item("intro", contentType = "help-intro") {
                 Column(Modifier.toolBoxEntrance(entrance, 1).padding(bottom = ToolBoxThemeTokens.spacing.sm),
                     verticalArrangement = Arrangement.spacedBy(ToolBoxThemeTokens.spacing.xs)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -393,6 +397,11 @@ internal fun DeveloperHelpContent(
                         }
                     }
                     item("chapter-end:" + chapter.id, contentType = "help-cap") { HelpCardCap(top = false, Modifier.animateItem(fadeInSpec = null, placementSpec = ToolBoxMotion.ItemPlacement, fadeOutSpec = null)) }
+                }
+            }
+            header?.let { content ->
+                item("debugging", contentType = "help-debugging") {
+                    Box(Modifier.padding(top = ToolBoxThemeTokens.spacing.lg)) { content() }
                 }
             }
             item("examples", contentType = "help-action") {
