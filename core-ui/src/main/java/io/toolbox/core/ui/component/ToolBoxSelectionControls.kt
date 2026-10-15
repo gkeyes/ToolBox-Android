@@ -2,7 +2,6 @@ package io.toolbox.core.ui.component
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
@@ -19,8 +18,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -43,7 +40,6 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
-import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.graphicsLayer
@@ -51,17 +47,35 @@ import androidx.compose.ui.zIndex
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import com.kyant.backdrop.drawBackdrop
-import com.kyant.backdrop.effects.blur
 import com.kyant.backdrop.effects.lens
 import com.kyant.backdrop.effects.vibrancy
+import androidx.compose.animation.core.Animatable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
+import kotlinx.coroutines.launch
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.gestures.awaitHorizontalTouchSlopOrCancellation
+import androidx.compose.foundation.gestures.horizontalDrag
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.LayoutDirection
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 import kotlin.math.roundToInt
 
 /**
  * Segmented control (iOS 26): a capsule track with a glass thumb that slides between segments on
- * the spatial spring. While a segment is held the thumb lifts: it grows about 10% and turns to
- * clear glass that refracts the track and labels beneath it. Each change ticks. Segments are radio
- * buttons inside a selectable group for accessibility.
+ * the spatial spring. Press the thumb and it lifts under the finger: it grows about 10%, overflows
+ * the track and turns to clear glass that refracts the labels beneath it; drag it along the track
+ * and release on a segment to pick it. Tapping another segment picks it too. Each change ticks.
+ * Segments stay selectable radio buttons in a group, so keys and accessibility work as before.
  */
 @Composable
 fun ToolBoxSegmentedControl(
@@ -79,10 +93,15 @@ fun ToolBoxSegmentedControl(
     val trackFill = ToolBoxNeutralFill.copy(alpha = if (dark) 0.24f else 0.12f)
     val pillFill = if (dark) Color(0xFF636366) else Color.White
     val live = glassRendersLive()
-    val sources = remember(options.size) { List(options.size) { MutableInteractionSource() } }
-    val pressed = sources.map { it.collectIsPressedAsState() }
+    // An out-of-range index means nothing is selected: no thumb, every segment pickable. The
+    // clamped index only positions the thumb.
+    val hasSelection = selectedIndex in options.indices
+    val selected = selectedIndex.coerceIn(0, options.lastIndex)
+    val currentSelected by rememberUpdatedState(selectedIndex)
+    val currentOnSelect by rememberUpdatedState(onSelect)
+    var dragging by remember { mutableStateOf(false) }
     val lift = animateFloatAsState(
-        targetValue = if (enabled && pressed.any { it.value }) 1f else 0f,
+        targetValue = if (enabled && dragging) 1f else 0f,
         animationSpec = spring(dampingRatio = 0.5f, stiffness = 300f),
         label = "segmented lift",
     )
@@ -93,24 +112,75 @@ fun ToolBoxSegmentedControl(
         drawRect(trackOnSurface)
         drawContent()
     }
+    // The track's capsule is a background, not a clip, so the lifted thumb can grow past it.
     BoxWithConstraints(
-        modifier.fillMaxWidth().heightIn(min = 44.dp).clip(CircleShape).background(trackFill).padding(3.dp),
+        modifier.fillMaxWidth().heightIn(min = 44.dp).background(trackFill, CircleShape).padding(3.dp),
     ) {
         val segmentWidth = maxWidth / options.size
-        val indicatorOffset = animateDpAsState(
-            targetValue = segmentWidth * selectedIndex.coerceIn(0, options.lastIndex),
-            animationSpec = ToolBoxMotion.spatial(),
-            label = "segmented indicator",
-        )
+        val segmentPx = with(LocalDensity.current) { segmentWidth.toPx() }
+        val lastIndex = options.lastIndex
+        val thumbX = remember { Animatable(segmentPx * selected) }
+        val scope = rememberCoroutineScope()
+        // Settle on the selection whenever it changes or a drag ends.
+        LaunchedEffect(selected, segmentPx, dragging) {
+            if (!dragging) thumbX.animateTo(segmentPx * selected, ToolBoxMotion.spatial())
+        }
+        val thumbIndex by remember(segmentPx, lastIndex) {
+            derivedStateOf { (thumbX.value / segmentPx).roundToInt().coerceIn(0, lastIndex) }
+        }
+        // Only a press on the thumb is ours: it lifts under the finger, follows a horizontal drag
+        // (a vertical one is left to the scrolling parent) and picks the segment it's released
+        // on. Taps elsewhere, keys and accessibility go through each segment's selectable.
+        val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
+        val gestures = if (!enabled || !hasSelection) Modifier else Modifier.pointerInput(segmentPx, lastIndex, rtl) {
+            // Pointer x measured from the layout start, matching the Row and the thumb's offset.
+            fun fromStart(x: Float) = if (rtl) size.width - x else x
+            awaitEachGesture {
+                // The segment's selectable consumes the down for its tap; still watch it, and only
+                // consume once the drag passes horizontal slop.
+                val down = awaitFirstDown(requireUnconsumed = false)
+                // Hit-test the thumb where it is now, even mid-slide.
+                val thumbStart = thumbX.value
+                if (fromStart(down.position.x) !in thumbStart..thumbStart + segmentPx) return@awaitEachGesture
+                var under = (thumbStart / segmentPx).roundToInt().coerceIn(0, lastIndex)
+                fun follow(fingerX: Float) {
+                    val x = (fromStart(fingerX) - segmentPx / 2f).coerceIn(0f, segmentPx * lastIndex)
+                    scope.launch { thumbX.snapTo(x) }
+                    val now = (x / segmentPx).roundToInt().coerceIn(0, lastIndex)
+                    if (now != under) {
+                        under = now
+                        haptics.tick()
+                    }
+                }
+                dragging = true
+                val completed = try {
+                    val start = awaitHorizontalTouchSlopOrCancellation(down.id) { change, _ -> change.consume() }
+                    if (start == null) {
+                        false
+                    } else {
+                        follow(start.position.x)
+                        horizontalDrag(start.id) { change ->
+                            change.consume()
+                            follow(change.position.x)
+                        }
+                    }
+                } finally {
+                    dragging = false
+                }
+                if (completed && under != currentSelected) currentOnSelect(under)
+            }
+        }
         Row(
-            Modifier.fillMaxSize().selectableGroup()
+            // Clipped to the capsule so the recorded track has no square corners; the thumb is a
+            // sibling, so it can still overflow.
+            Modifier.fillMaxSize().clip(CircleShape).selectableGroup().then(gestures)
                 .then(if (live) Modifier.layerBackdrop(trackBackdrop) else Modifier),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             options.forEachIndexed { index, label ->
-                val selected = index == selectedIndex
+                val isSelected = index == selectedIndex
                 val textColor = animateColorAsState(
-                    if (selected) colors.textPrimary else colors.textSecondary,
+                    if (isSelected) colors.textPrimary else colors.textSecondary,
                     ToolBoxMotion.effects(),
                     label = "segment label",
                 )
@@ -120,15 +190,15 @@ fun ToolBoxSegmentedControl(
                         .heightIn(min = 38.dp)
                         .then(segmentTestTags.getOrNull(index)?.let(Modifier::testTag) ?: Modifier)
                         .selectable(
-                            selected = selected,
+                            selected = isSelected,
                             enabled = enabled,
                             role = Role.RadioButton,
-                            interactionSource = sources[index],
+                            interactionSource = null,
                             indication = null,
                             onClick = {
-                                if (!selected) {
+                                if (!isSelected) {
                                     haptics.tick()
-                                    onSelect(index)
+                                    currentOnSelect(index)
                                 }
                             },
                         ),
@@ -138,7 +208,7 @@ fun ToolBoxSegmentedControl(
                         label,
                         style = ToolBoxThemeTokens.textStyles.metadata.copy(
                             color = textColor.value,
-                            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
                             textAlign = TextAlign.Center,
                         ),
                         maxLines = 1,
@@ -147,65 +217,61 @@ fun ToolBoxSegmentedControl(
                 }
             }
         }
-        if (selectedIndex in options.indices) {
-            val thumb = Modifier
-                .offset { IntOffset(indicatorOffset.value.roundToPx(), 0) }
-                .width(segmentWidth)
-                .fillMaxHeight()
-                .graphicsLayer {
-                    val s = 1f + 0.1f * lift.value
-                    scaleX = s
-                    scaleY = s
-                }
-            if (live) {
-                // Drawn over the labels: solid at rest (the selected label is drawn on top again
-                // below), clear lens glass while lifted.
-                Box(
-                    thumb.drawBackdrop(
-                        backdrop = trackBackdrop,
-                        shape = { CircleShape },
-                        effects = {
-                            vibrancy()
-                            blur(2.dp.toPx())
-                            lens(10.dp.toPx(), 20.dp.toPx())
-                        },
-                        onDrawSurface = { drawRect(pillFill.copy(alpha = 1f - 0.85f * lift.value)) },
+        if (!hasSelection) return@BoxWithConstraints
+        val thumb = Modifier
+            .offset { IntOffset(thumbX.value.roundToInt(), 0) }
+            .width(segmentWidth)
+            .fillMaxHeight()
+            .graphicsLayer {
+                val s = 1f + 0.1f * lift.value
+                scaleX = s
+                scaleY = s
+            }
+        if (live) {
+            // Drawn over the labels: solid at rest, clear lens glass while lifted. No blur, so the
+            // labels seen through it stay sharp.
+            Box(
+                thumb.drawBackdrop(
+                    backdrop = trackBackdrop,
+                    shape = { CircleShape },
+                    effects = {
+                        vibrancy()
+                        lens(10.dp.toPx(), 20.dp.toPx())
+                    },
+                    onDrawSurface = { drawRect(pillFill.copy(alpha = 1f - 0.85f * lift.value)) },
+                ),
+            )
+            // The label of the segment under the thumb, drawn on top so it stays readable: fully at
+            // rest, still 60% while the thumb is lifted.
+            Box(
+                thumb.graphicsLayer { alpha = 1f - 0.4f * lift.value }.clearAndSetSemantics { },
+                contentAlignment = Alignment.Center,
+            ) {
+                ToolBoxText(
+                    options[thumbIndex],
+                    style = ToolBoxThemeTokens.textStyles.metadata.copy(
+                        color = colors.textPrimary,
+                        fontWeight = FontWeight.SemiBold,
+                        textAlign = TextAlign.Center,
                     ),
-                )
-                // The label of the segment the thumb is over stays readable on top of the solid
-                // thumb, so a new selection's label doesn't ride across with the sliding thumb.
-                val thumbIndex = (indicatorOffset.value / segmentWidth).roundToInt()
-                    .coerceIn(0, options.lastIndex)
-                Box(
-                    thumb.graphicsLayer { alpha = 1f - lift.value }.clearAndSetSemantics { },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    ToolBoxText(
-                        options[thumbIndex],
-                        style = ToolBoxThemeTokens.textStyles.metadata.copy(
-                            color = colors.textPrimary,
-                            fontWeight = FontWeight.SemiBold,
-                            textAlign = TextAlign.Center,
-                        ),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-            } else {
-                Box(
-                    thumb
-                        .zIndex(-1f)
-                        .shadow(
-                            elevation = 3.dp,
-                            shape = CircleShape,
-                            clip = false,
-                            ambientColor = Color.Black.copy(alpha = 0.12f),
-                            spotColor = Color.Black.copy(alpha = 0.12f),
-                        )
-                        .clip(CircleShape)
-                        .background(pillFill),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
+        } else {
+            Box(
+                thumb
+                    .zIndex(-1f)
+                    .shadow(
+                        elevation = 3.dp,
+                        shape = CircleShape,
+                        clip = false,
+                        ambientColor = Color.Black.copy(alpha = 0.12f),
+                        spotColor = Color.Black.copy(alpha = 0.12f),
+                    )
+                    .clip(CircleShape)
+                    .background(pillFill),
+            )
         }
     }
 }

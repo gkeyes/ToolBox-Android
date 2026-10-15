@@ -149,25 +149,33 @@ fun LiquidButton(
 /** Kyant's resting highlight angle: light on the top-left and bottom-right rims. */
 private const val RestingHighlightAngle = 45f
 
+
 /**
  * The rim highlight of a pressed glass control: at rest the default 45° light; under the finger it
  * turns to the finger's side (the shader lights both ends of the axis, so angles repeat every
- * 180°) and brightens.
+ * 180°) and brightens. The direction is measured in the button's own proportions, so on a wide
+ * capsule a press left of centre lights the left rim, not the round ends.
  */
 internal fun followingHighlight(interaction: InteractiveHighlight): Highlight {
     val progress = interaction.pressProgress.fastCoerceIn(0f, 1f)
     val size = interaction.size
     if (progress <= 0.001f || size.isUnspecified || size.width <= 0f || size.height <= 0f) return Highlight.Default
     val touch = interaction.touchPosition
-    val touchAngle = Math.toDegrees(
-        atan2((touch.y - size.height / 2f).toDouble(), (touch.x - size.width / 2f).toDouble()),
-    ).toFloat()
-    // Shortest turn on the 180° period.
+    // -1..1 across each axis, so the angle follows the button's shape rather than raw pixels.
+    val dx = (touch.x - size.width / 2f) / (size.width / 2f)
+    val dy = (touch.y - size.height / 2f) / (size.height / 2f)
+    val touchAngle = Math.toDegrees(atan2(dy.toDouble(), dx.toDouble())).toFloat()
+    // Shortest turn on the 180° period. It can't also fade towards the centre: a map from the
+    // button to orientations that is the resting angle at the centre and the finger's direction
+    // further out winds twice round the 180° circle, so it must break somewhere. The break is left
+    // at the centre point, and the touch position is the spring-animated one, so jitter there is
+    // smoothed rather than snapping the light.
     val turn = ((touchAngle - RestingHighlightAngle) % 180f + 270f) % 180f - 90f
+    val angle = RestingHighlightAngle + turn * progress
     return Highlight(
         style = HighlightStyle.Default(
             color = Color.White.copy(alpha = 0.5f + 0.3f * progress),
-            angle = RestingHighlightAngle + turn * progress,
+            angle = angle,
         ),
     )
 }
