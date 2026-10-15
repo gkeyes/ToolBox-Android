@@ -1,13 +1,14 @@
 name: Publish release
 run-name: Publish ${{ inputs.tag }} from run ${{ inputs.run_id }}
 
-# Manual only: creates a release at the commit an Android CI run built, attaches that run's
-# verified signed delivery, carries over unchanged TBX packages from an earlier release, and publishes it.
+# Manual only: creates a release at the commit an Android CI run built, attaches that run's verified signed
+# delivery and every registered mini-tool's .tbx at the version its manifest has at that commit (from the
+# `dev` test channel, else from an earlier release), and publishes it as the latest release.
 on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "New release tag, e.g. v0.8.31 (must match the APK version)"
+        description: "New release tag, e.g. v0.8.31 (must match the APK version and be higher than the latest release)"
         type: string
         required: true
       run_id:
@@ -15,7 +16,7 @@ on:
         type: string
         required: true
       reuse_tbx_from:
-        description: "Release tag whose .tbx assets are carried over unchanged (optional)"
+        description: "Earlier release tag to take a .tbx from when the test channel no longer has the released version (optional)"
         type: string
         required: false
       notes:
@@ -28,7 +29,8 @@ permissions:
   actions: read
 
 concurrency:
-  group: publish-release-${{ inputs.tag }}
+  # One group for every tag, so two dispatches can never both pass the latest-release check and move stable backwards.
+  group: publish-release
   cancel-in-progress: false
 
 jobs:
@@ -43,6 +45,12 @@ jobs:
       REUSE: ${{ inputs.reuse_tbx_from }}
       NOTES: ${{ inputs.notes }}
     steps:
+      # The release scripts come from this workflow's commit; the released commit's manifests are read from
+      # history, so a run of an older commit is checked with the current rules.
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+          fetch-depth: 0
       - name: Check the source run and tag
         run: |
           set -euo pipefail
@@ -51,7 +59,22 @@ jobs:
           gh run view "$RUN_ID" --json conclusion,workflowName,headSha \
             --jq 'select(.workflowName == "Android CI" and .conclusion == "success") | .headSha' > head_sha.txt
           test -s head_sha.txt || { echo "Run $RUN_ID is not a successful Android CI run" >&2; exit 1; }
+          git cat-file -e "$(cat head_sha.txt)^{commit}" \
+            || { echo "$(cat head_sha.txt) is not in this repository's history" >&2; exit 1; }
           if gh release view "$TAG" >/dev/null 2>&1; then echo "$TAG already exists" >&2; exit 1; fi
+          # The new release becomes the latest one, so it must be strictly higher than the current latest.
+          # Only "no stable release yet" may skip this; any other lookup failure stops the release.
+          if latest="$(gh api "repos/$GH_REPO/releases/latest" --jq .tag_name 2>latest-error.txt)"; then
+            python3 scripts/ci/stable_release.py check-tag --tag "$TAG" --latest "$latest"
+          elif grep -q 'HTTP 404' latest-error.txt \
+            && [ "$(gh api "repos/$GH_REPO/releases?per_page=100" --paginate \
+                 --jq '.[] | select((.draft or .prerelease) | not) | .tag_name' | wc -l)" = 0 ]; then
+            echo "No stable release yet."
+          else
+            cat latest-error.txt >&2
+            echo "Could not read the latest release; not publishing." >&2
+            exit 1
+          fi
       - name: Download the signed delivery
         run: |
           set -euo pipefail
@@ -60,15 +83,28 @@ jobs:
           gh run download "$RUN_ID" -n "$name" -D dist
           test -f "dist/toolbox-v${version}-release.apk" || { echo "Signed APK for $version missing" >&2; ls -la dist; exit 1; }
           if [ -f dist/SHA256SUMS.txt ]; then (cd dist && sha256sum -c SHA256SUMS.txt); fi
-      - name: Carry over unchanged TBX packages
-        if: ${{ inputs.reuse_tbx_from != '' }}
+      - name: Collect each mini-tool's package at the released version
         run: |
           set -euo pipefail
-          mkdir -p reused
-          gh release download "$REUSE" --pattern '*.tbx' -D reused
-          gh release download "$REUSE" --pattern 'SHA256SUMS.txt' -O reused/previous-sums.txt
-          (cd reused && grep '\.tbx$' previous-sums.txt | sha256sum -c -)
-          cp reused/*.tbx dist/
+          # The test channel's packages, checked against the digests GitHub recorded when they were uploaded.
+          mkdir -p tbx-sources/dev
+          gh api "repos/$GH_REPO/releases/tags/dev" \
+            --jq '.assets[] | select(.name | endswith(".tbx")) | "\((.digest // "") | ltrimstr("sha256:"))  \(.name)"' \
+            > tbx-sources/dev/SHA256SUMS.txt
+          # A dev release with no packages yet is an empty source (the reused release can still supply them);
+          # `gh release download` would fail with "no assets match" instead.
+          if [ -s tbx-sources/dev/SHA256SUMS.txt ]; then
+            gh release download dev --pattern '*.tbx' -D tbx-sources/dev
+          fi
+          if [ -n "$REUSE" ]; then
+            mkdir -p tbx-sources/reused
+            gh release download "$REUSE" --pattern '*.tbx' -D tbx-sources/reused
+            gh release download "$REUSE" --pattern 'SHA256SUMS.txt' -O tbx-sources/reused/SHA256SUMS.txt
+          fi
+          # Every registered tool must be present at exactly its manifest version at the released commit;
+          # a tool no source has at that version stops the release instead of shipping an older package.
+          python3 scripts/ci/stable_release.py collect-tbx --revision "$(cat head_sha.txt)" --out dist \
+            tbx-sources/dev tbx-sources/reused | tee -a "$GITHUB_STEP_SUMMARY"
       - name: Write combined checksums
         run: |
           set -euo pipefail

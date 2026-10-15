@@ -104,8 +104,8 @@ case "$kind" in
     version="${version#toolbox-v}"
     version="${version%-release.apk}"
     # One version number never ships twice: every build has its own bytes (it embeds its run id), so a
-    # commit that left the version alone (CI, docs or scripts only; the PR version check requires a bump
-    # for anything shipped) keeps the APK already on `dev`. Never offer a lower version either.
+    # commit that left the version alone (no new changelog fragment since the published build: CI, docs or
+    # scripts only, as app_version.py requires a fragment for anything shipped) keeps the APK already on `dev`. Never offer a lower version either.
     # A failed swap can leave two APKs behind; the highest one is what the channel offers.
     published="$(printf '%s\n' "$app_assets" | sed -n 's/^toolbox-v\(.*\)-dev\.apk$/\1/p' | sort -V | tail -n 1)"
     upload_apk=1
@@ -136,10 +136,18 @@ case "$kind" in
     fi
     publish_asset "$dir/BUILD_RECEIPT.txt"
     gh api -X PATCH "repos/$GH_REPO/git/refs/tags/$tag" -f sha="$GITHUB_SHA" -F force=true >/dev/null
+    # The receipt carries the changelog lines of the fragments this version was computed from
+    # (CHANGELOG_1, CHANGELOG_2, ... in order) and the version it was raised from.
+    changes="$(sed -n 's/^CHANGELOG_[0-9][0-9]*=\(.*\)$/- \1/p' "$dir/BUILD_RECEIPT.txt")"
+    base="$(sed -n 's/^VERSION_BASE=\(..*\)$/\1/p' "$dir/BUILD_RECEIPT.txt")"
     gh release edit "$tag" --notes "main 分支最新通过 CI 的构建，供应用内“测试版”更新渠道使用。
 
 - ToolBox ${version}，提交 ${GITHUB_SHA:0:7}，[构建记录](${GITHUB_SERVER_URL:-https://github.com}/${GH_REPO}/actions/runs/${GITHUB_RUN_ID:-})
-- 小工具在各自通过 TBX CI 后单独更新。"
+- 小工具在各自通过 TBX CI 后单独更新。${changes:+
+
+本次更新${base:+（相对 ${base}）}：
+
+${changes}}"
     ;;
   tools)
     shopt -s nullglob

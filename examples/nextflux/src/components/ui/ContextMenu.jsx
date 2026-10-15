@@ -70,8 +70,9 @@ const ContextMenu = ({ isOpen, onClose, position, children }) => {
   }, [isOpen, onClose]);
 
   useEffect(() => {
-    if (isOpen && menuRef.current && position) {
-      const menu = menuRef.current;
+    if (!isOpen || !menuRef.current || !position) return undefined;
+    const menu = menuRef.current;
+    const place = () => {
       // Layout size: the entrance animation scales the box, which
       // getBoundingClientRect() would report as smaller than the menu.
       const width = menu.offsetWidth;
@@ -102,7 +103,14 @@ const ContextMenu = ({ isOpen, onClose, position, children }) => {
 
       menu.style.left = `${x}px`;
       menu.style.top = `${y}px`;
-    }
+    };
+    place();
+    // Items can finish laying out after the first measure (large text wraps
+    // them), so place again whenever the menu's size changes.
+    if (typeof ResizeObserver === "undefined") return undefined;
+    const observer = new ResizeObserver(place);
+    observer.observe(menu);
+    return () => observer.disconnect();
   }, [isOpen, position, anchor]);
 
   if (!isOpen) return null;
@@ -114,7 +122,7 @@ const ContextMenu = ({ isOpen, onClose, position, children }) => {
     <div
       ref={menuRef}
       className={cn(
-        "nextflux-context-menu fixed z-[9999] min-w-[220px]",
+        "nextflux-context-menu fixed z-[9999] min-w-[min(220px,calc(100vw-20px))] max-w-[calc(100vw-20px)]",
         "p-1.5",
       )}
       style={{

@@ -2,7 +2,9 @@
 """Validate apksigner/aapt output after successful commands, then package a receipt.
 
 Uses the original public certificate fingerprint, not an expiring Actions artifact.
-Version and application ID come from the checked-out Gradle configuration.
+The application ID comes from the checked-out Gradle configuration; the version is the one CI computed from
+the changelog fragments (TOOLBOX_VERSION_NAME / TOOLBOX_VERSION_CODE, see app_version.py) and passed to
+Gradle, else the values written in app/build.gradle.kts.
 """
 
 import hashlib
@@ -11,13 +13,18 @@ import os
 from pathlib import Path
 import re
 import shutil
+import sys
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from app_version import computed_version  # noqa: E402
 
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKER_MAPPING = "io.toolbox.host.background.ToolBoxBackgroundWorker -> io.toolbox.host.background.ToolBoxBackgroundWorker:"
 
 
-def verify_release(signature: str, badging: str, gradle: str, mapping: str, expected: str) -> dict[str, str]:
+def verify_release(signature: str, badging: str, gradle: str, mapping: str, expected: str,
+                   version: tuple[str, str] | None = None) -> dict[str, str]:
     if not re.fullmatch(r"[0-9a-f]{64}", expected):
         raise ValueError("Original release certificate fingerprint is missing or invalid")
     if not re.search(r"^Number of signers: 1\s*$", signature, re.MULTILINE):
@@ -36,6 +43,8 @@ def verify_release(signature: str, badging: str, gradle: str, mapping: str, expe
         if not value:
             raise ValueError(f"Cannot read {key} from app/build.gradle.kts")
         config[key] = value[1]
+    if version:
+        config["versionName"], config["versionCode"] = version
     if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?", config["versionName"]):
         raise ValueError("Unsupported release version name")
     for apk_key, config_key in (("name", "applicationId"), ("versionName", "versionName"), ("versionCode", "versionCode")):
@@ -78,7 +87,12 @@ def main() -> None:
         (evidence / "signature.txt").read_text(), (evidence / "badging.txt").read_text(),
         (ROOT / "app/build.gradle.kts").read_text(),
         (ROOT / "app/build/outputs/mapping/release/mapping.txt").read_text(), expected,
+        computed_version(os.environ),
     )
+    # Changelog lines of the fragments this version was computed from (app_version.py compute), one key each.
+    changes = json.loads(os.environ.get("TOOLBOX_CHANGES") or "[]")
+    if not isinstance(changes, list) or not all(isinstance(line, str) and line.strip() for line in changes):
+        raise ValueError("TOOLBOX_CHANGES must be a JSON list of changelog lines")
     startup_file = evidence / "startup/result.json"
     startup = json.loads(startup_file.read_text()) if startup_file.exists() else None
     apk = ROOT / "app/build/outputs/apk/release/app-release.apk"
@@ -113,6 +127,8 @@ def main() -> None:
         "STANDALONE_TBX_VALIDATION": "SEPARATE_TBX_CI",
         "HOST_SCREENSHOT_VALIDATION": "REMOVED_BY_USER_REQUEST",
         **startup_scope,
+        "VERSION_BASE": os.environ.get("TOOLBOX_VERSION_BASE", ""),
+        **{f"CHANGELOG_{index}": " ".join(line.split()) for index, line in enumerate(changes, 1)},
         "REAL_DEVICE": "NOT_RUN", "REAL_SERVER_LOGIN": "NOT_RUN", "MINIFIED_RUNTIME_DEVICE_TEST": "NOT_RUN",
     }
     (delivery / "BUILD_RECEIPT.txt").write_text("".join(f"{key}={value}\n" for key, value in receipt.items()))
