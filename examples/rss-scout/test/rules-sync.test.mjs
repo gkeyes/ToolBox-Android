@@ -68,3 +68,45 @@ test('a partial sync keeps the half the previous cache already had', () => {
   const complete = { ...privateOnly, partial: '' };
   assert.equal(keepCachedHalf(complete, radarOnly), complete);
 });
+
+test('a half that fails permanently stops scans from re-syncing until the settings change', async () => {
+  const { sync, needsRetry, keepCachedHalf, sourceKey } = ctx.RSSScoutRules;
+  const signal = new AbortController().signal;
+  const privateSettings = { ...settings, privateRuleUrl: 'https://rules.example/r.json' };
+  // The private rule URL answers 404 every time: Radar loads, the private half can never load.
+  const gone = await sync(network, privateSettings, '', signal);
+  assert.equal(gone.partial, 'private');
+  assert.equal(gone.stuck, true);
+  assert.equal(needsRetry(gone, privateSettings), false, 'a permanent 404 must not trigger a full sync on every scan');
+  assert.equal(keepCachedHalf(gone, { ...gone, stuck: false }).stuck, true);
+  // A changed rule setting is a new sourceKey, so the cache is no longer valid and the next scan syncs.
+  const changed = { ...privateSettings, privateRuleUrl: 'https://rules.example/other.json' };
+  assert.notEqual(sourceKey(changed), gone.sourceKey);
+  assert.equal(needsRetry(gone, changed), true);
+  // Clearing the flag (a new instance key) makes the partial cache retry again.
+  assert.equal(needsRetry({ ...gone, stuck: false }, privateSettings), true);
+
+  // A transient failure (5xx, rate limit, network error) keeps retrying on every scan.
+  for (const failure of [{ status: 503, text: '' }, { status: 429, text: '' }, null]) {
+    const flaky = {
+      request: async url => {
+        if (!url.includes('rules.example')) return network.request(url);
+        if (!failure) throw new Error('network down');
+        return failure;
+      }
+    };
+    const cache = await sync(flaky, privateSettings, '', signal);
+    assert.equal(cache.partial, 'private');
+    assert.equal(cache.stuck, false);
+    assert.equal(needsRetry(cache, privateSettings), true);
+  }
+
+  // Radar half: every Radar source must have failed permanently.
+  const privateRules = fs.readFileSync(new URL('../private-rules.json', import.meta.url), 'utf8');
+  const radarGone = { request: async url => (url.includes('rules.example') ? { status: 200, text: privateRules } : { status: 404, text: '' }) };
+  const noRadar = await sync(radarGone, privateSettings, '', signal);
+  assert.equal(noRadar.partial, 'base');
+  assert.equal(noRadar.stuck, true);
+  const oneMirrorDown = { request: async url => (url.includes('jsdelivr') ? { status: 502, text: '' } : radarGone.request(url)) };
+  assert.equal((await sync(oneMirrorDown, privateSettings, '', signal)).stuck, false);
+});

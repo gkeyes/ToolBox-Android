@@ -1,6 +1,7 @@
 import { appStorage, flushStorage, getManyItems, onBeforeFlush } from "@platform/storage";
 import { recordWork } from "@platform/perf";
 import type { Session } from "@/lib/types";
+import { SKILLS } from "@/data/taxonomy";
 import { useApp, type AppState, type Settings } from "./useApp";
 
 /**
@@ -92,6 +93,12 @@ function schedule() {
   timer = setTimeout(() => commit(false), Math.max(0, Math.min(DEBOUNCE_MS, firstDirtyAt + MAX_WAIT_MS - now)));
 }
 
+const SKILL_IDS = new Set<string>(SKILLS.map((x) => x.id));
+/** Estimates for skill ids this taxonomy no longer knows are dropped on load, as on backup restore. */
+export function cleanProficiency(value: unknown): AppState["proficiency"] {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return Object.fromEntries(Object.entries(value).filter(([k]) => SKILL_IDS.has(k))) as AppState["proficiency"];
+}
 function track(next: AppState, prev: AppState) {
   let changed = false;
   if (next.sessions !== prev.sessions) {
@@ -125,7 +132,7 @@ function persistedFrom(source: Record<string, unknown>, sessions: Session[]): Pe
   const pick = <T,>(value: unknown, fallback: T): T => (value === undefined ? fallback : (value as T));
   return {
     profile: pick(source.profile, null),
-    proficiency: pick(source.proficiency, {}),
+    proficiency: cleanProficiency(source.proficiency),
     sessions,
     customScenarios: pick(source.customScenarios, []),
     bookmarks: pick(source.bookmarks, []),

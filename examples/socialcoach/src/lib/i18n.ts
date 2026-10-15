@@ -384,7 +384,7 @@ const dict = {
   st_model_row_hint: { zh: "配置你自己的 API 地址、密钥和模型。", en: "Configure your API endpoint, key and models." },
   st_model_own: { zh: "自己的", en: "Your own" },
   st_model_local: { zh: "API Key 由 ToolBox 安全存储保存；不会写入备份。", en: "ToolBox stores API keys securely; keys are excluded from backups." },
-  st_about_body: { zh: "SocialCoach TBX 1.0.9，基于 GeminiLight/SocialCoach（Apache-2.0）移植。想说的话，说出来。用于低风险练习与反思，不是临床评估；模型评分仅作参考。记录留在本机，练习时相关文本会发送至你配置的模型服务。本版无使用统计、反馈上报或语音采集。", en: "SocialCoach TBX 1.0.9, adapted from GeminiLight/SocialCoach (Apache-2.0). Say the thing you’ve been not saying. For low-stakes practice, not clinical assessment. Model ratings are estimates. Records stay on this device; relevant text is sent to your configured model provider. No telemetry, feedback upload or voice capture." },
+  st_about_body: { zh: "SocialCoach TBX 1.0.11，基于 GeminiLight/SocialCoach（Apache-2.0）移植。想说的话，说出来。用于低风险练习与反思，不是临床评估；模型评分仅作参考。记录留在本机，练习时相关文本会发送至你配置的模型服务。本版无使用统计、反馈上报或语音采集。", en: "SocialCoach TBX 1.0.11, adapted from GeminiLight/SocialCoach (Apache-2.0). Say the thing you’ve been not saying. For low-stakes practice, not clinical assessment. Model ratings are estimates. Records stay on this device; relevant text is sent to your configured model provider. No telemetry, feedback upload or voice capture." },
   st_edit: { zh: "编辑", en: "Edit" },
 
   // misc
