@@ -16,6 +16,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.runtime.Composable
+import androidx.compose.foundation.lazy.LazyListLayoutInfo
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -265,9 +267,20 @@ internal fun DeveloperHelpContent(
     val pinScrollPx = with(density) { toolBoxPinnedSearchScroll(pinLift).roundToPx() }
     // A new query reshapes the list. If the field is pinned, keep it pinned and show the first
     // result under it, instead of jumping back to the top and dropping the focused field.
+    // While searching, the list ends in just enough room to scroll the field to its pinned spot:
+    // a screen until measured (so a short result list never clamps the scroll), then exactly
+    // what the results leave, so there is no screen of blank to scroll into.
+    var searchRoomPx by remember { mutableStateOf<Int?>(null) }
     LaunchedEffect(query) {
+        searchRoomPx = null
         if (listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > pinScrollPx) {
             listState.scrollToItem(0, pinScrollPx)
+        }
+    }
+    LaunchedEffect(searching, pinScrollPx) {
+        if (!searching) return@LaunchedEffect
+        snapshotFlow { searchRoom(listState.layoutInfo, pinScrollPx) }.collect { room ->
+            if (room != null) searchRoomPx = room
         }
     }
     Box(modifier) {
@@ -416,8 +429,11 @@ internal fun DeveloperHelpContent(
                 )
             }
             // A short (or empty) result list could not scroll far enough to keep the field pinned:
-            // leave a screen of room below the page while searching.
-            if (searching) item("search-room", contentType = "help-room") { Spacer(Modifier.fillParentMaxHeight()) }
+            // leave room below the page while searching (see searchRoom).
+            if (searching) item(SearchRoomKey, contentType = "help-room") {
+                val room = searchRoomPx
+                Spacer(if (room == null) Modifier.fillParentMaxHeight() else Modifier.height(with(density) { room.toDp() }))
+            }
         }
     }
 }
@@ -530,4 +546,19 @@ internal sealed interface HelpLoadState {
     data object Loading : HelpLoadState
     data object Failed : HelpLoadState
     data class Loaded(val document: HelpDocument) : HelpLoadState
+}
+
+private const val SearchRoomKey = "search-room"
+
+/**
+ * The search room's height for the list to scroll exactly [pinScrollPx] at most, or null while it
+ * can't be measured (the first item or the room is off screen in a way that hides the content's
+ * length). A list long enough to scroll past the pin by itself needs none.
+ */
+private fun searchRoom(info: LazyListLayoutInfo, pinScrollPx: Int): Int? {
+    val items = info.visibleItemsInfo
+    val first = items.firstOrNull()?.takeIf { it.index == 0 } ?: return null
+    val room = items.firstOrNull { it.key == SearchRoomKey } ?: return 0
+    val contentBeforeRoom = info.beforeContentPadding + (room.offset - first.offset) + info.afterContentPadding
+    return (info.viewportSize.height + pinScrollPx - contentBeforeRoom).coerceAtLeast(0)
 }

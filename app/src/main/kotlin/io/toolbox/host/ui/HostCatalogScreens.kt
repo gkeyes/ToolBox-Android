@@ -202,6 +202,9 @@ internal fun ToolManagerContent(
                 listBackdrop = listBackdrop,
                 contentTop = contentPadding.calculateTopPadding(),
                 onHeightChanged = { searchHeightPx = it },
+                // The list's top padding adds the route's vertical padding under the title: pin
+                // that much higher, flush with the end of the top bar's fade.
+                pinLift = hostRouteLayoutFor(maxWidth).verticalContentPadding,
                 modifier = Modifier
                     .padding(
                         start = contentPadding.calculateStartPadding(direction),

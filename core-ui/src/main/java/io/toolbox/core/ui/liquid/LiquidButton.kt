@@ -1,7 +1,8 @@
 /*
  * Vendored from Kyant0/AndroidLiquidGlass (https://github.com/Kyant0/AndroidLiquidGlass),
  * catalog app @ 65ab177, Copyright Kyant, licensed under the Apache License 2.0
- * (http://www.apache.org/licenses/LICENSE-2.0). Package renamed; theme colours, padding and height exposed as parameters.
+ * (http://www.apache.org/licenses/LICENSE-2.0). Package renamed; theme colours, padding and height exposed as parameters;
+ * press growth capped for wide buttons.
  */
 package io.toolbox.core.ui.liquid
 
@@ -76,7 +77,10 @@ fun LiquidButton(
                         val height = size.height
 
                         val progress = interactiveHighlight.pressProgress
-                        val scale = lerp(1f, 1f + 4f.dp.toPx() / size.height, progress)
+                        // Grows 4dp in height, but never more than 12dp in width: a full-width
+                        // button growing by its height ratio would reach into the panel's margins.
+                        val grow = minOf(4f.dp.toPx() / size.height, 12f.dp.toPx() / size.width)
+                        val scale = lerp(1f, 1f + grow, progress)
 
                         val maxOffset = size.minDimension
                         val initialDerivative = 0.05f

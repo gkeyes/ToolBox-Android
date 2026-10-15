@@ -51,6 +51,8 @@ import androidx.compose.ui.geometry.Size
 @Stable
 class ToolBoxWindowGlass internal constructor() {
     internal var copy by mutableStateOf<WindowBackdrop?>(null)
+    /** The panel's page tone as last drawn, shared with the buttons on it. */
+    internal val tone = PanelTone()
     internal var copySize: IntSize? = null
 
     /** False until the page copy lands (and always with 实色材质 on): draw an opaque panel then. */
@@ -113,6 +115,8 @@ private class WindowCopyBackdrop(
     private val overlay: (() -> Color)? = null,
     /** Read on every draw, so a control moving with its panel (a slide, a drag) is redrawn in register. */
     private val motion: () -> Unit = {},
+    /** The panel's tone: controls on it take the panel's legible fill, not one of their own. */
+    private val panelTone: PanelTone? = null,
 ) : Backdrop {
     override val isCoordinatesDependent: Boolean = true
 
@@ -153,7 +157,7 @@ private class WindowCopyBackdrop(
             }
         }
         // Past the control's bounds too: blur and lens sample a padded region around it.
-        if (overlay != null) drawRect(legibleFill(overlay(), regionLuminance), topLeft = Offset(-OverlayBleed, -OverlayBleed), size = Size(size.width + 2 * OverlayBleed, size.height + 2 * OverlayBleed))
+        if (overlay != null) drawRect(legibleFill(overlay(), panelTone?.range ?: regionLuminance), topLeft = Offset(-OverlayBleed, -OverlayBleed), size = Size(size.width + 2 * OverlayBleed, size.height + 2 * OverlayBleed))
     }
 }
 
@@ -169,11 +173,14 @@ internal fun ProvideWindowButtonBackdrop(
     fill: () -> Color,
     blurRadius: Dp,
     motion: () -> Unit = {},
+    tone: PanelTone? = null,
     content: @Composable () -> Unit,
 ) {
     val currentFill by rememberUpdatedState(fill)
     val currentMotion by rememberUpdatedState(motion)
-    val backdrop = remember(copy) { copy?.let { WindowCopyBackdrop(it, null, { currentFill() }) { currentMotion() } } }
+    val backdrop = remember(copy, tone) {
+        copy?.let { WindowCopyBackdrop(it, null, { currentFill() }, { currentMotion() }, tone) }
+    }
     // One provider either way, so the content keeps its state while the copy comes and goes.
     CompositionLocalProvider(
         LocalToolBoxButtonBackdrop provides (backdrop ?: LocalToolBoxButtonBackdrop.current),
@@ -190,7 +197,7 @@ fun ProvideToolBoxWindowButtonBackdrop(
     blurRadius: Dp = 28.dp,
     motion: () -> Unit = {},
     content: @Composable () -> Unit,
-) = ProvideWindowButtonBackdrop(glass.copy, { fill }, blurRadius, motion, content)
+) = ProvideWindowButtonBackdrop(glass.copy, { fill }, blurRadius, motion, glass.tone, content)
 
 /**
  * Liquid Glass over a copy of the page: the page frosted by [blurRadius] (colours and shapes stay,
@@ -205,6 +212,7 @@ internal fun Modifier.snapshotGlass(
     fill: () -> Color,
     layerScale: (() -> Float)? = null,
     motion: () -> Unit = {},
+    tone: PanelTone? = null,
 ): Modifier {
     val scale by rememberUpdatedState(layerScale)
     val backdrop = remember(copy) { WindowCopyBackdrop(copy, layerScale?.let { { scale?.invoke() ?: 1f } }) }
@@ -227,21 +235,35 @@ internal fun Modifier.snapshotGlass(
             motion()
             draw()
         },
-        onDrawSurface = { drawRect(legibleFill(fill(), backdrop.regionLuminance)) },
+        onDrawSurface = {
+            tone?.range = backdrop.regionLuminance
+            drawRect(legibleFill(fill(), backdrop.regionLuminance))
+        },
     )
 }
 
+/** The page tone under a glass panel as last drawn, so the controls on it match its fill. */
+internal class PanelTone {
+    var range: ClosedFloatingPointRange<Float>? = null
+}
+
 /**
- * A light panel over dark content (or a dark one over light content, such as a web article
- * behind a dark-theme dialog) lets that tone through and washes out secondary text: make the
- * fill nearly opaque then. [pageLuminance] is measured under the panel, not across the page.
+ * A dark panel over light content (a web article behind a dark-theme dialog) lets that light
+ * through and washes out secondary text: thicken the fill then. [pageLuminance] runs from the
+ * darkest to the brightest cell under the panel. A light panel is left alone: its secondary text
+ * still reads over black (5:1 at .66), and saturated tiles read as "dark", so thickening it made
+ * panels over colourful pages look solid.
  */
 private fun legibleFill(fill: Color, pageLuminance: ClosedFloatingPointRange<Float>): Color {
     val darkPanel = fill.copy(alpha = 1f).luminance() < 0.5f
-    // Any light cell under a dark panel (or dark cell under a light one) can sit under its text.
-    val opposite = if (darkPanel) pageLuminance.endInclusive > 0.45f else pageLuminance.start < 0.25f
-    return if (opposite && fill.alpha < 0.92f) fill.copy(alpha = 0.92f) else fill
+    return if (darkPanel && pageLuminance.endInclusive > 0.45f && fill.alpha < DarkPanelLegibleAlpha) {
+        fill.copy(alpha = DarkPanelLegibleAlpha)
+    } else {
+        fill
+    }
 }
+
+private const val DarkPanelLegibleAlpha = 0.77f
 
 /**
  * Draws [glass] behind this node (see [snapshotGlass]). Before the copy lands, or with 实色材质
@@ -261,7 +283,7 @@ fun Modifier.toolBoxWindowGlassEffect(
     if (copy == null || !ToolBoxThemeTokens.materials.realBlurEnabled || !LocalView.current.isHardwareAccelerated) {
         return background(fallback)
     }
-    return snapshotGlass(copy, cornerRadius, blurRadius, { fill }, layerScale, motion)
+    return snapshotGlass(copy, cornerRadius, blurRadius, { fill }, layerScale, motion, glass.tone)
 }
 
 /**
