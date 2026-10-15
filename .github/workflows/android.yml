@@ -4,13 +4,17 @@ name: Android CI
 # JVM unit test run on every push to main, and on a pull request whose changes Gradle compiles or packages
 # (scripts/ci/pr_scope.py; a PR that only touches CI scripts, docs or the version number skips them).
 # Emulator behavior tests are opt-in from a manual run. Pushes to the default branch also build the
-# signed release and cold-start it on an emulator before uploading it.
+# signed release and cold-start it on an emulator before uploading it. On the default branch the APK version
+# is computed first from the changelog fragments in changes/ (scripts/ci/app_version.py); pull requests never
+# edit it. A push that only adds a fragment (changes/*.md) still runs, so a follow-up fragment for a change
+# that reached main without one rebuilds and publishes it.
 on:
   push:
     branches: ["main"]
     paths:
       - "**"
       - "!**.md"
+      - "changes/*.md"
       - "sdk/help/**"
       - "!docs/**"
       - "!examples/**"
@@ -57,15 +61,55 @@ permissions:
   contents: read
 
 # PR and manual runs restart on a new commit. Pushes to main never cancel a running build, so a quick
-# series of merges cannot starve the test channel; a newer push only replaces one still waiting.
+# series of merges cannot starve the test channel; a newer push only replaces one still waiting. Push runs
+# therefore run one at a time, so the version job of one never reads `dev` while another push run is still
+# publishing. A manual run is in its own group and can overlap a push run; the publish job re-checks `dev`
+# before publishing (app_version.py check-dev).
 concurrency:
   group: android-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name != 'push' }}
 
 jobs:
+  version:
+    name: Compute the app version
+    runs-on: ubuntu-24.04
+    # The version every APK build of this run uses: the last build on `dev` raised by the fragments added
+    # since its commit. Empty on pull requests and other branches, whose builds use app/build.gradle.kts.
+    outputs:
+      name: ${{ steps.compute.outputs.name }}
+      code: ${{ steps.compute.outputs.code }}
+      base: ${{ steps.compute.outputs.base_name && format('{0} ({1})', steps.compute.outputs.base_name, steps.compute.outputs.base_code) || '' }}
+      base_commit: ${{ steps.compute.outputs.base_commit }}
+      changes: ${{ steps.compute.outputs.changes }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        if: ${{ github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
+        with:
+          persist-credentials: false
+          # Full history: fragments and shipped changes are counted from the last published build's commit.
+          fetch-depth: 0
+      # Fails when a change since the last published build ships in the APK without a fragment (the PR check
+      # cannot see what other PRs merged after it ran). Only a missing `dev` release falls back to the values
+      # in app/build.gradle.kts; any other lookup failure is retried, then stops the run before any build.
+      - name: Compute the version from the changelog fragments
+        id: compute
+        if: ${{ github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: python3 scripts/ci/app_version.py compute --head "$GITHUB_SHA"
+
   verify:
     name: Build APKs and verify host behavior
+    needs: [version]
+    # Lint and tests still report when the version job refused the build (nothing is published then).
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
+    env:
+      # Blank on pull requests (and when the version job failed): Gradle then uses the version written in
+      # app/build.gradle.kts.
+      TOOLBOX_VERSION_NAME: ${{ needs.version.outputs.name }}
+      TOOLBOX_VERSION_CODE: ${{ needs.version.outputs.code }}
     outputs:
       checks: ${{ steps.scope.outputs.checks }}
     steps:
@@ -203,10 +247,14 @@ jobs:
     name: Package stable signed release
     # Runs alongside verify; nothing is delivered until the publish job sees both succeed.
     # PRs never receive the signing key.
+    needs: [version]
     if: ${{ github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
     runs-on: ubuntu-24.04
     env:
       TOOLBOX_RELEASE_CERT_SHA256: 849be1fd8066964d6194faa538fc0b17b4b17e5c116304e1d3be8ff725e4c71d
+      # The computed version, for the Gradle build and the cold-start check of the installed version.
+      TOOLBOX_VERSION_NAME: ${{ needs.version.outputs.name }}
+      TOOLBOX_VERSION_CODE: ${{ needs.version.outputs.code }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
@@ -243,6 +291,8 @@ jobs:
           actual="$(sha256sum "$signing_dir/certificate.der" | awk '{print $1}')"
           test "$actual" = "$TOOLBOX_RELEASE_CERT_SHA256" || { echo 'Original release certificate mismatch' >&2; exit 1; }
           unset SIGNING_KEYSTORE_BASE64
+          : "${TOOLBOX_VERSION_NAME:?The computed version is required for the signed release}"
+          : "${TOOLBOX_VERSION_CODE:?The computed version code is required for the signed release}"
           ./gradlew --no-daemon :app:assembleRelease 2>&1 | tee build/release-evidence/release-build.log
       - name: Verify embedded resources match build inputs
         run: |
@@ -385,7 +435,7 @@ jobs:
 
   publish:
     name: Publish verified signed release
-    needs: [verify, delivery]
+    needs: [version, verify, delivery]
     # Push and manual runs on main use different run groups; publishing to `dev` is serialized
     # across both so the commit-order check in publish-test-release.sh can't race another publisher.
     concurrency:
@@ -400,10 +450,18 @@ jobs:
       actions: read
     env:
       TOOLBOX_RELEASE_CERT_SHA256: 849be1fd8066964d6194faa538fc0b17b4b17e5c116304e1d3be8ff725e4c71d
+      # verify_release.py checks the APK against this version and writes it, the version it was raised from
+      # and the fragments' changelog lines into BUILD_RECEIPT.txt (the publisher puts them in the dev notes).
+      TOOLBOX_VERSION_NAME: ${{ needs.version.outputs.name }}
+      TOOLBOX_VERSION_CODE: ${{ needs.version.outputs.code }}
+      TOOLBOX_VERSION_BASE: ${{ needs.version.outputs.base }}
+      TOOLBOX_CHANGES: ${{ needs.version.outputs.changes }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
           persist-credentials: false
+          # Full history: the dev check below tells whether a newer published build contains this commit.
+          fetch-depth: 0
       - name: Download the signed release from this run
         env:
           GH_TOKEN: ${{ github.token }}
@@ -432,6 +490,17 @@ jobs:
           if-no-files-found: error
           # Publish release reads it by run id; published builds also live on their Release.
           retention-days: 30
+      # The version job read `dev` when this run started and refused a shipped change without a fragment.
+      # Publishing is serialized, but a manual run can overlap a push run (separate run groups), and a re-run
+      # of failed jobs reuses the old version job's result: if another build reached `dev` since, this version
+      # may not be new, so stop. Lookups retry, then fail closed; only a missing release counts as none.
+      - name: Require dev to be unchanged since the version was computed
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          BASE_COMMIT: ${{ needs.version.outputs.base_commit }}
+        run: python3 scripts/ci/app_version.py check-dev --base-commit "$BASE_COMMIT" --head "$GITHUB_SHA" --version "$TOOLBOX_VERSION_NAME" \
+            --apk "$(find build/ci-delivery -maxdepth 1 -name 'toolbox-v*-release.apk' -print -quit)"
       - name: Publish to the in-app test channel
         env:
           GH_TOKEN: ${{ github.token }}
