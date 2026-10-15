@@ -399,7 +399,7 @@ export function createHome(api) {
     if (stepTween(now)) more = true;
     if (stepDrops(now)) more = true;
     if (wallsStep(false)) more = true;
-    if (inertia && view === 'home' && !gesture) { cam.az += inertia.az; cam.pol = Math.min(POL_MAX, Math.max(POL_MIN, cam.pol + inertia.pol)); inertia.az *= .9; inertia.pol *= .9; if (Math.abs(inertia.az) + Math.abs(inertia.pol) < .0005) inertia = null; else more = true; }
+    if (inertia && view === 'home' && !gesture) { const k = dt * 60, decay = Math.pow(.9, k); cam.az += inertia.az * k; cam.pol = Math.min(POL_MAX, Math.max(POL_MIN, cam.pol + inertia.pol * k)); inertia.az *= decay; inertia.pol *= decay; if (Math.abs(inertia.az) + Math.abs(inertia.pol) < .0005) inertia = null; else more = true; }
     placeCamera(); renderer.render(scene, camera); updateOverlay();
     if (more || gesture) raf = requestAnimationFrame(frame); else last = 0;
   }
@@ -509,9 +509,10 @@ export function createHome(api) {
     if (e) q('.hv-who[data-hv="relook"]').innerHTML = `<b>${api.esc(e.name)}</b><span>${api.esc(itemLine(e.item))} · ${api.esc(e.room)}${HM.KINDS[e.model.kind].wall ? ' · 贴墙摆放' : ''}</span>`;
     updateRing(); invalidate();
   }
-  function saveModel(e) { api.saveModel(e.id, { ...e.model }); }
+  // A failed save puts the piece back where the ledger has it, so the screen never shows a spot that will not survive a restart.
+  function saveModel(e) { api.saveModel(e.id, { ...e.model }).then(ok => { if (ok) return; api.toast('没保存上，已放回原位，请再试一次'); syncItems(true); updateRing(); invalidate(); }); }
   let homeTimer = 0;
-  function saveHome() { clearTimeout(homeTimer); homeTimer = setTimeout(() => api.saveHome({ template: T.key, sizes: HM.sizesOf(T) }), 300); }
+  function saveHome() { clearTimeout(homeTimer); homeTimer = setTimeout(() => api.saveHome({ template: T.key, sizes: HM.sizesOf(T) }).then(ok => { if (!ok) api.toast('户型没保存上，下次打开会回到上次保存的样子，请再调整一次'); }), 300); }
 
   /* ---------- modes, tray, sheets ---------- */
   function setMode(m) {
@@ -524,7 +525,7 @@ export function createHome(api) {
     q('.hv-sub').textContent = m === 'place' ? '点选家具，按住拖动' : m === 'resize' ? '拖动把手调整房间' : '单指转动 · 双指缩放';
     if (m !== 'place') select(null);
     buildHandles(); paintLabels(); renderTray(); paintArea(); fit();
-    if (m === 'resize') tween({ az: PI / 4, pol: .45, zoom: 1.2, tx: 0, tz: 0 }, 600);
+    if (m === 'resize') tween({ az: PI / 4, pol: .45, zoom: .95, tx: 0, tz: 0 }, 600);
     else if (view === 'home') resetView(true);
     invalidate();
   }
