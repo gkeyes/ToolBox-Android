@@ -1,0 +1,160 @@
+/*
+ * Edge-lens glass is painted by ::before; the element itself keeps only its
+ * drop shadow. design/lens.js sets --nf-lens on the element and ::before
+ * inherits it.
+ *
+ * Why: Chromium places a backdrop-filter url() at the element's ink-overflow
+ * origin. An outer shadow or border moves that origin, so the edge map landed
+ * offset by the shadow (~27px right, ~21px down) and the bottom and right
+ * edges did not bend. ::before has no outer shadow, so its map sits exactly
+ * on it (the reader close button always worked this way).
+ *
+ * These elements must not get opacity < 1, filter, mask, clip-path or blend,
+ * even while pressed: any of those turns them into the backdrop root of their
+ * ::before and the glass shows nothing behind it.
+ */
+:root {
+  --nf-glass-inset: inset 0 1px 1px rgb(255 255 255 / 0.95), inset 0 -1px 1px rgb(255 255 255 / 0.45), inset 0 0 0 0.5px rgb(255 255 255 / 0.6);
+  --nf-glass-drop: 0 6px 18px rgb(0 0 0 / 0.14);
+  --nf-btn-inset: inset 0 1px 1px rgb(255 255 255 / 0.9), inset 0 -1px 1px rgb(255 255 255 / 0.35), inset 0 0 0 0.5px rgb(255 255 255 / 0.55);
+  --nf-btn-drop: 0 4px 14px rgb(0 0 0 / 0.10);
+}
+.dark,
+[data-theme="dark"] {
+  --nf-glass-inset: inset 0 1px 1px rgb(255 255 255 / 0.28), inset 0 -1px 1px rgb(255 255 255 / 0.10), inset 0 0 0 0.5px rgb(255 255 255 / 0.18);
+  --nf-glass-drop: 0 6px 18px rgb(0 0 0 / 0.45);
+  --nf-btn-inset: inset 0 1px 1px rgb(255 255 255 / 0.30), inset 0 -1px 1px rgb(255 255 255 / 0.10), inset 0 0 0 0.5px rgb(255 255 255 / 0.20);
+  --nf-btn-drop: 0 4px 14px rgb(0 0 0 / 0.40);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    --nf-glass-inset: inset 0 1px 1px rgb(255 255 255 / 0.28), inset 0 -1px 1px rgb(255 255 255 / 0.10), inset 0 0 0 0.5px rgb(255 255 255 / 0.18);
+    --nf-glass-drop: 0 6px 18px rgb(0 0 0 / 0.45);
+    --nf-btn-inset: inset 0 1px 1px rgb(255 255 255 / 0.30), inset 0 -1px 1px rgb(255 255 255 / 0.10), inset 0 0 0 0.5px rgb(255 255 255 / 0.20);
+    --nf-btn-drop: 0 4px 14px rgb(0 0 0 / 0.40);
+  }
+}
+
+/* Chrome glass: host keeps the drop shadow, ::before is the glass. The
+   element's --nf-lens (set by lens.js) is inherited by its ::before. */
+.article-list-header > [data-sidebar="trigger"],
+.article-list-inline-tabs .tabs__list,
+.article-list-scoped-tabs .tabs__list,
+.article-list-actions,
+.article-list-indicator {
+  isolation: isolate;
+  background: transparent;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  box-shadow: var(--nf-glass-drop);
+}
+.article-list-inline-tabs .tabs__list,
+.article-list-scoped-tabs .tabs__list,
+.article-list-actions { position: relative; }
+.article-list-header > [data-sidebar="trigger"]::before,
+.article-list-inline-tabs .tabs__list::before,
+.article-list-scoped-tabs .tabs__list::before,
+.article-list-actions::before,
+.article-list-indicator::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  pointer-events: none;
+  background: var(--nf-glass);
+  box-shadow: var(--nf-glass-inset);
+  -webkit-backdrop-filter: var(--nf-lens, blur(12px)) var(--nf-glass-filter);
+  backdrop-filter: var(--nf-lens, blur(12px)) var(--nf-glass-filter);
+}
+@media (max-width: 767px) {
+  .action-buttons .reader-dock,
+  .action-buttons .reader-speech-slot:has(.nextflux-speech-bar) {
+    isolation: isolate;
+    background: transparent;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    box-shadow: var(--nf-glass-drop);
+  }
+  .dark .action-buttons .reader-dock { box-shadow: var(--nf-glass-drop); }
+  .action-buttons .reader-speech-slot:has(.nextflux-speech-bar) { position: relative; }
+  .action-buttons .reader-dock::before,
+  .action-buttons .reader-speech-slot:has(.nextflux-speech-bar)::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    border-radius: inherit;
+    pointer-events: none;
+    background: var(--nf-glass);
+    box-shadow: var(--nf-glass-inset);
+    -webkit-backdrop-filter: var(--nf-lens, blur(12px)) var(--nf-glass-filter);
+    backdrop-filter: var(--nf-lens, blur(12px)) var(--nf-glass-filter);
+  }
+}
+
+/* Filled glass buttons, the same way. The press sheen and brightening move
+   onto ::before too: a filter on the button would blank its glass. */
+.button:is(.button--primary, .button--secondary, .button--tertiary, .button--danger):not(.nf-set-row, .nextflux-close-button) {
+  isolation: isolate;
+  background-color: transparent;
+  --button-bg: transparent;
+  --button-bg-hover: transparent;
+  --button-bg-pressed: transparent;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  box-shadow: var(--nf-btn-drop);
+}
+.button:is(.button--primary, .button--secondary, .button--tertiary, .button--danger):not(.nf-set-row, .nextflux-close-button)::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  pointer-events: none;
+  background: var(--nf-btn-sheen, none), var(--nf-btn-glass);
+  box-shadow: var(--nf-btn-inset);
+  -webkit-backdrop-filter: var(--nf-lens, blur(6px)) blur(4px) saturate(180%) brightness(1.05);
+  backdrop-filter: var(--nf-lens, blur(6px)) blur(4px) saturate(180%) brightness(1.05);
+  transition: filter 240ms ease-out;
+}
+.button:is(.button--primary, .button--secondary, .button--tertiary, .button--danger):not(.nf-set-row, .nextflux-close-button):is(:active, [data-pressed="true"], [data-nf-pressed="true"]):not(:disabled, [data-disabled="true"], [aria-disabled="true"]) {
+  filter: none;
+  background-image: none;
+  --nf-btn-sheen: radial-gradient(circle at var(--nf-gx, 50%) var(--nf-gy, 50%), rgb(255 255 255 / 0.5), rgb(255 255 255 / 0) 62%);
+}
+.button:is(.button--primary, .button--secondary, .button--tertiary, .button--danger):not(.nf-set-row, .nextflux-close-button):is(:active, [data-pressed="true"], [data-nf-pressed="true"]):not(:disabled, [data-disabled="true"], [aria-disabled="true"])::before {
+  filter: brightness(1.08);
+  transition-duration: 80ms;
+}
+/* Inside a glass bar the bar is the glass: plain fill, no glass of its own. */
+:is(.reader-speech-slot, .reader-dock, .article-list-actions) .button:is(.button--primary, .button--secondary, .button--tertiary, .button--danger)::before {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  box-shadow: none;
+}
+:is(.reader-speech-slot, .reader-dock, .article-list-actions) .button:is(.button--primary, .button--secondary, .button--tertiary, .button--danger) { box-shadow: none; }
+
+/* Large text passes under the reader dock and the speech bar: blur enough
+   there that it can't be read through. */
+.action-buttons :is(.reader-dock, .reader-speech-slot) {
+  --nf-glass-filter: blur(7px) saturate(180%) brightness(1.05);
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .article-list-header > [data-sidebar="trigger"]::before,
+  .article-list-inline-tabs .tabs__list::before,
+  .article-list-scoped-tabs .tabs__list::before,
+  .article-list-actions::before,
+  .article-list-indicator::before,
+  .action-buttons .reader-dock::before,
+  .action-buttons .reader-speech-slot:has(.nextflux-speech-bar)::before {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    background: var(--surface);
+  }
+  .button:is(.button--primary, .button--secondary, .button--tertiary, .button--danger):not(.nf-set-row, .nextflux-close-button)::before {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
