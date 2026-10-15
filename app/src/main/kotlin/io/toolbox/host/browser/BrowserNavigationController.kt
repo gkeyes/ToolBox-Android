@@ -55,10 +55,13 @@ internal class BrowserNavigationController(
         return when (BrowserLinkPolicy.classify(url)) {
             BrowserLinkKind.Web -> false
             BrowserLinkKind.External -> {
-                // Only the top document may ask to leave for another app, one request at a time; frames
-                // would otherwise queue dialogs without limit. Script redirects without a gesture stay
-                // allowed because login and payment pages hand off to apps that way.
-                if (request.isForMainFrame && decisions.none { it.page === page && it.externalTarget != null }) {
+                // The top document, or a frame the user tapped (an "open in app" button inside an embedded
+                // login or payment frame), may ask to leave for another app, one request at a time; frames
+                // without a gesture would otherwise queue dialogs without limit. Script redirects without a
+                // gesture stay allowed in the top document because login and payment pages hand off that way.
+                if ((request.isForMainFrame || request.hasGesture()) &&
+                    decisions.none { it.page === page && it.externalTarget != null }
+                ) {
                     offerExternal(page, url)
                 }
                 true
@@ -83,7 +86,9 @@ internal class BrowserNavigationController(
             else notify("此应用链接没有有效的目标地址。")
             return
         }
-        val targetKey = target.toString()
+        // A declined app is remembered by package or scheme and host, so a page that changes the query
+        // (a timestamp, a nonce) cannot re-ask after every 取消.
+        val targetKey = externalTargetKey(target.scheme, target.host, parsed?.`package`)
         if (targetKey in declinedExternal || decisions.any { it.page === page && it.externalTarget == targetKey }) return
         decisions = decisions + Decision(
             page, "在其他应用中打开", "网页请求打开 ${target.scheme.orEmpty()} 链接。", "打开应用",
@@ -176,3 +181,8 @@ internal class BrowserNavigationController(
         }
     }
 }
+
+/** One key per app a page can hand off to: the intent's package when it names one, else scheme and host. */
+internal fun externalTargetKey(scheme: String?, host: String?, packageName: String?): String =
+    packageName?.takeIf { it.isNotBlank() }?.let { "package:$it" }
+        ?: "${scheme.orEmpty().lowercase()}://${host.orEmpty().lowercase()}"
