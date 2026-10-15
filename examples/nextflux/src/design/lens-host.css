@@ -176,7 +176,8 @@
   .article-list-actions::before,
   .article-list-indicator::before,
   .action-buttons .reader-dock::before,
-  .action-buttons .reader-speech-slot:has(.nextflux-speech-bar)::before {
+  .action-buttons .reader-speech-slot:has(.nextflux-speech-bar)::before,
+  .action-buttons .reader-topbar-row .nextflux-close-button::before {
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
     background: var(--surface);
