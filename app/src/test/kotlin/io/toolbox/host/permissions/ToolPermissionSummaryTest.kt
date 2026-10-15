@@ -7,7 +7,7 @@ import org.junit.Test
 class ToolPermissionSummaryTest {
     @Test
     fun explicitRevocationOverridesTheSharedDefault() {
-        assertEquals(ToolPermissionSummary.Ready(1, 2), summarizeToolPermissions("t", setOf("storage", "network"), listOf(
+        assertEquals(ToolPermissionSummary.Ready(1, 2, setOf("network")), summarizeToolPermissions("t", setOf("storage", "network"), listOf(
             PermissionGrant("t", "storage", false, 1), PermissionGrant("t", "network", true, 1),
         )))
     }
@@ -15,12 +15,12 @@ class ToolPermissionSummaryTest {
     @Test
     fun absentGrantsUseThePermissionDetailsPolicy() {
         val declared = setOf("storage", "storage.secure", "device.basic", "clipboard.write", "haptics", "network", "camera")
-        assertEquals(ToolPermissionSummary.Ready(5, 7), summarizeToolPermissions("t", declared, emptyList()))
+        assertEquals(5 to 7, summarizeToolPermissions("t", declared, emptyList()).let { it.enabled to it.total })
     }
 
     @Test
     fun undeclaredAndOtherToolGrantsNeverInflateTheCount() {
-        assertEquals(ToolPermissionSummary.Ready(0, 1), summarizeToolPermissions("t", setOf("network"), listOf(
+        assertEquals(ToolPermissionSummary.Ready(0, 1, emptySet()), summarizeToolPermissions("t", setOf("network"), listOf(
             PermissionGrant("other", "network", true, 1), PermissionGrant("t", "camera", true, 1),
         )))
     }
@@ -28,5 +28,17 @@ class ToolPermissionSummaryTest {
     @Test
     fun noDeclaredPermissionsAreNotPresentedAsFullyAuthorized() {
         assertEquals("未声明权限", summarizeToolPermissions("t", emptySet(), emptyList()).label)
+    }
+
+    @Test
+    fun capabilitiesRevokedInSystemSettingsCountAsOff() {
+        val stored = summarizeToolPermissions("t", setOf("network", "notifications", "location"), listOf(
+            PermissionGrant("t", "network", true, 1), PermissionGrant("t", "notifications", true, 1), PermissionGrant("t", "location", true, 1),
+        ))
+        val revoked = stored.withSystemState { false }
+        val expectedNotifications = if (android.os.Build.VERSION.SDK_INT >= 33) 1 else 2
+        assertEquals(expectedNotifications, (revoked as ToolPermissionSummary.Ready).enabled)
+        assertEquals("已允许 $expectedNotifications / 3 项 · ${3 - expectedNotifications} 项关闭", revoked.label)
+        assertEquals(3, (stored.withSystemState { true } as ToolPermissionSummary.Ready).enabled)
     }
 }

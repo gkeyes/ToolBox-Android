@@ -59,6 +59,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.animation.togetherWith
@@ -387,14 +388,10 @@ internal fun ToolDetailScreen(
     val entrance = rememberToolBoxEntrance("tool-detail")
     var groupsOpen by rememberSaveable(toolId) { mutableStateOf(false) }
     var deleteConfirmed by rememberSaveable(toolId) { mutableStateOf(false) }
-    // Feedback is catalog-wide; drop whatever an earlier screen left so this page only shows its own results.
-    var staleFeedbackCleared by rememberSaveable(toolId) { mutableStateOf(false) }
-    LaunchedEffect(toolId) {
-        if (!staleFeedbackCleared) {
-            staleFeedbackCleared = true
-            if (state.feedback != null) onAction(CatalogAction.DismissFeedback)
-        }
-    }
+    // Feedback is catalog-wide: a message the list was already showing stays for the list, and this
+    // page only shows results that arrive while it is open.
+    val entryFeedback = remember(toolId) { state.feedback }
+    val ownFeedback = state.feedback?.takeIf { it !== entryFeedback }
     // Leave the page once the confirmed delete lands; the list shows the "已删除" notice.
     LaunchedEffect(deleteConfirmed, tool == null) {
         if (deleteConfirmed && tool == null) onBack()
@@ -420,18 +417,6 @@ internal fun ToolDetailScreen(
             ),
             overscrollEffect = null,
         ) {
-            // Favorite, group and delete results started here have no operation id, so they land in feedback.
-            state.feedback?.let { feedback ->
-                item("detail-feedback") {
-                    FeedbackSurface(
-                        message = feedback.message,
-                        tone = if (feedback is CatalogFeedback.Completed) FeedbackTone.Success else FeedbackTone.Error,
-                        dismissible = true,
-                        onDismiss = { onAction(CatalogAction.DismissFeedback) },
-                        modifier = Modifier.padding(bottom = ToolBoxThemeTokens.spacing.oneHalf),
-                    )
-                }
-            }
             if (tool == null) {
                 item("missing") {
                     CatalogStatusState("该工具已不存在", icon = ToolBoxIconKey.Tools, detail = "它可能已被删除或正在更新。")
@@ -537,6 +522,23 @@ internal fun ToolDetailScreen(
                 }
             }
         }
+        // Favorite, group and delete results started here have no operation id, so they land in feedback.
+        // It floats above the bottom edge so it is seen and announced wherever the page is scrolled.
+        ownFeedback?.let { feedback ->
+            FeedbackSurface(
+                message = feedback.message,
+                tone = if (feedback is CatalogFeedback.Completed) FeedbackTone.Success else FeedbackTone.Error,
+                dismissible = true,
+                onDismiss = { onAction(CatalogAction.DismissFeedback) },
+                modifier = Modifier.align(Alignment.BottomCenter)
+                    .widthIn(max = ToolBoxThemeTokens.sizes.detailContentMaxWidth)
+                    .padding(bottom = chromePadding.calculateBottomPadding())
+                    .padding(horizontal = ToolBoxThemeTokens.spacing.two, vertical = ToolBoxThemeTokens.spacing.oneHalf)
+                    .shadow(8.dp, toolBoxShape(ToolBoxThemeTokens.radii.control), clip = false)
+                    .background(ToolBoxThemeTokens.colors.surface, toolBoxShape(ToolBoxThemeTokens.radii.control))
+                    .testTag("detail_feedback"),
+            )
+        }
 
         if (confirmation != null) ToolBoxModalDialog(
             onDismissRequest = { onAction(CatalogAction.CancelUninstall) },
@@ -548,7 +550,7 @@ internal fun ToolDetailScreen(
                     summary = "工具文件、权限、存储和后台任务都会一并删除。",
                     confirmLabel = "确认删除",
                     onConfirm = {
-                        if (state.feedback != null) onAction(CatalogAction.DismissFeedback)
+                        if (ownFeedback != null) onAction(CatalogAction.DismissFeedback)
                         deleteConfirmed = true
                         onAction(CatalogAction.ConfirmUninstall)
                     },

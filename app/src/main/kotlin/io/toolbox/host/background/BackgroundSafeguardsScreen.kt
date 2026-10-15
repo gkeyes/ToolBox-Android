@@ -130,13 +130,17 @@ internal fun BackgroundSafeguardsScreen(
         activity?.shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS) == true
     }
     var rationaleBeforeRequest by remember { mutableStateOf(false) }
+    // A first dialog dismissed with Back also leaves no rationale, so settings only open once ToolBox
+    // has asked here before.
+    var askedBefore by remember { mutableStateOf(false) }
+    val requestRecord = remember(context) { context.getSharedPreferences(PermissionRequestRecord, Context.MODE_PRIVATE) }
     val notificationLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { granted ->
         safeguards.refresh()
         // After two denials Android answers false without showing a dialog (no rationale before or
         // after the request); only then send the user to settings, never after a first-time denial.
-        if (!granted && !rationaleBeforeRequest && !notificationRationale()) openNotificationSettings()
+        if (!granted && askedBefore && !rationaleBeforeRequest && !notificationRationale()) openNotificationSettings()
     }
 
     BackgroundSafeguardsContent(
@@ -155,6 +159,8 @@ internal fun BackgroundSafeguardsScreen(
         onOpenNotifications = {
             if (context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
                 rationaleBeforeRequest = notificationRationale()
+                askedBefore = requestRecord.getBoolean(NotificationsAskedKey, false)
+                requestRecord.edit().putBoolean(NotificationsAskedKey, true).apply()
                 notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
             } else {
                 openNotificationSettings()
@@ -530,3 +536,6 @@ private fun Context.openFirstSupported(vararg intents: Intent) {
 
 private fun appDetailsIntent(context: Context) = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
     .setData(Uri.fromParts("package", context.packageName, null))
+
+private const val PermissionRequestRecord = "permission_requests"
+private const val NotificationsAskedKey = "notifications_asked"

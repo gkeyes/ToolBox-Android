@@ -54,6 +54,13 @@ internal fun ToolPermissionsContent(
     onSelectTool: (String) -> Unit,
 ) {
     val entrance = io.toolbox.core.ui.component.rememberToolBoxEntrance("tool-permissions")
+    val context = androidx.compose.ui.platform.LocalContext.current
+    // Re-read Android's permission state on every return, e.g. after revoking one in system settings.
+    var systemGranted by remember { mutableStateOf<(String) -> Boolean>({ true }) }
+    androidx.lifecycle.compose.LifecycleResumeEffect(context) {
+        systemGranted = { permission -> context.checkSelfPermission(permission) == android.content.pm.PackageManager.PERMISSION_GRANTED }
+        onPauseOrDispose { }
+    }
     DetailScreen(title = "工具权限", onBack = onBack) { chromePadding ->
         LazyColumn(
             state = io.toolbox.host.ui.rememberTitleBoundListState(),
@@ -75,7 +82,7 @@ internal fun ToolPermissionsContent(
                     Column(Modifier.toolBoxEntrance(entrance, 0).padding(bottom = ToolBoxThemeTokens.spacing.xs),
                         verticalArrangement = Arrangement.spacedBy(ToolBoxThemeTokens.spacing.xxs)) {
                         SectionHeader("已安装工具 · ${tools.size}")
-                        ToolBoxText("摘要为 ToolBox 内部授权；系统权限请进入详情核对。",
+                        ToolBoxText("摘要已计入系统设置里关闭的权限；点工具可查看和处理。",
                             modifier = Modifier.padding(horizontal = ToolBoxThemeTokens.spacing.md),
                             style = ToolBoxThemeTokens.textStyles.label.copy(color = ToolBoxThemeTokens.colors.textTertiary))
                     }
@@ -90,7 +97,7 @@ internal fun ToolPermissionsContent(
                         key(tool.currentVersion) {
                             val summaryFlow = remember(tool.currentVersion) { summaryFor(tool) }
                             val summary by summaryFlow.collectAsStateWithLifecycle(initialValue = ToolPermissionSummary.Loading)
-                            ToolPermissionSelectionRow(tool, summary, onSelectTool)
+                            ToolPermissionSelectionRow(tool, summary.withSystemState(systemGranted), onSelectTool)
                         }
                     }
                 }
