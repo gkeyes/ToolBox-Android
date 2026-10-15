@@ -137,6 +137,10 @@ object HardenedRuntimeWebView {
             check(WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
                 "WebRTC hardening is unavailable"
             }
+            // Known, accepted residual (SEC-X1, docs/runtime.md): page callbacks that run synchronously
+            // inside a frame insertion (custom-element reactions, an about:blank frame's synchronous load)
+            // run before the insertion's lock; document-start scripts have no frame-creation hook. Only a
+            // tool deliberately evading the lock reaches it. RuntimeWebRtcFrameInstrumentationTest pins it.
             WebViewCompat.addDocumentStartJavaScript(
                 createdWebView,
                 RuntimeHardeningScripts.webRtc(context),
