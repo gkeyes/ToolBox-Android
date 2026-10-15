@@ -300,5 +300,31 @@
         "tests/*.test.cjs"
       ]
     }
+  },
+  "zhuzhang": {
+    "manifest": "manifest.json",
+    "javascript": [
+      "*.js"
+    ],
+    "package": [
+      "bash",
+      "package.sh",
+      "{output}"
+    ],
+    "expected_files": [
+      "manifest.json",
+      "index.html",
+      "style.css",
+      "runtime.js",
+      "calendar.js",
+      "app.js",
+      "icon.svg",
+      "integrity.json"
+    ],
+    "tests": {
+      "unit": [
+        "tests/*.test.cjs"
+      ]
+    }
   }
 }
