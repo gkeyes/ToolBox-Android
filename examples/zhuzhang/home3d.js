@@ -422,7 +422,7 @@ export function createHome(api) {
     }
     gesture = { kind: 'rotate', x, y, lx: x, ly: y, t: performance.now(), moved: false };
   }
-  function moveOne(x, y) {
+  function moveOne(x, y, ts) {
     if (handleDrag) { const p = floorHit(x, y); if (p) applyHandle(handleDrag, p); return; }
     if (!gesture) return;
     if (gesture.kind === 'drag' && drag) {
@@ -437,7 +437,7 @@ export function createHome(api) {
       const h = canvas.clientHeight || 1, dx = x - gesture.lx, dy = y - gesture.ly;
       if (Math.hypot(x - gesture.x, y - gesture.y) > 6) gesture.moved = true;
       const da = -2 * PI * dx / h * .8, dp = -2 * PI * dy / h * .8;
-      cam.az += da; cam.pol = Math.min(POL_MAX, Math.max(POL_MIN, cam.pol + dp)); gesture.lx = x; gesture.ly = y; { const now = performance.now(), f = 16.667 / Math.max(4, now - (gesture.lt || gesture.t)); gesture.lt = now; gesture.v = { az: da * f, pol: dp * f }; } // per 60 Hz frame, whatever the touch rate
+      cam.az += da; cam.pol = Math.min(POL_MAX, Math.max(POL_MIN, cam.pol + dp)); gesture.lx = x; gesture.ly = y; { const now = ts || performance.now(), f = 16.667 / Math.max(8, now - (gesture.lt || gesture.t)); gesture.lt = now; gesture.v = { az: da * f, pol: dp * f }; } // per 60 Hz frame, from event time stamps
       tw = null; invalidate();
     }
   }
@@ -447,7 +447,7 @@ export function createHome(api) {
       if (!gesture.moved && mode === 'place') select(null);
       else if (gesture.v && !reduced() && performance.now() - gesture.t > 60) inertia = { ...gesture.v };
     }
-    if (drag) { drag.e.g.position.y = 0; if (drag.moved) saveModel(drag.e); drag = null; }
+    if (drag) endDrag();
     gesture = null; invalidate();
   }
   let pinch = null;
@@ -456,7 +456,7 @@ export function createHome(api) {
     if (view !== 'home') return;
     e.preventDefault();
     if (e.touches.length >= 2) {
-      if (drag) { drag.e.g.position.y = 0; if (drag.moved) saveModel(drag.e); drag = null; }
+      if (drag) endDrag();
       gesture = null; pinch = { d: dist(e.touches), zoom: cam.zoom }; tw = null; return;
     }
     beginOne(e.touches[0].clientX, e.touches[0].clientY);
@@ -464,7 +464,7 @@ export function createHome(api) {
   canvas.addEventListener('touchmove', e => {
     if (view !== 'home') return; e.preventDefault();
     if (pinch && e.touches.length >= 2) { cam.zoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, pinch.zoom * dist(e.touches) / Math.max(1, pinch.d))); invalidate(); return; }
-    if (e.touches.length === 1) moveOne(e.touches[0].clientX, e.touches[0].clientY);
+    if (e.touches.length === 1) moveOne(e.touches[0].clientX, e.touches[0].clientY, e.timeStamp);
   }, { passive: false });
   const touchEnd = e => {
     if (view !== 'home') return;
@@ -511,9 +511,13 @@ export function createHome(api) {
   }
   // A failed save puts the piece back where the ledger has it, so the screen never shows a spot that will not survive a restart.
   const saveGen = new Map();
-  function saveModel(e) { const gen = (saveGen.get(e.id) || 0) + 1; saveGen.set(e.id, gen); api.saveModel(e.id, { ...e.model }).then(ok => { if (ok || saveGen.get(e.id) !== gen) return; api.toast('没保存上，已放回原位，请再试一次'); syncItems(true); updateRing(); invalidate(); }); }
+  function saveModel(e) { const gen = (saveGen.get(e.id) || 0) + 1; saveGen.set(e.id, gen); api.saveModel(e.id, { ...e.model }).then(ok => { if (ok || saveGen.get(e.id) !== gen) return; api.toast('没保存上，已放回原位，请再试一次', null, true); if (drag && drag.e === e) e.rollback = true; else rollback(e); }); }
+  // Back to the ledger's spot for this one piece; the others keep what they saved.
+  function rollback(e) { e.rollback = false; const i = api.data().items.find(x => x.id === e.id); if (i?.model) { e.model = { ...i.model }; placeEntry(e); applyFit(); } updateRing(); invalidate(); }
+  // A failure that lands mid-drag waits for the finger: a real move saves anew, a mere touch rolls back.
+  function endDrag() { const d = drag; drag = null; d.e.g.position.y = 0; if (d.moved) { d.e.rollback = false; saveModel(d.e); } else if (d.e.rollback) rollback(d.e); }
   let homeTimer = 0;
-  function saveHome() { clearTimeout(homeTimer); homeTimer = setTimeout(() => api.saveHome({ template: T.key, sizes: HM.sizesOf(T) }).then(ok => { if (!ok) api.toast('户型没保存上，下次打开会回到上次保存的样子，请再调整一次'); }), 300); }
+  function saveHome() { clearTimeout(homeTimer); homeTimer = setTimeout(() => api.saveHome({ template: T.key, sizes: HM.sizesOf(T) }).then(ok => { if (!ok) api.toast('户型没保存上，下次打开会回到上次保存的样子，请再调整一次', null, true); }), 300); }
 
   /* ---------- modes, tray, sheets ---------- */
   function setMode(m) {
@@ -586,7 +590,7 @@ export function createHome(api) {
     const others = [...items.values()].filter(e => e.room === i.room && e.shown).map(e => { const [w, d] = HM.footprint(HM.KINDS[e.model.kind], e.rot); return { x: e.x, z: e.z, w, d }; });
     const model = HM.findSpot(kind, RECTS, i.room, others);
     api.saveModel(i.id, model).then(ok => {
-      if (!ok) return;
+      if (!ok) { api.toast('没放进去，请再试一次', null, true); return; }
       syncItems(); renderTray();
       const e = items.get(i.id);
       if (e && e.shown) { focusRoom(i.room, 1.5); if (!reduced()) drops.push({ e, t0: performance.now() + 300 }); select(e); }
@@ -617,7 +621,7 @@ export function createHome(api) {
     else if (a === 'pick-ok') { if (!pick.sel) return; const cb = pick.cb; const sel = pick.sel; closeSheet(q('[data-sheet="pick"]')); cb && cb(sel); }
     else if (a === 'rot') { const e2 = selected; if (!e2) return; if (HM.KINDS[e2.model.kind].wall) { api.toast('挂墙的东西会自动朝向屋内'); return; } const r = HM.clampPlacement(HM.KINDS[e2.model.kind], HM.bbox(RECTS, e2.room), e2.x, e2.z, (e2.rot + 1) % 4); e2.model = { ...e2.model, x: +r.fx.toFixed(4), z: +r.fz.toFixed(4), rot: r.rot }; placeEntry(e2); updateRing(); saveModel(e2); invalidate(); }
     else if (a === 'drop') select(null);
-    else if (a === 'relook') { const e2 = selected; if (!e2) return; openPicker({ sel: e2.model.kind, hint: `给「${e2.name}」换一个外观。`, cb: kind => { if (kind === e2.model.kind) return; api.saveModel(e2.id, { ...e2.model, kind }).then(ok => { if (ok) { syncItems(); const n = items.get(e2.id); if (n?.shown) select(n); else select(null); } }); } }); }
+    else if (a === 'relook') { const e2 = selected; if (!e2) return; openPicker({ sel: e2.model.kind, hint: `给「${e2.name}」换一个外观。`, cb: kind => { if (kind === e2.model.kind) return; api.saveModel(e2.id, { ...e2.model, kind }).then(ok => { if (!ok) api.toast('外观没换成，请再试一次', null, true); if (ok) { syncItems(); const n = items.get(e2.id); if (n?.shown) select(n); else select(null); } }); } }); }
   };
   root.addEventListener('click', onClick); layer.addEventListener('click', onClick);
   layer.addEventListener('touchstart', e => { const b = e.target.closest('.gbtn'); if (b && e.touches[0]) press(b, e.touches[0].clientX, e.touches[0].clientY); }, { passive: true });

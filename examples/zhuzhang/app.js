@@ -4,7 +4,7 @@
   // Ledger money is integer cents. DOM content originating from users is escaped.
   const KEY = 'ledger.v1';
   const runtime = window.ZZRuntime;
-  const VERSION = '1.5.3';
+  const VERSION = '1.5.4';
   const MAX_CENTS = 100000000000;
   const $ = s => document.querySelector(s);
   const $$ = s => [...document.querySelectorAll(s)];
@@ -102,8 +102,8 @@
     const unlock=()=>{if(!background)document.body.classList.remove('saving');controls.forEach(([el,wasDisabled])=>{if(el.isConnected)el.disabled=wasDisabled;});if(submit?.isConnected){submit.disabled=false;submit.innerHTML=label;}};
     if(busy){
       const before=data;
-      for(let n=0;n<40&&busy;n++)await new Promise(r=>setTimeout(r,50));
-      if(busy){unlock();return false;}
+      for(let n=0;n<200&&busy;n++)await new Promise(r=>setTimeout(r,50));
+      if(busy){unlock();showError('我的家还在保存，这笔记录未保存，请稍后再按保存。');return false;}
       // Background saves only touch item.model and project.home; carry over what they changed unless the form changed it too.
       if(data!==before){const same=(a,b)=>JSON.stringify(a)===JSON.stringify(b),old=new Map(before.items.map(i=>[i.id,i.model])),fresh=new Map(data.items.map(i=>[i.id,i]));for(const i of next.items||[]){const f=fresh.get(i.id),o=old.get(i.id);if(f&&!same(o,f.model)&&same(o,i.model)){if(f.model)i.model=clone(f.model);else delete i.model;}}if(next.project&&!same(before.project.home,data.project.home)&&same(before.project.home,next.project.home)){if(data.project.home)next.project.home=clone(data.project.home);else delete next.project.home;}}
     }
@@ -114,10 +114,12 @@
       if(!background&&activeDraftId&&$('#sheet').open&&$('#sheet form[data-form]'))next.completedDrafts=[...new Set([...(next.completedDrafts||[]),activeDraftId])];
       if(!draftsUnreadable)next.completedDrafts=(next.completedDrafts||[]).filter(id=>id===activeDraftId||storedDraftIds.has(id));
       next=validate(next);next.revision=(data.revision||0)+1;
-      await runtime.set(KEY,next);
+      // A slow store gets a word after 10 s, but the write keeps the lock until it settles so nothing can overtake it.
+      const slow=setTimeout(()=>{const m='存储响应很慢，仍在等待保存完成，请不要关闭。';if(background)toast(m,null,true);else showError(m);},10000);
+      try{await runtime.set(KEY,next);}finally{clearTimeout(slow);}
       data=next;
       return true;
-    }catch(error){showError(runtime.explain(error));return false;}
+    }catch(error){if(!background)showError(runtime.explain(error));return false;}
     finally{busy=false;busyBackground=false;unlock();}
   }
   const paymentIndex = new WeakMap();
@@ -156,15 +158,16 @@
   function comparisonLabel(g){return g.unbudgeted?'预算未齐':g.expected>g.budget?(g.unknown?'至少超出 ':'超出 ')+money(g.expected-g.budget):g.unknown?'待补估价':signed(g.expected-g.budget);}
 
   // action: {label, run} adds one button (1.5.0 「去摆放」); the toast then stays a little longer and takes taps.
-  function toast(text,action){
-    const el=$('#toast');clearTimeout(toastTimer);el.innerHTML=icon('check')+`<span class="toast-text">${esc(text)}</span>`+(action?`<button type="button" class="toast-action">${esc(action.label)}</button>`:'');
+  // warn: a failure; it shows the info mark instead of the tick and stays a little longer.
+  function toast(text,action,warn=false){
+    const el=$('#toast');clearTimeout(toastTimer);el.classList.toggle('warn',warn);el.innerHTML=icon(warn?'info':'check')+`<span class="toast-text">${esc(text)}</span>`+(action?`<button type="button" class="toast-action">${esc(action.label)}</button>`:'');
     el.classList.toggle('has-action',Boolean(action));
     const hide=()=>{clearTimeout(toastTimer);el.classList.remove('show');try{if(el.hidePopover&&el.matches(':popover-open'))el.hidePopover();}catch(_){}};
     if(action)el.querySelector('.toast-action').onclick=()=>{hide();action.run();};
     try{if(el.showPopover&&!el.matches(':popover-open'))el.showPopover();}catch(_){}
-    el.classList.add('show');toastTimer=setTimeout(hide,action?5200:3000);
+    el.classList.add('show');toastTimer=setTimeout(hide,action||warn?5200:3000);
   }
-  function showError(message){if(ui.page==='home'&&!$('#guard').open&&!$('#sheet').open&&matchMedia('(max-width:700px)').matches){toast(message);return;}const body=$('#guard').open?$('#guard .guard-content'):$('#sheet').open?$('#sheet-body'):$('#main');let box=body.querySelector('.error-message');if(!box){box=document.createElement('div');box.className='error-message';box.setAttribute('role','alert');body.prepend(box);}box.textContent=message;box.scrollIntoView({block:'nearest',behavior:'smooth'});}
+  function showError(message){if(ui.page==='home'&&!$('#guard').open&&!$('#sheet').open&&matchMedia('(max-width:700px)').matches){toast(message,null,true);return;}const body=$('#guard').open?$('#guard .guard-content'):$('#sheet').open?$('#sheet-body'):$('#main');let box=body.querySelector('.error-message');if(!box){box=document.createElement('div');box.className='error-message';box.setAttribute('role','alert');body.prepend(box);}box.textContent=message;box.scrollIntoView({block:'nearest',behavior:'smooth'});}
   function dialog(title,html){
     clearTimeout(draftTimer);
     $('#sheet-title').textContent=title;$('#sheet-body').innerHTML=html;
@@ -636,7 +639,8 @@
   }
   // Delegated events keep dynamically rendered pages and bottom sheets consistent.
   document.addEventListener('click',async e=>{
-    const b=e.target.closest('[data-action]');if(!b||b.disabled||busy||draftBusy)return;const a=b.dataset.action,id=b.dataset.id||'';
+    const b=e.target.closest('[data-action]');if(!b||b.disabled||(busy&&!busyBackground)||draftBusy)return;const a=b.dataset.action,id=b.dataset.id||'';
+    if(busy&&a!=='nav'){for(let n=0;n<200&&busy;n++)await new Promise(r=>setTimeout(r,50));if(busy){showError('我的家还在保存，请稍后再试。');return;}}
     if(['nav','detail','transaction','payment','add-item','edit-item','edit-plan','edit-estimate','settle-item','project','settings','apply-preview'].includes(a)&&isFormDirty()){pendingNavigation=()=>{if(b.isConnected)b.click();};closeDialog();return;}
     try{
       if(a==='nav')navigate(b.dataset.page);
