@@ -181,11 +181,14 @@ internal fun followingHighlight(interaction: InteractiveHighlight): Highlight {
     // quarter turn. The turn fades out within the inner third, so finger jitter at the centre
     // (where the direction is undefined) barely moves it.
     val shortest = ((touchAngle - RestingHighlightAngle) % 180f + 270f) % 180f - 90f
-    val last = interaction.highlightTurn
-    val turn = if (last == null) shortest else shortest + 180f * ((last - shortest) / 180f).roundToInt()
-    interaction.highlightTurn = turn
     val reach = (hypot(dx, dy) / CentreFade).fastCoerceAtMost(1f)
-    val angle = RestingHighlightAngle + turn * progress * reach
+    val scale = progress * reach
+    // At full scale every equivalent turn looks the same, so the stored turn drops its extra
+    // revolutions there; it only unwinds while the press or the centre fade scales it down.
+    val last = interaction.highlightTurn
+    val turn = if (last == null || scale >= 0.999f) shortest else shortest + 180f * ((last - shortest) / 180f).roundToInt()
+    interaction.highlightTurn = turn
+    val angle = RestingHighlightAngle + turn * scale
     return Highlight(
         style = HighlightStyle.Default(
             color = Color.White.copy(alpha = 0.5f + 0.3f * progress),
