@@ -250,7 +250,7 @@ export default function MobileSheet({
           <Drawer.Dialog
             ref={dialogRef}
             className={cn(
-              "nextflux-modal-surface nextflux-mobile-sheet p-0",
+              "nextflux-modal-surface nextflux-mobile-sheet nextflux-floating-sheet p-0",
               fixedHeight && "h-4/5",
               dialogClassName,
             )}

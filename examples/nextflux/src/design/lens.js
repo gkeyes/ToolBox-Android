@@ -84,14 +84,14 @@ export function installLens({ doc = document, win = window } = {}) {
   svg.dataset.nfLens = "";
   doc.body.append(svg);
 
-  const filters = new Map(); // "w×h×r" -> filter id
-  const bound = new Map(); // element -> inset
-  const filterFor = (width, height, radius) => {
-    const key = `${width}x${height}r${radius}`;
-    if (filters.has(key)) return filters.get(key);
+  const filters = new Map(); // "w×h×r" -> { id, node }
+  const bound = new Map(); // element -> { inset, key }
+  let nextId = 0;
+  const filterFor = (key, width, height, radius) => {
+    if (filters.has(key)) return filters.get(key).id;
     const href = edgeMap(doc, width, height, radius);
     if (!href) return null;
-    const id = `nf-lens-${filters.size}`;
+    const id = `nf-lens-${nextId++}`;
     const filter = doc.createElementNS(NS, "filter");
     // The region is far larger than the element and the map sits on neutral
     // grey: Chromium leaves any backdrop outside the region unfiltered (losing
@@ -115,43 +115,78 @@ export function installLens({ doc = document, win = window } = {}) {
     for (const [name, value] of Object.entries({ in: "SourceGraphic", in2: "map", scale: SCALE, xChannelSelector: "R", yChannelSelector: "G" })) displace.setAttribute(name, String(value));
     filter.append(neutral, image, merge, displace);
     svg.append(filter);
-    filters.set(key, id);
+    filters.set(key, { id, node: filter });
     return id;
   };
 
-  const update = (element) => {
-    const inset = bound.get(element) ?? 0;
-    // Layout size, not getBoundingClientRect: a sheet or alert measured while
-    // it scales in would get a map smaller than itself, and Chromium leaves the
-    // backdrop outside the filter region unfiltered (no blur at all there).
-    const width = element.offsetWidth - inset * 2;
-    const height = element.offsetHeight - inset * 2;
-    if (width < 8 || height < 8) return;
-    const style = win.getComputedStyle(element, inset ? "::before" : null);
-    const radius = Math.min(parseFloat(style.borderTopLeftRadius) || 0, width / 2, height / 2);
-    const id = filterFor(width, height, Math.round(radius));
-    if (id) element.style.setProperty("--nf-lens", `url(#${id})`);
-  };
-
-  const resizes = new win.ResizeObserver((entries) => { for (const entry of entries) update(entry.target); });
-  const scan = () => {
+  // Drop elements that left the page and every map no element uses any more,
+  // so resizing (split screen, font size) doesn't pile up filters.
+  const prune = () => {
     for (const element of bound.keys()) {
       if (!element.isConnected) { resizes.unobserve(element); bound.delete(element); }
     }
-    for (const { selector, inset = 0 } of TARGETS) {
-      for (const element of doc.querySelectorAll(selector)) {
-        if (bound.has(element)) continue;
-        bound.set(element, inset);
-        resizes.observe(element);
-      }
+    const used = new Set([...bound.values()].map((entry) => entry.key));
+    for (const [key, { node }] of filters) {
+      if (!used.has(key)) { node.remove(); filters.delete(key); }
     }
   };
-  let frame = 0;
-  const schedule = () => {
-    if (frame) return;
-    frame = win.requestAnimationFrame(() => { frame = 0; scan(); });
+
+  const update = (element) => {
+    const entry = bound.get(element);
+    if (!entry) return;
+    // Layout size, not getBoundingClientRect: a sheet or alert measured while
+    // it scales in would get a map smaller than itself, and Chromium leaves the
+    // backdrop outside the filter region unfiltered (no blur at all there).
+    const width = element.offsetWidth - entry.inset * 2;
+    const height = element.offsetHeight - entry.inset * 2;
+    if (width < 8 || height < 8) return;
+    const style = win.getComputedStyle(element, entry.inset ? "::before" : null);
+    const radius = Math.round(Math.min(parseFloat(style.borderTopLeftRadius) || 0, width / 2, height / 2));
+    const key = `${width}x${height}r${radius}`;
+    if (key === entry.key) return;
+    const id = filterFor(key, width, height, radius);
+    if (!id) return;
+    entry.key = key;
+    element.style.setProperty("--nf-lens", `url(#${id})`);
   };
-  const mutations = new win.MutationObserver(schedule);
+
+  const resizes = new win.ResizeObserver((entries) => {
+    for (const entry of entries) update(entry.target);
+    prune();
+  });
+  const bind = (element) => {
+    if (bound.has(element)) return;
+    const target = TARGETS.find(({ selector }) => element.matches(selector));
+    if (!target) return;
+    bound.set(element, { inset: target.inset ?? 0, key: null });
+    resizes.observe(element);
+  };
+  const ALL = TARGETS.map(({ selector }) => selector).join(", ");
+  // Only the nodes that were added are searched, never the whole document:
+  // a long article mounts in many small batches and none of it is chrome.
+  const bindWithin = (root) => {
+    if (root.matches?.(ALL)) bind(root);
+    if (root.firstElementChild) for (const element of root.querySelectorAll(ALL)) bind(element);
+  };
+  const scan = () => { prune(); bindWithin(doc.body); };
+
+  let added = [];
+  let removed = false;
+  let frame = 0;
+  const flush = () => {
+    frame = 0;
+    const roots = added;
+    added = [];
+    if (removed) { removed = false; prune(); }
+    for (const root of roots) if (root.isConnected) bindWithin(root);
+  };
+  const mutations = new win.MutationObserver((records) => {
+    for (const record of records) {
+      for (const node of record.addedNodes) if (node.nodeType === 1) added.push(node);
+      if (record.removedNodes.length) removed = true;
+    }
+    if (!frame && (added.length || removed)) frame = win.requestAnimationFrame(flush);
+  });
   mutations.observe(doc.body, { childList: true, subtree: true });
   scan();
   return {
