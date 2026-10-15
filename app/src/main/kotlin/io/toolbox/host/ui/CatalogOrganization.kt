@@ -352,6 +352,12 @@ private fun CatalogGroupFolder(
     val style = catalogGroupColor(group.color)
     val interactionSource = remember { MutableInteractionSource() }
     val editLabel = "编辑分组" + group.name
+    // Shared by the capsule and the name below it; the shared source keeps press feedback on the capsule.
+    val openGesture = if (editing) Modifier.clickable(interactionSource = interactionSource, indication = null,
+        role = Role.Button, onClickLabel = "打开分组", onClick = onOpen)
+    else Modifier.combinedClickable(interactionSource = interactionSource, indication = null,
+        role = Role.Button, onClickLabel = "打开分组", onClick = onOpen,
+        onLongClick = onEdit, onLongClickLabel = editLabel)
     Column(
         modifier
             .catalogDragTarget(drag, "group:" + group.id, "groups", index, total, group.name,
@@ -376,13 +382,7 @@ private fun CatalogGroupFolder(
                             if (editing && index < total - 1) add(CustomAccessibilityAction("后移") { onMove(1); true })
                         }
                     }
-                    .then(
-                        if (editing) Modifier.clickable(interactionSource = interactionSource, indication = null,
-                            role = Role.Button, onClickLabel = "打开分组", onClick = onOpen)
-                        else Modifier.combinedClickable(interactionSource = interactionSource, indication = null,
-                            role = Role.Button, onClickLabel = "打开分组", onClick = onOpen,
-                            onLongClick = onEdit, onLongClickLabel = editLabel),
-                    )
+                    .then(openGesture)
                     .padding(horizontal = metrics.padding),
                 contentAlignment = Alignment.Center,
             ) {
@@ -407,7 +407,8 @@ private fun CatalogGroupFolder(
         }
         Spacer(Modifier.height(6.dp))
         Row(
-            Modifier.fillMaxWidth().padding(horizontal = 2.dp).clearAndSetSemantics { },
+            // The capsule already exposes the open action to TalkBack; tapping the name opens it too.
+            Modifier.fillMaxWidth().clearAndSetSemantics { }.then(openGesture).padding(horizontal = 2.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.Center,
         ) {
@@ -427,7 +428,7 @@ internal fun groupCapsuleMetrics(width: Dp): GroupCapsuleMetrics {
     val padding = 10.dp
     val slot = ((width - padding * 2 - GROUP_SLOT_GAP * 2) / 3).coerceIn(36.dp, 56.dp)
     val height = slot + padding * 2
-    return GroupCapsuleMetrics(slot, padding, height, height * 0.32f)
+    return GroupCapsuleMetrics(slot, padding, height, height / 2)
 }
 
 private val GROUP_SLOT_GAP = 10.dp

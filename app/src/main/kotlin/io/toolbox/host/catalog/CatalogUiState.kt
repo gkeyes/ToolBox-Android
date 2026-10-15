@@ -63,6 +63,8 @@ sealed interface CatalogAction {
     data object CancelUninstall : CatalogAction
     data object ConfirmUninstall : CatalogAction
     data object DismissFeedback : CatalogAction
+    /** Restarts catalog collection after [CatalogUiState.loadFailed]. */
+    data object RetryLoad : CatalogAction
 }
 
 data class CatalogUiState(

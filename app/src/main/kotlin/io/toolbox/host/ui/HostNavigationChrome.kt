@@ -3,7 +3,7 @@ package io.toolbox.host.ui
 import androidx.compose.foundation.layout.navigationBars
 import io.toolbox.core.ui.component.ToolBoxGlassIconButton
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.layout.Arrangement
@@ -40,8 +40,6 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import io.toolbox.core.ui.component.toolBoxOpenDesignCanvas
@@ -57,7 +55,7 @@ import io.toolbox.core.ui.component.ToolBoxMenuAction
 import io.toolbox.core.ui.component.ToolBoxOverflowMenu
 import io.toolbox.core.ui.component.ToolBoxNavigationBar
 import io.toolbox.core.ui.component.ToolBoxNavigationItem
-import io.toolbox.core.ui.component.ToolBoxTextButton
+import io.toolbox.core.ui.component.ToolBoxPrimaryButton
 import io.toolbox.core.ui.component.ToolBoxTopBar
 import io.toolbox.core.ui.component.rememberToolBoxGlassState
 import io.toolbox.core.ui.component.toolBoxBackdropSource
@@ -341,9 +339,9 @@ private fun DestinationItem(
             .width(ToolBoxThemeTokens.sizes.mediumNavigationItemWidth)
             .heightIn(min = ToolBoxThemeTokens.sizes.compactChrome)
             .clip(androidx.compose.foundation.shape.RoundedCornerShape(ToolBoxThemeTokens.radii.denseSurface))
-            .clickable(role = Role.Tab) { onDestination(destination) }
-            .testTag(destination.testTag)
-            .semantics { contentDescription = "${destination.label}标签${if (selected) "，已选择" else ""}" },
+            // The merged label names the tab; selection is announced from `selected`, not text.
+            .selectable(selected = selected, role = Role.Tab) { onDestination(destination) }
+            .testTag(destination.testTag),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
@@ -367,7 +365,10 @@ internal fun DetailScreen(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
     subtitle: String = "",
-    actions: @Composable RowScope.() -> Unit = {},
+    /** False shows only the small bar title, for pages whose content opens with its own hero. */
+    largeTitle: Boolean = true,
+    /** Top-bar actions; they get the bar's glass state so they can be round glass buttons. */
+    actions: @Composable RowScope.(ToolBoxGlassState) -> Unit = {},
     content: @Composable BoxScope.(PaddingValues) -> Unit,
 ) {
     val glassState = rememberToolBoxGlassState()
@@ -386,7 +387,8 @@ internal fun DetailScreen(
                         navigationIcon = ToolBoxIconKey.Back,
                         onNavigationClick = onBack,
                         glassState = glassState,
-                        actions = actions,
+                        largeTitle = largeTitle,
+                        actions = { actions(glassState) },
                     )
                 },
             ) { scaffoldPadding ->
@@ -442,11 +444,12 @@ private fun TopBar(
         actions = {
             if (onOrganize != null) {
                 if (organizeEditing) {
-                    ToolBoxTextButton(
+                    // A filled accent capsule, like the board's "完成".
+                    ToolBoxPrimaryButton(
                         label = "完成",
                         onClick = onOrganize,
-                        outlined = false,
                         modifier = Modifier.testTag("catalog_organize"),
+                        compact = true,
                     )
                 } else {
                     ToolBoxOverflowMenu(

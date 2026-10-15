@@ -172,6 +172,20 @@ class PackageToolTest(unittest.TestCase):
                     (source / name).write_bytes(payload)
                 self.assert_rejected_without_output(prepare)
 
+    def test_dot_named_files_use_the_host_extension_rule(self):
+        # PackagePathPolicy.forbiddenCode takes the text after the last '.', even at the start of a name.
+        for name in [".so", "sub/.zip", "lib/.DEX", ".tar.gz"]:
+            with self.subTest(name=name):
+                def prepare(source, name=name):
+                    (source / name).parent.mkdir(parents=True, exist_ok=True)
+                    (source / name).write_bytes(b"plain")
+                self.assert_rejected_without_output(prepare)
+        # Other dot-named files and dotted directories are still packaged, as the host accepts them.
+        (self.source / ".config").write_text("1", encoding="utf-8")
+        (self.source / "v1.so.d").mkdir()
+        (self.source / "v1.so.d/data.txt").write_text("1", encoding="utf-8")
+        PACKAGER.package_tool(self.source, self.root / "dotted.tbx")
+
     def test_host_path_rules_are_mirrored(self):
         names = ["a%2e%2e.js", "b%2F.js", "c%5c.js", "C:drive.js"]
         for name in names:

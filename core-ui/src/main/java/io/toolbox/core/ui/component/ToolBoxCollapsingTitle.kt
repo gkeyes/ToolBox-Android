@@ -34,6 +34,7 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -132,14 +133,30 @@ fun ToolBoxTitleCollapseSource(state: ScrollState) {
 }
 
 /**
- * Height of the expanded title block below the 56dp bar. The block is sized for its text, so it
- * grows with the system font scale instead of clipping the bottom of the 34sp title.
+ * Height of the expanded title block below the 56dp bar. It is measured from the real title and
+ * subtitle line heights (including CJK fallback font metrics), so it grows with the system font
+ * scale and never clips the subtitle.
  */
 @Composable
 fun toolBoxLargeTitleHeight(subtitle: String = ""): Dp {
-    val textScale = LocalDensity.current.fontScale.coerceAtLeast(1f)
-    return ToolBoxThemeTokens.sizes.largeTitle * textScale + if (subtitle.isNotBlank()) 20.dp * textScale else 0.dp
+    val density = LocalDensity.current
+    val textScale = density.fontScale.coerceAtLeast(1f)
+    val styles = ToolBoxThemeTokens.textStyles
+    val spacing = ToolBoxThemeTokens.spacing
+    val measurer = rememberTextMeasurer()
+    val hasSubtitle = subtitle.isNotBlank()
+    val measured = remember(measurer, density, styles, hasSubtitle) {
+        with(density) {
+            val title = measurer.measure(LINE_SAMPLE, styles.screenTitle, maxLines = 1).size.height.toDp()
+            val sub = if (hasSubtitle) measurer.measure(LINE_SAMPLE, styles.metadata, maxLines = 1).size.height.toDp() else 0.dp
+            spacing.xs + title + sub + if (hasSubtitle) spacing.xxs else 0.dp
+        }
+    }
+    return maxOf(ToolBoxThemeTokens.sizes.largeTitle * textScale, measured)
 }
+
+/** Latin ascender/descender plus a CJK glyph, which uses the taller fallback font metrics. */
+private const val LINE_SAMPLE = "国Ag"
 
 /**
  * Screen top bar (design system v2 scaffold): a fixed 56dp bar holding navigation, actions and
@@ -160,6 +177,8 @@ fun ToolBoxCollapsingTopBar(
     onNavigationClick: (() -> Unit)? = null,
     glassState: ToolBoxGlassState? = null,
     statusBarPadding: Boolean = true,
+    /** False for a page with only the 17sp bar title (no large title block below the bar). */
+    largeTitle: Boolean = true,
     actions: @Composable RowScope.() -> Unit = {},
 ) {
     val colors = ToolBoxThemeTokens.colors
@@ -175,7 +194,7 @@ fun ToolBoxCollapsingTopBar(
 
     Box(modifier.fillMaxWidth()) {
         // Large title first so the bar draws over it as it slides up.
-        Box(
+        if (largeTitle) Box(
             Modifier.fillMaxWidth()
                 .windowInsetsPadding(insets)
                 .padding(top = ToolBoxThemeTokens.sizes.topBar)
@@ -243,7 +262,7 @@ fun ToolBoxCollapsingTopBar(
             onNavigationClick = onNavigationClick,
             glassState = glassState,
             windowInsets = insets,
-            titleAlpha = { toolBoxBarTitleAlpha(progress(readScrolled())) },
+            titleAlpha = { if (largeTitle) toolBoxBarTitleAlpha(progress(readScrolled())) else 1f },
             actions = actions,
         )
     }

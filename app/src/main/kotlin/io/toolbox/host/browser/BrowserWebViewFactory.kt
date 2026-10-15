@@ -104,6 +104,7 @@ internal class BrowserWebViewFactory(
                     navigation.cancelPage(view)
                 }
                 validBrowserUrl(url)?.let { state.address = it }
+                navigation.documentStarted()
                 filters.navigated(url)
                 state.title = ""
                 state.error = null
@@ -277,16 +278,22 @@ internal class BrowserWebViewFactory(
         }
     }
 
-    private fun applyUserAgent(settings: WebSettings) {
+    /** Applies the current [BrowserUiState.userAgentMode] to a live page; the caller reloads it. */
+    fun applyUserAgent(page: WebView) {
+        applyUserAgent(page.settings, resetMetadata = true)
+    }
+
+    private fun applyUserAgent(settings: WebSettings, resetMetadata: Boolean = false) {
         val profile = BrowserUserAgentPolicy.profile(
             mode = state.userAgentMode,
             defaultUserAgent = WebSettings.getDefaultUserAgent(activity),
         )
         settings.userAgentString = profile.userAgent
 
-        if (!profile.overrideMetadata ||
-            !WebViewFeature.isFeatureSupported(WebViewFeature.USER_AGENT_METADATA)
-        ) {
+        if (!WebViewFeature.isFeatureSupported(WebViewFeature.USER_AGENT_METADATA)) return
+        if (!profile.overrideMetadata) {
+            // A page switched from an overriding mode drops its metadata; unset fields use the system default.
+            if (resetMetadata) WebSettingsCompat.setUserAgentMetadata(settings, UserAgentMetadata.Builder().build())
             return
         }
 

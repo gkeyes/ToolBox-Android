@@ -25,16 +25,18 @@ internal class BackupViewModel(private val operations: BackupOperations, private
     private var preview: RestorePreview? = null
     @Volatile private var publishedResult: BackupUiState.Result? = null
     private var restoring = false
+    /** Which flow the user last started, so a cancel reports the export or the restore it stopped. */
+    private var exporting = false
     val busy get() = job != null
 
-    fun requestExport() { if (!busy) mutableState.value = BackupUiState.ExportConsent }
+    fun requestExport() { if (!busy) { exporting = true; mutableState.value = BackupUiState.ExportConsent } }
     fun prepareExport() = runOperation {
         cleanup()
         exported = operations.export(::progress)
         BackupUiState.ExportReady
     }
     fun exportPickerStarted() { mutableState.value = BackupUiState.Picking(true) }
-    fun restorePickerStarted() { if (!busy) mutableState.value = BackupUiState.Picking(false) }
+    fun restorePickerStarted() { if (!busy) { exporting = false; mutableState.value = BackupUiState.Picking(false) } }
     fun pickerFailed() = runOperation { throw BackupException("DESTINATION") }
 
     fun exportSelected(location: String?) {
@@ -79,7 +81,7 @@ internal class BackupViewModel(private val operations: BackupOperations, private
             job?.cancel()
         } else runOperation {
             cleanup()
-            BackupUiState.Result("已取消", "未执行恢复，临时文件已清理。")
+            cancelledResult(exporting, running = false)
         }
     }
     private fun progress(label: String, percent: Int) {
@@ -100,7 +102,7 @@ internal class BackupViewModel(private val operations: BackupOperations, private
                     cleanup()
                     publishedResult ?: if (restoring && operations.committed) {
                         BackupUiState.Result("恢复已完成", "取消请求晚于原子提交。数据已恢复，请重新打开工具确认。")
-                    } else BackupUiState.Result("已取消", "操作已取消，恢复期间的临时改动已回滚。已停止的运行会话需手动重新打开。")
+                    } else cancelledResult(exporting, running = true)
                 }
             } catch (failure: Exception) {
                 withContext(NonCancellable) { cleanup() }
@@ -122,4 +124,12 @@ internal class BackupViewModel(private val operations: BackupOperations, private
         // Finite cleanup/rollback must outlive a screen which has been removed.
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch { running?.cancelAndJoin(); cleanup() }
     }
+}
+
+/** [running]: the cancel stopped work in progress rather than a consent or picker step. */
+internal fun cancelledResult(exporting: Boolean, running: Boolean): BackupUiState.Result = when {
+    exporting && running -> BackupUiState.Result("已取消", "导出已取消，未保存备份，临时文件已清理。")
+    exporting -> BackupUiState.Result("已取消", "未导出备份，临时文件已清理。")
+    running -> BackupUiState.Result("已取消", "操作已取消，恢复期间的临时改动已回滚。已停止的运行会话需手动重新打开。")
+    else -> BackupUiState.Result("已取消", "未执行恢复，临时文件已清理。")
 }

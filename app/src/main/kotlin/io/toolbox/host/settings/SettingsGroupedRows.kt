@@ -1,5 +1,6 @@
 package io.toolbox.host.settings
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -8,15 +9,16 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
+import io.toolbox.host.R
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -98,6 +100,17 @@ internal fun SettingsIconTile(
     }
 }
 
+/** ToolBox's own launcher icon, masked like an app icon, for the Settings and About heroes. */
+@Composable
+internal fun AppLauncherMark(size: Dp, modifier: Modifier = Modifier) {
+    Image(
+        painter = painterResource(R.mipmap.ic_launcher),
+        contentDescription = null,
+        modifier = modifier.size(size).clip(toolBoxShape(size * 0.22f)),
+        contentScale = ContentScale.Crop,
+    )
+}
+
 /** Hairline separator between rows of a grouped card, inset to start after the icon tile. */
 @Composable
 internal fun SettingsRowSeparator(start: Dp = SettingsSeparatorInset) {
@@ -112,7 +125,8 @@ internal fun SettingsRowSeparator(start: Dp = SettingsSeparatorInset) {
 
 /**
  * Grouped-card navigation row: coloured tile, 17pt title, 13pt secondary summary, optional
- * trailing content and a disclosure chevron when it navigates.
+ * trailing content and a disclosure chevron when it navigates. [leading] replaces the tile with
+ * other 30dp artwork, such as a tool's own icon.
  */
 @Composable
 internal fun SettingsNavRow(
@@ -126,6 +140,7 @@ internal fun SettingsNavRow(
     onClickLabel: String? = null,
     enabled: Boolean = true,
     trailing: (@Composable () -> Unit)? = null,
+    leading: (@Composable () -> Unit)? = null,
 ) {
     val colors = ToolBoxThemeTokens.colors
     val interactionSource = remember { MutableInteractionSource() }
@@ -152,7 +167,7 @@ internal fun SettingsNavRow(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        SettingsIconTile(icon, tint, enabled = enabled)
+        if (leading != null) leading() else SettingsIconTile(icon, tint, enabled = enabled)
         // When large text leaves too little width beside a value or chip, the value moves under
         // the title instead of squeezing it into a one-character column.
         val configuration = LocalConfiguration.current
@@ -219,18 +234,17 @@ internal fun SettingsSwitchRow(
     summary: String? = null,
     enabled: Boolean = true,
 ) {
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Spacer(Modifier.width(16.dp))
-        SettingsIconTile(icon, tint, enabled = enabled)
-        ToolBoxSwitchSettingRow(
-            title = title,
-            checked = checked,
-            onCheckedChange = onCheckedChange,
-            modifier = modifier.weight(1f),
-            summary = summary,
-            enabled = enabled,
-        )
-    }
+    // The tile sits in the switch row's own leading slot, so it is part of the toggle target and
+    // the labels start at 58dp like nav rows and separators.
+    ToolBoxSwitchSettingRow(
+        title = title,
+        checked = checked,
+        onCheckedChange = onCheckedChange,
+        modifier = modifier,
+        summary = summary,
+        enabled = enabled,
+        leading = { SettingsIconTile(icon, tint, enabled = enabled) },
+    )
 }
 
 @Composable

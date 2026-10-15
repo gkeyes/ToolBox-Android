@@ -22,8 +22,8 @@ import io.toolbox.core.ui.component.toolBoxPressFeedback
 import io.toolbox.host.ui.CatalogLazyGroupItem
 import io.toolbox.host.ui.CatalogToolGlyph
 import io.toolbox.host.ui.DetailScreen
-import io.toolbox.host.ui.SectionHeader
-import io.toolbox.host.ui.ToolVisual
+import io.toolbox.host.ui.ContentSectionHeader
+import io.toolbox.host.ui.toolVisual
 import io.toolbox.host.ui.mergePadding
 import kotlinx.coroutines.flow.Flow
 
@@ -74,7 +74,7 @@ internal fun ToolPermissionsContent(
                 item("installed-title") {
                     Column(Modifier.toolBoxEntrance(entrance, 0).padding(bottom = ToolBoxThemeTokens.spacing.xs),
                         verticalArrangement = Arrangement.spacedBy(ToolBoxThemeTokens.spacing.xxs)) {
-                        SectionHeader("已安装工具 · ${tools.size}")
+                        ContentSectionHeader("已安装工具 · ${tools.size}")
                         ToolBoxText("摘要为 ToolBox 内部授权；系统权限请进入详情核对。",
                             modifier = Modifier.padding(horizontal = ToolBoxThemeTokens.spacing.md),
                             style = ToolBoxThemeTokens.textStyles.label.copy(color = ToolBoxThemeTokens.colors.textTertiary))
@@ -85,7 +85,8 @@ internal fun ToolPermissionsContent(
                     key = { _, tool -> "permission:${tool.metadata.id}" },
                     contentType = { _, _ -> "permission-tool" },
                 ) { index, tool ->
-                    CatalogLazyGroupItem(index = index, count = tools.size, modifier = Modifier.toolBoxEntrance(entrance, index + 1)) {
+                    // Separators start under the name: 16dp padding + 36dp icon + 12dp gap.
+                    CatalogLazyGroupItem(index = index, count = tools.size, modifier = Modifier.toolBoxEntrance(entrance, index + 1), dividerStart = 64.dp) {
                         // Reset collected state, not just the flow, when an installed identity changes.
                         key(tool.currentVersion) {
                             val summaryFlow = remember(tool.currentVersion) { summaryFor(tool) }
@@ -112,7 +113,7 @@ private fun ToolPermissionSelectionRow(tool: InstalledTool, summary: ToolPermiss
             .testTag("permission_summary:${tool.metadata.id}"),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        CatalogToolGlyph(tool.metadata.id, tool.currentVersion.versionCode, ToolVisual(ToolBoxIconKey.Tools, colors.primary), size = 36.dp)
+        CatalogToolGlyph(tool.metadata.id, tool.currentVersion.versionCode, toolVisual(tool.metadata.id, tool.metadata.name, colors.primary), size = 36.dp)
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             ToolBoxText(tool.metadata.name, style = ToolBoxThemeTokens.textStyles.title.copy(color = colors.textPrimary))
             ToolBoxText(summary.label, style = ToolBoxThemeTokens.textStyles.metadata.copy(color = colors.textSecondary))

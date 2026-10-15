@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.selection.selectable
@@ -48,9 +49,11 @@ internal fun CatalogListHeader(state: CatalogUiState, onAction: (CatalogAction) 
     val largeText = LocalDensity.current.fontScale >= 1.3f
     BoxWithConstraints(Modifier.fillMaxWidth().padding(top = 4.dp).testTag("catalog_list_header")) {
         if (maxWidth < 300.dp || largeText) {
-            Column(Modifier.fillMaxWidth()) {
+            // Stacked: a gap under the search field, and the button pulled back by its own 16dp
+            // label padding so its text lines up with the title.
+            Column(Modifier.fillMaxWidth().padding(top = ToolBoxThemeTokens.spacing.xs)) {
                 AppText(title, Modifier.semantics { heading() }, textStyle = ToolBoxThemeTokens.textStyles.title)
-                ToolBoxTextButton("排序 · ${state.layout.sort.label}", openSort, outlined = false)
+                ToolBoxTextButton("排序 · ${state.layout.sort.label}", openSort, Modifier.offset(x = (-16).dp), outlined = false)
             }
         } else {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {

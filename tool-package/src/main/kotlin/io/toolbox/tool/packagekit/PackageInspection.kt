@@ -117,8 +117,15 @@ internal sealed interface PreparationResult {
 
 /** Preflight uses the exact same inspector as installation, without publishing a bundle. */
 object ToolPackageInspectors {
+    /**
+     * With [hostVersion], a package for a newer host is refused as UNSUPPORTED_HOST_VERSION (as on install)
+     * instead of failing strict validation of fields this host does not know.
+     */
     fun create(
         temporaryDirectory: java.io.File,
         resourceProbe: PackageResourceProbe = FileSystemPackageResourceProbe,
-    ): ToolPackageInspector = DefaultPackageInspector(temporaryDirectory.toPath(), resourceProbe = resourceProbe)
+        hostVersion: String? = null,
+    ): ToolPackageInspector = DefaultPackageInspector(
+        temporaryDirectory.toPath(), resourceProbe = resourceProbe, hostVersion = hostVersion,
+    )
 }

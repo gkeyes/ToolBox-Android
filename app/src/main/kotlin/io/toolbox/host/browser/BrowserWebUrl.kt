@@ -7,7 +7,7 @@ import java.util.Locale
  *
  * Tool-supplied `browser.open` URLs keep the strict `validateRuntimeBrowserUrl` check. Chromium leaves `| ^ { }` and
  * backticks unescaped and allows underscore hosts, which `java.net.URI` rejects, so pages here are parsed by hand:
- * http/https only, a host, no user info, a valid port and no raw or percent-escaped control characters.
+ * http/https only, a host without empty labels, no user info, a valid port and no raw or percent-escaped control characters.
  */
 internal object BrowserWebUrl {
     data class Parts(val scheme: String, val host: String, val port: Int?)
@@ -41,7 +41,9 @@ internal object BrowserWebUrl {
             val colon = authority.lastIndexOf(':')
             val name = if (colon < 0) authority else authority.substring(0, colon)
             if (name.any { !(it.isLetterOrDigit() || it == '-' || it == '.' || it == '_') }) return null
-            host = name.trimEnd('.').lowercase(Locale.ROOT)
+            // Every label needs a character; one trailing dot (a fully qualified name) is kept, since it is part of the origin.
+            if (name.removeSuffix(".").split('.').any { it.isEmpty() }) return null
+            host = name.lowercase(Locale.ROOT)
             portText = if (colon < 0) null else authority.substring(colon + 1)
         }
         if (host.isEmpty()) return null

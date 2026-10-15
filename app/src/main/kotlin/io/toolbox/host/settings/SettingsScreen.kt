@@ -138,14 +138,14 @@ internal fun SettingsContent(
         item("operation") {
             ToolBoxGroupedSurface(Modifier.toolBoxEntrance(entrance, 3)) {
                 SettingsSwitchRow(
-                    title = "后台保障", summary = state.backgroundProgressSummary ?: "允许已启动的任务持续运行",
+                    title = "允许后台运行", summary = state.backgroundProgressSummary ?: "允许已启动的任务持续运行",
                     checked = state.settings.backgroundEnabled, onCheckedChange = onBackgroundEnabledChange,
                     icon = ToolBoxIconKey.Lock, tint = SettingsIconTint.Green, enabled = state.canChangeBackground,
                     modifier = Modifier.testTag("settings_background_enabled"),
                 )
                 SettingsRowSeparator()
                 SettingsNavRow(
-                    title = "后台运行设置", summary = "通知、电池与系统权限",
+                    title = "后台保障", summary = "通知、电池与系统权限",
                     icon = ToolBoxIconKey.Clock, tint = SettingsIconTint.Orange,
                     onClick = onBackgroundSafeguards, enabled = state.loaded,
                 )
@@ -235,7 +235,7 @@ private fun SettingsHeroCard(onClick: () -> Unit, modifier: Modifier = Modifier)
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        SettingsIconTile(ToolBoxIconKey.Tools, SettingsIconTint.Graphite, size = 64.dp)
+        AppLauncherMark(size = 64.dp)
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             AppText("ToolBox", textStyle = ToolBoxThemeTokens.textStyles.detailTitle)
             AppText(
