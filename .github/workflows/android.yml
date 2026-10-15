@@ -499,7 +499,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           BASE_COMMIT: ${{ needs.version.outputs.base_commit }}
-        run: python3 scripts/ci/app_version.py check-dev --base-commit "$BASE_COMMIT" --head "$GITHUB_SHA"
+        run: python3 scripts/ci/app_version.py check-dev --base-commit "$BASE_COMMIT" --head "$GITHUB_SHA" --version "$TOOLBOX_VERSION_NAME"
       - name: Publish to the in-app test channel
         env:
           GH_TOKEN: ${{ github.token }}

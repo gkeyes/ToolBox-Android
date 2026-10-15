@@ -109,6 +109,17 @@ class ReadDevTest(unittest.TestCase):
         api = FakeApi(release("toolbox-v0.13.14-dev.apk", "BUILD_RECEIPT.txt", "game-2048-v1.0.4.tbx"), receipt())
         self.assertEqual({"name": "0.13.14", "code": 90, "commit": COMMIT}, self.read(api))
 
+    def test_this_runs_own_half_published_apk_is_not_a_mismatch(self):
+        # An earlier attempt of this run swapped in its APK and stopped before the receipt.
+        api = FakeApi(release("toolbox-v0.13.15-dev.apk", "BUILD_RECEIPT.txt"), receipt())
+        with self.assertRaises(app_version.LookupFailed):
+            self.read(api)
+        self.assertEqual({"name": "0.13.14", "code": 90, "commit": COMMIT},
+                         app_version.read_dev(api, REPO, sleep=lambda seconds: None, own_version="0.13.15"))
+        # Someone else's newer APK is still a mismatch.
+        with self.assertRaises(app_version.LookupFailed):
+            app_version.read_dev(api, REPO, sleep=lambda seconds: None, own_version="0.13.16")
+
     def test_missing_release_is_no_build(self):
         self.assertIsNone(self.read(FakeApi()))
 
@@ -237,7 +248,7 @@ class ComputeFromHistoryTest(unittest.TestCase):
         head = self.commit("fix", {"app/src/main/a.kt": "a", "changes/fix.md": fragment("patch", "修正甲。")})
 
         def check(dev, base_commit):
-            with patch.object(app_version, "read_dev", lambda api, repo: dev), patch.dict(os.environ, {"GH_REPO": REPO}), \
+            with patch.object(app_version, "read_dev", lambda api, repo, **_: dev), patch.dict(os.environ, {"GH_REPO": REPO}), \
                     contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
                 return app_version.main(["check-dev", "--base-commit", base_commit, "--head", head])
 
