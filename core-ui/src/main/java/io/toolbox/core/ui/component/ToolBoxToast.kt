@@ -55,7 +55,10 @@ object ToolBoxToasts {
             Handler(Looper.getMainLooper()).post { show(context, message, long) }
             return
         }
+        // A context with no activity (the application, from a mini-tool request) goes to the
+        // activity that is on screen, if one has a host.
         val activity = context.findActivity()
+            ?: hosts.keys.firstOrNull { !it.isFinishing && it.window.decorView.isShown && it.hasWindowFocus() }
         val host = activity?.let { hosts[it] }
         if (activity != null && host != null && !activity.isFinishing && activity.window.decorView.isShown) {
             host(ToolBoxToastRequest(message, if (long) 3_500L else 2_000L))
@@ -71,6 +74,9 @@ object ToolBoxToasts {
     }
 }
 
+/** Longer than the capsule's exit animation. */
+private const val ToolBoxToastExitMs = 400L
+
 /** One toast; a new instance per show, so the same text shown twice restarts the timer. */
 internal class ToolBoxToastRequest(val message: String, val durationMs: Long)
 
@@ -82,6 +88,7 @@ fun ToolBoxToastHost(modifier: Modifier = Modifier) {
     var request by remember { mutableStateOf<ToolBoxToastRequest?>(null) }
     var visible by remember { mutableStateOf(false) }
     val glass = rememberToolBoxWindowGlass(view, active = false)
+    val realBlur = ToolBoxThemeTokens.materials.realBlurEnabled
     DisposableEffect(activity) {
         val host: (ToolBoxToastRequest) -> Unit = { request = it }
         if (activity != null) ToolBoxToasts.register(activity, host)
@@ -90,10 +97,13 @@ fun ToolBoxToastHost(modifier: Modifier = Modifier) {
     LaunchedEffect(request) {
         val shown = request ?: return@LaunchedEffect
         // Copy the page before the capsule shows: the capsule refracts that copy.
-        if (!visible && ToolBoxThemeTokens.materials.realBlurEnabled) glass.capture(view)
+        if (!visible && realBlur) glass.capture(view)
         visible = true
         delay(shown.durationMs)
         visible = false
+        // Let the capsule animate out on the copy, then drop the full-screen bitmap.
+        delay(ToolBoxToastExitMs)
+        glass.release()
     }
     AnimatedVisibility(
         visible = visible,

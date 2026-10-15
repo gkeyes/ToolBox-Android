@@ -357,14 +357,18 @@ internal fun RuntimeExitConfirmation(onConfirm: () -> Unit, toolName: String?, m
     var hintVisible by remember { mutableStateOf(false) }
     val hostView = LocalView.current
     val glass = rememberToolBoxWindowGlass(hostView, active = false)
+    val realBlur = ToolBoxThemeTokens.materials.realBlurEnabled
 
     LaunchedEffect(hintRevision) {
         if (hintRevision == 0) return@LaunchedEffect
         // Copy the page before the capsule shows: the capsule refracts that copy.
-        if (!hintVisible && ToolBoxThemeTokens.materials.realBlurEnabled) glass.capture(hostView)
+        if (!hintVisible && realBlur) glass.capture(hostView)
         hintVisible = true
-        delay(RUNTIME_EXIT_BACK_WINDOW_MS)
+        // The confirmation window started at the Back press, not after the copy: hide on time.
+        delay((RUNTIME_EXIT_BACK_WINDOW_MS - (SystemClock.elapsedRealtime() - lastBackAt)).coerceAtLeast(0L))
         hintVisible = false
+        delay(400L)
+        if (!hintVisible) glass.release()
     }
 
     BackHandler(enabled = !leaving) {

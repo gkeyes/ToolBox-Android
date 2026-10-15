@@ -58,6 +58,11 @@ class ToolBoxWindowGlass internal constructor() {
     suspend fun capture(hostView: View) {
         copy = if (hostView.isHardwareAccelerated) captureWindowBackdrop(hostView, scale = 0.5f) else null
     }
+
+    /** Drops the copy once its glass is gone, so a hidden toast doesn't hold a full-screen bitmap. */
+    fun release() {
+        copy = null
+    }
 }
 
 /**
