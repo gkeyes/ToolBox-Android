@@ -71,6 +71,7 @@ import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.abs
+import androidx.compose.ui.graphics.takeOrElse
 
 @Composable
 fun ToolBoxSearchField(
@@ -79,6 +80,8 @@ fun ToolBoxSearchField(
     placeholder: String,
     modifier: Modifier = Modifier,
     contentDescription: String = placeholder,
+    /** Unspecified: the muted field fill. Transparent when [modifier] already draws a glass surface. */
+    containerColor: Color = Color.Unspecified,
 ) {
     val focusRequester = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
@@ -94,7 +97,7 @@ fun ToolBoxSearchField(
     Row(
         modifier = modifier.fillMaxWidth().heightIn(min = toolBoxSearchFieldMinHeight())
             .clip(shape)
-            .background(colors.surfaceMuted)
+            .background(containerColor.takeOrElse { colors.surfaceMuted })
             .border(1.5.dp, focusColor.value, shape)
             .padding(start = spacing.oneHalf, end = spacing.half),
         verticalAlignment = Alignment.CenterVertically,

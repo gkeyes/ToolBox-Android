@@ -112,6 +112,18 @@ import kotlinx.coroutines.delay
 import top.yukonga.miuix.kmp.utils.overScrollVertical
 import java.text.DateFormat
 import java.util.Date
+import androidx.compose.foundation.layout.offset
+import androidx.compose.ui.zIndex
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.ui.platform.LocalView
+import io.toolbox.core.ui.component.toolBoxLargeTitleHeight
+import com.kyant.backdrop.backdrops.layerBackdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop
+import com.kyant.backdrop.drawBackdrop
+import com.kyant.backdrop.effects.blur
+import com.kyant.backdrop.effects.lens
+import com.kyant.backdrop.effects.vibrancy
 
 @Composable
 internal fun ToolManagerContent(
@@ -178,12 +190,66 @@ internal fun ToolManagerContent(
         val fontScale = LocalDensity.current.fontScale
         val columns = homeGridColumnCount((contentWidth - 32.dp).value, fontScale)
         val folderColumns = homeFolderColumnCount(contentWidth.value, fontScale)
+        // 全部工具: the search field is chrome, pinned under the collapsed top bar, and is glass
+        // over the list (recorded into its own backdrop) while the tools scroll beneath it.
+        val density = LocalDensity.current
+        val searchGlassLive = ToolBoxThemeTokens.materials.realBlurEnabled && LocalView.current.isHardwareAccelerated
+        val listBackdrop = rememberLayerBackdrop()
+        var searchHeightPx by remember { mutableIntStateOf(0) }
+        val searchHeight = if (searchHeightPx > 0) with(density) { searchHeightPx.toDp() } else ToolBoxThemeTokens.sizes.touchTarget
+        if (!home) {
+            val contentTopPx = with(density) { contentPadding.calculateTopPadding().roundToPx() }
+            val pinnedTopPx = contentTopPx - with(density) { toolBoxLargeTitleHeight().roundToPx() }
+            val searchRadius = ToolBoxThemeTokens.radii.control
+            val searchTint = ToolBoxThemeTokens.materials.glassTint
+            ToolBoxSearchField(
+                value = state.query,
+                onValueChange = { onAction(CatalogAction.SetQuery(it)) },
+                placeholder = "搜索工具",
+                containerColor = if (searchGlassLive) Color.Transparent else Color.Unspecified,
+                modifier = Modifier
+                    .zIndex(1f)
+                    .padding(
+                        start = contentPadding.calculateStartPadding(direction),
+                        end = contentPadding.calculateEndPadding(direction),
+                    )
+                    .offset {
+                        val info = listState.layoutInfo
+                        val item = info.visibleItemsInfo.firstOrNull { it.key == "search" }
+                        val natural = when {
+                            item != null -> item.offset + info.beforeContentPadding
+                            info.visibleItemsInfo.isEmpty() -> contentTopPx
+                            else -> pinnedTopPx
+                        }
+                        IntOffset(0, maxOf(natural, pinnedTopPx))
+                    }
+                    .onSizeChanged { searchHeightPx = it.height }
+                    .toolBoxEntrance(entrance, 0)
+                    .then(
+                        if (searchGlassLive) {
+                            Modifier.drawBackdrop(
+                                backdrop = listBackdrop,
+                                shape = { RoundedCornerShape(searchRadius) },
+                                effects = {
+                                    vibrancy()
+                                    blur(8.dp.toPx())
+                                    lens(12.dp.toPx(), 24.dp.toPx())
+                                },
+                                onDrawSurface = { drawRect(searchTint) },
+                            )
+                        } else {
+                            Modifier
+                        },
+                    ),
+            )
+        }
         LazyColumn(
             userScrollEnabled = drag.active == null,
             state = listState,
             modifier = Modifier.fillMaxSize()
                 .overScrollVertical()
                 .testTag(if (home) "catalog_home_list" else "catalog_tools_list")
+                .then(if (!home && searchGlassLive) Modifier.layerBackdrop(listBackdrop) else Modifier)
                 .catalogDragSurface(drag, home && editing),
             contentPadding = contentPadding,
             overscrollEffect = null,
@@ -203,14 +269,8 @@ internal fun ToolManagerContent(
                 }
             }
             if (!home) {
-                item("search") {
-                    ToolBoxSearchField(
-                        value = state.query,
-                        onValueChange = { onAction(CatalogAction.SetQuery(it)) },
-                        placeholder = "搜索工具",
-                        modifier = Modifier.toolBoxEntrance(entrance, 0),
-                    )
-                }
+                // Holds the place of the pinned search field drawn over the list.
+                item("search") { Spacer(Modifier.fillMaxWidth().height(searchHeight)) }
                 item("installed-title") {
                     Box(Modifier.toolBoxEntrance(entrance, 1)) { CatalogListHeader(state, onAction) }
                 }
