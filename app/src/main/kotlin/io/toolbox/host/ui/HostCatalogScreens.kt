@@ -17,6 +17,7 @@ import io.toolbox.core.ui.component.LocalToolBoxFrostedSheets
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalAccessibilityManager
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -407,6 +408,10 @@ internal fun ToolDetailScreen(
     var entryMessage by rememberSaveable(toolId) { mutableStateOf(state.feedback?.message) }
     LaunchedEffect(state.feedback == null) { if (state.feedback == null) entryMessage = null }
     val ownFeedback = state.feedback?.takeIf { it.message != entryMessage }
+    // The floating notice's height, so the last rows (delete) can scroll clear of it.
+    var feedbackHeight by remember { mutableStateOf(0.dp) }
+    val density = LocalDensity.current
+    val feedbackGap = ToolBoxThemeTokens.spacing.oneHalf * 2
     // Anything started here makes the next result this page's own, even if its text matches the list's
     // message, which is retired at that point.
     val act: (CatalogAction) -> Unit = { action ->
@@ -544,6 +549,7 @@ internal fun ToolDetailScreen(
                         )
                     }
                 }
+                if (ownFeedback != null) item("feedback-inset") { Spacer(Modifier.height(feedbackHeight)) }
             }
         }
         // Favorite, group and delete results started here have no operation id, so they land in feedback.
@@ -560,7 +566,8 @@ internal fun ToolDetailScreen(
                     .padding(horizontal = ToolBoxThemeTokens.spacing.two, vertical = ToolBoxThemeTokens.spacing.oneHalf)
                     .shadow(8.dp, toolBoxShape(ToolBoxThemeTokens.radii.control), clip = false)
                     .background(ToolBoxThemeTokens.colors.surface, toolBoxShape(ToolBoxThemeTokens.radii.control))
-                    .testTag("detail_feedback"),
+                    .testTag("detail_feedback")
+                    .onSizeChanged { feedbackHeight = with(density) { it.height.toDp() } + feedbackGap },
             )
         }
 
