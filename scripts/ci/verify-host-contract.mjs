@@ -375,7 +375,8 @@ assert.equal(vm.runInContext('new HTMLIFrameElement(crossOrigin).contentWindow =
 // the document's child windows before it returns, using the original window.length getter.
 const domRealm = `class Node { appendChild(child) { frameList.push(child); return child; }
     get ownerDocument() { return theDocument; } }
-  class Document extends Node { get defaultView() { return globalThis; } get ownerDocument() { return null; } }
+  class Document extends Node { get defaultView() { return globalThis; } get ownerDocument() { return null; }
+    get body() { return null; } set body(value) { frameList.push(pendingFrame); } }
   class Element extends Node { set innerHTML(html) { frameList.push(pendingFrame); } }
   globalThis.Node = Node; globalThis.Document = Document; globalThis.Element = Element;
   globalThis.theDocument = new Document();
@@ -385,7 +386,7 @@ const domRealm = `class Node { appendChild(child) { frameList.push(child); retur
 const insertParent = vm.createContext({});
 vm.runInContext(domRealm, insertParent);
 vm.runInContext(webRtcHardening, insertParent);
-vm.runInContext(`for (let i = 0; i < 4; i++) Object.defineProperty(globalThis, i, { get() { return frameList[i]; } });`,
+vm.runInContext(`for (let i = 0; i < 8; i++) Object.defineProperty(globalThis, i, { get() { return frameList[i]; } });`,
   insertParent);
 const appended = vm.createContext({});
 vm.runInContext(domRealm, appended);
@@ -400,6 +401,18 @@ vm.runInContext(domRealm, parsed);
 insertParent.pendingFrame = vm.runInContext('globalThis', parsed);
 vm.runInContext("new Element().innerHTML = '<iframe></iframe>'", insertParent);
 assert.equal(vm.runInContext('typeof RTCPeerConnection', parsed), 'undefined', 'An innerHTML insertion must lock its frames too');
+const replacedBody = vm.createContext({});
+vm.runInContext(domRealm, replacedBody);
+insertParent.pendingFrame = vm.runInContext('globalThis', replacedBody);
+vm.runInContext('theDocument.body = {}', insertParent);
+assert.equal(vm.runInContext('typeof RTCPeerConnection', replacedBody), 'undefined', 'Replacing document.body must lock its frames');
+// A page that makes WeakSet.prototype.has always true cannot make a child realm look already wrapped.
+const lyingSet = vm.createContext({});
+vm.runInContext(domRealm, lyingSet);
+insertParent.lyingWindow = vm.runInContext('globalThis', lyingSet);
+const childAppend = vm.runInContext('Node.prototype.appendChild', lyingSet);
+vm.runInContext('WeakSet.prototype.has = () => true; new Element().appendChild(lyingWindow)', insertParent);
+assert.notEqual(vm.runInContext('Node.prototype.appendChild', lyingSet), childAppend, 'The child realm must still be wrapped');
 // The frame's own document-start run on top of the parent's wrapping still locks later children.
 vm.runInContext(webRtcHardening, insertParent);
 const later = vm.createContext({});

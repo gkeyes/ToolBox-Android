@@ -39,8 +39,21 @@
     ['Document', ['append', 'prepend', 'replaceChildren', 'moveBefore', 'write', 'writeln', 'execCommand']],
     ['Range', ['insertNode', 'surroundContents']]
   ];
-  const insertSetters = [['Element', ['innerHTML', 'outerHTML']], ['ShadowRoot', ['innerHTML']]];
+  const insertSetters = [['Element', ['innerHTML', 'outerHTML']], ['ShadowRoot', ['innerHTML']], ['Document', ['body']]];
+  // WeakSet methods are captured too: a page that made `has` always true would skip a child realm's wrapping.
+  const weakHas = WeakSet.prototype.has;
+  const weakAdd = WeakSet.prototype.add;
   const ownWrappers = new WeakSet();
+  // Frames this copy has already locked once; only orders the work, never skips a lock.
+  const seenFrames = new WeakSet();
+  // An interface's prototype without a [[Get]] that a page-replaced constructor could turn into a getter.
+  const interfaceProto = (scope, type) => {
+    const ctor = getOwn(scope, type);
+    const value = ctor && ctor.value;
+    if (typeof value !== 'function') return undefined;
+    const descriptor = getOwn(value, 'prototype');
+    return descriptor && descriptor.value;
+  };
   const frameKeys = ['contentWindow', 'contentDocument'];
   // Null-prototype descriptors: a page-defined Object.prototype.get/set cannot leak into them.
   const lockedValue = enumerable =>
@@ -77,8 +90,7 @@
   // The initial about:blank of an iframe appended in the same task may exist before the
   // document-start script reaches it, so a parent must not get its window or document unlocked.
   const wrapFrameAccessors = (scope, type) => {
-    const ctor = getOwn(scope, type);
-    const proto = ctor && ctor.value && ctor.value.prototype;
+    const proto = interfaceProto(scope, type);
     if (!proto) return;
     const windowDescriptor = getOwn(proto, 'contentWindow');
     if (!windowDescriptor || typeof windowDescriptor.get !== 'function') return;
@@ -124,13 +136,25 @@
     }
   };
 
+  // Frames not seen before are locked first, so re-locking an older frame (which reads that realm's
+  // page-controlled globals) cannot run page code while a new frame is still open.
   const lockChildFrames = view => {
     let count = 0;
     try { count = lengthOf ? apply(lengthOf, view, []) : 0; } catch (_) { return; }
+    const children = [];
     for (let i = 0; i < count; i++) {
-      let child;
-      try { child = view[i]; } catch (_) { continue; }
-      lockFrame(child);
+      try { children[i] = view[i]; } catch (_) {}
+    }
+    for (let pass = 0; pass < 2; pass++) {
+      for (let i = 0; i < count; i++) {
+        const child = children[i];
+        if (child === undefined || child === null) continue;
+        let seen = true;
+        try { seen = apply(weakHas, seenFrames, [child]); } catch (_) {}
+        if (seen !== (pass === 1)) continue;
+        lockFrame(child);
+        try { apply(weakAdd, seenFrames, [child]); } catch (_) {}
+      }
     }
   };
 
@@ -142,20 +166,19 @@
 
   const wrapInsertions = scope => {
     const wrap = (type, keys, setter) => {
-      const ctor = getOwn(scope, type);
-      const proto = ctor && ctor.value && ctor.value.prototype;
+      const proto = interfaceProto(scope, type);
       if (!proto) return;
       for (let i = 0; i < keys.length; i++) {
         const key = keys[i];
         const descriptor = getOwn(proto, key);
         if (!descriptor || descriptor.configurable === false) continue;
         const original = setter ? descriptor.set : descriptor.value;
-        if (typeof original !== 'function' || ownWrappers.has(original)) continue;
+        if (typeof original !== 'function' || apply(weakHas, ownWrappers, [original])) continue;
         // Method shorthand: named like the original and not constructible.
         const wrapper = setter
           ? getOwn({ set [key](value) { try { apply(original, this, [value]); } finally { afterInsert(this); } } }, key).set
           : { [key](...args) { try { return apply(original, this, args); } finally { afterInsert(this); } } }[key];
-        ownWrappers.add(wrapper);
+        apply(weakAdd, ownWrappers, [wrapper]);
         define(proto, key, setter
           ? { __proto__: null, get: descriptor.get, set: wrapper, enumerable: descriptor.enumerable, configurable: true }
           : { __proto__: null, value: wrapper, writable: descriptor.writable, enumerable: descriptor.enumerable,
