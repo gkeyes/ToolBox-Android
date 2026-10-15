@@ -60,6 +60,9 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
@@ -145,6 +148,8 @@ internal fun RuntimeShellScreen(
         }
     }
     val immersiveNavigationBar = isHyperOsGestureNavigation(LocalContext.current)
+    // Last finger-down on the page; a touch ends a run of Backs the page took (see RuntimeExitConfirmation).
+    var pageTouchedAt by remember { mutableLongStateOf(0L) }
     ToolBoxRuntimeScaffold(
         modifier = Modifier
             .fillMaxSize()
@@ -155,7 +160,16 @@ internal fun RuntimeShellScreen(
     ) {
         Box(
             modifier = Modifier
-                .fillMaxSize(),
+                .fillMaxSize()
+                .pointerInput(Unit) {
+                    // Watches only: nothing is consumed, so the page keeps every touch.
+                    awaitPointerEventScope {
+                        while (true) {
+                            val event = awaitPointerEvent(PointerEventPass.Initial)
+                            if (event.type == PointerEventType.Press) pageTouchedAt = SystemClock.elapsedRealtime()
+                        }
+                    }
+                },
         ) {
             when (val current = state) {
                 RuntimeUiState.Loading -> RuntimeCenteredState(runtimeLoadingTitle(toolName), "正在准备页面。")
@@ -188,6 +202,7 @@ internal fun RuntimeShellScreen(
                     onConfirm = { viewModel.requestExit(onBack) },
                     toolName = toolName,
                     askPage = ready?.webView?.let { webView -> { answer: (Boolean) -> Unit -> askPageToHandleBack(webView, answer) } },
+                    pageTouchedAt = { pageTouchedAt },
                     modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 48.dp),
                 )
             }
@@ -372,7 +387,7 @@ private const val RUNTIME_PAGE_BACK_SCRIPT =
 /** A page busy for longer than this is treated as not handling Back, so Back never feels dead. */
 private const val RUNTIME_PAGE_BACK_TIMEOUT_MS = 400L
 
-/** Backs in a row the page may take within the exit window before the host takes the next one. */
+/** Backs in a row the page may take, with no touch on the page between them, before the host takes the next one. */
 private const val PAGE_BACK_STREAK = 2
 
 /**
@@ -390,6 +405,7 @@ internal fun RuntimeExitConfirmation(
     toolName: String?,
     modifier: Modifier = Modifier,
     askPage: ((answer: (Boolean) -> Unit) -> Unit)? = null,
+    pageTouchedAt: () -> Long = { 0L },
 ) {
     val hintText = remember(toolName) { runtimeExitHint(toolName) }
     var lastBackAt by remember { mutableLongStateOf(0L) }
@@ -415,9 +431,11 @@ internal fun RuntimeExitConfirmation(
     // While the page is deciding, one further Back waits for its answer instead of being lost.
     var askingPage by remember { mutableStateOf(false) }
     var pendingBackAt by remember { mutableLongStateOf(0L) }
-    // When the page took the last two Backs within the window, the next one goes to the host, so a
-    // page that cancels every Back can't trap the user without a way out.
-    val pageTookBackAt = remember { LongArray(PAGE_BACK_STREAK) }
+    // After the page took two Backs in a row, the next one goes to the host however slowly they
+    // came, so a page that cancels every Back can't trap the user. A touch on the page (opening
+    // another panel) or a Back the host took starts the count again.
+    var pageBackStreak by remember { mutableIntStateOf(0) }
+    var pageTookLastBackAt by remember { mutableLongStateOf(0L) }
     var disposed by remember { mutableStateOf(false) }
     DisposableEffect(Unit) { onDispose { disposed = true } }
     val currentAskPage by rememberUpdatedState(askPage)
@@ -436,11 +454,12 @@ internal fun RuntimeExitConfirmation(
 
     fun offerBack(now: Long) {
         val ask = currentAskPage
-        val pageKeepsBack = pageTookBackAt.all { it != 0L && now - it <= RUNTIME_EXIT_BACK_WINDOW_MS }
+        if (pageTouchedAt() > pageTookLastBackAt) pageBackStreak = 0
+        val pageKeepsBack = pageBackStreak >= PAGE_BACK_STREAK
         // While the exit hint shows, the next Back confirms it rather than going to the page again.
         val hintShowing = shouldExitRuntimeOnBack(lastBackAt, now)
         if (ask == null || pageKeepsBack || hintShowing) {
-            pageTookBackAt.fill(0L)
+            pageBackStreak = 0
             exitBack(now)
             return
         }
@@ -449,10 +468,10 @@ internal fun RuntimeExitConfirmation(
             if (disposed) return@ask
             askingPage = false
             if (handled) {
-                pageTookBackAt.copyInto(pageTookBackAt, 0, 1)
-                pageTookBackAt[PAGE_BACK_STREAK - 1] = now
+                pageBackStreak++
+                pageTookLastBackAt = SystemClock.elapsedRealtime()
             } else {
-                pageTookBackAt.fill(0L)
+                pageBackStreak = 0
                 exitBack(now)
             }
             val pending = pendingBackAt
