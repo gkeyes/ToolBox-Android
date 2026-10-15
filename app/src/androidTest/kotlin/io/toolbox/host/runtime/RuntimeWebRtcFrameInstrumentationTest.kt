@@ -38,7 +38,8 @@ import org.junit.runner.RunWith
 
 /**
  * SEC-X1: WebRTC must be gone in every frame of a real tool WebView, including a sandboxed
- * srcdoc iframe whose origin is opaque and a same-origin about:blank iframe.
+ * srcdoc iframe whose origin is opaque, a same-origin about:blank iframe, and an iframe whose
+ * contentWindow/contentDocument is read in the same task as its appendChild.
  */
 @RunWith(AndroidJUnit4::class)
 class RuntimeWebRtcFrameInstrumentationTest {
@@ -61,6 +62,22 @@ class RuntimeWebRtcFrameInstrumentationTest {
             Files.write(bundle.resolve("app.js"), """
                 const probe = scope => typeof scope.RTCPeerConnection + '|' + (scope.__toolboxWebRtcBlocked === true);
                 window.mainProbe = probe(window);
+                // Same task as appendChild: the child's initial about:blank may not have run the
+                // document-start script yet, so the parent's frame accessors must lock it first.
+                const sameTaskProbe = read => {
+                  const frame = document.createElement('iframe');
+                  document.body.appendChild(frame);
+                  let type;
+                  let created;
+                  let marked;
+                  try { const child = read(frame); type = typeof child.RTCPeerConnection; marked = child.__toolboxWebRtcBlocked === true; }
+                  catch (error) { type = 'threw:' + error; }
+                  try { new (read(frame).RTCPeerConnection)({ iceServers: [] }); created = 'constructed'; }
+                  catch (_) { created = 'blocked'; }
+                  return type + '|' + created + '|' + marked;
+                };
+                window.sameTaskWindowProbe = sameTaskProbe(frame => frame.contentWindow);
+                window.sameTaskDocumentProbe = sameTaskProbe(frame => frame.contentDocument.defaultView);
                 window.srcdocProbe = null;
                 window.addEventListener('message', event => {
                   if (event.data && typeof event.data.rtcProbe === 'string') window.srcdocProbe = event.data.rtcProbe;
@@ -124,6 +141,8 @@ class RuntimeWebRtcFrameInstrumentationTest {
 
             await { evaluate(view, "typeof window.mainProbe") == "\"string\"" }
             assertEquals("\"undefined|true\"", evaluate(view, "window.mainProbe"))
+            assertEquals("\"undefined|blocked|true\"", evaluate(view, "window.sameTaskWindowProbe"))
+            assertEquals("\"undefined|blocked|true\"", evaluate(view, "window.sameTaskDocumentProbe"))
             await { evaluate(view, "window.srcdocProbe !== null") == "true" }
             val srcdoc = evaluate(view, "window.srcdocProbe")
             assertTrue("The sandboxed srcdoc frame must be opaque: $srcdoc", srcdoc.endsWith("|null\""))

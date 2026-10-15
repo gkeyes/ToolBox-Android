@@ -320,6 +320,56 @@ const bareFrame = vm.createContext({});
 vm.runInContext(webRtcHardening, bareFrame);
 assert.equal(vm.runInContext('globalThis.__toolboxWebRtcBlocked', bareFrame), true);
 assert.equal(vm.runInContext('typeof RTCPeerConnection', bareFrame), 'undefined');
+// A marker pre-set by a parent page must not make the script skip the lock.
+const forgedFrame = vm.createContext({});
+vm.runInContext('globalThis.RTCPeerConnection = class RTCPeerConnection {}; globalThis.__toolboxWebRtcBlocked = true;',
+  forgedFrame);
+vm.runInContext(webRtcHardening, forgedFrame);
+assert.equal(vm.runInContext('typeof RTCPeerConnection', forgedFrame), 'undefined', 'A forged marker must not skip the lock');
+assert.equal(vm.runInContext(`Object.getOwnPropertyDescriptor(globalThis, '__toolboxWebRtcBlocked').configurable`, forgedFrame),
+  false);
+// A same-task iframe: the parent reads contentWindow/contentDocument before the child's own
+// document-start script has run. The parent's frame accessors must lock the child first, with the
+// same lock (including the child's own frame accessors), and the child's later run must still pass.
+const frameRealm = `class HTMLIFrameElement {
+    constructor(win) { this.win = win; }
+    get contentWindow() { return this.win; }
+    get contentDocument() { return this.win ? this.win.doc : null; }
+  }
+  globalThis.HTMLIFrameElement = HTMLIFrameElement;
+  globalThis.RTCPeerConnection = class RTCPeerConnection {};
+  globalThis.RTCDataChannel = class RTCDataChannel {};
+  globalThis.doc = { kind: 'document' };`;
+const parentFrame = vm.createContext({});
+vm.runInContext(frameRealm, parentFrame);
+vm.runInContext(webRtcHardening, parentFrame);
+const childFrame = vm.createContext({});
+vm.runInContext(frameRealm, childFrame);
+parentFrame.childWindow = vm.runInContext('globalThis', childFrame);
+assert.equal(vm.runInContext('typeof new HTMLIFrameElement(childWindow).contentWindow.RTCPeerConnection', parentFrame),
+  'undefined', 'contentWindow must hand out a locked child');
+assert.equal(vm.runInContext(`(() => { try { new (new HTMLIFrameElement(childWindow).contentWindow.RTCPeerConnection)();
+  return 'constructed'; } catch (_) { return 'blocked'; } })()`, parentFrame), 'blocked');
+assert.equal(vm.runInContext('typeof RTCDataChannel', childFrame), 'undefined');
+assert.equal(vm.runInContext('__toolboxWebRtcBlocked', childFrame), true);
+assert.equal(vm.runInContext(`Object.getOwnPropertyDescriptor(HTMLIFrameElement.prototype, 'contentWindow').configurable`,
+  childFrame), false, 'The child realm gets the same frame-accessor lock');
+vm.runInContext(webRtcHardening, childFrame);
+assert.equal(vm.runInContext('typeof RTCPeerConnection', childFrame), 'undefined', 'The child document-start run is harmless');
+const docChild = vm.createContext({});
+vm.runInContext(frameRealm, docChild);
+parentFrame.docChildWindow = vm.runInContext('globalThis', docChild);
+assert.equal(vm.runInContext('new HTMLIFrameElement(docChildWindow).contentDocument.kind', parentFrame), 'document');
+assert.equal(vm.runInContext('typeof RTCPeerConnection', docChild), 'undefined', 'contentDocument must lock the child too');
+assert.throws(() => vm.runInContext(`'use strict'; Object.defineProperty(HTMLIFrameElement.prototype, 'contentWindow',
+  { get() { return null; } });`, parentFrame), 'The wrapped accessor must not be replaceable');
+// A child that cannot be locked: same-origin (document readable) is hidden, cross-origin is left to its own script.
+parentFrame.stuck = vm.runInContext(`Object.defineProperty(globalThis, 'RTCPeerConnection',
+  { value: function () {}, writable: false, configurable: false }); globalThis`, vm.createContext({ document: {} }));
+assert.equal(vm.runInContext('new HTMLIFrameElement(stuck).contentWindow', parentFrame), null);
+parentFrame.crossOrigin = new Proxy({}, { get() { throw new Error('SecurityError'); },
+  getOwnPropertyDescriptor() { throw new Error('SecurityError'); } });
+assert.equal(vm.runInContext('new HTMLIFrameElement(crossOrigin).contentWindow === crossOrigin', parentFrame), true);
 
 const forbidden = [/\.addJavascriptInterface\s*\(/, /setAllowUniversalAccessFromFileURLs\(true\)/, /allowUniversalAccessFromFileURLs\s*=\s*true/];
 for (const module of ['app', 'tool-runtime']) {
