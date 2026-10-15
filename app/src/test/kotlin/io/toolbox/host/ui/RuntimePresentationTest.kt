@@ -78,6 +78,17 @@ class RuntimePresentationTest {
     }
 
     @Test
+    fun aTapFromTheGestureEdgeCountsOnlyWellApartFromABack() {
+        val streak = PageBackStreak()
+        streak.pageTook(10_000L)
+        streak.pageTook(11_000L)
+        // Lifted 400 ms before this press after starting at the edge: likely the swipe itself.
+        assertTrue(streak.hostTakes(12_000L, pageTouchedAt = 11_600L, fromGestureEdge = true))
+        // An edge tap that opened a panel a second before the next Back restarts the count.
+        assertTrue(!streak.hostTakes(13_000L, pageTouchedAt = 11_900L, fromGestureEdge = true))
+    }
+
+    @Test
     fun aHostTakenBackRestartsTheCount() {
         val streak = PageBackStreak()
         streak.pageTook(10_000L)

@@ -22,6 +22,9 @@ internal const val PAGE_BACK_STREAK = 2
  */
 internal const val PAGE_TOUCH_NEAR_BACK_MS = 150L
 
+/** The same for a touch that started inside the side system gesture insets, where a Back swipe begins. */
+internal const val PAGE_EDGE_TOUCH_NEAR_BACK_MS = 500L
+
 /**
  * Counts the Backs a running page took in a row, so a page that cancels every Back can't trap the
  * user: after [PAGE_BACK_STREAK] of them the next Back goes to the host, however slowly they came.
@@ -31,9 +34,14 @@ internal class PageBackStreak {
     private var count = 0
     private var lastPageBackAt = 0L
 
-    /** Whether the Back pressed at [now] goes to the host without asking the page. */
-    fun hostTakes(now: Long, pageTouchedAt: Long): Boolean {
-        if (pageTouchedAt - lastPageBackAt > PAGE_TOUCH_NEAR_BACK_MS && now - pageTouchedAt > PAGE_TOUCH_NEAR_BACK_MS) {
+    /**
+     * Whether the Back pressed at [now] goes to the host without asking the page. [pageTouchedAt] is
+     * when a finger last lifted on the page; [fromGestureEdge] says that touch started inside the
+     * side system gesture insets, so it needs a wider gap from a Back to count as a real tap.
+     */
+    fun hostTakes(now: Long, pageTouchedAt: Long, fromGestureEdge: Boolean = false): Boolean {
+        val near = if (fromGestureEdge) PAGE_EDGE_TOUCH_NEAR_BACK_MS else PAGE_TOUCH_NEAR_BACK_MS
+        if (pageTouchedAt - lastPageBackAt > near && now - pageTouchedAt > near) {
             count = 0
         }
         return count >= PAGE_BACK_STREAK
