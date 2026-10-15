@@ -46,7 +46,7 @@ class BrowserActivity : ComponentActivity() {
     private val mediaLayoutCompatScript by lazy {
         applicationContext.assets.open("browser/media-layout-compat.js").bufferedReader().use { it.readText() }
     }
-    private val ssl = BrowserSslController { state.webView }
+    private val ssl = BrowserSslController({ state.webView }) { state.certificateBypassed = it }
     private val capabilities = BrowserCapabilityController(this) { it === state.webView }
     private val navigation = BrowserNavigationController(
         context = this,

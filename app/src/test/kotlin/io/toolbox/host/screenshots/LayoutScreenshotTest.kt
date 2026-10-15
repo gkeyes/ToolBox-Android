@@ -25,6 +25,7 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isRoot
 import androidx.compose.ui.test.onFirst
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
@@ -365,6 +366,37 @@ class LayoutScreenshotTest(private val fontScale: Float) {
         val layout = layouts.single()
         assertEquals("example.com", layout.layoutInput.text.text)
         assertFalse("domain is cut at font $fontScale", layout.isLineEllipsized(0) || layout.hasVisualOverflow)
+    }
+
+    /** A long domain may still be cut, but never below the 10dp floor; insecure pages keep their warning. */
+    @Test fun browserLongDomainStaysAboveFloor() {
+        val state = BrowserUiState().apply { address = "https://www.bankofamerica.com/login" }
+        compose.setContent {
+            val context = LocalContext.current
+            val scope = rememberCoroutineScope()
+            val filters = androidx.compose.runtime.remember { BrowserFilterController(context, scope) }
+            ToolBoxTheme { BrowserBottomBar(state, filters, NoBrowserActions) }
+        }
+        fun check(label: String, warning: String?) {
+            compose.waitForIdle()
+            val node = compose.onNodeWithTag("browser_address_host", useUnmergedTree = true).fetchSemanticsNode()
+            val layouts = mutableListOf<TextLayoutResult>()
+            node.config[SemanticsActions.GetTextLayoutResult].action?.invoke(layouts)
+            val layout = layouts.single()
+            assertEquals("bankofamerica.com", layout.layoutInput.text.text)
+            val size = with(compose.density) { layout.layoutInput.style.fontSize.toDp() }
+            assertTrue("$label @${fontScale}x: domain shrank to $size, below the 10dp floor", size >= 9.9.dp)
+            if (warning != null) compose.onNodeWithContentDescription(warning, useUnmergedTree = true).assertExists()
+        }
+        check("https", null)
+        state.address = "http://www.bankofamerica.com/login"
+        check("http", "HTTP 页面")
+        state.address = "https://www.bankofamerica.com/login"
+        state.certificateBypassed = true
+        check("certificate bypassed", "证书有问题的页面")
+        state.certificateBypassed = false
+        state.mixedContent = true
+        check("mixed content", "含不安全内容的页面")
     }
 
     private object NoBrowserActions : BrowserScreenActions {

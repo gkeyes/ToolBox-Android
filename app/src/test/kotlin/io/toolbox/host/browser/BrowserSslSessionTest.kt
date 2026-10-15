@@ -18,7 +18,8 @@ class BrowserSslSessionTest {
         var current: Any? = Any()
         val view: Any get() = requireNotNull(current)
         val cleared = mutableListOf<Any>()
-        val session = BrowserSslSession({ current }, { cleared.add(it) })
+        var bypassed = false
+        val session = BrowserSslSession({ current }, { cleared.add(it) }, bypassChanged = { bypassed = it })
 
         fun request(url: String = "https://example.test/", page: Any = view): Connection =
             Connection().also {
@@ -59,6 +60,44 @@ class BrowserSslSessionTest {
         assertEquals(0, resource.cancelled)
         assertEquals(1, f.session.size)
         assertEquals(clearsBeforeStart, f.cleared.size)
+    }
+
+    @Test fun proceedingMarksThePageInsecureUntilTheSessionEnds() {
+        val f = Fixture()
+        f.session.navigationRequested(f.view, "https://example.test/")
+        f.request()
+        f.request("https://cdn.other.test/image")
+        f.session.resolve(requireNotNull(f.session.first).id, false)
+        assertFalse(f.bypassed)
+        f.session.resolve(requireNotNull(f.session.first).id, true)
+        assertTrue(f.bypassed)
+        // The announced start after proceed() is the same page, so the warning stays.
+        assertFalse(f.session.navigationStarted(f.view, "https://example.test/"))
+        assertTrue(f.bypassed)
+        f.session.navigationRequested(f.view, "https://example.test/next")
+        assertFalse(f.bypassed)
+        f.request()
+        f.session.resolve(requireNotNull(f.session.first).id, true)
+        assertTrue(f.bypassed)
+        // Stop cancels the requests but the allowed document stays visible, and so does its warning.
+        f.session.destroyPage(f.view)
+        assertTrue(f.bypassed)
+        f.session.navigationRequested(f.view, "https://example.test/again")
+        assertFalse(f.bypassed)
+    }
+
+    @Test fun unannouncedStartAfterProceedKeepsTheWarning() {
+        val f = Fixture()
+        f.session.navigationRequested(f.view, "https://example.test/")
+        assertFalse(f.session.navigationStarted(f.view, "https://example.test/"))
+        // A script navigation the host never announced hits a bad certificate before its start.
+        f.request("https://other.test/")
+        f.session.resolve(requireNotNull(f.session.first).id, true)
+        assertTrue(f.session.navigationStarted(f.view, "https://other.test/"))
+        assertTrue(f.bypassed)
+        // The next unannounced page started without any allowance is clean again.
+        assertTrue(f.session.navigationStarted(f.view, "https://third.test/"))
+        assertFalse(f.bypassed)
     }
 
     @Test fun sslBeforeFirstStartAlsoWorksWithoutAnAnnouncedNavigation() {
