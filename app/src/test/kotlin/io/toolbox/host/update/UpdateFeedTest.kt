@@ -44,6 +44,17 @@ class UpdateFeedTest {
     }
 
     @Test
+    fun matchesToolsImportedUnderTheOwnersOriginalId() {
+        val asset = ReleaseAsset("zhuzhang-v1.2.0.tbx", "u", 0, null)
+        val zhuzhang = ToolPackage("zhuzhang", "1.2.0", asset)
+        assertTrue(zhuzhang.matches("io.gkeyes.zhuzhang"))
+        assertFalse(zhuzhang.matches("io.toolbox.zhuzhang"))
+        assertFalse(zhuzhang.matches("com.someone.zhuzhang"))
+        // Other examples ship as io.toolbox.*, so an unrelated io.gkeyes tool must not be offered their update.
+        assertFalse(ToolPackage("game-2048", "1.0.0", asset).matches("io.gkeyes.game2048"))
+    }
+
+    @Test
     fun testChannelKeepsTheNewerPackagePerTool() {
         val asset = ReleaseAsset("x", "u", 0, null)
         val merged = UpdateFeedParser.mergeTools(
