@@ -133,12 +133,14 @@ private class WindowCopyBackdrop(
             (copy.image.width / copy.scale).roundToInt(),
             (copy.image.height / copy.scale).roundToInt(),
         )
-        val scale = layerScale?.invoke() ?: run {
-            val width = node.size.width.toFloat()
-            if (width <= 0f) 1f else (node.localToRoot(Offset(width, 0f)) - node.localToRoot(Offset.Zero)).x / width
-        }
-        val inverse = 1f / scale.coerceAtLeast(0.01f)
-        scale(inverse, inverse, pivot = Offset.Zero) {
+        // Each axis on its own: a button stretched by a drag scales x and y differently.
+        val fixed = layerScale?.invoke()
+        val zero = node.localToRoot(Offset.Zero)
+        val width = node.size.width.toFloat()
+        val height = node.size.height.toFloat()
+        val scaleX = fixed ?: if (width <= 0f) 1f else (node.localToRoot(Offset(width, 0f)) - zero).x / width
+        val scaleY = fixed ?: if (height <= 0f) 1f else (node.localToRoot(Offset(0f, height)) - zero).y / height
+        scale(1f / scaleX.coerceAtLeast(0.01f), 1f / scaleY.coerceAtLeast(0.01f), pivot = Offset.Zero) {
             translate(-origin.x, -origin.y) {
                 drawImage(copy.image, dstOffset = IntOffset.Zero, dstSize = pageSize)
             }
