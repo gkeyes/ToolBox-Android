@@ -216,7 +216,8 @@ internal class HostBackupService(
         val taskIds = mutableSetOf<String>()
         val plans = prepared.contents.tools.mapIndexed { index, tool ->
             val folder = File(prepared.directory, "tools/${tool.id}")
-            val manifest = restorablePackage(inspector.validate(FilePackageInput(File(folder, "package.tbx"))))?.manifest
+            val valid = restorablePackage(inspector.validate(FilePackageInput(File(folder, "package.tbx"))))
+            val manifest = valid?.manifest
             if (manifest != null && (manifest.id != tool.id || manifest.versionCode != tool.versionCode || manifest.version != tool.version)) throw BackupException("INDEX")
             val metadata = J.read(File(folder, "metadata.json"))
             if (metadata["id"] != tool.id || J.int(metadata["versionCode"]) != tool.versionCode) throw BackupException("INDEX")
@@ -239,7 +240,7 @@ internal class HostBackupService(
                 } catch (_: Exception) {
                     null to true
                 }
-                when (val identity = restoreIdentity(installed, installedKey.first, installedKey.second, result.signingKeyId, result.manifest.versionCode, result.integrityHash)) {
+                when (val identity = restoreIdentity(installed, installedKey.first, installedKey.second, checkNotNull(valid).signingKeyId, valid.manifest.versionCode, valid.integrityHash)) {
                     RestoreIdentity.Replace -> Unit
                     RestoreIdentity.KeepInstalled -> {
                         keepInstalled = true
