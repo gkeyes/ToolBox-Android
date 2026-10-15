@@ -41,6 +41,7 @@ internal class HostRuntimeBridgeProvider(
             context = applicationContext,
             toolId = runtime.toolId,
             toolName = runtime.installedManifest.name,
+            toolShortName = runtime.installedManifest.shortName,
             requireForegroundRuntime = continuity.requireForegroundRuntime,
             authorizeBrowserLaunch = {
                 val current = (installedManifests.read(runtime.toolId) as? HostInstalledManifestResult.Found)?.manifest

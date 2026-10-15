@@ -50,6 +50,29 @@ class RuntimeManifestUiTest {
     }
 
     @Test
+    fun orientationStaysLockedWhileTheRuntimeReloadsOrFails() {
+        var shown by mutableStateOf(true)
+        var readyUi by mutableStateOf<ManifestUi?>(ManifestUi(orientation = ManifestOrientation.PORTRAIT))
+        compose.setContent { if (shown) ApplyRetainedRuntimeManifestUi(readyUi) }
+        compose.waitForIdle()
+        assertEquals(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT, compose.activity.requestedOrientation)
+
+        // Loading or Error: no ready manifest, the lock stays.
+        readyUi = null
+        compose.waitForIdle()
+        assertEquals(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT, compose.activity.requestedOrientation)
+
+        // Ready again after an update that changed the declared orientation.
+        readyUi = ManifestUi(orientation = ManifestOrientation.LANDSCAPE)
+        compose.waitForIdle()
+        assertEquals(ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE, compose.activity.requestedOrientation)
+
+        shown = false
+        compose.waitForIdle()
+        assertEquals(ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED, compose.activity.requestedOrientation)
+    }
+
+    @Test
     fun unspecifiedOrientationLeavesTheHostAlone() {
         compose.setContent { ApplyRuntimeManifestUi(ManifestUi(orientation = ManifestOrientation.UNSPECIFIED)) }
         compose.waitForIdle()

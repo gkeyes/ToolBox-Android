@@ -327,6 +327,7 @@ private fun CatalogEntry.toCatalogTool(nameSortKey: String) = CatalogTool(
     lastOpenedAt = lastOpenedAt,
     installedAt = installedAt,
     nameSortKey = nameSortKey,
+    category = categoryId,
 )
 
 /** Android's ICU transliterator handles Han names without a bundled dictionary or network access. */

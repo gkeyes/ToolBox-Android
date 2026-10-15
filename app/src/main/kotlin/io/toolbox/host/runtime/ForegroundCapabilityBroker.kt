@@ -213,7 +213,7 @@ internal class ForegroundCapabilityBroker private constructor(
         activity.startActivity(Intent.createChooser(send, "分享"))
     }
 
-    private suspend fun pinShortcut(toolId: String, label: String, requireForegroundRuntime: () -> Unit): Boolean {
+    private suspend fun pinShortcut(toolId: String, labels: ShortcutLabels, requireForegroundRuntime: () -> Unit): Boolean {
         ensureActive()
         // One stable token per tool: the launcher keeps the intent of an already pinned shortcut,
         // so rotating the token would leave that home-screen icon holding a dead token.
@@ -238,7 +238,8 @@ internal class ForegroundCapabilityBroker private constructor(
                     .putExtra(EXTRA_SHORTCUT_TOKEN, route.token)
                     .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
                 val shortcut = ShortcutInfo.Builder(activity, route.shortcutId)
-                    .setShortLabel(label)
+                    .setShortLabel(labels.short)
+                    .setLongLabel(labels.long)
                     .setIcon(Icon.createWithResource(activity, R.mipmap.ic_launcher))
                     .setIntent(launchIntent)
                     .build()
@@ -516,6 +517,8 @@ internal class ForegroundCapabilityBroker private constructor(
 
     private data class CreateDocumentRequest(val name: String, val mimeType: String)
     private data class ShortcutRoute(val token: String, val shortcutId: String)
+
+    internal data class ShortcutLabels(val short: String, val long: String)
     private class CreateDocumentContract : ActivityResultContract<CreateDocumentRequest, Uri?>() {
         override fun createIntent(context: Context, input: CreateDocumentRequest): Intent =
             Intent(Intent.ACTION_CREATE_DOCUMENT)
@@ -548,6 +551,7 @@ internal class ForegroundCapabilityBroker private constructor(
             context: Context,
             toolId: String,
             toolName: String,
+            toolShortName: String? = null,
             requireForegroundRuntime: () -> Unit = {
                 throw RuntimeHandlerException(RuntimeRpcErrorCode.SESSION_ENDED, "No foreground tool session is available")
             },
@@ -571,12 +575,23 @@ internal class ForegroundCapabilityBroker private constructor(
                     }
                 },
                 files = files,
-                shortcuts = RuntimeShortcutHandler { name -> withForeground(requireForegroundRuntime) { it.pinShortcut(toolId, name ?: toolName, requireForegroundRuntime) } },
+                shortcuts = RuntimeShortcutHandler { name -> withForeground(requireForegroundRuntime) { it.pinShortcut(toolId, shortcutLabels(name, toolShortName, toolName), requireForegroundRuntime) } },
                 camera = files,
                 location = RuntimeLocationHandler { precise, timeout -> withForeground(requireForegroundRuntime) { it.getCurrentLocation(precise, timeout) } },
                 sessionCleanup = files,
             )
         }
+
+        /**
+         * A name the tool passes wins for both labels. Otherwise the launcher's short label is the
+         * manifest `shortName` (when it has one) and the long label is the full tool name.
+         */
+        internal fun shortcutLabels(requested: String?, shortName: String?, name: String): ShortcutLabels =
+            if (requested != null) {
+                ShortcutLabels(requested, requested)
+            } else {
+                ShortcutLabels(shortName?.takeIf { it.isNotBlank() } ?: name, name)
+            }
 
         private suspend fun <T> withForeground(requireForegroundRuntime: () -> Unit, action: suspend (ForegroundCapabilityBroker) -> T): T =
             withContext(Dispatchers.Main.immediate) {

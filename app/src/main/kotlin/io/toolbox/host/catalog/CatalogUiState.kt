@@ -15,6 +15,8 @@ data class CatalogTool(
     val lastOpenedAt: Long?,
     val installedAt: Long = 0L,
     val nameSortKey: String = name.lowercase(Locale.ROOT),
+    /** The manifest's first `categories` entry; search matches it. */
+    val category: String? = null,
 )
 
 @Immutable
@@ -162,7 +164,9 @@ internal fun List<CatalogTool>.filteredBy(query: String): List<CatalogTool> {
     val value = query.trim()
     if (value.isEmpty()) return this
     return filter { tool ->
-        tool.name.contains(value, ignoreCase = true) || tool.toolId.contains(value, ignoreCase = true)
+        tool.name.contains(value, ignoreCase = true) ||
+            tool.toolId.contains(value, ignoreCase = true) ||
+            tool.category?.contains(value, ignoreCase = true) == true
     }
 }
 

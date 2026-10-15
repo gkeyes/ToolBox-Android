@@ -48,6 +48,23 @@ class ManifestUiTest {
         }
     }
 
+    @Test
+    fun installedManifestCarriesShortNameAndCategories() {
+        val bytes = String(manifest(null)).replace(
+            "\"name\":\"Ui\"",
+            "\"name\":\"Ui\",\"shortName\":\"U\",\"categories\":[\"开发\",\"效率\"]",
+        ).toByteArray()
+        val verified = InstalledManifestVerifier.verify(bytes, "com.example.ui", 1, CatalogSecurityProfile.STRICT)
+        val installed = (verified as InstalledManifestVerification.Verified).manifest
+        assertEquals("U", installed.shortName)
+        assertEquals(listOf("开发", "效率"), installed.categories)
+
+        val plain = (InstalledManifestVerifier.verify(manifest(null), "com.example.ui", 1, CatalogSecurityProfile.STRICT)
+            as InstalledManifestVerification.Verified).manifest
+        assertEquals(null, plain.shortName)
+        assertEquals(emptyList<String>(), plain.categories)
+    }
+
     private fun installedUi(block: String?): ManifestUi {
         val verified = InstalledManifestVerifier.verify(manifest(block), "com.example.ui", 1, CatalogSecurityProfile.STRICT)
         assertTrue(verified.toString(), verified is InstalledManifestVerification.Verified)
