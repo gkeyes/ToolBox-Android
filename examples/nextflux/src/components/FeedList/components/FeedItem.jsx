@@ -60,7 +60,7 @@ const FeedItem = ({ feed, active, count }) => {
         asChild
         isActive={active}
         className={cn(
-          "pl-[44px] pr-3",
+          "flex-wrap gap-x-[12px] gap-y-0 pl-[44px] pr-[12px]",
           active && "active-feed",
         )}
       >
@@ -70,7 +70,9 @@ const FeedItem = ({ feed, active, count }) => {
           onContextMenu={handleContextMenu}
         >
           <FeedIcon feedId={feed.id} />
-          <span className="flex-1 flex min-w-0 items-center gap-1">
+          {/* At large text on a narrow sidebar the name keeps room for a few
+              characters and the count moves to the next line. */}
+          <span className="flex-1 flex min-w-[min(4em,calc(100%_-_1.25rem_-_12px))] items-center gap-1">
             {feed.parsing_error_count > 0 && (
               <span className="text-warning">
                 <TriangleAlert className="size-4" />
@@ -78,7 +80,7 @@ const FeedItem = ({ feed, active, count }) => {
             )}
             <span className="min-w-0 truncate">{feed.title}</span>
           </span>
-          <span className="sidebar-badge shrink-0 ds-tnum text-[length:var(--ds-text-subhead)]">
+          <span className="sidebar-badge ml-auto shrink-0 ds-tnum text-[length:var(--ds-text-subhead)]">
             {count !== 0 && count}
           </span>
         </Link>
