@@ -627,3 +627,4 @@ body[data-page="home"] #toast.has-action{top:calc(var(--home-top,64px) + 78px);b
 /* 1.11.4: large text on a narrow screen: a 待付款 card puts its amount under the name instead of squeezing the name, and the top bar's 本地账本 wraps instead of pushing the page wider. */
 .due-list-item>.between:first-child{flex-wrap:wrap;gap:8px 12px}.due-list-item>.between:first-child>.flex{flex:1 1 11em;min-width:0}.due-list-item>.between:first-child>strong{margin-left:auto}.due-list-item h3{word-break:keep-all;overflow-wrap:anywhere}
 .top-actions{min-width:0}.top-actions>.demo-mark{white-space:normal;min-width:0}
+@media(max-width:700px){.topbar{height:auto;min-height:72px}.mobile-project{flex:0 1 auto;min-width:0}}
