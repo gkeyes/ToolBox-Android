@@ -14,12 +14,12 @@ class ToolNotificationOpensTest {
         ToolNotificationOpens.record("tool.a", "feed-2", openedAt = 3)
 
         val delivered = mutableListOf<ToolNotificationOpen>()
-        ToolNotificationOpens.deliver("tool.a") { delivered += it; true }
-        ToolNotificationOpens.deliver("tool.a") { delivered += it; true }
+        ToolNotificationOpens.deliver("tool.a", now = 10) { delivered += it; true }
+        ToolNotificationOpens.deliver("tool.a", now = 10) { delivered += it; true }
 
         assertEquals(listOf(ToolNotificationOpen("feed-1", 1), ToolNotificationOpen("feed-2", 3)), delivered)
         val other = mutableListOf<ToolNotificationOpen>()
-        ToolNotificationOpens.deliver("tool.b") { other += it; true }
+        ToolNotificationOpens.deliver("tool.b", now = 10) { other += it; true }
         assertEquals(listOf(ToolNotificationOpen("x", 2)), other)
     }
 
@@ -28,7 +28,7 @@ class ToolNotificationOpensTest {
         ToolNotificationOpens.record("tool.a", "feed-1", openedAt = 4)
 
         val delivered = mutableListOf<ToolNotificationOpen>()
-        ToolNotificationOpens.deliver("tool.a") { delivered += it; true }
+        ToolNotificationOpens.deliver("tool.a", now = 10) { delivered += it; true }
 
         assertEquals(listOf(ToolNotificationOpen("feed-1", 4)), delivered)
     }
@@ -37,9 +37,9 @@ class ToolNotificationOpensTest {
         ToolNotificationOpens.record("tool.a", "n1", openedAt = 1)
         ToolNotificationOpens.record("tool.a", "n2", openedAt = 2)
 
-        ToolNotificationOpens.deliver("tool.a") { it.notificationId == "n1" }
+        ToolNotificationOpens.deliver("tool.a", now = 10) { it.notificationId == "n1" }
         val retried = mutableListOf<String>()
-        ToolNotificationOpens.deliver("tool.a") { retried += it.notificationId; true }
+        ToolNotificationOpens.deliver("tool.a", now = 10) { retried += it.notificationId; true }
 
         assertEquals(listOf("n2"), retried)
     }
@@ -52,5 +52,27 @@ class ToolNotificationOpensTest {
         ToolNotificationOpens.record("tool.b", "n1")
 
         assertEquals(listOf("tool.a"), heard)
+    }
+
+    @Test fun aTapThePageNeverReceivedExpires() {
+        ToolNotificationOpens.record("tool.a", "old", openedAt = 1_000)
+        ToolNotificationOpens.record("tool.a", "new", openedAt = 1_000 + ToolNotificationOpens.MAX_AGE_MS)
+
+        val delivered = mutableListOf<String>()
+        ToolNotificationOpens.deliver("tool.a", now = 1_001 + ToolNotificationOpens.MAX_AGE_MS) { delivered += it.notificationId; true }
+
+        assertEquals(listOf("new"), delivered)
+    }
+
+    @Test fun discardedAndOversizedTapsAreNeverDelivered() {
+        ToolNotificationOpens.record("tool.a", "n1", openedAt = 1)
+        ToolNotificationOpens.discard("tool.a")
+        ToolNotificationOpens.record("tool.b", "x".repeat(257), openedAt = 1)
+
+        val delivered = mutableListOf<String>()
+        ToolNotificationOpens.deliver("tool.a", now = 10) { delivered += it.notificationId; true }
+        ToolNotificationOpens.deliver("tool.b", now = 10) { delivered += it.notificationId; true }
+
+        assertEquals(emptyList<String>(), delivered)
     }
 }

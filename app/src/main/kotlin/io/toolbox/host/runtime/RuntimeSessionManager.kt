@@ -312,6 +312,7 @@ internal class RuntimeSessionManager(
     }
 
     suspend fun releaseTool(toolId: String) = withContext(Dispatchers.Main.immediate) {
+        ToolNotificationOpens.discard(toolId)
         recovery.cancel(toolId)?.join()
         recoveryStatus.remove(toolId)
         // An IO preparation may not own a WebView yet. Drain it before a same-version

@@ -17,6 +17,7 @@ import io.toolbox.host.HostPackageOperations
 import io.toolbox.host.HostTrace
 import io.toolbox.host.backup.ToolExportOperations
 import io.toolbox.host.backup.ToolExportResult
+import io.toolbox.host.runtime.ToolNotificationOpens
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -236,7 +237,10 @@ internal class CatalogViewModel(
             pendingRuntimeLaunchToolId = toolId
             return
         }
-        if (state.value.tools.none { it.toolId == toolId }) return
+        if (state.value.tools.none { it.toolId == toolId }) {
+            ToolNotificationOpens.discard(toolId)
+            return
+        }
         openInstalled(toolId)
     }
 
