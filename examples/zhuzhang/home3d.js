@@ -434,10 +434,12 @@ export function createHome(api) {
       const bb = HM.bbox(RECTS, drag.e.room); if (!bb) return;
       const tx = p.x + drag.off[0], tz = p.z + drag.off[1];
       // Heading of the drag over the last ~5 cm: the wall it is pushed towards is the one it may back onto. Right after
-      // the heading point moves on, the new heading is too short to count, so the previous one stands in for it.
-      if (!drag.last) drag.last = [tx, tz]; let mv = { dx: tx - drag.last[0], dz: tz - drag.last[1] }; const len = Math.hypot(mv.dx, mv.dz);
-      if (len > .05) { drag.last = [tx, tz]; drag.hd = mv; } else if (len < .03 && drag.hd) mv = drag.hd;
-      const r = HM.clampPlacement(HM.KINDS[drag.e.model.kind], bb, tx, tz, drag.e.rot, mv);
+      // the heading point moves on, the new heading is too short to count, so the previous one stands in for it, but
+      // only while the finger still goes roughly that way (within 60°): after a turn, a stale heading would pick the
+      // wall the finger is leaving, so until the new heading counts there is none.
+      if (!drag.last) drag.last = [tx, tz]; let mv = { dx: tx - drag.last[0], dz: tz - drag.last[1] }; const len = Math.hypot(mv.dx, mv.dz), hd = drag.hd;
+      if (len > .05) { drag.last = [tx, tz]; drag.hd = mv; } else if (len < .03 && hd && (len < .01 || mv.dx * hd.dx + mv.dz * hd.dz > .5 * len * Math.hypot(hd.dx, hd.dz))) mv = hd;
+      const r = HM.clampPlacement(HM.KINDS[drag.e.model.kind], bb, tx, tz, drag.e.rot, { ...mv, on: !!drag.snap }); drag.snap = r.snap;
       Object.assign(drag.e, { x: r.x, z: r.z, rot: r.rot }); drag.e.model = { ...drag.e.model, x: +r.fx.toFixed(4), z: +r.fz.toFixed(4), rot: r.rot };
       drag.e.g.position.set(r.x, .08, r.z); drag.e.g.rotation.y = r.rot * PI / 2; updateRing(); invalidate(); return;
     }
@@ -704,7 +706,9 @@ export function createHome(api) {
   paintLabelBtn();
   // Test hooks for the screenshot script: none of these change the ledger.
   const debug = { cam, items, select: id => select(items.get(id) || null), screen: (id, h = .3) => { const e = items.get(id); if (!e) return null; const r = canvas.getBoundingClientRect(); const [x, y] = project(new THREE.Vector3(e.x, h, e.z)); return [r.left + x, r.top + y]; }, mode: () => mode, setMode, editor: () => editor.debug() };
-  return { mount, hide, sync, setUi, openPicker, lendPicker, reveal, arrange, thumbs, back, closeTopSheet, debug };
+  // ToolBox closing with 拼户型 open: save it, like 完成.
+  function flush() { if (editor.isOpen()) editor.done(); }
+  return { mount, hide, sync, setUi, openPicker, lendPicker, reveal, arrange, thumbs, back, closeTopSheet, flush, debug };
 }
 
 /* ================= 拼户型 ================= */
@@ -750,8 +754,13 @@ function createPlanEditor({ root, layer, svg, icons, esc, toast, openSheet, clos
   function close() { el.hidden = true; delete root.dataset.blocks; sel = null; drag = null; }
   function useTemplate(t, name) { const b = HM.toBlocks(t); rooms = b.blocks; baths = b.baths; sel = null; startAll = new Map(); fit(); render(); toast(`已换成${name}，再拖方块调整`); }
   // 主卫 / 公卫 renames from moving a bathroom between rooms: the ledger's records follow the new name.
+  // A drag still under the finger (Back pressed mid-drag) is undone first, so a red overlap is never what gets saved.
+  function cancelDrag() { if (!drag) return; const it = drag.it; if (it.bad && drag.o) Object.assign(it, drag.o); it.bad = false; it.drag = null; drag = null; showLines([]); showAnchors(null); }
   function done() {
+    cancelDrag();
     const home = HM.sanitizeBlocks({ blocks: rooms, baths }); if (!home) { toast('至少要留一个房间'); return; }
+    // The save never drops a block quietly: anything it would drop keeps the editor open to fix.
+    if (home.blocks.length < rooms.length || home.baths.length < baths.length) { render(); toast('有房间的位置存不了（叠在一起或太远），请调整后再按完成'); return; }
     const renames = []; for (const b of home.baths) { const was = startNames.get(b.id); if (was && was !== b.name) renames.push([was, b.name]); }
     close(); onDone(home, renames);
   }
@@ -793,13 +802,15 @@ function createPlanEditor({ root, layer, svg, icons, esc, toast, openSheet, clos
       e.setAttribute('aria-label', `${b.name}，在${host(b).name}里`);
     }
     for (const [id, e] of els) if (!live.has(id)) { e.remove(); els.delete(id); }
-    plan.querySelectorAll('.pe-hdl').forEach(h => h.remove());
     const it = byId(sel);
-    if (it && !drag) {
-      const p = it.host ? bathPos(it) : it;
-      // A bathroom's handles sit on the edges that move: the side away from the wall it is anchored to.
-      const ks = it.host ? [it.ax === 1 ? ['l', p.x, p.z + p.d / 2] : ['r', p.x + p.w, p.z + p.d / 2], it.az === 1 ? ['t', p.x + p.w / 2, p.z] : ['b', p.x + p.w / 2, p.z + p.d]] : [['l', p.x, p.z + p.d / 2], ['r', p.x + p.w, p.z + p.d / 2], ['t', p.x + p.w / 2, p.z], ['b', p.x + p.w / 2, p.z + p.d]];
-      for (const [k, x, z] of ks) { const h = document.createElement('div'); h.className = 'pe-hdl'; h.dataset.k = k; h.style.left = px(x) + 'px'; h.style.top = pz(z) + 'px'; h.setAttribute('aria-label', '拖动改大小'); plan.appendChild(h); bindHandle(h, it); }
+    // A bathroom's handles sit on the edges that move: the side away from the wall it is anchored to.
+    const keys = () => { const p = it.host ? bathPos(it) : it; return it.host ? [it.ax === 1 ? ['l', p.x, p.z + p.d / 2] : ['r', p.x + p.w, p.z + p.d / 2], it.az === 1 ? ['t', p.x + p.w / 2, p.z] : ['b', p.x + p.w / 2, p.z + p.d]] : [['l', p.x, p.z + p.d / 2], ['r', p.x + p.w, p.z + p.d / 2], ['t', p.x + p.w / 2, p.z], ['b', p.x + p.w / 2, p.z + p.d]]; };
+    // While a handle is dragged its node must stay: a touch whose target leaves the page sends no more touchmove or
+    // touchend, so the handles only follow the edge until the finger lifts.
+    if (drag && drag.handle) { const ks = keys(); for (const h of plan.querySelectorAll('.pe-hdl')) { const k = ks.find(q => q[0] === h.dataset.k); if (k) { h.style.left = px(k[1]) + 'px'; h.style.top = pz(k[2]) + 'px'; } } }
+    else {
+      plan.querySelectorAll('.pe-hdl').forEach(h => h.remove());
+      if (it && !drag) for (const [k, x, z] of keys()) { const h = document.createElement('div'); h.className = 'pe-hdl'; h.dataset.k = k; h.style.left = px(x) + 'px'; h.style.top = pz(z) + 'px'; h.setAttribute('aria-label', '拖动改大小'); plan.appendChild(h); bindHandle(h, it); }
     }
     const tot = rooms.filter(r => r.type !== '阳台').reduce((s, r) => s + r.w * r.d, 0);
     $('.pe-sum').textContent = `套内约 ${Math.round(tot)}㎡ · ${baths.length + rooms.filter(r => r.type === '卫生间').length} 个卫生间`;
@@ -838,6 +849,12 @@ function createPlanEditor({ root, layer, svg, icons, esc, toast, openSheet, clos
     const ax = q3(h.w > b.w ? (b.drag.x - h.x) / (h.w - b.w) : .5), az = q3(h.d > b.d ? (b.drag.z - h.z) / (h.d - b.d) : .5);
     return clash(b, h, ax, az) ? { h, clash: 1 } : { h, ax, az };
   }
+  // Two blocks share a name (an old L-shaped 客餐厅) only while they touch; pulled apart, the later one counts on now,
+  // the way the save would name it, so the editor never shows a name the save changes.
+  function splitNames() {
+    for (const [i, o] of rooms.entries()) { const same = rooms.slice(0, i).filter(q => q.name === o.name); if (!same.length || same.every(q => q.type === o.type && HM.touch(q, o))) continue;
+      const was = o.name; o.name = HM.nextName(o.type, used(o)); toast(`两块${was}分开了，这一块改叫${o.name}`); }
+  }
   function rename(b) { b.name = HM.nextName(HM.bathName(host(b)), used(b)); }
 
   /* ---------- gestures: touch first, mouse as a fallback ---------- */
@@ -854,17 +871,19 @@ function createPlanEditor({ root, layer, svg, icons, esc, toast, openSheet, clos
   function bindDrag(e) {
     track(e, (sx, sy) => {
       const it = byId(e.dataset.id); if (!it) return null; sel = it.id;
-      const o = it.host ? bathPos(it) : { x: it.x, z: it.z }; drag = { it, moved: false }; render();
+      const o = it.host ? bathPos(it) : { x: it.x, z: it.z }; drag = { it, moved: false, o: it.host ? null : o }; render();
       return {
         move(x, y) {
+          if (!drag || drag.it !== it) return; // undone by Back mid-drag
           const dx = (x - sx) / S, dz = (y - sy) / S; if (Math.hypot(dx, dz) * S > 4) drag.moved = true; if (!drag.moved) return;
           if (!it.host) { it.x = r1(Math.min(60 - it.w, Math.max(-60, o.x + dx))); it.z = r1(Math.min(60 - it.d, Math.max(-60, o.z + dz))); showLines(snapMove(it)); it.bad = isBad(it); }
           else { it.drag = { x: o.x + dx, z: o.z + dz }; const d = dropHost(it); it.bad = !d || !!d.clash; showAnchors(d && d.h, it); }
           render();
         },
         end() {
+          if (!drag || drag.it !== it) return;
           showLines([]); showAnchors(null);
-          if (!it.host && it.bad) { it.x = o.x; it.z = o.z; it.bad = false; toast('房间不能叠在一起，已放回原位'); }
+          if (!it.host && it.bad) { it.x = o.x; it.z = o.z; it.bad = false; toast('房间不能叠在一起，已放回原位'); } else if (!it.host) splitNames();
           if (it.host && it.drag) { const d = dropHost(it);
             if (d && !d.clash) { const was = it.name, moved = d.h.id !== it.host; it.host = d.h.id; it.ax = d.ax; it.az = d.az; if (moved) { rename(it); toast(it.name === was ? `${was}改放在${d.h.name}里` : `${was}改放在${d.h.name}里，现在叫${it.name}`); } }
             else toast(d ? '跟另一个卫生间叠到了，已放回原位' : '卫生间要放在某个房间里');
@@ -876,17 +895,21 @@ function createPlanEditor({ root, layer, svg, icons, esc, toast, openSheet, clos
   }
   function bindHandle(h, it) {
     track(h, (sx, sy) => {
-      const k = h.dataset.k, o = { x: it.x, z: it.z, w: it.w, d: it.d }, MIN = HM.BLOCK_MIN; drag = { it, moved: true, handle: true };
+      const k = h.dataset.k, o = { x: it.x, z: it.z, w: it.w, d: it.d }, MIN = HM.BLOCK_MIN; drag = { it, moved: true, handle: true, o };
       return {
         move(x, y) {
+          if (!drag || drag.it !== it) return; // undone by Back mid-drag
           const dx = r1((x - sx) / S), dz = r1((y - sy) / S);
           if (it.host) { const hr = host(it), g = (v, a, s) => v * s * (a === .5 ? 2 : 1); if (k === 'l' || k === 'r') it.w = r2(Math.min(hr.w, Math.max(HM.BATH_MIN, o.w + g(dx, it.ax, k === 'l' ? -1 : 1)))); else it.d = r2(Math.min(hr.d, Math.max(HM.BATH_MIN, o.d + g(dz, it.az, k === 't' ? -1 : 1)))); it.bad = clash(it, hr, it.ax, it.az); render(); return; }
           Object.assign(it, o);
           if (k === 'l') { const v = Math.min(dx, o.w - MIN); it.x = o.x + v; it.w = o.w - v; } else if (k === 'r') it.w = Math.max(MIN, o.w + dx);
           else if (k === 't') { const v = Math.min(dz, o.d - MIN); it.z = o.z + v; it.d = o.d - v; } else it.d = Math.max(MIN, o.d + dz);
-          showLines(snapEdge(it, k)); it.x = r2(it.x); it.z = r2(it.z); it.w = Math.max(MIN, r2(it.w)); it.d = Math.max(MIN, r2(it.d)); it.bad = isBad(it) || !fitsBaths(it); render();
+          showLines(snapEdge(it, k)); it.x = r2(it.x); it.z = r2(it.z); it.w = Math.max(MIN, r2(it.w)); it.d = Math.max(MIN, r2(it.d));
+          // The same bounds the save keeps (30 m a side, ±60 m), so what the editor shows is what is saved.
+          if (k === 'l' && it.x < -60) { it.w = r2(it.x + it.w + 60); it.x = -60; } if (k === 't' && it.z < -60) { it.d = r2(it.z + it.d + 60); it.z = -60; }
+          if (it.w > 30) { if (k === 'l') it.x = r2(it.x + it.w - 30); it.w = 30; } if (it.d > 30) { if (k === 't') it.z = r2(it.z + it.d - 30); it.d = 30; } it.bad = isBad(it) || !fitsBaths(it); render();
         },
-        end() { showLines([]); if (it.bad) { Object.assign(it, o); it.bad = false; toast(it.host ? '会跟另一个卫生间叠到，已改回原来大小' : '这样会叠到别的房间，已改回原来大小'); } drag = null; fit(); render(); }
+        end() { if (!drag || drag.it !== it) return; showLines([]); if (it.bad) { Object.assign(it, o); it.bad = false; toast(it.host ? '会跟另一个卫生间叠到，已改回原来大小' : '这样会叠到别的房间，已改回原来大小'); } else if (!it.host) splitNames(); drag = null; fit(); render(); }
       };
     });
   }
@@ -912,7 +935,9 @@ function createPlanEditor({ root, layer, svg, icons, esc, toast, openSheet, clos
     Object.assign(b, { host: h.id }, bathSpot(b, h)); b.name = HM.nextName(HM.bathName(h), used()); baths.push(b); sel = b.id; render();
     if (!picked || h === picked) toast(`加了${b.name}，放在${h.name}里，可以拖到别处`);
   }
-  function addRoom(type) { if (rooms.length >= HM.BLOCK_MAX) { toast(`最多${HM.BLOCK_MAX}个房间`); return; } const s = size(type), r = { id: newId('b'), type, name: HM.nextName(type, used()), ...freeSpot(s.w, s.d) }; rooms.push(r); sel = r.id; fit(); render(); toast(`加了${r.name}，拖去贴着别的房间`); }
+  function addRoom(type) { if (rooms.length >= HM.BLOCK_MAX) { toast(`最多${HM.BLOCK_MAX}个房间`); return; } const s = size(type), spot = freeSpot(s.w, s.d);
+    if (spot.x < -60 || spot.z < -60 || spot.x + s.w > 60 || spot.z + s.d > 60 || rooms.some(o => HM.boxOverlap(spot, o))) { toast('没有空位放新房间了，先挪一挪别的房间'); return; }
+    const r = { id: newId('b'), type, name: HM.nextName(type, used()), ...spot }; rooms.push(r); sel = r.id; fit(); render(); toast(`加了${r.name}，拖去贴着别的房间`); }
   function remove() {
     const it = byId(sel); if (!it) return;
     if (!it.host) { const inside = baths.filter(x => x.host === it.id); if (inside.length) { toast(`先把${inside.map(x => x.name).join('、')}拖到别的房间或拿掉`); return; } if (rooms.length < 2) { toast('至少要留一个房间'); return; } rooms = rooms.filter(o => o !== it); }
