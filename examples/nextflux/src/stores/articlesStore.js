@@ -8,7 +8,7 @@ import {
 } from "../db/storage.js";
 import minifluxAPI from "../api/miniflux.js";
 import { duplicateView, feeds as feedList, starredCounts, unreadCounts } from "./feedsStore.js";
-import { hiddenFeedIds, mergeCounts } from "./count-merge.mjs";
+import { createPublishCounts } from "./count-merge.mjs";
 import { settingsState } from "./settingsStore.js";
 import { clearAllSummaries } from "./aiStore.js";
 import { toggleStarAcknowledged } from "../toolbox/star-toggle.mjs";
@@ -154,11 +154,10 @@ export async function loadArticles(sourceId = null, type = "feed", page = 1, app
   return operation;
 }
 
-function publishCounts(counts) {
-  const hidden = hiddenFeedIds(feedList.get(), settingsState.get().showHiddenFeeds);
-  unreadCounts.set(mergeCounts(unreadCounts.get(), counts.unread, hidden));
-  starredCounts.set(mergeCounts(starredCounts.get(), counts.starred, hidden));
-}
+// Built on first use: feedsStore and this file import each other, so its
+// stores are not defined yet while this file loads.
+let countPublisher;
+const publishCounts = (counts) => (countPublisher ??= createPublishCounts({ unreadCounts, starredCounts, feeds: feedList, settings: settingsState }))(counts);
 
 function publishUpdates(result, check) {
   check(false);

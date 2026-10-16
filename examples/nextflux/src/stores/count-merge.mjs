@@ -11,3 +11,13 @@ export function mergeCounts(current, incoming, hidden) {
   for (const [id, value] of Object.entries(incoming || {})) if (!hidden.has(String(id))) next[id] = value;
   return next;
 }
+
+// The sidebar's publishCounts: merges a change's counts into the unread and
+// starred stores, leaving out feeds hidden from the sidebar.
+export function createPublishCounts({ unreadCounts, starredCounts, feeds, settings }) {
+  return (counts) => {
+    const hidden = hiddenFeedIds(feeds.get(), settings.get().showHiddenFeeds);
+    unreadCounts.set(mergeCounts(unreadCounts.get(), counts.unread, hidden));
+    starredCounts.set(mergeCounts(starredCounts.get(), counts.starred, hidden));
+  };
+}

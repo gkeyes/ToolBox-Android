@@ -2,7 +2,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { dedupeArticles } from "../src/toolbox/dedupe.mjs";
 import { createArticleCache } from "../src/toolbox/cache.js";
-import { hiddenFeedIds, mergeCounts } from "../src/stores/count-merge.mjs";
+import { readFileSync } from "node:fs";
+import { atom } from "nanostores";
+import { createPublishCounts } from "../src/stores/count-merge.mjs";
 
 const ids = (rows) => rows.map((row) => row.id);
 
@@ -180,10 +182,18 @@ test("an emoji before a placeholder word does not make it a real title", () => {
     { id: 2, title: "🖼 图片", url: "https://a.example/2" },
     { id: 3, title: "📷Photo", url: "https://a.example/3" },
     { id: 4, title: "📷 photo", url: "https://a.example/4" },
+    { id: 7, title: "🖼 圖片", url: "https://a.example/7" },
+    { id: 8, title: "🖼 圖片", url: "https://a.example/8" },
+    { id: 9, title: "📷 照片", url: "https://a.example/9" },
+    { id: 10, title: "📷 照片", url: "https://a.example/10" },
+    { id: 11, title: "🎬 影片", url: "https://a.example/11" },
+    { id: 12, title: "🎬 影片", url: "https://a.example/12" },
+    { id: 13, title: "Images", url: "https://a.example/13" },
+    { id: 14, title: "images", url: "https://a.example/14" },
     { id: 5, title: "🖼 图片集锦", url: "https://a.example/5" },
     { id: 6, title: "🖼 图片集锦", url: "https://a.example/6" },
   ];
-  assert.deepEqual(ids(dedupeArticles(rows)), [1, 2, 3, 4, 5]);
+  assert.deepEqual(ids(dedupeArticles(rows)), [1, 2, 3, 4, 7, 8, 9, 10, 11, 12, 13, 14, 5]);
 });
 
 test("after reading or starring, the sidebar counts leave out globally hidden feeds", async () => {
@@ -198,21 +208,21 @@ test("after reading or starring, the sidebar counts leave out globally hidden fe
   const feeds = [{ id: 1, title: "甲" }, { id: 2, title: "乙", hide_globally: true }];
   await cache.commitSync(token, { feeds, categories: [] });
   const view = { hideDuplicates: true, field: "published_at", direction: "desc", feedIds: [1] };
-  // The sidebar as loaded: only the visible feed 甲.
-  let unread = { 1: 2 };
-  let starred = { 1: 0 };
-  const merge = (counts, show = false) => {
-    const hidden = hiddenFeedIds(feeds, show);
-    unread = mergeCounts(unread, counts.unread, hidden);
-    starred = mergeCounts(starred, counts.starred, hidden);
-  };
-  merge((await cache.patchState([{ id: 1, status: "read" }], view)).counts);
-  assert.deepEqual(unread, { 1: 1 });
-  merge((await cache.patchState([{ id: 2, starred: 1 }], view)).counts);
-  assert.deepEqual(starred, { 1: 1 });
+  // The sidebar's own merge, on stores loaded with only the visible feed 甲.
+  const source = readFileSync(new URL("../src/stores/articlesStore.js", import.meta.url), "utf8");
+  assert.match(source, /const publishCounts = \(counts\) => \(countPublisher \?\?= createPublishCounts\(\{ unreadCounts, starredCounts, feeds: feedList, settings: settingsState \}\)\)\(counts\)/);
+  const unreadCounts = atom({ 1: 2 });
+  const starredCounts = atom({ 1: 0 });
+  const settings = atom({ showHiddenFeeds: false });
+  const publishCounts = createPublishCounts({ unreadCounts, starredCounts, feeds: atom(feeds), settings });
+  publishCounts((await cache.patchState([{ id: 1, status: "read" }], view)).counts);
+  assert.deepEqual(unreadCounts.get(), { 1: 1 });
+  publishCounts((await cache.patchState([{ id: 2, starred: 1 }], view)).counts);
+  assert.deepEqual(starredCounts.get(), { 1: 1 });
   // With 显示隐藏订阅 on, the hidden feed counts again.
-  merge((await cache.patchState([{ id: 4, status: "read" }], view)).counts, true);
-  assert.deepEqual([unread[1], unread[2], starred[2]], [1, 2, 1]);
+  settings.set({ showHiddenFeeds: true });
+  publishCounts((await cache.patchState([{ id: 4, status: "read" }], view)).counts);
+  assert.deepEqual([unreadCounts.get()[1], unreadCounts.get()[2], starredCounts.get()[2]], [1, 2, 1]);
 });
 
 test("hashtag-only titles after an emoji, with a full-width ＃ or with a space never match by title", () => {
