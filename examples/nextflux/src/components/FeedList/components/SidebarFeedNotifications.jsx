@@ -13,11 +13,14 @@ export default function SidebarFeedNotifications() {
   const [open, setOpen] = useState(false);
   if (!feedNotificationsAvailable()) return null;
 
-  const titles = watched
-    .map((id) => $feeds.find((feed) => Number(feed.id) === id)?.title)
+  const watchedList = watched
+    .map((id) => $feeds.find((feed) => Number(feed.id) === id))
     .filter(Boolean);
-  const caption = watched.length
-    ? t("feedNotify.watching", { count: watched.length })
+  const titles = watchedList.map((feed) => feed.title);
+  // Only feeds that still exist in the catalog count; an empty catalog means none are left.
+  const count = titles.length;
+  const caption = count
+    ? t("feedNotify.watching", { count })
     : t("feedNotify.none");
 
   return (
@@ -26,24 +29,24 @@ export default function SidebarFeedNotifications() {
         type="button"
         className="sidebar-pref ds-row w-full text-left"
         aria-expanded={open}
-        disabled={!watched.length}
+        disabled={!count}
         onClick={() => setOpen((value) => !value)}
       >
-        <span className={`ds-icon-badge ${watched.length ? "ds-tone-info" : "ds-tone-neutral"}`}>
+        <span className={`ds-icon-badge ${count ? "ds-tone-info" : "ds-tone-neutral"}`}>
           <Bell />
         </span>
         <div className="min-w-0 flex-1">
           <div className="truncate ds-body font-medium">{t("feedNotify.title")}</div>
           <div className="truncate ds-caption ds-tnum">{caption}</div>
         </div>
-        {watched.length > 0 && (
+        {count > 0 && (
           <ChevronDown className={`size-4 shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />
         )}
       </button>
-      {open && watched.length > 0 && (
+      {open && count > 0 && (
         <div className="px-3 pb-2 flex flex-col gap-1">
-          {titles.map((title) => (
-            <div key={title} className="truncate ds-caption">{title}</div>
+          {watchedList.map((feed) => (
+            <div key={feed.id} className="truncate ds-caption">{feed.title}</div>
           ))}
           <div className="ds-caption opacity-70">{t("feedNotify.listHint")}</div>
         </div>

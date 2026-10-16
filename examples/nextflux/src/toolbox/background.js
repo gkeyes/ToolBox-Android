@@ -142,7 +142,7 @@ async function verifyNativeSession() {
 async function runBackgroundSync(reason) {
   if (!continuousSync.get() || runtimeClosing.get()) return false;
   if (backgroundRun) return backgroundRun;
-  const scheduled = claimAutoSync();
+  const scheduled = claimAutoSync({ background: true });
   if (!scheduled) return false;
   const attemptAt = Date.now();
   setHealth({ type: "attempt", reason }, attemptAt);

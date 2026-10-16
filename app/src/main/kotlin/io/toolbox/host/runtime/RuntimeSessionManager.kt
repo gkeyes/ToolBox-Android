@@ -54,7 +54,7 @@ internal class RuntimeSessionManager(
     private val bridgeProvider: () -> RuntimeBridgeProvider,
     private val nowMillis: () -> Long = System::currentTimeMillis,
     private val toolIcons: ToolIconLoader? = null,
-) {
+) : ForegroundRuntimeSessions {
     private val appContext = context.applicationContext
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val stateByTool = ConcurrentHashMap<String, MutableStateFlow<RuntimeUiState>>()
@@ -161,10 +161,10 @@ internal class RuntimeSessionManager(
     val sessions: StateFlow<List<RuntimeBackgroundSessionUi>> = mutableSessions.asStateFlow()
     val notificationSnapshots: StateFlow<RuntimeForegroundNotificationSnapshot> = mutableNotificationSnapshots.asStateFlow()
 
-    fun state(toolId: String): StateFlow<RuntimeUiState> =
+    override fun state(toolId: String): StateFlow<RuntimeUiState> =
         stateByTool.getOrPut(toolId) { MutableStateFlow(RuntimeUiState.Loading) }.asStateFlow()
 
-    fun openForeground(toolId: String) {
+    override fun openForeground(toolId: String) {
         scope.launch {
             if (io.toolbox.host.backup.BackupRuntimeGate.paused) {
                 stateFlow(toolId).value = RuntimeUiState.Error("RESTORE_IN_PROGRESS", "正在恢复数据，请完成后重新打开工具。")
@@ -183,7 +183,7 @@ internal class RuntimeSessionManager(
         }
     }
 
-    fun retry(toolId: String) {
+    override fun retry(toolId: String) {
         scope.launch {
             recovery.cancel(toolId)?.join()
             recoveryStatus.remove(toolId)
@@ -194,7 +194,7 @@ internal class RuntimeSessionManager(
         }
     }
 
-    suspend fun prepareForegroundClose(toolId: String, reloading: Boolean): Boolean = withContext(Dispatchers.Main.immediate) {
+    override suspend fun prepareForegroundClose(toolId: String, reloading: Boolean): Boolean = withContext(Dispatchers.Main.immediate) {
         if (!reloading && !sessionsByTool[toolId].isNullOrEmpty()) return@withContext true
         val host = hosts[toolId] ?: return@withContext true
         val saved = HardenedRuntimeWebView.flushBeforeClose(host.webView)
@@ -202,18 +202,20 @@ internal class RuntimeSessionManager(
         saved && hosts[toolId] === host
     }
 
-    fun cancelForegroundClose(toolId: String) { hosts[toolId]?.webView?.let(HardenedRuntimeWebView::cancelClose) }
+    override fun cancelForegroundClose(toolId: String) { hosts[toolId]?.webView?.let(HardenedRuntimeWebView::cancelClose) }
 
-    fun discardForegroundRuntime(toolId: String) { destroyHost(toolId) }
+    override fun discardForegroundRuntime(toolId: String) { destroyHost(toolId) }
 
-    suspend fun reloadSaved(toolId: String) = withContext(Dispatchers.Main.immediate) {
-        backgroundTimers.cancelAll(toolId)
-        locationWatches.clearAllWatches(toolId)
-        destroyHost(toolId)
-        ensureRuntime(toolId, if (sessionsByTool[toolId].isNullOrEmpty()) null else RESTORE_REASON_PROCESS)
+    override suspend fun reloadSaved(toolId: String) {
+        withContext(Dispatchers.Main.immediate) {
+            backgroundTimers.cancelAll(toolId)
+            locationWatches.clearAllWatches(toolId)
+            destroyHost(toolId)
+            ensureRuntime(toolId, if (sessionsByTool[toolId].isNullOrEmpty()) null else RESTORE_REASON_PROCESS)
+        }
     }
 
-    fun detachForeground(toolId: String) {
+    override fun detachForeground(toolId: String) {
         scope.launch {
             if (!visibleTools.remove(toolId)) return@launch
             HostTrace.bestEffortSection("runtime.detach") { }

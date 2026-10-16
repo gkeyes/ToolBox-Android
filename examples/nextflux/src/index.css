@@ -378,6 +378,12 @@
   min-block-size: 48px;
   min-inline-size: 0;
   flex: 1 1 0;
+  /* A long label at large text sizes wraps inside the pill instead of running past it. */
+  block-size: auto;
+  white-space: normal;
+  text-wrap: balance;
+  line-height: 1.2;
+  padding-block: .5rem;
 }
 .nextflux-dialog-error {
   margin-block-start: .75rem;
