@@ -179,7 +179,7 @@ internal class BrowserWebViewFactory(
                 state.title = ""
                 documentGeneration++
                 state.mixedContent = false
-                state.error = null
+                // The error overlay is not cleared here: it stays until the new document draws (restorePageBase).
                 state.loadProgress = 0
                 state.interaction = state.interaction.pageStarted()
                 if (state.mediaDiagnosticsCapture) {
