@@ -628,3 +628,10 @@ body[data-page="home"] #toast.has-action{top:calc(var(--home-top,64px) + 78px);b
 .due-list-item>.between:first-child{flex-wrap:wrap;gap:8px 12px}.due-list-item>.between:first-child>.flex{flex:1 1 11em;min-width:0}.due-list-item>.between:first-child>strong{margin-left:auto}.due-list-item h3{word-break:keep-all;overflow-wrap:anywhere}
 .top-actions{min-width:0}.top-actions>.demo-mark{white-space:normal;min-width:0}
 @media(max-width:700px){.topbar{height:auto;min-height:72px}.mobile-project{flex:0 1 auto;min-width:0}}
+/* 1.12.0: 退的是哪一件 (design board ⑥) */
+.refund-piece{display:flex;flex-direction:column;gap:8px;margin-top:14px}.rp-head{display:flex;justify-content:space-between;align-items:baseline;gap:8px;font-size:13px;color:#4f5b54}.rp-head small{font-size:11px;color:var(--muted)}
+.rp-list{border:1px solid var(--line);border-radius:14px;overflow:hidden}.rp-opt{display:flex;align-items:center;gap:10px;width:100%;padding:11px 12px;text-align:left;border-bottom:1px solid var(--line);min-height:48px}.rp-opt:last-child{border-bottom:0}.rp-opt.active{background:var(--accent-soft)}
+.rp-dot{width:20px;height:20px;border-radius:50%;border:2px solid #c9d0c8;display:grid;place-items:center;flex:none}.rp-opt.active .rp-dot{border-color:var(--accent)}.rp-opt.active .rp-dot::after{content:"";width:10px;height:10px;border-radius:50%;background:var(--accent)}
+.rp-text{flex:1;min-width:0;display:flex;flex-direction:column}.rp-text b{font-size:14px;font-weight:600;overflow-wrap:anywhere}.rp-text small{font-size:11px;color:var(--muted)}.rp-paid{font-size:13px;color:#4f5b54;white-space:nowrap}
+.rp-note{padding:10px 12px;border-radius:12px;background:var(--surface-2,#f6f7f3);font-size:12px;line-height:1.6;color:#4f5b54;margin:0}.rp-note b{color:var(--accent)}
+@media (prefers-color-scheme:dark){.rp-head,.rp-paid,.rp-note{color:#c9cfc6}.rp-note{background:#262923}.rp-dot{border-color:#5b6157}}

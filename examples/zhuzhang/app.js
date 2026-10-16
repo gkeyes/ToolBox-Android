@@ -4,7 +4,7 @@
   // Ledger money is integer cents. DOM content originating from users is escaped.
   const KEY = 'ledger.v1';
   const runtime = window.ZZRuntime;
-  const VERSION = '1.11.5';
+  const VERSION = '1.12.0';
   const MAX_CENTS = 100000000000;
   const $ = s => document.querySelector(s);
   const $$ = s => [...document.querySelectorAll(s)];
@@ -78,7 +78,10 @@
       if(t&&renamed.has(t.itemId))t={...t,itemId:renamed.get(t.itemId)};
       if(!t||pids.has(t.id)||!ids.has(t.itemId)||!['payment','refund'].includes(t.kind)||!validDate(t.date))fail('备份中流水无效、重复或缺少关联项目。');
       pids.add(string(t.id,100,false));
-      out.payments.push({id:t.id,itemId:t.itemId,amount:cents(t.amount,true),date:t.date,kind:t.kind,note:string(t.note??'',1500)});
+      const q={id:t.id,itemId:t.itemId,amount:cents(t.amount,true),date:t.date,kind:t.kind,note:string(t.note??'',1500)};
+      // 1.12.0: a refund can name the piece of a bundle it returns; one whose piece is gone falls back to the shares.
+      if(t.kind==='refund'&&typeof t.part==='string'&&out.items.find(i=>i.id===t.itemId)?.parts?.some(p=>p.id===t.part))q.part=t.part;
+      out.payments.push(q);
     }
     for(const i of out.items){
       const net=out.payments.filter(t=>t.itemId===i.id).reduce((s,t)=>s+(t.kind==='refund'?-t.amount:t.amount),0);
@@ -186,7 +189,8 @@
     if(!cashCache.has(source))cashCache.set(source,new Map());const c=cashCache.get(source);if(c.has(i.id))return c.get(i.id);
     const w=weightsOf(i.parts,refOf(i,source)),rows=new Map();let net=0,prev=i.parts.map(()=>0);
     // In date order (a payment before a refund on the same day), the order the cash timeline is checked in.
-    const ts=source.payments.map((p,n)=>[p,n]).filter(([p])=>p.itemId===i.id).sort(([a,x],[b,y])=>a.date.localeCompare(b.date)||(a.kind==='refund')-(b.kind==='refund')||x-y).map(([p])=>p);
+    const all=source.payments.map((p,n)=>[p,n]).filter(([p])=>p.itemId===i.id),aimed=all.map(([p])=>p).filter(p=>p.kind==='refund'&&p.part&&i.parts.some(q=>q.id===p.part));
+    const ts=all.filter(([p])=>!aimed.includes(p)).sort(([a,x],[b,y])=>a.date.localeCompare(b.date)||(a.kind==='refund')-(b.kind==='refund')||x-y).map(([p])=>p);
     // 1.11.4: a stored refund dated before the money it returns (restore refuses that; an older ledger may have it)
     // comes off as the later payments arrive, as if dated on their day, so the pieces still add up to the net paid.
     const owed=[],take=(id,d)=>{net-=d;const step=stepSplit(prev,net,d,true,w),was=rows.get(id);rows.set(id,was?was.map((v,k)=>v+step[k]):step);prev=prev.map((v,k)=>v-step[k]);};
@@ -195,6 +199,9 @@
       net+=p.amount;const step=stepSplit(prev,net,p.amount,false,w);rows.set(p.id,step);prev=prev.map((v,k)=>v+step[k]);
       while(owed.length&&net>0){const o=owed[0],d=Math.min(o[1],net);take(o[0],d);o[1]-=d;if(!o[1])owed.shift();}
     }
+    // 1.12.0: a refund that names its piece comes off that piece only (what it can't cover comes off the rest by share).
+    for(const p of aimed){const k=i.parts.findIndex(q=>q.id===p.part),d=Math.min(p.amount,prev[k]),row=prev.map(()=>0);row[k]=d;prev[k]-=d;net-=d;
+      const left=Math.min(p.amount-d,net);if(left>0){const step=stepSplit(prev,net-left,left,true,w);step.forEach((v,j)=>{row[j]+=v;prev[j]-=v;});net-=left;}rows.set(p.id,row);}
     const out={rows,cash:prev};c.set(i.id,out);return out;
   }
   const pieceCash=(i,source=data)=>payShares(i,source).cash;
@@ -370,14 +377,14 @@
   // A bundle's payment: under a room filter, that room's share and the other pieces; otherwise every piece.
   function payRow(t,room){
     const i=data.items.find(x=>x.id===t.itemId);if(!i)return '';const ps=partsOf(i);if(!ps)return rowActivity(t);
-    const refund=t.kind==='refund',sign=refund?'+':'−',here=room?ps.filter(p=>p.room===room):[],rest=room?ps.filter(p=>p.room!==room):ps;
-    return `<button class="activity-row pay-bundle" data-action="transaction" data-id="${esc(t.id)}"><span class="row-icon">${icon(cat(i.category).icon)}</span><span class="activity-info"><span class="activity-title">${esc(i.name)} <span class="bundle-tag">打包 ${ps.length} 件</span></span><span class="activity-meta">${dateText(t.date)} · ${esc(cat(i.category).name)} · ${esc(i.room)}</span>${room?`<span class="bundle-share"><span>${esc(room)}的份：${esc(here.map(pieceText).join('，'))}</span><b class="num ${refund?'positive':''}">${sign}${money(payRoom(i,room,t))}</b></span><span class="bundle-rest">这笔共 ${money(t.amount)}${rest.length?' · 其余：'+esc(rest.map(pieceText).join('，')):''}</span>`:`<span class="bundle-rest">${esc(ps.map(pieceText).join('，'))}</span>`}</span>${room?'':`<span class="activity-amount num ${refund?'positive':''}">${sign}${money(t.amount)}<small>${refund?'已退款':'已付款'}</small></span>`}</button>`;
+    const refund=t.kind==='refund',sign=refund?'+':'−',aim=refund&&t.part?ps.find(p=>p.id===t.part):null,here=aim?[aim]:room?ps.filter(p=>p.room===room):[],rest=aim?[]:room?ps.filter(p=>p.room!==room):ps;
+    return `<button class="activity-row pay-bundle" data-action="transaction" data-id="${esc(t.id)}"><span class="row-icon">${icon(cat(i.category).icon)}</span><span class="activity-info"><span class="activity-title">${esc(i.name)} <span class="bundle-tag">打包 ${ps.length} 件</span></span><span class="activity-meta">${dateText(t.date)} · ${esc(cat(i.category).name)} · ${esc(i.room)}</span>${room?`<span class="bundle-share"><span>${aim?'退的是：':esc(room)+'的份：'}${esc(here.map(pieceText).join('，'))}</span><b class="num ${refund?'positive':''}">${sign}${money(payRoom(i,room,t))}</b></span><span class="bundle-rest">这笔共 ${money(t.amount)}${rest.length?' · 其余：'+esc(rest.map(pieceText).join('，')):''}</span>`:`<span class="bundle-rest">${aim?'退的是：'+esc(pieceText(aim)):esc(ps.map(pieceText).join('，'))}</span>`}</span>${room?'':`<span class="activity-amount num ${refund?'positive':''}">${sign}${money(t.amount)}<small>${refund?'已退款':'已付款'}</small></span>`}</button>`;
   }
   function renderLedger(){
     if(!['payments','due'].includes(ui.ledgerTab))ui.ledgerTab='payments';
     const items=filteredItems(),room=ui.room==='all'?null:ui.room,t=totals(data,items,room);let content='',count=0;
     if(ui.ledgerTab==='payments'){
-      const ids=new Set(items.map(i=>i.id)),ts=data.payments.filter(p=>ids.has(p.itemId)).sort((a,b)=>b.date.localeCompare(a.date)),months=[...new Set(ts.map(p=>p.date.slice(0,7)))];count=ts.length;
+      const ids=new Set(items.map(i=>i.id)),aimedAway=p=>{if(!room||!p.part)return false;const it=data.items.find(x=>x.id===p.itemId),q=partsOf(it)?.find(x=>x.id===p.part);return !!q&&q.room!==room;},ts=data.payments.filter(p=>ids.has(p.itemId)&&!aimedAway(p)).sort((a,b)=>b.date.localeCompare(a.date)),months=[...new Set(ts.map(p=>p.date.slice(0,7)))];count=ts.length;
       const amt=p=>{const it=data.items.find(x=>x.id===p.itemId),v=room&&partsOf(it)?payRoom(it,room,p):p.amount;return p.kind==='refund'?-v:v;};
       content=months.map(m=>`<section class="card list-card" style="margin-bottom:17px"><div class="month-heading">${m.replace('-','年')}月 <span class="muted caption">净支出 ${(n=>(n<0?'−':'')+money(Math.abs(n)))(ts.filter(p=>p.date.startsWith(m)).reduce((v,p)=>v+amt(p),0))}</span></div>${ts.filter(p=>p.date.startsWith(m)).map(p=>payRow(p,room)).join('')}</section>`).join('');
     }
@@ -682,12 +689,24 @@
     const i=data.items.find(i=>i.id===itemId),v={name:carry.name||'',category:carry['item-category']||(ui.category==='all'?'construction':ui.category),room:carry['item-room']||(ui.room==='all'?'全屋':ui.room),merchant:carry.merchant||'',note:carry.note||''};
     const linked=Boolean(i)||carry['payment-target']==='linked',amount=carry.amount??(full&&i?rawMoney(remaining(i)):'');
     dialog('记一笔',`<form id="payment-form" data-form="payment" novalidate><input type="hidden" name="record-mode" value="expense"><div class="segmented payment-types" aria-label="资金类型"><button type="button" class="seg active" data-action="payment-kind" data-kind="payment" aria-pressed="true">支出</button><button type="button" class="seg" data-action="payment-kind" data-kind="refund" aria-pressed="false">退款</button></div><input type="hidden" name="kind" id="payment-kind" value="payment"><label class="field entry-money-field"><span id="payment-amount-label">实际支出（元）</span><div class="money-field"><span aria-hidden="true">¥</span><input name="amount" id="payment-amount" inputmode="decimal" placeholder="0.00" value="${esc(amount)}" aria-labelledby="payment-amount-label" autocomplete="off"></div></label>
-    <input type="hidden" name="payment-target" id="payment-target" value="${linked?'linked':'new'}"><div class="payment-target-row" aria-label="费用归属"><button type="button" data-action="payment-target" data-target="new" class="target-option">新增费用</button><button type="button" data-action="payment-target" data-target="linked" class="target-option">关联预算</button></div><div id="payment-new-fields">${baseFields(v)}${partsBlock(carry.parts!==undefined?parseParts(carry.parts):[])}<label class="field form-row"><span>商家或施工方 <small>选填</small></span><input class="plain" name="merchant" value="${esc(v.merchant)}" placeholder="填写商家或施工方" maxlength="100"></label></div><div id="payment-linked-fields">${pickerField('payment-item','关联项目',i?.id||'',i?.name||'选择预算项目','item')}<div id="payment-item-info">${paymentInfo(i)}</div></div>${lookRow(carry['model-kind'])}<div class="field-grid form-row">${dateField('date','支出日期',carry.date||nowDate(),true)}<label class="field"><span>备注 <small>选填</small></span><input class="plain" name="note" value="${esc(v.note)}" placeholder="填写款项用途" maxlength="1000"></label></div><div id="refund-adjustment" class="refund-adjustment" hidden><label class="check-row"><input type="checkbox" id="refund-adjust" name="refund-adjust"><span>同时修改该项目的预计费用</span></label><div id="refund-price-row" hidden><label class="field form-row"><span>调整后预计费用（元）</span><input class="plain" inputmode="decimal" name="refund-price" id="refund-price" placeholder="填写新的项目总费用"></label><p class="form-hint">适用于退货或减项。请填写调整后的总费用，不是本次退款额。</p></div></div><p class="form-hint" id="payment-hint"></p><div class="dialog-actions"><button type="submit" class="button primary" id="payment-save">保存支出</button></div></form>`);
+    <input type="hidden" name="payment-target" id="payment-target" value="${linked?'linked':'new'}"><div class="payment-target-row" aria-label="费用归属"><button type="button" data-action="payment-target" data-target="new" class="target-option">新增费用</button><button type="button" data-action="payment-target" data-target="linked" class="target-option">关联预算</button></div><div id="payment-new-fields">${baseFields(v)}${partsBlock(carry.parts!==undefined?parseParts(carry.parts):[])}<label class="field form-row"><span>商家或施工方 <small>选填</small></span><input class="plain" name="merchant" value="${esc(v.merchant)}" placeholder="填写商家或施工方" maxlength="100"></label></div><div id="payment-linked-fields">${pickerField('payment-item','关联项目',i?.id||'',i?.name||'选择预算项目','item')}<div id="payment-item-info">${paymentInfo(i)}</div><input type="hidden" name="refund-part" id="refund-part" value="${esc(carry['refund-part']||'')}"><div id="refund-piece" class="refund-piece" hidden></div></div>${lookRow(carry['model-kind'])}<div class="field-grid form-row">${dateField('date','支出日期',carry.date||nowDate(),true)}<label class="field"><span>备注 <small>选填</small></span><input class="plain" name="note" value="${esc(v.note)}" placeholder="填写款项用途" maxlength="1000"></label></div><div id="refund-adjustment" class="refund-adjustment" hidden><label class="check-row"><input type="checkbox" id="refund-adjust" name="refund-adjust"><span>同时修改该项目的预计费用</span></label><div id="refund-price-row" hidden><label class="field form-row"><span>调整后预计费用（元）</span><input class="plain" inputmode="decimal" name="refund-price" id="refund-price" placeholder="填写新的项目总费用"></label><p class="form-hint">适用于退货或减项。请填写调整后的总费用，不是本次退款额。</p></div></div><p class="form-hint" id="payment-hint"></p><div class="dialog-actions"><button type="submit" class="button primary" id="payment-save">保存支出</button></div></form>`);
     updatePaymentTarget(linked?'linked':'new');
     if(carry.kind==='refund')updatePaymentKind('refund');
     if(carry['refund-adjust']==='on')$('#refund-adjust').checked=true;
     if(carry['refund-price']!==undefined)$('#refund-price').value=carry['refund-price'];
-    updateRefundAdjustment();refreshLook();draftSnapshot=formSnapshot();
+    $('#payment-amount').addEventListener('input',updateRefundPiece);
+    updateRefundAdjustment();updateRefundPiece();refreshLook();draftSnapshot=formSnapshot();
+  }
+  // 1.12.0 (design board ⑥): a refund on a bundle says which piece it returns, or 整笔一起退 (the shares, as before).
+  function updateRefundPiece(){
+    const box=$('#refund-piece'),field=$('#refund-part');if(!box||!field)return;
+    const i=data.items.find(x=>x.id===$('#payment-item')?.value),ps=$('#payment-kind').value==='refund'&&$('#payment-target').value==='linked'&&i?partsOf(i):null;
+    box.hidden=!ps;field.disabled=!ps;if(!ps){box.innerHTML='';return;}
+    if(field.value&&!ps.some(p=>p.id===field.value))field.value='';
+    const cash=pieceCash(i),pick=ps.find(p=>p.id===field.value),amt=parseFloat(String($('#payment-amount').value).replace(/,/g,''));
+    const opt=(v,name,sub,right,on)=>`<button type="button" class="rp-opt${on?' active':''}" data-action="refund-part" data-part="${esc(v)}" role="radio" aria-checked="${on}"><span class="rp-dot" aria-hidden="true"></span><span class="rp-text"><b>${name}</b><small>${sub}</small></span><span class="rp-paid num">${right}</span></button>`;
+    const others=pick?[...new Set(ps.filter(p=>p.room!==pick.room).map(p=>p.room))]:[];
+    box.innerHTML=`<div class="rp-head"><span>退的是哪一件</span><small>只在打包的帐出现</small></div><div class="rp-list" role="radiogroup" aria-label="退的是哪一件">${ps.map((p,k)=>opt(p.id,esc(p.name),esc(p.room),`付了 ${money(cash[k])}`,p===pick)).join('')}${opt('','整笔一起退','不指定，按各件的份分','',!pick)}</div>${pick?`<p class="rp-note">这笔退款只算到「${esc(pieceText(pick))}」：清单按${esc(pick.room)}看是 <b class="num">+${amt>0?money(Math.round(amt*100)):'¥0'}</b>${others.length?`，${esc(others.join('和'))}不变`:''}。</p>`:''}`;
   }
   function paymentInfo(i){
     if(!i)return '<p class="form-hint">选择项目后，支出将自动关联该项目。</p>';
@@ -709,7 +728,7 @@
     $('#payment-amount-label').textContent=refund?'退款金额（元）':'实际支出（元）';
     $('#date-caption').textContent=refund?'退款日期':'支出日期';
     $('#payment-save').textContent=refund?'保存退款':'保存支出';
-    $('#sheet-title').textContent=refund?'记录退款':'记一笔';
+    $('#sheet-title').textContent=refund?'记录退款':'记一笔';updateRefundPiece();
     if(i?.status==='settled')$('#payment-hint').textContent+=' 该项目已结算，新增收支后将重新核对结算。';
     updateRefundAdjustment();refreshLook();
   }
@@ -740,7 +759,7 @@
     const amount=fixed(f.get('amount'),2,kind==='refund'?'退款金额':'实际支出');if(!amount)throw new Error('金额须大于 0 元。');
     const date=String(f.get('date')||'');if(!validDate(date))throw new Error('请选择有效日期。');
     if(date>nowDate())throw new Error('实际收支日期不能晚于今天。尚未付款的项目请设置计划付清日期。');
-    const next=clone(data);let item,ps=null;
+    const next=clone(data);let item,ps=null,part='';
     if(target==='new'&&kind==='payment'){
       const name=String(f.get('name')||'').trim();if(!name)throw new Error('请填写项目名称。');
       item={id:uid('e'),name,category:String(f.get('item-category')),room:String(f.get('item-room')),budget:null,price:null,costMode:'actual',status:'confirmed',merchant:String(f.get('merchant')||'').trim(),due:'',note:''};
@@ -749,10 +768,12 @@
     }else if(target==='linked'){
       item=next.items.find(i=>i.id===f.get('payment-item'));if(!item)throw new Error('请选择关联项目。');
       const net=paid(item,data);if(kind==='refund'&&amount>net)throw new Error(`退款不能超过该项目的累计净支出 ${money(net)}。`);
+      part=kind==='refund'&&partsOf(item)?String(f.get('refund-part')||''):'';
+      if(part){const k=item.parts.findIndex(p=>p.id===part);if(k<0)throw new Error('退的那一件已不在打包里，请重新选择。');const has=pieceCash(data.items.find(x=>x.id===item.id),data)[k];if(amount>has)throw new Error(`退款不能超过「${pieceText(item.parts[k])}」付了的 ${money(has)}。`);}
       if(item.status==='estimate')item.status='confirmed';
       if(item.status==='settled')item.status='confirmed';
     }else throw new Error('请选择新增费用或关联预算。');
-    next.payments.push({id:uid('p'),itemId:item.id,amount,date,kind,note:String(f.get('note')||'').trim()});
+    next.payments.push({id:uid('p'),itemId:item.id,amount,date,kind,note:String(f.get('note')||'').trim(),...(part?{part}:{})});
     if(kind==='refund'&&f.get('refund-adjust')==='on'){
       if(item.costMode==='actual')throw new Error('按实际支出核算的项目无需同步修改预计费用。');
       const revised=fixed(f.get('refund-price'),2,'调整后预计费用'),before=priceText(item);
@@ -861,6 +882,7 @@
       else if(a==='stats-group'){ui.statsGroup=b.dataset.group;render();}
       else if(a==='stats-drill'){const group=ui.statsGroup;const key=b.dataset.key;navigate(group==='category'?'budget':'ledger',{ledgerTab:'payments',category:group==='category'?key:'all',room:group==='room'?key:'all',query:'',merchant:group==='merchant'?key:null});}
       else if(a==='payment-kind'){updatePaymentKind(b.dataset.kind);markDraft();}
+      else if(a==='refund-part'){$('#refund-part').value=b.dataset.part||'';updateRefundPiece();markDraft();}
       else if(a==='delete-item'){if(data.payments.some(t=>t.itemId===id))showError('此费用项已有付款记录。为避免丢失关联信息，请先处理相关流水。');else confirmation('删除费用项','该费用项将从预算和统计中移除；此操作不能撤销。','delete-item-confirm',id);}
       else if(a==='delete-item-confirm'){const next=clone(data);next.items=next.items.filter(i=>i.id!==id);next.changes=next.changes.filter(c=>c.itemId!==id);if(await write(next))done('费用项已删除');}
       else if(a==='delete-payment')confirmation('删除支出记录？','仅用于纠正错误记录。删除会重新计算净支出与待付款，不改变手动填写的预计费用。按实际支出核算的项目将同步更新费用合计。此操作不可撤销。','delete-payment-confirm',id);

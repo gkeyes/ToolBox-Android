@@ -601,6 +601,20 @@ test('1.11.5 · 完成 hands the move to the ledger, which applies it with no ba
   assert.equal(next.items[1].parts[1].room, '主卧'); assert.deepEqual(next.project.home, { k: 1 });
 });
 
+test('1.12.0 · a refund that names its piece comes off that piece only; one whose piece is gone falls back to the shares', () => {
+  const b = { id: 'bd', name: '电器打包', category: 'furniture', room: '多个空间', budget: null, price: 1409700, costMode: 'estimated', status: 'confirmed', merchant: '', due: '', note: '',
+    parts: [{ id: 'pa', name: '空调', room: '次卧', amount: 319900 }, { id: 'pb', name: '电脑', room: '书房', amount: null }, { id: 'pc', name: '电视', room: '客厅', amount: null }] };
+  const pays = [{ id: 'p', itemId: 'bd', amount: 1409700, date: '2026-10-01', kind: 'payment', note: '' }, { id: 'r', itemId: 'bd', amount: 319900, date: '2026-10-05', kind: 'refund', note: '', part: 'pa' }];
+  const L = app.validate({ ...base(), items: [b], payments: pays }), before = app.payShares(L.items[0], app.validate({ ...base(), items: [b], payments: pays.slice(0, 1) })).cash;
+  assert.equal(L.payments[1].part, 'pa');
+  const out = app.payShares(L.items[0], L);
+  assert.deepEqual(out.rows.get('r'), [319900, 0, 0], 'the refund row is all 空调');
+  assert.deepEqual(out.cash, [0, before[1], before[2]], '书房 and 客厅 unchanged');
+  const gone = app.validate({ ...base(), items: [{ ...b, parts: b.parts.slice(1).concat({ id: 'pd', name: '冰箱', room: '厨房', amount: null }) }], payments: pays });
+  assert.equal(gone.payments[1].part, undefined, 'a removed piece drops the link, the ledger still loads');
+  assert.equal(app.validate({ ...base(), payments: [...base().payments, { id: 'x', itemId: 'a', amount: 10, date: '2026-10-02', kind: 'refund', note: '', part: 'zz' }] }).payments[1].part, undefined, 'not a bundle: no link');
+});
+
 test('1.11.3 · the plan editor refuses drags past 60 rooms / 40 bathrooms and keeps a refused session as a draft', () => {
   const src = read('home3d.js');
   assert.match(src, /freeBath\(it\) && rooms\.length >= HM\.BLOCK_MAX\) toast\(`最多\$\{HM\.BLOCK_MAX\}个房间/);
