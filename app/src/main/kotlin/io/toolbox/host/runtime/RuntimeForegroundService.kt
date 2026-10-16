@@ -194,7 +194,13 @@ internal class RuntimeForegroundService : Service() {
         toolIcons.keys.retainAll(activeIconSessions)
         snapshot.sessions.forEach { session ->
             val id = session.sessionId
-            if (!toolIcons.containsKey(id)) loader.cached(session.toolId)?.let { toolIcons[id] = it }
+            if (!toolIcons.containsKey(id)) {
+                loader.cached(session.toolId)?.let {
+                    toolIcons[id] = it
+                    // The bootstrap post may already show this card; its icon isn't part of the card, so re-post it.
+                    notifications.refreshArtwork(id)
+                }
+            }
             if (!toolIcons.containsKey(id) && id !in iconLoads) {
                 iconLoads[id] = scope.launch {
                     try {
