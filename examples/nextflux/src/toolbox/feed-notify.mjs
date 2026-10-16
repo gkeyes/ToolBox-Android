@@ -55,7 +55,7 @@ export function routeForOpen(record) {
  * feedTitle(feedId) -> string
  * isForeground() -> boolean   the reader is on screen, so a system notification would be noise
  */
-export function createFeedNotifier({ api, notifications, storage, feedTitle = () => "", isForeground = () => false }) {
+export function createFeedNotifier({ api, notifications, storage, feedTitle = () => "", isForeground = () => false, isCached = async () => true }) {
   let queue = Promise.resolve();
   const serial = (work) => {
     const run = queue.catch(() => {}).then(work);
@@ -113,9 +113,13 @@ export function createFeedNotifier({ api, notifications, storage, feedTitle = ()
             results.push({ feedId, outcome: "baseline" });
             continue;
           }
-          const { entries = [], total = 0 } = await api.newUnreadEntries(feedId, watch.lastEntryId) || {};
-          const fresh = entries.filter((entry) => Number.isSafeInteger(entry?.id) && entry.id > watch.lastEntryId)
-            .sort((a, b) => b.id - a.id);
+          const { entries = [], total: reported = 0 } = await api.newUnreadEntries(feedId, watch.lastEntryId) || {};
+          const newer = entries.filter((entry) => Number.isSafeInteger(entry?.id) && entry.id > watch.lastEntryId);
+          // Only entries the committed sync wrote announce, so a tap never opens a missing one.
+          // The rest stay above the cursor and announce after the sync that caches them.
+          const cached = await Promise.all(newer.map((entry) => isCached(entry.id).catch(() => false)));
+          const fresh = newer.filter((_, index) => cached[index]).sort((a, b) => b.id - a.id);
+          const total = Math.max(fresh.length, (Number(reported) || 0) - (newer.length - fresh.length));
           if (!fresh.length) { results.push({ feedId, outcome: "none" }); continue; }
           if (isForeground()) {
             state.feeds[key] = { lastEntryId: fresh[0].id };
@@ -156,5 +160,15 @@ export function createFeedNotifier({ api, notifications, storage, feedTitle = ()
     });
   }
 
-  return { watchedFeedIds, setWatched, check, takeOpen };
+  /** Logout: forgets every watch, cursor and pending open, and withdraws posted notices. */
+  function clear() {
+    return serial(async () => {
+      const state = await load();
+      await storage.remove(FEED_NOTIFY_KEY);
+      await Promise.all(Object.keys(state.feeds).map((key) =>
+        notifications?.cancel?.(feedNotificationId(Number(key))).catch(() => {})));
+    });
+  }
+
+  return { watchedFeedIds, setWatched, check, takeOpen, clear };
 }

@@ -10,7 +10,9 @@ import { startContinuousSync } from "@/toolbox/background.js";
 export default function FeedNotifyPrompts() {
   const { t } = useTranslation();
   const prompt = useStore(feedNotifyPrompt);
-  const close = () => feedNotifyPrompt.set(null);
+  // The confirm dialog closes itself after onConfirm; it must not dismiss the permission
+  // dialog that replaced it.
+  const closeIf = (kind) => () => { if (feedNotifyPrompt.get()?.kind === kind) feedNotifyPrompt.set(null); };
 
   const enableWithSync = async () => {
     const feed = prompt?.feed;
@@ -22,12 +24,12 @@ export default function FeedNotifyPrompts() {
     } catch (error) {
       if (error?.code === "PERMISSION_DENIED" || error?.code === "SYSTEM_PERMISSION_DENIED") {
         // Background sync stays on; the permission dialog replaces this one.
-        queueMicrotask(() => feedNotifyPrompt.set({ kind: "permission" }));
+        feedNotifyPrompt.set({ kind: "permission" });
         return;
       }
       throw error;
     }
-    if (result === "blocked") queueMicrotask(() => feedNotifyPrompt.set({ kind: "permission" }));
+    if (result === "blocked") feedNotifyPrompt.set({ kind: "permission" });
     else toast.success(t("feedNotify.on", { title: feed.title }));
   };
 
@@ -38,7 +40,7 @@ export default function FeedNotifyPrompts() {
         content={t("feedNotify.needsSync")}
         isOpen={prompt?.kind === "needsSync"}
         onConfirm={enableWithSync}
-        onClose={close}
+        onClose={closeIf("needsSync")}
         status="accent"
         confirmVariant="primary"
         cancelText={t("common.cancel")}
@@ -48,7 +50,7 @@ export default function FeedNotifyPrompts() {
         title={t("feedNotify.permissionTitle")}
         content={t("feedNotify.permission")}
         isOpen={prompt?.kind === "permission"}
-        onClose={close}
+        onClose={closeIf("permission")}
         status="warning"
         confirmVariant="primary"
         confirmText={t("feedNotify.gotIt")}

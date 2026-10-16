@@ -6,11 +6,12 @@ import {
 
 // A stand-in for the Miniflux server and the ToolBox host. The server holds entries; the host
 // stores tool data, records posted notifications and turns a tap into a notifications.open event.
-function world({ notificationsGranted = true } = {}) {
+function world({ notificationsGranted = true, uncached = new Set() } = {}) {
   const entries = [];
   const failingFeeds = new Set();
   const data = new Map();
   const posted = [];
+  const cancelled = [];
   const openListeners = [];
   let foreground = false;
   let systemAllowed = true;
@@ -38,6 +39,7 @@ function world({ notificationsGranted = true } = {}) {
     storage: {
       async get(key) { return data.has(key) ? structuredClone(data.get(key)) : null; },
       async set(key, value) { data.set(key, structuredClone(value)); },
+      async remove(key) { data.delete(key); },
     },
     notifications: {
       async post(id, title, body) {
@@ -45,7 +47,7 @@ function world({ notificationsGranted = true } = {}) {
         // Android's own switch: only a post sees it, cancel does not.
         if (!systemAllowed) throw Object.assign(new Error("off"), { code: "SYSTEM_PERMISSION_DENIED" });
         posted.push({ id, title, body }); },
-      async cancel() { if (!notificationsGranted) throw denied(); },
+      async cancel(id) { if (!notificationsGranted) throw denied(); cancelled.push(id); },
       onOpen(listener) { openListeners.push(listener); return () => {}; },
     },
   };
@@ -58,8 +60,9 @@ function world({ notificationsGranted = true } = {}) {
   const notifier = createFeedNotifier({
     api, notifications: toolbox.notifications, storage: toolbox.storage,
     feedTitle: (feedId) => titles[feedId], isForeground: () => foreground,
+    isCached: async (id) => !uncached.has(id),
   });
-  return { server, toolbox, host, notifier, posted, data };
+  return { server, toolbox, host, notifier, posted, data, cancelled };
 }
 
 test("the whole chain: watch a feed, background sync finds new entries, notify, tap opens the article", async () => {
@@ -190,4 +193,31 @@ test("text and route helpers", () => {
   assert.equal(routeForOpen({ feedId: 3, entryIds: [9] }), "/feed/3/article/9");
   assert.equal(routeForOpen({ feedId: 3, entryIds: [9, 8] }), "/feed/3");
   assert.equal(routeForOpen(null), null);
+});
+
+test("an entry the committed sync has not cached waits for the sync that caches it", async () => {
+  const uncached = new Set([201]);
+  const { server, notifier, posted } = world({ uncached });
+  await notifier.setWatched(12, true);
+  server.add(12, 200, "已缓存");
+  server.add(12, 201, "同步之后才到");
+  assert.deepEqual(await notifier.check(), [{ feedId: 12, outcome: "notified", count: 1 }]);
+  assert.match(posted.at(-1).body, /已缓存/);
+  assert.doesNotMatch(posted.at(-1).body, /同步之后才到/);
+  uncached.clear();
+  assert.deepEqual(await notifier.check(), [{ feedId: 12, outcome: "notified", count: 1 }]);
+  assert.match(posted.at(-1).body, /同步之后才到/);
+});
+
+test("clear forgets every watch and withdraws posted notices", async () => {
+  const { server, notifier, data, cancelled } = world();
+  await notifier.setWatched(12, true);
+  await notifier.setWatched(13, true);
+  server.add(12, 300, "新");
+  await notifier.check();
+  cancelled.length = 0;
+  await notifier.clear();
+  assert.equal(data.has(FEED_NOTIFY_KEY), false);
+  assert.deepEqual(await notifier.watchedFeedIds(), []);
+  assert.deepEqual(cancelled.sort(), [feedNotificationId(12), feedNotificationId(13)].sort());
 });

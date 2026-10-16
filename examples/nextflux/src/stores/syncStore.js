@@ -177,6 +177,8 @@ export function removeCachedFeed(feedId) {
     feeds.set(feeds.get().filter((feed) => feed.id !== id));
     unreadCounts.set({ ...unreadCounts.get(), [id]: 0 });
     starredCounts.set({ ...starredCounts.get(), [id]: 0 });
+    const { forgetFeedNotification } = await import("../toolbox/feed-notifications.js");
+    await forgetFeedNotification(id).catch(() => {});
   });
 }
 
