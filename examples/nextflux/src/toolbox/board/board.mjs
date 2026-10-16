@@ -199,8 +199,8 @@ export function salvageTopics(raw, count = Infinity) {
 
 // Ranges that together reach (nearly) every article of a board over 3 —
 // "1-12", "1-11", "1-6,7-12" of 12 — lump the board into one topic and leave
-// none for the rest: when the reply has other topics, those numbers are not
-// this topic's. A topic that lists the articles one by one keeps them, and
+// none for the rest: when another topic claims some of them, those numbers
+// are not this topic's. A topic that lists the articles one by one keeps them, and
 // so does a reply whose only topic is the whole board.
 const catchAll = (ranged, count) => count > 3 && new Set(ranged).size >= count - Math.floor(count / 10);
 
@@ -242,13 +242,16 @@ export function readTopics(text, count) {
     return { item, numbers, ranged, lumps: catchAll(ranged, count) };
   });
   const real = (n) => Number.isInteger(n) && n >= 1 && n <= count;
-  // A catch-all range gives way only to a topic that groups real articles itself.
-  const others = read.some(({ item, numbers, lumps }) => !lumps && clean(item?.title, 40) && numbers.some(real));
+  // A catch-all range gives way only to a topic that groups real articles
+  // itself and claims some of the catch-all's: "1-12" beside [4,5] is no
+  // grouping, while "1-11" beside [12] splits the board in two and stays.
+  const rivals = read.filter(({ item, numbers, lumps }) => !lumps && clean(item?.title, 40) && numbers.some(real));
   for (const { item, ranged, lumps, numbers: all } of read) {
     if (topics.length >= MAX_TOPICS) break;
     const title = clean(item?.title, 40);
     let numbers = all;
-    if (others && lumps) {
+    const lumpSet = lumps ? new Set(ranged) : null;
+    if (lumps && rivals.some((rival) => rival.numbers.some((n) => lumpSet.has(n)))) {
       // Only what the ranges named goes; a number also written on its own stays.
       const lumped = new Map();
       ranged.forEach((n) => lumped.set(n, (lumped.get(n) || 0) + 1));

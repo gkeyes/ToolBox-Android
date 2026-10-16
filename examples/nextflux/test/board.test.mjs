@@ -146,6 +146,12 @@ test("article references keep their numbers: lists, ranges and 2.0 are not glued
   // A second topic with no real article does not count as another grouping; nor does a second catch-all.
   assert.deepEqual(parseTopics('{"topics":[{"title":"全部","articles":["1-12"]},{"title":"坏","articles":[99]}]}', 12).map((topic) => [topic.title, topic.articles.length]), [["全部", 12]]);
   assert.deepEqual(parseTopics('{"topics":[{"title":"全部","articles":["1-12"]},{"title":"又全部","articles":["1-11"]}]}', 12).map((topic) => [topic.title, topic.articles.length]), [["全部", 12]]);
+  // A near-whole range beside a topic of the rest splits the board in two: both stay.
+  for (const [reply, count, sizes] of [
+    ['{"topics":[{"title":"大","articles":["1-11"]},{"title":"小","articles":[12]}]}', 12, [11, 1]],
+    ['{"topics":[{"title":"大","articles":["1-9"]},{"title":"小","articles":[10]}]}', 10, [9, 1]],
+    ['{"topics":[{"title":"大","articles":["1-18"]},{"title":"小","articles":["19-20"]}]}', 20, [18, 2]],
+  ]) assert.deepEqual(parseTopics(reply, count).map((topic) => topic.articles.length), sizes, reply);
   // A small board may be one topic.
   assert.deepEqual(parseTopics('{"topics":[{"title":"全部","articles":["1-3"]},{"title":"乙","articles":[1]}]}', 3)[0].articles, [1, 2, 3]);
   assert.deepEqual(articleNumbers("1-14", 12), []);

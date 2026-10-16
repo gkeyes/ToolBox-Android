@@ -573,3 +573,26 @@ test("an empty board keeps the settings it was made under, so opening it again r
   assert.equal(globalThis.__board.reads, reads, "not made again");
   openBoard(false);
 });
+
+test("a sync landing while the first board of the day is made is read after it", async () => {
+  // A board not made yet, as at launch.
+  board.set({ ...board.get(), status: "idle", ids: [], filter: null, day: null });
+  rows = [article(1), article(2)];
+  // The sync finishes as the articles are read, before the board shows as loading.
+  globalThis.__board.onRead = () => {
+    rows = [article(1), article(2), article(9)];
+    globalThis.__board.isSyncing.set(true); globalThis.__board.isSyncing.set(false);
+  };
+  let call = waitCall();
+  refreshBoard();
+  const first = await call;
+  call = waitCall();
+  first.onChunk(TOPICS); first.resolve();
+  const after = await call;
+  after.onChunk(TOPICS); after.resolve();
+  await tick(); await tick();
+  assert.ok(board.get().ids.includes(9));
+  // The status line under the title is cut at the title's width.
+  const css = readFileSync(new URL("../src/design/ios27.css", import.meta.url), "utf8");
+  assert.match(css, /\.article-list-title > \.article-list-caption \{ max-inline-size: 100%; \}/);
+});
