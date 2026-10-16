@@ -355,3 +355,45 @@ test("a board from yesterday is made again even when the settings end where they
   await tick(); await tick();
   openBoard(false);
 });
+
+test("a sync deferred by settling settings is kept when the board closes, and after a board still being made", async () => {
+  const settled = () => new Promise((resolve) => setTimeout(resolve, 700));
+  rows = [article(1), article(2)];
+  settingsState.set({ ...settingsState.get(), duplicateMatch: "either" });
+  await settled();
+  let call = waitCall();
+  refreshBoard();
+  (await call).onChunk(TOPICS); calls.at(-1).resolve();
+  await tick(); await tick();
+  // Closed before the settings settle: the sync's article still comes in.
+  openBoard(true);
+  let before = calls.length;
+  settingsState.set({ ...settingsState.get(), duplicateMatch: "url" });
+  rows = [article(1), article(2), article(3)];
+  await sync();
+  settingsState.set({ ...settingsState.get(), duplicateMatch: "either" });
+  openBoard(false);
+  call = waitCall();
+  await settled();
+  const closed = await call;
+  assert.equal(calls.length, before + 1, "one call for the synced article");
+  closed.onChunk(TOPICS); closed.resolve();
+  await tick(); await tick();
+  assert.ok(board.get().ids.includes(3));
+
+  // A board being made when the sync lands: brought up to date after it.
+  call = waitCall();
+  refreshBoard();
+  const running = await call;
+  before = calls.length;
+  rows = [article(1), article(2), article(3), article(4)];
+  await sync();
+  assert.equal(calls.length, before, "nothing while the board is made");
+  call = waitCall();
+  running.onChunk(TOPICS); running.resolve();
+  const after = await call;
+  assert.equal(after.kind, "topics", "the synced article is asked about once the board is made");
+  after.onChunk(TOPICS); after.resolve();
+  await tick(); await tick();
+  assert.ok(board.get().ids.includes(4));
+});

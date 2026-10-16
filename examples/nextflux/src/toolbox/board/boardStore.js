@@ -28,6 +28,9 @@ let runFilter = null;
 // A pending settings change, and whether a sync finished while it waited.
 let settle = null;
 let syncedWhileSettling = false;
+// A sync's articles arrived while a board was being made from an earlier
+// snapshot: bring that board up to date once it is done.
+let syncAfterRun = false;
 let digestRun = null;
 
 const aiReady = () => Boolean(settingsState.get().aiApiKey);
@@ -62,6 +65,8 @@ async function todaysArticles() {
 export async function refreshBoard({ onlyIfNew = false } = {}) {
   const previous = board.get();
   if (onlyIfNew && run) return;
+  // This run reads today's articles afresh.
+  syncAfterRun = false;
   run?.abort();
   const controller = new AbortController();
   run = controller;
@@ -184,7 +189,10 @@ export async function refreshBoard({ onlyIfNew = false } = {}) {
       : { ...EMPTY, status: "error", error: message, raw: error?.raw ?? null, day: today, filter, ids: all.map((article) => article.id) });
     boardStream.set(null);
   } finally {
-    if (run === controller) run = null;
+    if (run === controller) {
+      run = null;
+      if (syncAfterRun) refreshBoard({ onlyIfNew: true });
+    }
   }
 }
 
@@ -267,6 +275,8 @@ isSyncing.listen((syncing) => {
   if (board.get().filter !== articleFilter() && !boardOpen.get()) return;
   // Settings still settling: their timer brings the board up to date.
   if (settle) { syncedWhileSettling = true; return; }
+  // A board being made read today's articles before this sync.
+  if (run) { syncAfterRun = true; return; }
   refreshBoard({ onlyIfNew: true });
 });
 
@@ -284,16 +294,18 @@ settingsState.listen(() => {
     settle = null;
     const synced = syncedWhileSettling;
     syncedWhileSettling = false;
-    const now = articleFilter();
     const state = board.get();
+    if (state.status === "idle" || !authState.get().userId) return;
     const made = run ? runFilter : state.filter;
-    if (!boardOpen.get() || state.status === "idle" || !authState.get().userId) return;
-    // Back to the settings the board was made under, today: only what a
-    // sync meanwhile brought in.
-    if (made === now && state.day === startOfDay().getTime()) {
-      if (synced && !run) refreshBoard({ onlyIfNew: true });
+    if (made !== articleFilter() || state.day !== startOfDay().getTime()) {
+      // An open board follows at once; a closed one waits to be opened.
+      if (boardOpen.get()) refreshBoard();
       return;
     }
-    refreshBoard();
+    // Back to the settings the board was made under: only what a sync
+    // meanwhile brought in, after the board being made, if any.
+    if (!synced) return;
+    if (run) syncAfterRun = true;
+    else refreshBoard({ onlyIfNew: true });
   }, SETTLE_MS);
 });
