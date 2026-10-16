@@ -437,6 +437,9 @@ body[data-page=home] .workspace{padding-bottom:0}
 .hv-label{position:absolute;left:0;top:0;display:flex;align-items:center;gap:5px;font-size:11px;font-weight:600;padding:3px 9px;white-space:nowrap;will-change:transform;transition:opacity .2s}
 .hv-label small{font-weight:500;color:var(--muted)}
 .hv-label.dim{opacity:.55}
+.hv-label.more-only{padding:0;background:none!important;box-shadow:none!important;-webkit-backdrop-filter:none;backdrop-filter:none}
+.hv-label.more-only::before,.hv-label.more-only::after{display:none}
+.hv-label.more-only .hv-more{margin:0}
 .hv-more{font-size:10px;font-weight:700;line-height:16px;color:var(--hg-accent);background:var(--hg-pill);border-radius:999px;padding:0 6px;margin-right:-5px;box-shadow:inset 0 0 0 .6px var(--hg-rim)}
 .hv-top{position:absolute;left:0;right:0;top:0;display:flex;align-items:flex-start;justify-content:space-between;gap:10px;padding:6px 16px;z-index:4;pointer-events:none}
 .hv-top>*{pointer-events:auto}

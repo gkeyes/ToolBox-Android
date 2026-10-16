@@ -107,22 +107,30 @@
     const NR=nearestRect(bb.rs,x,z).r,[x0,z0,x1,z1]=NR,h=GAP;
     rot=((rot|0)%4+4)%4;
     if(auto&&!dims.wall&&!dims.free){
-      // Gap between the look's back and each wall if it backed onto it; the depth faces the wall whatever the side, so no flicker.
       // A side counts only when it is a real wall (not the open seam to the other part of an L-shaped room) and the turned look fits.
       const me=NR,seam=sd=>bb.rs.some(({r})=>r!==me&&(sd===0?Math.abs(r[3]-z0)<.01&&x>r[0]&&x<r[2]:sd===2?Math.abs(r[1]-z1)<.01&&x>r[0]&&x<r[2]:sd===1?Math.abs(r[2]-x0)<.01&&z>r[1]&&z<r[3]:Math.abs(r[0]-x1)<.01&&z>r[1]&&z<r[3]));
       const fits=sd=>{const [along,across]=sd&1?[z1-z0,x1-x0]:[x1-x0,z1-z0];return dims.w<=along-2*h&&dims.d<=across-2*h;};
-      const near=[[z-z0,0],[x-x0,1],[z1-z,2],[x1-x,3]].map(([g,sd])=>[g-h-dims.d/2,sd]).filter(([g,sd])=>g<=SNAP+1e-6&&!seam(sd)&&fits(sd)).sort((a,b)=>a[0]-b[0]);
-      // The wall it backs onto keeps it until the look leaves that wall's range; only then may another wall take over.
-      // With a heading ({dx,dz}) a wall the drag clearly moves towards wins; crossing a narrow room between two
-      // in-range side walls turns to neither; otherwise (no clear heading, or none at all) the nearest wall wins.
+      const dist=[z-z0,x-x0,z1-z,x1-x],ok=sd=>!seam(sd)&&fits(sd);
+      // inRange: the wall the look already backs onto, measured with its depth towards that wall.
+      const inRange=sd=>dist[sd]-h-dims.d/2<=SNAP+1e-6&&ok(sd);
+      // Another wall can only take over once the look as it stands now (current turn) is within SNAP of it.
+      const [fw,fd]=footprint(dims,rot),phys=sd=>dist[sd]-h-(sd&1?fw:fd)/2;
+      const cand=[0,1,2,3].filter(sd=>sd!==rot&&phys(sd)<=SNAP+1e-6&&ok(sd)).sort((a,b)=>phys(a)-phys(b));
+      // narrow: the turned look nearly spans the room, so both walls of that pair are in range at once.
+      const narrow=sd=>(sd&1?x1-x0:z1-z0)<=dims.d+2*h+2*SNAP+1e-6;
+      // reach: the pair is close enough that the look, either way round, is never far from one of them (a bed in any
+      // bedroom), so being near one says nothing; only a clear push right up to it picks it, and nearest-wins never does.
+      const reach=sd=>(sd&1?x1-x0:z1-z0)<=2*(SNAP+h)+dims.w+dims.d+1e-6;
+      const m=typeof auto==='object'?Math.hypot(auto.dx,auto.dz):0,comp=sd=>m>1e-6?[-auto.dz,-auto.dx,auto.dz,auto.dx][sd]/m:0;
+      // The wall it backs onto keeps it until the look leaves that wall's range. Only in a narrow pair (a bed turned
+      // onto a side wall of a small bedroom, a chair on a balcony) may a wall the drag clearly heads for take over.
+      // Off its wall: a wall the drag clearly heads for wins (more clearly when the pair is ambiguous); otherwise
+      // the nearest one, unless both walls of its pair could claim the look.
       let side=null;
-      if(near.some(([,sd])=>sd===rot))side=rot;
-      else if(near.length){
-        if(typeof auto==='object'){const m=Math.hypot(auto.dx,auto.dz),comp=sd=>m>1e-6?[-auto.dz,-auto.dx,auto.dz,auto.dx][sd]/m:0;
-          const to=near.find(([,sd])=>comp(sd)>.6);
-          if(to)side=to[1];
-          else if(!near.some(([,sd])=>near.some(([,o])=>o===(sd+2)%4)&&Math.abs(comp(sd))<.6))side=near[0][1];}
-        else side=near[0][1];}
+      if(inRange(rot)){side=rot;if(narrow(rot)){const to=cand.find(sd=>(sd&1)!==(rot&1)&&comp(sd)>.6)??cand.find(sd=>sd===(rot+2)%4&&comp(sd)>.6);if(to!==undefined)side=to;}}
+      else if(cand.length){
+        const to=cand.find(sd=>reach(sd)?comp(sd)>.8&&phys(sd)<=.1:comp(sd)>.6);
+        if(to!==undefined)side=to;else{const n=cand.find(sd=>!reach(sd));if(n!==undefined)side=n;}}
       if(side!==null){rot=side;if(side===0)z=z0;else if(side===2)z=z1;else if(side===1)x=x0;else x=x1;} // pushed flush below by the clamp
     }
     if(dims.wall){
