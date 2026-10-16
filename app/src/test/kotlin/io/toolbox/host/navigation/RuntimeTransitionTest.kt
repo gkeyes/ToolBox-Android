@@ -91,7 +91,10 @@ class RuntimeTransitionTest {
     fun aSwitchDuringTheReturnKeepsTheSourceAlphaAndPutsTheCoverBeneathIt() {
         composeTransition(RuntimeRoute("a"))
         val a = current()
-        compose.runOnIdle { a.sourceAboveRuntime = true }
+        compose.runOnIdle {
+            a.entryCoverVisible = false
+            a.sourceAboveRuntime = true
+        }
         snap(a.sourceReturnProgress, 0.6f)
 
         route = RuntimeRoute("b")
@@ -99,6 +102,33 @@ class RuntimeTransitionTest {
         val b = current()
         assertTrue(b.coverBeneathSource)
         assertEquals(1f - 0.6f, ToolBoxMotion.fadeThroughOutgoingAlpha(1f - b.entryProgress.value), 0.0001f)
+    }
+
+    @Test
+    fun aSwitchAfterBackWhileLoadingCarriesTheCoverEntryAndKeepsTheCoverOnTop() {
+        composeTransition(RuntimeRoute("a"))
+        val a = current()
+        snap(a.entryProgress, 0.3f)
+        // Back while the cover is still showing: the source sits opaque beneath the cover.
+        compose.runOnIdle {
+            a.sourceAboveRuntime = true
+            a.runtimeLeaving = true
+        }
+
+        route = RuntimeRoute("b")
+        compose.waitForIdle()
+        val b = current()
+        assertFalse(b.coverBeneathSource)
+        assertEquals(0.3f, b.entryProgress.value, 0.0001f)
+    }
+
+    @Test
+    fun reopeningTheReturningToolCancelsTheReturnInsteadOfPushing() {
+        assertTrue(reopensReturningTool(RuntimeRoute("a"), RuntimeRoute("a"), leaving = true))
+        assertFalse(reopensReturningTool(RuntimeRoute("a"), RuntimeRoute("a"), leaving = false))
+        assertFalse(reopensReturningTool(RuntimeRoute("b"), RuntimeRoute("a"), leaving = true))
+        assertFalse(reopensReturningTool(RuntimeRoute("a"), null, leaving = true))
+        assertFalse(reopensReturningTool(SettingsRoute, RuntimeRoute("a"), leaving = true))
     }
 
     @Test
