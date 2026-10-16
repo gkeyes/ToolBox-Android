@@ -21,7 +21,7 @@ function loadApp() {
   vm.runInNewContext(read('app.js'), context);
   return window.ZZApp;
 }
-const app = loadApp();
+const app = loadApp(), ZZ = app;
 const base = () => ({
   schemaVersion: 2, revision: 1, completedDrafts: [],
   project: { name: '我的新家', area: '98', layout: '三室两厅', budget: 30000000, initialBudget: 30000000 },
@@ -599,6 +599,25 @@ test('1.11.5 · 完成 hands the move to the ledger, which applies it with no ba
   assert.deepEqual(next.items[0], { id: 'a', room: '餐厅', model: { kind: 'tvA', x: .1 } });
   assert.deepEqual(next.items[1].parts[0], { id: 'x', room: '餐厅', model: { kind: 'sofaA', x: .1 } }, 'the piece moves');
   assert.equal(next.items[1].parts[1].room, '主卧'); assert.deepEqual(next.project.home, { k: 1 });
+});
+
+test('1.12.1 · a failed plan save says so; moved pieces re-file their bundle; the restore notice counts early refunds', async () => {
+  // home3d: when the ledger write fails, 完成 (not quiet) tells the user.
+  const h3 = read('home3d.js'), at = h3.indexOf('  function saveHome(home, renames, quiet, move) {'), fn = h3.slice(at, h3.indexOf('  function', at + 10));
+  const toasts = []; const api = { saveHome: () => Promise.resolve(false), toast: (m) => toasts.push(m) };
+  const saveHome = new Function('HM', 'api', 'rebuildAll', 'setPlan', 'syncItems', 'renderTray', 'invalidate', 'let T, planKey, view;' + fn + 'return saveHome;')({ planOf: () => ({ key: 'k' }), sizesOf: () => ({}) }, api, () => {}, () => false, () => {}, () => {}, () => {});
+  assert.equal(await saveHome({}, [], false, null), false);
+  assert.ok(toasts.some((m) => m.startsWith('户型没保存上')), 'the failure is shown');
+  // app.js: a bundle whose pieces all move to 餐厅 is filed under 餐厅 itself.
+  const app = read('app.js'), src = app.match(/saveHome:(\(home,renames=\[\],move=null\)=>homeWrite\(next=>\{[\s\S]*?\}\}\)),\n/)[1];
+  const next = { project: {}, items: [{ id: 'b', room: '客餐厅', parts: [{ id: 'x', room: '客餐厅' }, { id: 'y', room: '客餐厅' }] }] };
+  new Function('homeWrite', 'partsOf', 'bundleRoom', 'return ' + src)((f) => f(next), (i) => i.parts || null, (ps) => new Set(ps.map((p) => p.room)).size > 1 ? '多个空间' : ps[0].room)({}, [], (room, model) => room === '客餐厅' ? { room: '餐厅' } : null);
+  assert.equal(next.items[0].room, '餐厅', 'the bundle follows its pieces');
+  // The restore notice: N is the number of items with a refund dated before its payment.
+  const line = app.match(/const early=parsed\.items[^\n]*/)[0];
+  const parsed = { items: [{ id: 'a' }, { id: 'b' }, { id: 'c' }], payments: [{ itemId: 'a', amount: 5, date: '2026-09-01', kind: 'refund' }, { itemId: 'a', amount: 9, date: '2026-09-02', kind: 'payment' }, { itemId: 'b', amount: 9, date: '2026-09-01', kind: 'payment' }, { itemId: 'c', amount: 1, date: '2026-08-01', kind: 'refund' }, { itemId: 'c', amount: 2, date: '2026-08-02', kind: 'payment' }] };
+  assert.equal(new Function('parsed', 'assertCashTimeline', line + 'return early;')(parsed, app.length && ZZ.assertCashTimeline), 2);
+  assert.match(app, /\$\{early\?`<p class="form-hint">有 \$\{early\} 个项目的退款日期早于付款/);
 });
 
 test('1.12.0 · a refund that names its piece comes off that piece only; one whose piece is gone falls back to the shares', () => {
