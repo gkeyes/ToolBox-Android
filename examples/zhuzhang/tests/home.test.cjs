@@ -67,10 +67,12 @@ test('validate drops unknown looks and unknown templates without rejecting the l
   assert.deepEqual(HM.sanitizeModel({ kind: 'bedA', x: 'a', z: NaN, rot: 1.5 }), { kind: 'bedA', x: .5, z: .5, rot: 0 });
 });
 
-test('the appliance and furniture palette has 13 and 12 looks, all with footprints', () => {
+test('the palette has 13 appliance, 21 furniture and 6 生活 looks, all with footprints', () => {
   assert.equal(HM.ORDER.app.length, 13);
-  assert.equal(HM.ORDER.fur.length, 12);
-  for (const k of [...HM.ORDER.app, ...HM.ORDER.fur]) assert.ok(HM.KINDS[k].w > 0 && HM.KINDS[k].d > 0, k);
+  assert.equal(HM.ORDER.fur.length, 21);
+  assert.equal(HM.ORDER.liv.length, 6);
+  assert.deepEqual([...HM.ORDER.app, ...HM.ORDER.fur, ...HM.ORDER.liv].sort(), Object.keys(HM.KINDS).sort(), 'every look is in exactly one group');
+  for (const k of [...HM.ORDER.app, ...HM.ORDER.fur, ...HM.ORDER.liv]) assert.ok(HM.KINDS[k].w > 0 && HM.KINDS[k].d > 0, k);
   assert.ok(read('home3d.js').includes('hoodB:'), 'every look is drawn in home3d.js');
   for (const k of Object.keys(HM.KINDS)) assert.match(read('home3d.js'), new RegExp(`\\b${k}: \\(\\)`), k);
 });

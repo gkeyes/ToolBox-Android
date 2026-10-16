@@ -19,9 +19,15 @@
     bedA:{k:'fur',w:1.7,d:2.15},bedB:{k:'fur',w:1.75,d:2.2},
     diningA:{k:'fur',w:1.7,d:1.7,free:1},diningB:{k:'fur',w:1.5,d:1.7,free:1},
     deskA:{k:'fur',w:1.2,d:1.05},deskB:{k:'fur',w:1.3,d:1.0},
-    cabA:{k:'fur',w:1.4,d:.62},cabB:{k:'fur',w:1.3,d:.45},cabC:{k:'fur',w:1.0,d:.36}
+    cabA:{k:'fur',w:1.4,d:.62},cabB:{k:'fur',w:1.3,d:.45},cabC:{k:'fur',w:1.0,d:.36},
+    // 1.8.0 · more everyday furniture, and a 生活 group for lamps, the cat's things and plants
+    coffeeA:{k:'fur',w:1.1,d:.6,free:1},coffeeB:{k:'fur',w:.8,d:.8,free:1},sideA:{k:'fur',w:.45,d:.45,free:1},
+    tableA:{k:'fur',w:1.2,d:.7,free:1},chairA:{k:'fur',w:.45,d:.45,free:1},stoolA:{k:'fur',w:.36,d:.36,free:1},
+    armA:{k:'fur',w:.8,d:.8},shoeA:{k:'fur',w:1.0,d:.35},dresserA:{k:'fur',w:1.0,d:.45},
+    lampA:{k:'liv',w:.45,d:.45,free:1},lampB:{k:'liv',w:.45,d:.45,free:1},catTree:{k:'liv',w:.6,d:.6},
+    catBed:{k:'liv',w:.55,d:.55,free:1},plantA:{k:'liv',w:.45,d:.45,free:1},plantB:{k:'liv',w:.4,d:.4,free:1}
   };
-  const ORDER={app:['fridgeA','fridgeB','fridgeC','tvA','tvB','acA','acB','hoodA','hoodB','microA','microB','washerA','washerB'],fur:['sofaA','sofaB','sofaC','bedA','bedB','diningA','diningB','deskA','deskB','cabA','cabB','cabC']};
+  const ORDER={app:['fridgeA','fridgeB','fridgeC','tvA','tvB','acA','acB','hoodA','hoodB','microA','microB','washerA','washerB'],fur:['sofaA','sofaB','sofaC','armA','bedA','bedB','diningA','diningB','tableA','chairA','stoolA','coffeeA','coffeeB','sideA','deskA','deskB','dresserA','cabA','cabB','cabC','shoeA'],liv:['lampA','lampB','catTree','catBed','plantA','plantB']};
   // Room names match ROOMS in app.js. back = rooms along the back wall, left to right, with widths.
   const TEMPLATES={
     t1l1:{n:'一室一厅',back:[['主卧',3.6],['卫生间',2.0]],D1:3.5,D2:4.2,L:3.4,K:2.6,BW:3.0},
