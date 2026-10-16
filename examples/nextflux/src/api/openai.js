@@ -86,3 +86,16 @@ export const summarizeArticleStream = async (article, { onChunk, onDone, onError
     onError(error);
   }
 };
+
+// Streams a chat completion for prepared messages, without the model's
+// thinking text (used by today's briefing).
+export const streamChat = async (messages, { onChunk, signal }) => {
+  const { aiApiKey, aiBaseUrl, aiModel } = settingsState.get();
+  await streamChatCompletion({
+    baseUrl: aiBaseUrl,
+    apiKey: aiApiKey,
+    signal,
+    onDelta: createThinkFilter(onChunk),
+    body: { model: aiModel, messages, temperature: 0.3 },
+  });
+};

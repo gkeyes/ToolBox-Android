@@ -14,6 +14,7 @@ import {
 } from "@/stores/feedsStore.js";
 import MenuButton from "./MenuButton";
 import FeedTitleFilterButton from "./FeedTitleFilterButton.jsx";
+import BriefingButton from "./BriefingButton.jsx";
 import ArticleListTabs from "./ArticleListFooter.jsx";
 import { useEffect, useLayoutEffect, useRef } from "react";
 
@@ -191,6 +192,7 @@ export default function ArticleListHeader({ collapsed = false }) {
   const actions = (
     <div className="article-list-actions ml-auto flex shrink-0">
       {feedId && <FeedTitleFilterButton feedId={feedId} feedTitle={title} />}
+      <BriefingButton />
       <MarkAllReadButton />
       <MenuButton />
     </div>
