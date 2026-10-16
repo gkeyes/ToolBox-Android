@@ -4,7 +4,7 @@
   // Ledger money is integer cents. DOM content originating from users is escaped.
   const KEY = 'ledger.v1';
   const runtime = window.ZZRuntime;
-  const VERSION = '1.12.0';
+  const VERSION = '1.12.1';
   const MAX_CENTS = 100000000000;
   const $ = s => document.querySelector(s);
   const $$ = s => [...document.querySelectorAll(s)];
@@ -1165,6 +1165,6 @@
   }
 
   // validate() is exposed for the unit tests; the 3D module talks to the ledger only through homeApi.
-  window.ZZApp=Object.freeze({validate,payShares,lookOnSave,lookRow,version:VERSION});
+  window.ZZApp=Object.freeze({validate,payShares,assertCashTimeline,lookOnSave,lookRow,version:VERSION});
   boot();
 })();

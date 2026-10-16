@@ -635,3 +635,5 @@ body[data-page="home"] #toast.has-action{top:calc(var(--home-top,64px) + 78px);b
 .rp-text{flex:1;min-width:0;display:flex;flex-direction:column}.rp-text b{font-size:14px;font-weight:600;overflow-wrap:anywhere}.rp-text small{font-size:11px;color:var(--muted)}.rp-paid{font-size:13px;color:#4f5b54;white-space:nowrap}
 .rp-note{padding:10px 12px;border-radius:12px;background:var(--surface-2,#f6f7f3);font-size:12px;line-height:1.6;color:#4f5b54;margin:0}.rp-note b{color:var(--accent)}
 @media (prefers-color-scheme:dark){.rp-head,.rp-paid,.rp-note{color:#c9cfc6}.rp-note{background:#262923}.rp-dot{border-color:#5b6157}}
+/* 1.12.1: the project name gives way first, so 本地账本 stays on one line at large text sizes. */
+@media(max-width:700px){.mobile-project{flex:0 100 auto}.mobile-project>span:not(.brand-mark){min-width:0}.mobile-project strong{max-width:100%}.top-actions{flex:none}.top-actions>.demo-mark{white-space:nowrap}}
