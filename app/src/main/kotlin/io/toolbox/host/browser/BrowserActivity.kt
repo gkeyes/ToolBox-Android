@@ -229,7 +229,7 @@ class BrowserActivity : ComponentActivity() {
             // Stop first: changing the user agent restarts an in-flight load, and the reload below would repeat it.
             live.stopLoading()
             webViewFactory.applyUserAgent(live)
-            state.error = null
+            // The error overlay stays until the reloaded page draws (BrowserWebViewFactory.restorePageBase).
             state.loadProgress = 0
             state.interaction = state.interaction.pageStarted()
             // data:, blob: and about:blank documents reload in place too; only a page with no document navigates.
@@ -269,7 +269,6 @@ class BrowserActivity : ComponentActivity() {
         state.mediaDiagnosticEvents.clear()
         state.mediaDiagnosticsReport = "正在重新加载网页并捕获媒体错误…"
         filters.stopPicker()
-        state.error = null
         state.loadProgress = 0
         state.interaction = state.interaction.pageStarted()
         val page = state.webView
@@ -352,7 +351,8 @@ class BrowserActivity : ComponentActivity() {
             BrowserLoadAction.Recover -> { state.interaction = state.interaction.requestRecoveryPrompt(); return }
             else -> Unit
         }
-        state.error = null
+        // A page that is still there keeps the error overlay until its reload draws; a new page has nothing under it.
+        if (state.webView == null) state.error = null
         state.loadProgress = 0
         state.interaction = state.interaction.pageStarted()
         if (state.webView == null) createPage() else state.webView?.let { page ->

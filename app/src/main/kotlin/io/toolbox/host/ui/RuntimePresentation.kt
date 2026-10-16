@@ -50,15 +50,21 @@ internal class PageBackStreak {
      * measured from when the lift was handled, [pageTouchHandledAt]: a stalled UI thread delays both
      * alike (the gesture's own lift is queued just before its Back), so a stall never stretches the
      * gap into a real tap.
+     *
+     * A stall can still fall between the lift and the Back, which comes as its own message. So when the
+     * system said a Back swipe began, at [backStartedAt], a lift handled from then until [now] is the
+     * swipe's own finger, whatever the gap.
      */
     fun hostTakes(
         now: Long,
         pageTouchedAt: Long,
         fromGestureEdge: Boolean = false,
         pageTouchHandledAt: Long = pageTouchedAt,
+        backStartedAt: Long = 0L,
     ): Boolean {
         val near = if (fromGestureEdge) PAGE_EDGE_TOUCH_NEAR_BACK_MS else PAGE_TOUCH_NEAR_BACK_MS
-        if (pageTouchedAt - lastPageBackAt > near && now - pageTouchHandledAt > near) {
+        val liftInSwipe = backStartedAt > 0L && pageTouchHandledAt in backStartedAt..now
+        if (!liftInSwipe && pageTouchedAt - lastPageBackAt > near && now - pageTouchHandledAt > near) {
             count = 0
         }
         return count >= PAGE_BACK_STREAK

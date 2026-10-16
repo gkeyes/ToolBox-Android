@@ -88,11 +88,18 @@ internal class BrowserWebViewFactory(
         prePaintBase = true
     }
 
-    /** White is the base colour pages without their own background expect, once a real page has drawn. */
+    /**
+     * White is the base colour pages without their own background expect, once a real page has drawn.
+     * The error overlay also leaves only now: a retry keeps it up over WebView's own error page, whose
+     * text may not suit the dark pre-paint base, until the new document has drawn.
+     */
     private fun restorePageBase(view: WebView) {
         if (view === state.webView && mainFrameFailed) return
         view.setBackgroundColor(android.graphics.Color.WHITE)
-        if (view === state.webView) prePaintBase = false
+        if (view === state.webView) {
+            prePaintBase = false
+            state.error = null
+        }
     }
 
     /** Night mode changed without recreating the page: a pre-paint base follows the new window colour. */
