@@ -517,7 +517,10 @@ test('1.11.0 · a bundle keeps its pieces, each with its own room and look, and 
   }
 });
 
-test('1.11.2 · a record id with ~ is refused (3D piece ids are record~piece)', () => {
-  const s = base(); s.items[0].id = 'a~x'; s.payments[0].itemId = 'a~x';
-  assert.throws(() => app.validate(s));
+test('1.11.2 · a record id with ~ is renamed and its payments follow (3D piece ids are record~piece)', () => {
+  const s = base(); s.items[0].id = 'a~x'; s.payments[0].itemId = 'a~x'; s.items.push({ ...s.items[1], id: 'a_x' });
+  const out = app.validate(s);
+  assert.equal(out.items[0].id, 'a_x_2');
+  assert.equal(out.payments[0].itemId, 'a_x_2');
+  assert.ok(out.items.every((i) => !i.id.includes('~')));
 });

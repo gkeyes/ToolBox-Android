@@ -54,10 +54,11 @@
     // 1.4.0: optional floor plan. Unknown template → dropped (the plan is derived from 户型 again); sizes clamped.
     const home=HM.sanitizeHome(p.home);if(home)out.project.home=home;
     if(source.completedDrafts!==undefined){if(!Array.isArray(source.completedDrafts))fail('草稿提交记录无效。');out.completedDrafts=[...new Set(source.completedDrafts.map(id=>string(id,100,false)))];}
-    const ids=new Set();
+    const ids=new Set(),renamed=new Map();
     for(const i of source.items){
       if(!i||ids.has(i.id))fail('备份中费用项 ID 重复。');
-      const id=string(i.id,100,false);if(id.includes('~'))fail('备份中项目编号无效。');ids.add(id);
+      // 1.11.2: ~ joins a record and its piece in 我的家; an older id with it is renamed (its payments follow).
+      let id=string(i.id,100,false);if(id.includes('~')){const was=id;let n=0;do id=was.replace(/~/g,'_')+(n++?'_'+n:'');while(ids.has(id)||source.items.some(x=>x!==i&&x?.id===id));renamed.set(was,id);}ids.add(id);
       if(!CATS.some(c=>c.id===i.category)||!['estimate','confirmed','settled'].includes(i.status))fail('备份中存在不支持的分类或状态。');
       if(i.due&&!validDate(i.due))fail('备份中付款日期无效。');
       out.items.push({id,name:string(i.name,100,false),category:i.category,room:string(i.room,50,false),budget:i.budget===null?null:cents(i.budget),price:i.price===null?null:cents(i.price),costMode:source.schemaVersion===1?'estimated':(i.costMode||'estimated'),status:i.status,merchant:string(i.merchant??'',100),due:string(i.due??'',10),note:string(i.note??'',1500)});
@@ -73,7 +74,8 @@
       }
     }
     const pids=new Set();
-    for(const t of source.payments){
+    for(let t of source.payments){
+      if(t&&renamed.has(t.itemId))t={...t,itemId:renamed.get(t.itemId)};
       if(!t||pids.has(t.id)||!ids.has(t.itemId)||!['payment','refund'].includes(t.kind)||!validDate(t.date))fail('备份中流水无效、重复或缺少关联项目。');
       pids.add(string(t.id,100,false));
       out.payments.push({id:t.id,itemId:t.itemId,amount:cents(t.amount,true),date:t.date,kind:t.kind,note:string(t.note??'',1500)});
@@ -84,7 +86,7 @@
       if(net<0)fail('备份中退款超过了关联项目已付金额。');if(i.status==='estimate'&&net>0)fail('有净付款的费用项不能标记为未确认。');
       if(i.status==='settled'&&i.costMode!=='actual'&&(i.price===null||net!==i.price))fail('已结算项目的金额与净付款不一致。');
     }
-    if(Array.isArray(source.changes))out.changes=source.changes.map(c=>({date:string(c?.date,40),itemId:string(c?.itemId,100),note:string(c?.note,2500)}));
+    if(Array.isArray(source.changes))out.changes=source.changes.map(c=>({date:string(c?.date,40),itemId:renamed.get(c?.itemId)??string(c?.itemId,100),note:string(c?.note,2500)}));
     const total=out.items.reduce((s,i)=>s+i.budget+(i.price??0),0)+out.payments.reduce((s,t)=>s+t.amount,0);
     if(!Number.isSafeInteger(total))fail('备份合计超出精确计算范围。');
     return out;
@@ -176,14 +178,18 @@
     if(!partsOf(i))return i.room===room?total:0;
     const s=shares(i,total,source);return i.parts.reduce((a,p,k)=>a+(p.room===room?s[k]:0),0);
   }
-  // 1.11.2: each piece's net paid, payment by payment, so a room's total is the sum of the rows 清单 shows.
+  // 1.11.2: each payment's share per piece is the step of the running net total's split, so rounding never piles up:
+  // the rows 清单 shows add up to each piece's net paid, and a fully refunded bundle leaves every piece at 0.
   const cashCache=new WeakMap();
-  function pieceCash(i,source=data){
+  function payShares(i,source=data){
     if(!cashCache.has(source))cashCache.set(source,new Map());const c=cashCache.get(source);if(c.has(i.id))return c.get(i.id);
-    const w=weightsOf(i.parts,refOf(i,source)),out=i.parts.map(()=>0);
-    for(const p of source.payments)if(p.itemId===i.id){const s=splitBy(p.amount,w);s.forEach((v,k)=>{out[k]+=p.kind==='refund'?-v:v;});}
-    c.set(i.id,out);return out;
+    const w=weightsOf(i.parts,refOf(i,source)),rows=new Map();let net=0,prev=i.parts.map(()=>0);
+    for(const p of source.payments)if(p.itemId===i.id){const r=p.kind==='refund';net=Math.max(0,net+(r?-p.amount:p.amount));const cur=splitBy(net,w);rows.set(p.id,cur.map((v,k)=>r?prev[k]-v:v-prev[k]));prev=cur;}
+    const out={rows,cash:prev};c.set(i.id,out);return out;
   }
+  const pieceCash=(i,source=data)=>payShares(i,source).cash;
+  // One payment's amount for a room (a refund as the amount credited back), from the same running split.
+  const payRoom=(i,room,t,source=data)=>{const s=payShares(i,source).rows.get(t.id);return s?i.parts.reduce((a,p,k)=>a+(p.room===room?s[k]:0),0):0;};
   const roomPaid=(i,room,source=data)=>pieceCash(i,source).reduce((a,v,k)=>a+(i.parts[k].room===room?v:0),0);
   // Expected = what was paid when that is the larger figure (or the record is 按实际支出): then the room's paid, row by row.
   const roomExpected=(i,room,source=data)=>i.costMode==='actual'||i.price===null||paid(i,source)>=i.price?roomPaid(i,room,source):roomShare(i,room,expected(i,source),source);
@@ -325,8 +331,8 @@
   /* ---------- 1.11.0 · 预算: each budget's 项目策划 (the cap you set) against its 费用预算 (what it should cost) ---------- */
   // room (1.11.2): under a room filter a bundle shows that room's share of its 策划 and 预计.
   function budgetCard(i,room=null){
-    const ps=partsOf(i),part=room&&ps?v=>roomShare(i,room,v):v=>v,full=expected(i),exp=room&&ps?roomExpected(i,room):full,known=!missingPrice(i),over=i.budget!==null&&known&&full>i.budget,max=Math.max(i.budget===null?0:part(i.budget),exp,1);
-    const tag=over?`<span class="bc-tag danger">超出策划 ${money(full-i.budget)}</span>`:!known?'<span class="bc-tag warn">待估价</span>':i.status==='settled'?'<span class="bc-tag">已结算</span>':i.costMode==='actual'?'<span class="bc-tag">已记账</span>':i.status!=='estimate'?'<span class="bc-tag">报价已确认</span>':'<span class="bc-tag gray">待确认</span>';
+    const ps=partsOf(i),part=room&&ps?v=>roomShare(i,room,v):v=>v,full=expected(i),exp=room&&ps?roomExpected(i,room):full,plan=i.budget===null?null:part(i.budget),known=!missingPrice(i),over=plan!==null&&known&&exp>plan,max=Math.max(i.budget===null?0:part(i.budget),exp,1);
+    const tag=over?`<span class="bc-tag danger">超出策划 ${money(exp-plan)}</span>`:!known?'<span class="bc-tag warn">待估价</span>':i.status==='settled'?'<span class="bc-tag">已结算</span>':i.costMode==='actual'?'<span class="bc-tag">已记账</span>':i.status!=='estimate'?'<span class="bc-tag">报价已确认</span>':'<span class="bc-tag gray">待确认</span>';
     const here=room&&ps?ps.filter(p=>p.room===room):null,where=here?`${esc(room)}的份：${esc(here.map(pieceText).join('，'))}`:ps?`${esc(i.room)}：${esc(ps.map(pieceText).join('，'))}`:esc(i.room);
     return `<button type="button" class="bcard" data-action="detail" data-id="${esc(i.id)}"><span class="bc-top"><span class="bc-left"><span class="bc-name">${esc(i.name)}${ps?` <span class="bundle-tag">${ps.length} 件</span>`:''}</span><span class="bc-sub">${where}</span></span>${tag}</span>${i.budget!==null&&known?`<span class="bc-bar${over?' over':''}" aria-hidden="true"><span style="width:${(over?100:exp/max*100).toFixed(1)}%"></span></span>`:''}<span class="bc-nums"><span>策划 <b class="num">${i.budget===null?'未设置':money(part(i.budget))}</b></span><span>预计 <b class="num ${over?'negative':known?'':'amber'}">${i.costMode==='actual'?money(here?roomPaid(i,room):paid(i)):known?money(exp):'待估价'}</b></span></span></button>`;
   }
@@ -341,14 +347,14 @@
   function payRow(t,room){
     const i=data.items.find(x=>x.id===t.itemId);if(!i)return '';const ps=partsOf(i);if(!ps)return rowActivity(t);
     const refund=t.kind==='refund',sign=refund?'+':'−',here=room?ps.filter(p=>p.room===room):[],rest=room?ps.filter(p=>p.room!==room):ps;
-    return `<button class="activity-row pay-bundle" data-action="transaction" data-id="${esc(t.id)}"><span class="row-icon">${icon(cat(i.category).icon)}</span><span class="activity-info"><span class="activity-title">${esc(i.name)} <span class="bundle-tag">打包 ${ps.length} 件</span></span><span class="activity-meta">${dateText(t.date)} · ${esc(cat(i.category).name)} · ${esc(i.room)}</span>${room?`<span class="bundle-share"><span>${esc(room)}的份：${esc(here.map(pieceText).join('，'))}</span><b class="num ${refund?'positive':''}">${sign}${money(roomShare(i,room,t.amount))}</b></span><span class="bundle-rest">这笔共 ${money(t.amount)}${rest.length?' · 其余：'+esc(rest.map(pieceText).join('，')):''}</span>`:`<span class="bundle-rest">${esc(ps.map(pieceText).join('，'))}</span>`}</span>${room?'':`<span class="activity-amount num ${refund?'positive':''}">${sign}${money(t.amount)}<small>${refund?'已退款':'已付款'}</small></span>`}</button>`;
+    return `<button class="activity-row pay-bundle" data-action="transaction" data-id="${esc(t.id)}"><span class="row-icon">${icon(cat(i.category).icon)}</span><span class="activity-info"><span class="activity-title">${esc(i.name)} <span class="bundle-tag">打包 ${ps.length} 件</span></span><span class="activity-meta">${dateText(t.date)} · ${esc(cat(i.category).name)} · ${esc(i.room)}</span>${room?`<span class="bundle-share"><span>${esc(room)}的份：${esc(here.map(pieceText).join('，'))}</span><b class="num ${refund?'positive':''}">${sign}${money(payRoom(i,room,t))}</b></span><span class="bundle-rest">这笔共 ${money(t.amount)}${rest.length?' · 其余：'+esc(rest.map(pieceText).join('，')):''}</span>`:`<span class="bundle-rest">${esc(ps.map(pieceText).join('，'))}</span>`}</span>${room?'':`<span class="activity-amount num ${refund?'positive':''}">${sign}${money(t.amount)}<small>${refund?'已退款':'已付款'}</small></span>`}</button>`;
   }
   function renderLedger(){
     if(!['payments','due'].includes(ui.ledgerTab))ui.ledgerTab='payments';
     const items=filteredItems(),room=ui.room==='all'?null:ui.room,t=totals(data,items,room);let content='',count=0;
     if(ui.ledgerTab==='payments'){
       const ids=new Set(items.map(i=>i.id)),ts=data.payments.filter(p=>ids.has(p.itemId)).sort((a,b)=>b.date.localeCompare(a.date)),months=[...new Set(ts.map(p=>p.date.slice(0,7)))];count=ts.length;
-      const amt=p=>{const v=room?roomShare(data.items.find(x=>x.id===p.itemId),room,p.amount):p.amount;return p.kind==='refund'?-v:v;};
+      const amt=p=>{const it=data.items.find(x=>x.id===p.itemId),v=room&&partsOf(it)?payRoom(it,room,p):p.amount;return p.kind==='refund'?-v:v;};
       content=months.map(m=>`<section class="card list-card" style="margin-bottom:17px"><div class="month-heading">${m.replace('-','年')}月 <span class="muted caption">净支出 ${(n=>(n<0?'−':'')+money(Math.abs(n)))(ts.filter(p=>p.date.startsWith(m)).reduce((v,p)=>v+amt(p),0))}</span></div>${ts.filter(p=>p.date.startsWith(m)).map(p=>payRow(p,room)).join('')}</section>`).join('');
     }
     if(ui.ledgerTab==='due'){
@@ -1094,7 +1100,7 @@
     render();
     resumeClosedForm();
     // The notice once: the old 测算 inputs are gone after this boot, and an old 应用 draft is written out of the store.
-    if(legacyCalc&&!$('#sheet').open)toast('测算已并入「预算」：旧的测算输入和测算草稿不再保留，账本不受影响',null,false,6000);
+    if(legacyCalc){const say=()=>toast('测算已并入「预算」：旧的测算输入和测算草稿不再保留，账本不受影响',null,false,6000);if($('#sheet').open)setTimeout(say,3500);else say();}
     if(legacyApply&&storageOK)mutateDrafts(list=>list).catch(()=>{});
   }
   // The app was closed (e.g. system Back) with a form open and unsaved: reopen it as it was, once.
