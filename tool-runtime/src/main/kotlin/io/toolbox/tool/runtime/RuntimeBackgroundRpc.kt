@@ -241,7 +241,8 @@ private fun RpcValue.ObjectValue.toBackgroundTaskSpec(periodic: Boolean): Runtim
         arrayOf("key", "operation", "constraints")
     }
     requireOnly(*allowed)
-    val key = requiredIdentifier("key")
+    // A notify task posts with its key as the notification id, so it shares that id's cap.
+    val key = requiredIdentifier("key").also { require(it.length <= MAX_NOTIFICATION_ID_LENGTH) }
     val operation = requiredObject("operation").toBackgroundOperation()
     val constraints = value["constraints"]?.let {
         (it as? RpcValue.ObjectValue ?: throw IllegalArgumentException("constraints")).toTaskConstraints()

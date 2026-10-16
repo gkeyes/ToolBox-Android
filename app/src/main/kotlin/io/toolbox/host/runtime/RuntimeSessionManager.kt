@@ -322,6 +322,8 @@ internal class RuntimeSessionManager(
         visibleTools -= toolId
         destroyHost(toolId)
         stateFlow(toolId).value = RuntimeUiState.Loading
+        // A tap recorded while the joins above suspended belongs to the released version too.
+        ToolNotificationOpens.discard(toolId)
     }
 
     suspend fun backupRuntimeIds(): Set<String> = withContext(Dispatchers.Main.immediate) {

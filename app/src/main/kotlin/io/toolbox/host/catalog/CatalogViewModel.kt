@@ -127,6 +127,7 @@ internal class CatalogViewModel(
                     pendingRuntimeLaunchToolId?.let { toolId ->
                         pendingRuntimeLaunchToolId = null
                         if (projection.tools.any { it.toolId == toolId }) openInstalled(toolId)
+                        else ToolNotificationOpens.discard(toolId)
                     }
                 }
         }
@@ -233,7 +234,8 @@ internal class CatalogViewModel(
     }
 
     private fun open(toolId: String) {
-        if (!state.value.isLoaded) {
+        // A failed read's list says nothing about the tool, so wait for the retry like the first load.
+        if (!state.value.isLoaded || state.value.loadFailed) {
             pendingRuntimeLaunchToolId = toolId
             return
         }

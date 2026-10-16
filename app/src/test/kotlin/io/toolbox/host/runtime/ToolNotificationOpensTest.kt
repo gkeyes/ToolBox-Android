@@ -17,10 +17,10 @@ class ToolNotificationOpensTest {
         ToolNotificationOpens.deliver("tool.a", now = 10) { delivered += it; true }
         ToolNotificationOpens.deliver("tool.a", now = 10) { delivered += it; true }
 
-        assertEquals(listOf(ToolNotificationOpen("feed-1", 1), ToolNotificationOpen("feed-2", 3)), delivered)
+        assertEquals(listOf("feed-1" to 1L, "feed-2" to 3L), delivered.map { it.notificationId to it.openedAt })
         val other = mutableListOf<ToolNotificationOpen>()
         ToolNotificationOpens.deliver("tool.b", now = 10) { other += it; true }
-        assertEquals(listOf(ToolNotificationOpen("x", 2)), other)
+        assertEquals(listOf("x" to 2L), other.map { it.notificationId to it.openedAt })
     }
 
     @Test fun repeatedTapOnOneNotificationBeforeLoadIsOneOpen() {
@@ -30,7 +30,7 @@ class ToolNotificationOpensTest {
         val delivered = mutableListOf<ToolNotificationOpen>()
         ToolNotificationOpens.deliver("tool.a", now = 10) { delivered += it; true }
 
-        assertEquals(listOf(ToolNotificationOpen("feed-1", 4)), delivered)
+        assertEquals(listOf("feed-1" to 4L), delivered.map { it.notificationId to it.openedAt })
     }
 
     @Test fun undeliveredTapsStayForTheNextLoad() {
@@ -55,8 +55,9 @@ class ToolNotificationOpensTest {
     }
 
     @Test fun aTapThePageNeverReceivedExpires() {
-        ToolNotificationOpens.record("tool.a", "old", openedAt = 1_000)
-        ToolNotificationOpens.record("tool.a", "new", openedAt = 1_000 + ToolNotificationOpens.MAX_AGE_MS)
+        // The wall clock jumps back an hour between the taps; expiry follows the monotonic clock.
+        ToolNotificationOpens.record("tool.a", "old", openedAt = 5_000_000, tappedAtMonotonic = 1_000)
+        ToolNotificationOpens.record("tool.a", "new", openedAt = 1_400_000, tappedAtMonotonic = 1_000 + ToolNotificationOpens.MAX_AGE_MS)
 
         val delivered = mutableListOf<String>()
         ToolNotificationOpens.deliver("tool.a", now = 1_001 + ToolNotificationOpens.MAX_AGE_MS) { delivered += it.notificationId; true }
