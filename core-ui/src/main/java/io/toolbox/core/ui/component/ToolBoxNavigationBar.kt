@@ -4,6 +4,11 @@ import androidx.compose.ui.semantics.selected
 import androidx.compose.runtime.rememberUpdatedState
 import io.toolbox.core.ui.liquid.LiquidBottomTab
 import io.toolbox.core.ui.liquid.LiquidBottomTabs
+import io.toolbox.core.ui.liquid.LiquidBottomTabsMetrics
+import androidx.compose.ui.platform.LocalView
+import com.kyant.backdrop.backdrops.emptyBackdrop
+import com.kyant.backdrop.drawBackdrop
+import com.kyant.shapes.Capsule
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.animateDpAsState
@@ -106,8 +111,9 @@ fun ToolBoxNavigationBar(
 }
 
 /**
- * The [LiquidTabNavigationBar] geometry without refraction: a 64dp capsule with 4dp inset, a
- * 56dp selection capsule at rest (10% ink, as Kyant's lens draws it) and icon-over-label tabs.
+ * [LiquidTabNavigationBar] at rest, without refraction: the same [LiquidBottomTabsMetrics]
+ * capsule, tint, rim highlight and shadow (Kyant's own, over an empty backdrop, so the page shows
+ * through unblurred), the resting 10% lens and icon-over-label tabs.
  */
 @Composable
 private fun StandInTabNavigationBar(
@@ -119,28 +125,38 @@ private fun StandInTabNavigationBar(
 ) {
     val colors = ToolBoxThemeTokens.colors
     val dark = colors.background.luminance() < 0.5f
-    val capsule = RoundedCornerShape(50)
-    val selectedIndex = items.indexOfFirst { it.id == selectedId }
+    val tint = ToolBoxThemeTokens.materials.glassTint
+    // As the live bar coerces it: an unknown id still shows the lens on the first tab.
+    val selectedIndex = items.indexOfFirst { it.id == selectedId }.coerceAtLeast(0)
+    val surface = if (LocalView.current.isHardwareAccelerated) {
+        Modifier.drawBackdrop(
+            backdrop = emptyBackdrop(),
+            shape = { Capsule() },
+            effects = {},
+            onDrawSurface = { drawRect(tint) },
+        )
+    } else {
+        Modifier.toolBoxSolidGlass(Capsule())
+    }
     BoxWithConstraints(
         modifier = modifier
             .windowInsetsPadding(WindowInsets.navigationBars)
             .padding(horizontal = ToolBoxThemeTokens.spacing.oneHalf, vertical = ToolBoxThemeTokens.spacing.compact)
             .fillMaxWidth()
-            .height(64.dp)
-            .toolBoxSolidGlass(capsule)
-            .padding(4.dp),
+            .height(LiquidBottomTabsMetrics.BarHeight)
+            .then(surface)
+            .padding(LiquidBottomTabsMetrics.BarPadding),
+        contentAlignment = Alignment.CenterStart,
     ) {
         val itemWidth = maxWidth / items.size
-        if (selectedIndex >= 0) {
-            Box(
-                Modifier
-                    .offset { IntOffset((itemWidth * selectedIndex).roundToPx(), 0) }
-                    .width(itemWidth)
-                    .fillMaxHeight()
-                    .clip(capsule)
-                    .background(if (dark) androidx.compose.ui.graphics.Color.White.copy(0.1f) else androidx.compose.ui.graphics.Color.Black.copy(0.1f)),
-            )
-        }
+        Box(
+            Modifier
+                .offset { IntOffset((itemWidth * selectedIndex).roundToPx(), 0) }
+                .width(itemWidth)
+                .height(LiquidBottomTabsMetrics.LensHeight)
+                .clip(Capsule())
+                .background(LiquidBottomTabsMetrics.restingLensInk(isLightTheme = !dark)),
+        )
         Row(Modifier.fillMaxSize().selectableGroup()) {
             items.forEachIndexed { index, item ->
                 key(item.id) {
@@ -150,7 +166,7 @@ private fun StandInTabNavigationBar(
                         Modifier
                             .weight(1f)
                             .fillMaxHeight()
-                            .clip(capsule)
+                            .clip(Capsule())
                             .selectable(
                                 selected = selected,
                                 interactionSource = remember { MutableInteractionSource() },
@@ -160,7 +176,7 @@ private fun StandInTabNavigationBar(
                             )
                             .then(item.testTag?.let(Modifier::testTag) ?: Modifier)
                             .semantics { contentDescription = item.label },
-                        verticalArrangement = Arrangement.spacedBy(2.dp, Alignment.CenterVertically),
+                        verticalArrangement = Arrangement.spacedBy(LiquidBottomTabsMetrics.TabSpacing, Alignment.CenterVertically),
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
                         ToolBoxIcon(icon = item.icon, contentDescription = null, tint = tint, modifier = Modifier.size(24.dp))

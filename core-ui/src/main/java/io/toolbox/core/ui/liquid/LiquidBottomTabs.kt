@@ -61,6 +61,20 @@ import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.sign
 
+/**
+ * The resting geometry of [LiquidBottomTabs], shared with the non-refracting stand-in the host
+ * draws while live glass is paused, so the two bars stay the same shape.
+ */
+object LiquidBottomTabsMetrics {
+    val BarHeight = 64f.dp
+    val BarPadding = 4f.dp
+    val LensHeight = 56f.dp
+    val TabSpacing = 2f.dp
+
+    fun restingLensInk(isLightTheme: Boolean): Color =
+        if (isLightTheme) Color.Black.copy(0.1f) else Color.White.copy(0.1f)
+}
+
 @Composable
 fun LiquidBottomTabs(
     selectedTabIndex: () -> Int,
@@ -204,9 +218,9 @@ fun LiquidBottomTabs(
                     onDrawSurface = { drawRect(containerColor) }
                 )
                 .then(interactiveHighlight.modifier)
-                .height(64f.dp)
+                .height(LiquidBottomTabsMetrics.BarHeight)
                 .fillMaxWidth()
-                .padding(4f.dp),
+                .padding(LiquidBottomTabsMetrics.BarPadding),
             verticalAlignment = Alignment.CenterVertically,
             content = content
         )
@@ -243,7 +257,7 @@ fun LiquidBottomTabs(
                         onDrawSurface = { drawRect(containerColor) }
                     )
                     .then(interactiveHighlight.modifier)
-                    .height(56f.dp)
+                    .height(LiquidBottomTabsMetrics.LensHeight)
                     .fillMaxWidth()
                     .padding(horizontal = 4f.dp)
                     .graphicsLayer(colorFilter = ColorFilter.tint(accentColor)),
@@ -298,14 +312,13 @@ fun LiquidBottomTabs(
                     onDrawSurface = {
                         val progress = dampedDragAnimation.pressProgress
                         drawRect(
-                            if (isLightTheme) Color.Black.copy(0.1f)
-                            else Color.White.copy(0.1f),
+                            LiquidBottomTabsMetrics.restingLensInk(isLightTheme),
                             alpha = 1f - progress
                         )
                         drawRect(Color.Black.copy(alpha = 0.03f * progress))
                     }
                 )
-                .height(56f.dp)
+                .height(LiquidBottomTabsMetrics.LensHeight)
                 .fillMaxWidth(1f / tabsCount)
         )
     }

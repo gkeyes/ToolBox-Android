@@ -107,6 +107,12 @@ import io.toolbox.core.ui.component.ToolBoxTextButton
 import io.toolbox.core.ui.component.ToolBoxDestructiveButton
 import io.toolbox.core.ui.component.ToolBoxGlassIconButton
 import io.toolbox.core.ui.component.ToolBoxIconKey
+import io.toolbox.core.ui.component.ToolBoxGlassActivity
+import io.toolbox.core.ui.component.ToolBoxNavigationBar
+import io.toolbox.core.ui.component.ToolBoxNavigationItem
+import io.toolbox.core.ui.component.rememberToolBoxGlassState
+import io.toolbox.core.ui.component.toolBoxBackdropSource
+import androidx.compose.ui.test.getBoundsInRoot
 
 /**
  * Renders the main host screens on a narrow phone (320dp) at normal and the largest font size,
@@ -313,6 +319,47 @@ class LayoutScreenshotTest(private val fontScale: Float) {
         Column(Modifier.fillMaxSize()) {
             Spacer(Modifier.weight(1f))
             Box(Modifier.fillMaxWidth().height(760.dp)) { Catalog(home = false) }
+        }
+    }
+
+    /**
+     * The tab bar while live glass is paused (opening or leaving a tool) must keep the live bar's
+     * geometry: only the material may change, so the tabs sit in exactly the same places.
+     */
+    @Test fun tabBarStandIn() {
+        render("tab_bar_standin") { TabBars() }
+        val live = (0..2).map { compose.onNodeWithTag("live-$it", useUnmergedTree = true).getBoundsInRoot() }
+        val standIn = (0..2).map { compose.onNodeWithTag("standin-$it", useUnmergedTree = true).getBoundsInRoot() }
+        val dy = standIn[0].top - live[0].top
+        live.zip(standIn).forEachIndexed { index, (a, b) ->
+            assertEquals("tab $index left", a.left.value, b.left.value, 0.5f)
+            assertEquals("tab $index width", a.width.value, b.width.value, 0.5f)
+            assertEquals("tab $index height", a.height.value, b.height.value, 0.5f)
+            assertEquals("tab $index top", dy.value, (b.top - a.top).value, 0.5f)
+        }
+    }
+
+    @Composable private fun TabBars() {
+        val glass = rememberToolBoxGlassState()
+        fun items(prefix: String) = listOf(
+            ToolBoxNavigationItem("home", "首页", ToolBoxIconKey.Folder, "$prefix-0"),
+            ToolBoxNavigationItem("tools", "全部工具", ToolBoxIconKey.Tools, "$prefix-1"),
+            ToolBoxNavigationItem("settings", "设置", ToolBoxIconKey.Settings, "$prefix-2"),
+        )
+        Box(Modifier.fillMaxSize()) {
+            Column(Modifier.fillMaxSize().toolBoxBackdropSource(glass)) {
+                repeat(12) { AppText("NextFlux 阅读器 · 工作效率 · 健康记录与用药提醒 $it") }
+            }
+            Column(Modifier.fillMaxWidth().align(Alignment.TopCenter)) {
+                Spacer(Modifier.height(24.dp))
+                ToolBoxGlassActivity(active = true) {
+                    ToolBoxNavigationBar(items("live"), "tools", {}, glassState = glass)
+                }
+                Spacer(Modifier.height(24.dp))
+                ToolBoxGlassActivity(active = false) {
+                    ToolBoxNavigationBar(items("standin"), "tools", {}, glassState = glass)
+                }
+            }
         }
     }
 
