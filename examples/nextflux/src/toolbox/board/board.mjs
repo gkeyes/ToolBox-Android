@@ -1,0 +1,164 @@
+// 今日看板: today's unread articles, grouped by the configured AI into a few
+// ranked topics. Each topic names the articles it is built from, so the board
+// can open them. "读成文章" asks the AI for a short written digest of those
+// topics that cites its articles as [n].
+
+// One request carries every chosen article. Titles and excerpts share this
+// many characters, so a busy day still fits a common context window.
+export const PROMPT_BUDGET = 24000;
+export const MAX_ARTICLES = 150;
+const EXCERPT_MAX = 280;
+const TITLE_MAX = 120;
+export const MAX_TOPICS = 7;
+
+export function startOfDay(now = new Date()) {
+  const day = new Date(now);
+  day.setHours(0, 0, 0, 0);
+  return day;
+}
+
+const time = (value) => {
+  const parsed = Date.parse(value || "");
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
+// When an article reached the reader: the later of published and fetched,
+// ignoring a timestamp in the future (a feed with a wrong clock or time zone).
+export function arrivedAt(row, now = Date.now()) {
+  const times = [time(row?.published_at), time(row?.created_at)].filter((at) => at && at <= now);
+  return times.length ? Math.max(...times) : 0;
+}
+
+// Unread articles that arrived since local midnight, newest first, from feeds
+// the list would show.
+export function todaysUnread(rows, { now = new Date(), isVisibleFeed = () => true } = {}) {
+  const since = startOfDay(now).getTime();
+  const at = now.getTime();
+  return rows
+    .filter((row) => row?.status === "unread" && isVisibleFeed(row.feedId) && arrivedAt(row, at) >= since)
+    .sort((a, b) => arrivedAt(b, at) - arrivedAt(a, at) || b.id - a.id);
+}
+
+// Preview text is already plain text; only tidy its whitespace.
+const tidy = (value, max) => String(value || "").replace(/\s+/g, " ").trim().slice(0, max);
+
+// Picks the newest articles that fit the prompt budget. Every chosen article
+// keeps its title; the excerpts share what is left. Returns the articles that
+// go into the prompt (oldest are dropped first) and how many were left out.
+export function fitArticles(articles, budget = PROMPT_BUDGET) {
+  const chosen = [];
+  let used = 0;
+  for (const article of articles.slice(0, MAX_ARTICLES)) {
+    const head = `${tidy(article.feedTitle, 40)} · ${tidy(article.title, TITLE_MAX) || "（无标题）"}`;
+    // Keep room for at least a short excerpt per article.
+    if (used + head.length + 40 > budget) break;
+    used += head.length + 8;
+    chosen.push({ ...article, head });
+  }
+  const room = Math.max(0, budget - used);
+  const each = chosen.length ? Math.min(EXCERPT_MAX, Math.floor(room / chosen.length)) : 0;
+  return {
+    articles: chosen.map(({ head, ...article }) => ({ ...article, head, excerpt: tidy(article.text, each) })),
+    skipped: articles.length - chosen.length,
+  };
+}
+
+const articleList = (articles) => articles
+  .map((article, index) => `[${index + 1}] ${article.head}${article.excerpt ? `\n${article.excerpt}` : ""}`)
+  .join("\n\n");
+
+const TOPICS_PROMPT = [
+  "你是一位新闻编辑，为读者整理“今日看板”。",
+  "下面是读者今天还没读的文章，每篇前面有编号 [n]。",
+  "把讲同一件事的文章归成一个主题，选出 3 到 7 个最值得看的主题，按重要程度从高到低排列；零散、不重要的文章可以不归入任何主题。",
+  "只输出一个 JSON 对象，不要输出其他文字，格式：",
+  "{\"topics\":[{\"title\":\"主题名，不超过 12 个字\",\"gist\":\"一句话重点，不超过 24 个字\",\"summary\":\"两三句话的摘要\",\"articles\":[1,3]}]}",
+  "articles 填这个主题包含的文章编号。全部用简体中文，只根据给出的内容写，不要编造。",
+].join("\n");
+
+export function topicsMessages(articles) {
+  return [
+    { role: "system", content: TOPICS_PROMPT },
+    { role: "user", content: `今天的未读文章共 ${articles.length} 篇：\n\n${articleList(articles)}` },
+  ];
+}
+
+const clean = (value, max) => String(value ?? "").replace(/\*\*/g, "").replace(/\s+/g, " ").trim().slice(0, max);
+
+// Reads the AI's topics. Article numbers must name a real article; each
+// article belongs to at most one topic (the higher ranked); a topic left
+// without articles is dropped. Throws when nothing usable came back.
+export function parseTopics(text, count) {
+  const raw = String(text || "");
+  const start = raw.indexOf("{");
+  const end = raw.lastIndexOf("}");
+  let data = null;
+  if (start >= 0 && end > start) {
+    try { data = JSON.parse(raw.slice(start, end + 1)); } catch { data = null; }
+  }
+  const list = Array.isArray(data?.topics) ? data.topics : Array.isArray(data) ? data : null;
+  if (!list) throw new Error("AI 返回的内容无法识别，请重新生成。");
+  const taken = new Set();
+  const topics = [];
+  for (const item of list) {
+    if (topics.length >= MAX_TOPICS) break;
+    const title = clean(item?.title, 40);
+    const numbers = (Array.isArray(item?.articles) ? item.articles : [])
+      .map(Number)
+      .filter((n) => Number.isInteger(n) && n >= 1 && n <= count && !taken.has(n));
+    if (!title || !numbers.length) continue;
+    const unique = [...new Set(numbers)];
+    unique.forEach((n) => taken.add(n));
+    topics.push({ title, gist: clean(item?.gist, 80), summary: clean(item?.summary, 400), articles: unique });
+  }
+  if (!topics.length) throw new Error("AI 没有归出主题，请重新生成。");
+  return topics;
+}
+
+const DIGEST_PROMPT = [
+  "你是一位新闻编辑，把读者今天的新闻写成一篇简短的文章。",
+  "下面先给出已经整理好的主题，再给出文章，文章前面有编号 [n]。",
+  "按主题的顺序写，每个主题一段，第一行“## 主题名”，下一行用两到四句简体中文写清楚发生了什么，句末标出依据的文章编号，如 [2][5]。",
+  "只根据给出的内容写，不要编造；不要写开场白或结尾。",
+].join("\n");
+
+export function digestMessages(topics, articles) {
+  const outline = topics.map((topic, index) => `${index + 1}. ${topic.title}：${topic.gist}（文章 ${topic.articles.map((n) => `[${n}]`).join("")}）`).join("\n");
+  return [
+    { role: "system", content: DIGEST_PROMPT },
+    { role: "user", content: `主题：\n${outline}\n\n文章：\n\n${articleList(articles)}` },
+  ];
+}
+
+// Splits the (possibly still streaming) digest into sections. Text between
+// citations stays text; a citation is kept only if it names a real article.
+// Parts are {text} with non-empty text, or {cite}.
+export function parseDigest(text, count) {
+  const sections = [];
+  let current = null;
+  const push = (value) => {
+    const part = value.replace(/\*\*/g, "");
+    if (part) current.parts.push({ text: part });
+  };
+  for (const raw of String(text || "").split("\n")) {
+    const line = raw.trim();
+    if (!line) continue;
+    const heading = line.match(/^#{1,6}\s*(.+)$/);
+    if (heading) {
+      current = { title: heading[1].replace(/\*\*/g, "").trim(), parts: [] };
+      sections.push(current);
+      continue;
+    }
+    if (!current) { current = { title: "", parts: [] }; sections.push(current); }
+    if (current.parts.length) push(" ");
+    let last = 0;
+    for (const match of line.matchAll(/\[(\d+)\]/g)) {
+      const number = Number(match[1]);
+      if (match.index > last) push(line.slice(last, match.index));
+      if (number >= 1 && number <= count) current.parts.push({ cite: number });
+      last = match.index + match[0].length;
+    }
+    if (last < line.length) push(line.slice(last));
+  }
+  return sections;
+}

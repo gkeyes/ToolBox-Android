@@ -4,9 +4,23 @@ import { Tabs } from "@heroui/react";
 import { useStore } from "@nanostores/react";
 import { useTranslation } from "react-i18next";
 
-export default function ArticleListFooter({ activeCount = null }) {
+// Each tab shows its name with its count on a smaller line below. `counts`
+// holds the counts that are known ({starred, unread, all}); the active tab
+// always shows `activeCount`.
+export default function ArticleListFooter({ activeCount = null, counts = {} }) {
   const { t } = useTranslation();
   const $filter = useStore(filter);
+  const countOf = (key) => {
+    const value = $filter === key ? activeCount : counts[key];
+    return Number.isFinite(value) ? value.toLocaleString("en-US") : null;
+  };
+  const label = (key, text) => {
+    const count = countOf(key);
+    return <span className="article-tab-label">
+      <span>{text}</span>
+      {count != null && <span className="article-tab-count ds-tnum">{count}</span>}
+    </span>;
+  };
 
   return (
     <div className="article-list-tabs px-3">
@@ -27,24 +41,21 @@ export default function ArticleListFooter({ activeCount = null }) {
               <Tabs.Indicator className="bg-accent" />
               <div className="flex items-center space-x-1.5">
                 <Star className="size-3 fill-current" />
-                <span>{t("articleList.starred")}</span>
-                {$filter === "starred" && activeCount != null && <span className="article-tab-count ds-tnum">{activeCount}</span>}
+                {label("starred", t("articleList.starred"))}
               </div>
             </Tabs.Tab>
             <Tabs.Tab id="unread">
               <Tabs.Indicator className="bg-accent" />
               <div className="flex items-center space-x-1.5">
                 <CircleDot className="size-3 p-px fill-current" />
-                <span>{t("articleList.unread")}</span>
-                {$filter === "unread" && activeCount != null && <span className="article-tab-count ds-tnum">{activeCount}</span>}
+                {label("unread", t("articleList.unread"))}
               </div>
             </Tabs.Tab>
             <Tabs.Tab id="all">
               <Tabs.Indicator className="bg-accent" />
               <div className="flex items-center space-x-1.5">
                 <Text strokeWidth={4} className="size-3" />
-                <span>{t("articleList.all")}</span>
-                {$filter === "all" && activeCount != null && <span className="article-tab-count ds-tnum">{activeCount}</span>}
+                {label("all", t("articleList.all"))}
               </div>
             </Tabs.Tab>
           </Tabs.List>
