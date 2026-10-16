@@ -58,7 +58,7 @@
     for(const i of source.items){
       if(!i||ids.has(i.id))fail('备份中费用项 ID 重复。');
       // 1.11.2: ~ joins a record and its piece in 我的家; an older id with it is renamed (its payments follow).
-      let id=string(i.id,100,false);if(id.includes('~')){const was=id;let n=0;do id=was.replace(/~/g,'_')+(n++?'_'+n:'');while(ids.has(id)||source.items.some(x=>x!==i&&x?.id===id));renamed.set(was,id);}ids.add(id);
+      let id=string(i.id,100,false);if(id.includes('~')){const was=id,stem=was.replace(/~/g,'_').slice(0,94);let n=0;do id=stem+(n++?'_'+n:'');while(ids.has(id)||source.items.some(x=>x!==i&&x?.id===id));renamed.set(was,id);}ids.add(id);
       if(!CATS.some(c=>c.id===i.category)||!['estimate','confirmed','settled'].includes(i.status))fail('备份中存在不支持的分类或状态。');
       if(i.due&&!validDate(i.due))fail('备份中付款日期无效。');
       out.items.push({id,name:string(i.name,100,false),category:i.category,room:string(i.room,50,false),budget:i.budget===null?null:cents(i.budget),price:i.price===null?null:cents(i.price),costMode:source.schemaVersion===1?'estimated':(i.costMode||'estimated'),status:i.status,merchant:string(i.merchant??'',100),due:string(i.due??'',10),note:string(i.note??'',1500)});
@@ -86,6 +86,7 @@
       if(net<0)fail('备份中退款超过了关联项目已付金额。');if(i.status==='estimate'&&net>0)fail('有净付款的费用项不能标记为未确认。');
       if(i.status==='settled'&&i.costMode!=='actual'&&(i.price===null||net!==i.price))fail('已结算项目的金额与净付款不一致。');
     }
+    idRenames=renamed;
     if(Array.isArray(source.changes))out.changes=source.changes.map(c=>({date:string(c?.date,40),itemId:renamed.get(c?.itemId)??string(c?.itemId,100),note:string(c?.note,2500)}));
     const total=out.items.reduce((s,i)=>s+i.budget+(i.price??0),0)+out.payments.reduce((s,t)=>s+t.amount,0);
     if(!Number.isSafeInteger(total))fail('备份合计超出精确计算范围。');
@@ -101,7 +102,7 @@
 
   let page=['overview','budget','ledger','statistics','home'].includes(location.hash.slice(1))?location.hash.slice(1):'overview';
   const ui={page,ledgerTab:'payments',category:'all',room:'all',merchant:null,query:'',statsGroup:'category'};
-  let legacyCalc=false, legacyApply=false, pickerState=null, pendingImport=null, toastTimer;
+  let legacyCalc=false, legacyApply=false, idRenames=new Map(), pickerState=null, pendingImport=null, toastTimer;
   // The form's fields as they were when its save locked it: disabled controls drop out of FormData.
   let lockedForm=null, lockedFields=null;
   // background: a 我的家 change (moving furniture, the floor plan) that is not the open form's submission.
@@ -184,7 +185,9 @@
   function payShares(i,source=data){
     if(!cashCache.has(source))cashCache.set(source,new Map());const c=cashCache.get(source);if(c.has(i.id))return c.get(i.id);
     const w=weightsOf(i.parts,refOf(i,source)),rows=new Map();let net=0,prev=i.parts.map(()=>0);
-    for(const p of source.payments)if(p.itemId===i.id){const r=p.kind==='refund';net=Math.max(0,net+(r?-p.amount:p.amount));const cur=splitBy(net,w);rows.set(p.id,cur.map((v,k)=>r?prev[k]-v:v-prev[k]));prev=cur;}
+    // In date order (a payment before a refund on the same day), the order the cash timeline is checked in.
+    const ts=source.payments.map((p,n)=>[p,n]).filter(([p])=>p.itemId===i.id).sort(([a,x],[b,y])=>a.date.localeCompare(b.date)||(a.kind==='refund')-(b.kind==='refund')||x-y).map(([p])=>p);
+    for(const p of ts){const r=p.kind==='refund';net=Math.max(0,net+(r?-p.amount:p.amount));const cur=splitBy(net,w);rows.set(p.id,cur.map((v,k)=>r?prev[k]-v:v-prev[k]));prev=cur;}
     const out={rows,cash:prev};c.set(i.id,out);return out;
   }
   const pieceCash=(i,source=data)=>payShares(i,source).cash;
@@ -1013,6 +1016,8 @@
     const list=record?.schemaVersion===2&&Array.isArray(record.records)?record.records:record?[record]:[];
     const seen=new Set();storedDraftIds=new Set(list.filter(validDraft).map(d=>d.id).filter(id=>typeof id==='string'));
     if(list.some(d=>d?.type==='apply'))legacyCalc=legacyApply=true;
+    // 1.11.2: a record renamed by validate() (an old id with ~) keeps its unfinished drafts.
+    if(idRenames.size)for(const d of list)if(d&&Array.isArray(d.fields))d.fields=d.fields.map(e=>Array.isArray(e)&&['id','payment-item'].includes(e[0])&&idRenames.has(e[1])?[e[0],idRenames.get(e[1])]:e);
     drafts=list.filter(validDraft).map(d=>({...d,id:typeof d.id==='string'&&d.id.length<=100?d.id:uid('d')})).filter(d=>{if(seen.has(d.id)||(data.completedDrafts||[]).includes(d.id))return false;seen.add(d.id);return true;});
   }
   function openDraftList(){
