@@ -631,13 +631,13 @@ export function createArticleCache(storage, options = {}) {
     // Only the feeds the reader can see take part: a copy in a hidden feed
     // never hides the one in a visible feed. 收藏 compares starred rows only.
     const feeds = Array.isArray(view.feedIds) ? new Set(view.feedIds.map(Number)) : null;
-    const key = `${starredOnly ? "starred|" : ""}${view.field}|${view.direction}|${feeds ? [...feeds].sort((a, b) => a - b).join(",") : "*"}`;
+    const key = `${starredOnly ? "starred|" : ""}${view.match || "either"}|${view.field}|${view.direction}|${feeds ? [...feeds].sort((a, b) => a - b).join(",") : "*"}`;
     let byView = hiddenIndexes.get(current.maps.articles);
     if (!byView) { byView = new Map(); hiddenIndexes.set(current.maps.articles, byView); }
     if (!byView.has(key)) {
       if (byView.size > 8) byView.clear();
       const rows = [...current.maps.articles.values()].filter((row) => row.status !== "removed" && (!starredOnly || row.starred === 1) && (!feeds || feeds.has(row.feedId)));
-      byView.set(key, duplicateIds(sortRows(rows, view.field, view.direction)));
+      byView.set(key, duplicateIds(sortRows(rows, view.field, view.direction), view.match));
     }
     return byView.get(key);
   }
@@ -1085,7 +1085,7 @@ export function createArticleCache(storage, options = {}) {
       // already read stays hidden); 收藏 compares starred entries only, across
       // the same visible feeds as the 收藏 count.
       const hidden = query.hideDuplicates === true
-        ? hiddenCopies(current, { field, direction, feedIds: query.duplicateFeedIds }, query.filter === "starred") : null;
+        ? hiddenCopies(current, { field, direction, feedIds: query.duplicateFeedIds, match: query.duplicateMatch }, query.filter === "starred") : null;
       const shown = hidden ? rows.filter((row) => !hidden.has(row.id)) : rows;
       const pageSize = query.pageSize ?? 30;
       if (!Number.isSafeInteger(pageSize) || pageSize < 1) throw invalid();

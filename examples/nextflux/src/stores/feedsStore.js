@@ -143,7 +143,7 @@ export function duplicateView() {
   if (settings.hideDuplicateArticles === false) return null;
   const list = feeds.get();
   return {
-    hideDuplicates: true, field: settings.sortField, direction: settings.sortDirection,
+    hideDuplicates: true, match: settings.duplicateMatch, field: settings.sortField, direction: settings.sortDirection,
     feedIds: list.length ? list.filter((feed) => settings.showHiddenFeeds || !feed.hide_globally).map((feed) => feed.id) : undefined,
   };
 }
@@ -167,11 +167,11 @@ export async function loadFeeds() {
   }
 }
 
-// Turning 隐藏重复条目 on or off, or changing the order (which decides the
+// Turning 隐藏重复条目 on or off, changing 查重方式, or changing the order (which decides the
 // copy that is kept), changes the counts.
 let countSettings = null;
 settingsState.subscribe((settings) => {
-  const next = [settings.hideDuplicateArticles, settings.sortField, settings.sortDirection, settings.showHiddenFeeds].join("|");
+  const next = [settings.hideDuplicateArticles, settings.duplicateMatch, settings.sortField, settings.sortDirection, settings.showHiddenFeeds].join("|");
   const changed = countSettings !== null && countSettings !== next;
   countSettings = next;
   if (changed && feeds.get().length) void loadFeeds();

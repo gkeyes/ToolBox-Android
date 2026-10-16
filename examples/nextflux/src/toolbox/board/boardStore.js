@@ -35,6 +35,7 @@ async function todaysArticles() {
   const rows = todaysUnread(await getCachedArticleMetadata({ filter: "unread" }), {
     isVisibleFeed: (id) => feeds.has(id),
     hideDuplicates: settings.hideDuplicateArticles !== false,
+    duplicateMatch: settings.duplicateMatch,
   });
   return rows.map((row) => ({
     id: row.id,

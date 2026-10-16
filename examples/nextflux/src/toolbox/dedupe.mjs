@@ -1,6 +1,7 @@
-// Duplicate entries (often the same story fetched twice by Miniflux). Two
-// entries are duplicates when the title the list shows is exactly the same, or
-// the original article URL is exactly the same, after trimming surrounding
+// Duplicate entries (often the same story fetched twice by Miniflux). Which
+// fields count is the 查重方式 setting: "title" compares the title the list
+// shows, "url" the original article URL, and "either" (the default) hides an
+// entry when either one is exactly the same, after trimming surrounding
 // whitespace. An empty title or URL never matches anything.
 //
 // The first entry in the given order is kept and later copies are hidden. Each
@@ -27,15 +28,19 @@ export const duplicateTitle = (article) => {
 };
 export const duplicateUrl = (article) => text(article?.url);
 
+export const DUPLICATE_MATCHES = ["either", "title", "url"];
+const matchMode = (match) => (DUPLICATE_MATCHES.includes(match) ? match : "either");
+
 // Returns the input array itself when disabled or when nothing is hidden.
-export function dedupeArticles(articles, { enabled = true } = {}) {
+export function dedupeArticles(articles, { enabled = true, match = "either" } = {}) {
   if (!enabled || !Array.isArray(articles) || articles.length < 2) return articles;
+  const mode = matchMode(match);
   const titles = new Set();
   const urls = new Set();
   const kept = [];
   for (const article of articles) {
-    const title = duplicateTitle(article);
-    const url = duplicateUrl(article);
+    const title = mode === "url" ? "" : duplicateTitle(article);
+    const url = mode === "title" ? "" : duplicateUrl(article);
     if ((title && titles.has(title)) || (url && urls.has(url))) continue;
     if (title) titles.add(title);
     if (url) urls.add(url);
@@ -46,8 +51,8 @@ export function dedupeArticles(articles, { enabled = true } = {}) {
 
 // The ids of the later copies in `rows` (already in list order), by the same
 // rule as dedupeArticles.
-export function duplicateIds(rows) {
-  const kept = dedupeArticles(rows, { enabled: true });
+export function duplicateIds(rows, match = "either") {
+  const kept = dedupeArticles(rows, { enabled: true, match });
   if (kept === rows) return new Set();
   const shown = new Set(kept.map((row) => row.id));
   return new Set(rows.filter((row) => !shown.has(row.id)).map((row) => row.id));
