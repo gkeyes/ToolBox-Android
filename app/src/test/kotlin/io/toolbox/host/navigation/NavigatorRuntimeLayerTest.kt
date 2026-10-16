@@ -49,7 +49,7 @@ class NavigatorRuntimeLayerTest {
             ToolBoxTheme {
                 val current = rememberRuntimeNavigator(stack, stack.lastOrNull() as? RuntimeRoute)
                 navigator = current
-                NavigatorRuntimeLayer(current, viewModelFactory = { factory }, toolName = null)
+                NavigatorRuntimeLayer(current, current.transition, viewModelFactory = { factory }, toolName = null)
             }
         }
         compose.runOnIdle { nav().navigate(A) }

@@ -134,11 +134,13 @@ internal fun RetainedSecondaryPage(
 @Composable
 internal fun NavigatorRuntimeLayer(
     navigator: RuntimeNavigator,
+    // Passed rather than read from the navigator: the navigator is the same object across
+    // compositions, so only a changed argument makes this layer recompose for a new transition.
+    transition: RuntimeTransition,
     viewModelFactory: (RuntimeRoute) -> ViewModelProvider.Factory,
     toolName: String?,
     modifier: Modifier = Modifier,
 ) {
-    val transition = navigator.transition
     val route = transition.route ?: return
     if (!transition.runtimeLayerEnabled) return
     key(route) {

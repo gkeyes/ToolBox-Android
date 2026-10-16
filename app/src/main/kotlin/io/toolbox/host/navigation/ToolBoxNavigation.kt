@@ -552,6 +552,7 @@ internal fun ToolBoxNavigation(
 
         NavigatorRuntimeLayer(
             navigator = navigator,
+            transition = transition,
             viewModelFactory = { route -> RuntimeViewModelFactory(route.toolId, dependencies) },
             toolName = runtimeTitle,
             modifier = Modifier
