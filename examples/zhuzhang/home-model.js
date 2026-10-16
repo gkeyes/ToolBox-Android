@@ -182,10 +182,10 @@
   // Keep a look inside its own room: the nearest part of the room (an L-shaped 客餐厅 has two),
   // clear of the walls; a wall-mounted look snaps to the nearest wall and faces into the room.
   // auto (a drag, true or its heading {dx,dz}): a look that is not free and comes within SNAP of a wall turns its back to it and backs onto it.
-  const SNAP=.35,SLACK=.1,MINH=.03;
+  const SNAP=.35,SLACK=.1,MINH=.03,HOLD=.15;
   function clampPlacement(dims,bb,x,z,rot,auto=false){
     const NR=nearestRect(bb.rs,x,z).r,[x0,z0,x1,z1]=NR,h=GAP;
-    rot=((rot|0)%4+4)%4;
+    rot=((rot|0)%4+4)%4;let snap=false;
     if(auto&&!dims.wall&&!dims.free){
       // A side counts only when it is a real wall (not the open seam to the other part of an L-shaped room) and the turned look fits.
       const me=NR,seam=sd=>bb.rs.some(({r})=>r!==me&&(sd===0?Math.abs(r[3]-z0)<.01&&x>r[0]&&x<r[2]:sd===2?Math.abs(r[1]-z1)<.01&&x>r[0]&&x<r[2]:sd===1?Math.abs(r[2]-x0)<.01&&z>r[1]&&z<r[3]:Math.abs(r[0]-x1)<.01&&z>r[1]&&z<r[3]));
@@ -214,12 +214,22 @@
       //    with no heading yet turns to no new wall; auto===true (no heading known) takes the nearest. A narrow pair
       //    is never picked by nearness (both are always near), only by a clear push right up to it.
       let side=null;
-      if(inRange(rot)){side=rot;
-        if(narrow(rot)){const to=cand.find(sd=>(sd&1)!==(rot&1)&&comp(sd)>.3&&(comp((rot+2)%4)>.3||Math.max(g(sd),0)<g(rot)-.15))??cand.find(sd=>sd===(rot+2)%4&&comp(sd)>.3);if(to!==undefined&&((to&1)!==(rot&1)||g(to)<g(rot)))side=to;}}
+      // A look already backed onto a wall (auto.on: the last move left it snapped) lets go of it only 15 cm past the
+      // snap range (HOLD), so a finger trembling at the edge of the range doesn't free it to snap to whatever wall the
+      // next twitch points at.
+      // reach: the finger is where the look would back flush onto that wall, while the look as it stands is still clear
+      // of it (a bed lying across a room, slid up to where it would back onto the head wall).
+      const reach=sd=>g(sd)<=.02&&phys(sd)>=.1;
+      const held=typeof auto==='object'&&auto.on&&g(rot)<=SNAP+HOLD+1e-6&&ok(rot);
+      if(inRange(rot)||held){side=rot;
+        if(narrow(rot)){const to=cand.find(sd=>(sd&1)!==(rot&1)&&comp(sd)>.3&&(comp((rot+2)%4)>.3||Math.max(g(sd),0)<g(rot)-.15||reach(sd)))??cand.find(sd=>sd===(rot+2)%4&&comp(sd)>.3);if(to!==undefined&&((to&1)!==(rot&1)||g(to)<g(rot)-(g(to)+g(rot)>=.3?.1:0)))side=to;}
+        // Only held (past the snap range): a push that reaches a wall across hands the look over to it.
+        if(side===rot&&!inRange(rot)){const to=cand.find(sd=>(sd&1)!==(rot&1)&&!narrow(sd)&&comp(sd)>.6&&reach(sd));if(to!==undefined)side=to;}}
       else if(cand.length){
         const to=cand.find(sd=>!narrow(sd)?comp(sd)>.6:(sd&1)===(rot&1)?comp(sd)>.3:comp(sd)>.8&&phys(sd)<=.1); // already lying across a narrow pair: as in 1.
         if(to!==undefined)side=to;else{const n=head?cand.find(sd=>!narrow(sd)&&comp(sd)>.1):auto===true?cand.find(sd=>!narrow(sd)):undefined;if(n!==undefined)side=n;}}
       if(side!==null){rot=side;if(side===0)z=z0;else if(side===2)z=z1;else if(side===1)x=x0;else x=x1;} // pushed flush below by the clamp
+      snap=side!==null;
     }
     if(dims.wall){
       const side=[[z-z0,0],[x-x0,1],[z1-z,2],[x1-x,3]].sort((a,b)=>a[0]-b[0])[0][1];
@@ -235,7 +245,7 @@
       x=cl(x,x0,x1,sw/2+h);z=cl(z,z0,z1,sd/2+h);
     }
     const fx=bb.x1>bb.x0?(x-bb.x0)/(bb.x1-bb.x0):.5,fz=bb.z1>bb.z0?(z-bb.z0)/(bb.z1-bb.z0):.5;
-    return {x,z,rot,fx:clamp(fx,0,1),fz:clamp(fz,0,1)};
+    return {x,z,rot,snap,fx:clamp(fx,0,1),fz:clamp(fz,0,1)};
   }
   // Saved fractions → a clamped position in the current plan (rooms may have been resized since).
   function placeFromModel(model,rects,room){
@@ -336,7 +346,7 @@
     }
     return out+'</svg>';
   }
-  const api={SPACE_TYPES,BLOCK_TYPES,BLOCK_MIN,BATH_MIN,BLOCK_MAX,BATH_MAX,NOHOST,bathBox,bathName,nextName,sanitizeBlocks,cutRects,toBlocks,typeOf,typeOfName,boxOverlap,FURNITURE,KINDS,ORDER,LABELS,TEMPLATES,TEMPLATE_ORDER,MAX_PER_ROOM,WALL_T,GAP,deriveTemplate,planOf,sizesOf,sanitizeHome,sanitizeModel,makeRects,roomNames,area,bbox,nearestRect,footprint,clampPlacement,placeFromModel,fitsRoom,fitRoom,findSpot,lookState,applyLook,handles,moveHandle,planSvg};
+  const api={touch,SPACE_TYPES,BLOCK_TYPES,BLOCK_MIN,BATH_MIN,BLOCK_MAX,BATH_MAX,NOHOST,bathBox,bathName,nextName,sanitizeBlocks,cutRects,toBlocks,typeOf,typeOfName,boxOverlap,FURNITURE,KINDS,ORDER,LABELS,TEMPLATES,TEMPLATE_ORDER,MAX_PER_ROOM,WALL_T,GAP,deriveTemplate,planOf,sizesOf,sanitizeHome,sanitizeModel,makeRects,roomNames,area,bbox,nearestRect,footprint,clampPlacement,placeFromModel,fitsRoom,fitRoom,findSpot,lookState,applyLook,handles,moveHandle,planSvg};
   root.ZZHomeModel=Object.freeze(api);
   if(typeof module==='object'&&module.exports)module.exports=api;
 })(typeof globalThis!=='undefined'?globalThis:this);

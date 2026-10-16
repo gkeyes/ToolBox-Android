@@ -181,13 +181,14 @@ test('1.8.1 · the wall a look backs onto keeps it until it leaves that wall; no
 });
 
 // Feeds a drag step by step like home3d does: the raw target moves, the look's turn carries over, and the heading is
-// measured from the last point more than 5 cm back (the previous heading standing in while the new one is under 3 cm).
+// measured from the last point more than 5 cm back (the previous heading standing in while the new one is under 3 cm and
+// still points roughly the same way), and whether the last move left the look snapped.
 function dragPath(dims, bb, x, z, rot, dx, dz, steps) {
-  const out = []; let last = [x, z], hd = null;
+  const out = []; let last = [x, z], hd = null, on = false;
   for (let i = 1; i <= steps; i++) {
-    const tx = x + dx * i, tz = z + dz * i; let mv = { dx: tx - last[0], dz: tz - last[1] }; const len = Math.hypot(mv.dx, mv.dz);
-    if (len > .05) { last = [tx, tz]; hd = mv; } else if (len < .03 && hd) mv = hd;
-    const p = HM.clampPlacement(dims, bb, tx, tz, rot, mv); rot = p.rot; out.push(p);
+    const tx = x + dx * i, tz = z + dz * i; let mv = { dx: tx - last[0], dz: tz - last[1] }; const len = Math.hypot(mv.dx, mv.dz), h = hd;
+    if (len > .05) { last = [tx, tz]; hd = mv; } else if (len < .03 && h && (len < .01 || mv.dx * h.dx + mv.dz * h.dz > .5 * len * Math.hypot(h.dx, h.dz))) mv = h;
+    const p = HM.clampPlacement(dims, bb, tx, tz, rot, { ...mv, on }); rot = p.rot; on = p.snap; out.push(p);
   }
   return out;
 }
@@ -211,7 +212,7 @@ test('1.8.2 · pulling a bed off its head wall never swings it to a side wall; i
   assert.ok([...seeded, ...nudge].every(p => p.rot === 0), 'a small sideways nudge after the pull does not turn it');
   const side = HM.clampPlacement(bed, bb, x0 + .5, 2.0, 0, { dx: -.06, dz: 0 });
   assert.equal(side.rot, 1, 'pushed hard into a side wall it turns to it');
-  assert.equal(dragPath(bed, bb, side.x, side.z, 1, 0, -.01, 100).at(-1).rot, 1, '1.8.4: slid straight along the side wall into the corner it keeps the side wall');
+  assert.equal(dragPath(bed, bb, side.x, side.z, 1, 0, -.01, 100).at(-1).rot, 0, '1.9.1: slid straight along the side wall up to the head wall it backs onto the head wall');
   const cx = (bb.rs[0].r[0] + bb.rs[0].r[2]) / 2, tx = cx - side.x, tz = z0 + HM.GAP + bed.d / 2 - side.z, n = Math.ceil(Math.hypot(tx, tz) / .01);
   const back = dragPath(bed, bb, side.x, side.z, 1, tx / n, tz / n, n);
   assert.equal(back.at(-1).rot, 0, 'dragged back to the head wall centre it backs onto it again');
@@ -273,7 +274,8 @@ test('1.8.4 · sliding along a wall of a narrow pair into a corner keeps that wa
   }
   const ki = HM.bbox(rects, '厨房'), [kx0, kz0, kx1] = ki.rs[0].r, bed = HM.KINDS.bedA, kz = kz0 + HM.GAP + bed.d / 2, kc = (kx0 + kx1) / 2;
   const kEnd = kx0 + HM.GAP + bed.w / 2, kn = Math.max(1, Math.round((kc - kEnd) / .01));
-  assert.ok(dragPath(bed, ki, kc, kz, 0, (kEnd - kc) / kn, 0, kn).every(q => q.rot === 0), '厨房 bed slid into the corner keeps its wall');
+  // 1.9.1: the 厨房 bed lies across the room like a side-wall bed in 次卧, so slid to the end wall it backs onto it.
+  assert.equal(dragPath(bed, ki, kc, kz, 0, (kEnd - kc) / kn, 0, kn).at(-1).rot, 1, '厨房 bed slid to the end wall backs onto it');
   // A finger held still with a few px of jitter: headings shorter than 3 cm head for no wall.
   const mb = HM.bbox(rects, '主卧'), f = HM.KINDS.fridgeA, x = 3.6 - HM.GAP - f.d / 2 - .3;
   for (const [dx, dz] of [[.01, 0], [.02, .01], [-.01, .02], [0, 0]]) assert.equal(HM.clampPlacement(f, mb, x, 1.8, 0, { dx, dz }).rot, 0, `jitter (${dx}, ${dz}) turns nothing`);
@@ -445,4 +447,33 @@ test('the look is a named form field in both ledger forms, so drafts carry it', 
   assert.match(src, /const fields=\[\.\.\.new FormData\(form\)\.entries\(\)\]/);
   assert.match(src, /form\.elements\.namedItem\(name\)/);
   assert.match(src, /lookOnSave\(next,item,f\.get\('model-kind'\)\)/);
+});
+
+test('1.9.1 · a side-wall bed dragged up to the head wall backs onto it, whatever the sideways offset', () => {
+  for (const t of HM.TEMPLATE_ORDER) { const { rects } = HM.makeRects(HM.planOf({ template: t }));
+    for (const room of ['次卧', '次卧2']) { const bb = HM.bbox(rects, room); if (!bb) continue; const [x0, z0, x1] = bb.rs[0].r;
+      for (const bed of [HM.KINDS.bedA, HM.KINDS.bedB]) { const zHead = z0 + HM.GAP + bed.d / 2;
+        for (const [rot, xs, sg] of [[1, x0 + HM.GAP + bed.d / 2, 1], [3, x1 - HM.GAP - bed.d / 2, -1]]) for (const zs of [zHead + .6, zHead + 1.0]) for (let off = 0; off <= .9001; off += .1) {
+          const ex = xs + sg * off, n = Math.round(Math.hypot(ex - xs, zs - zHead) / .01), p = dragPath(bed, bb, xs, zs, rot, (ex - xs) / n, (zHead - zs) / n, n);
+          assert.equal(p.at(-1).rot, 0, `${t} ${room} bed on wall ${rot}, ${Math.round(off * 100)} cm sideways: ended on ${p.at(-1).rot}`);
+        } } } }
+});
+
+test('1.9.1 · a look on a wall holds it 15 cm past the snap range, so a trembling finger does not swap walls', () => {
+  const { rects } = HM.makeRects(HM.planOf({ template: 't3l2' })), mb = HM.bbox(rects, '主卧'), [, , x1] = mb.rs[0].r, f = HM.KINDS.fridgeA;
+  const at = gap => x1 - HM.GAP - f.d / 2 - gap, tw = { dx: -.03, dz: .05 }; // a twitch away from the wall and along it
+  const on = HM.clampPlacement(f, mb, at(.3), 1.8, 0, { dx: .06, dz: 0 }); assert.equal(on.rot, 3); assert.equal(on.snap, true);
+  assert.equal(HM.clampPlacement(f, mb, at(.45), 1.8, 3, { ...tw, on: true }).snap, true, 'held at 45 cm');
+  assert.equal(HM.clampPlacement(f, mb, at(.55), 1.8, 3, { ...tw, on: true }).snap, false, 'let go at 55 cm');
+  assert.equal(HM.clampPlacement(f, mb, at(.45), 1.8, 3, { ...tw, on: false }).snap, false, 'not held when it was not on the wall');
+});
+
+test('1.9.1 · in a block plan, a side-wall bed in a converted 次卧 or a ➕ 次卧 (3.0 × 3.3) gets back to the head wall', () => {
+  const home = HM.toBlocks(HM.planOf({ template: 't3l2' })); const [, w, d] = HM.SPACE_TYPES.find(s => s[0] === '次卧');
+  home.blocks.push({ id: 'bz', type: '次卧', name: '次卧3', x: 20, z: 0, w, d });
+  const { rects } = HM.makeRects(HM.planOf(home));
+  for (const room of ['次卧', '次卧2', '次卧3']) { const bb = HM.bbox(rects, room), [x0, z0] = bb.rs[0].r;
+    for (const bed of [HM.KINDS.bedA, HM.KINDS.bedB]) { const zh = z0 + HM.GAP + bed.d / 2, xs = x0 + HM.GAP + bed.d / 2;
+      for (const off of [0, .3, .6, .9]) { const n = Math.round(Math.hypot(off, 1) / .01), p = dragPath(bed, bb, xs, zh + 1, 1, off / n, -1 / n, n);
+        assert.equal(p.at(-1).rot, 0, `${room} ${Math.round(off * 100)} cm sideways`); } } }
 });

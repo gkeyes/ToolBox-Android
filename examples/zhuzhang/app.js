@@ -4,7 +4,7 @@
   // Ledger money is integer cents. DOM content originating from users is escaped.
   const KEY = 'ledger.v1';
   const runtime = window.ZZRuntime;
-  const VERSION = '1.9.0';
+  const VERSION = '1.9.1';
   const MAX_CENTS = 100000000000;
   const $ = s => document.querySelector(s);
   const $$ = s => [...document.querySelectorAll(s)];
@@ -804,10 +804,11 @@
   document.addEventListener('input',e=>{if(e.target.closest('#sheet form'))markDraft();});
   document.addEventListener('change',e=>{if(e.target.closest('#sheet form'))markDraft();});
   document.addEventListener('visibilitychange',()=>{if(document.hidden){if(isFormDirty())saveDraftNow().catch(()=>{});flushCalc();}});
-  window.addEventListener('pagehide',()=>{flushCalc();if(isFormDirty())saveDraftNow().catch(()=>{});});
+  window.addEventListener('pagehide',()=>{try{homeState.mod?.flush?.();}catch(_){}flushCalc();if(isFormDirty())saveDraftNow().catch(()=>{});});
   runtime.onFlush(async()=>{
     let failure=null;flushCalc();const calcWrite=calcSaving;
-    // A 我的家 save queued just before closing (拼户型 on Back) lands before the host lets go.
+    // An open 拼户型 saves, and a 我的家 save queued just before closing (拼户型 on Back) lands before the host lets go.
+    try{homeState.mod?.flush?.();}catch(_){}
     await homeQueue.catch(()=>{});
     // The form's own save may still finish within the host's window; if it doesn't, the draft is written anyway.
     for(let n=0;n<30&&busy&&!busyBackground&&isFormDirty();n++)await new Promise(r=>setTimeout(r,50));
