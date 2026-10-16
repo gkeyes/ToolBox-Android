@@ -227,8 +227,8 @@ class MainActivity : ComponentActivity() {
         private const val STATE_LAUNCH_INTENT_PENDING = "io.toolbox.host.launchIntentPending"
 
         /** For the host's own notifications and alarms; goes through the non-exported [ToolLaunchActivity]. */
-        internal fun openToolIntent(context: Context, toolId: String): Intent =
-            ToolLaunchActivity.openToolIntent(context, toolId)
+        internal fun openToolIntent(context: Context, toolId: String, notificationId: String? = null): Intent =
+            ToolLaunchActivity.openToolIntent(context, toolId, notificationId)
     }
 
     @Composable

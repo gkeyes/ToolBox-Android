@@ -161,13 +161,13 @@ data class LiveNotificationSupportState(
     val androidLiveAllowed: Boolean,
 )
 
-/** Tapping a tool notification opens that tool through the host's validated launch route. */
+/** Tapping a tool notification opens that tool through the host's validated launch route and tells it which one. */
 internal fun toolNotificationContentIntent(context: Context, toolId: String, notificationId: String): PendingIntent =
     PendingIntent.getActivity(
         context,
         notificationId.hashCode(),
         // Tool + notification id in the data keeps each notification's intent distinct.
-        MainActivity.openToolIntent(context, toolId)
+        MainActivity.openToolIntent(context, toolId, notificationId)
             .setData(RuntimeForegroundService.actionUri(toolId, notificationId, "notification")),
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
     )

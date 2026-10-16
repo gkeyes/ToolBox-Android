@@ -123,6 +123,15 @@ internal class RuntimeSessionManager(
                 applyRuntimeTheme()
             }
         }
+        // A tap on a running tool's notification reaches it at once; otherwise onMainEntryLoaded delivers it.
+        ToolNotificationOpens.addListener { toolId -> scope.launch { deliverNotificationOpens(toolId) } }
+    }
+
+    private fun deliverNotificationOpens(toolId: String) {
+        val host = hosts[toolId]?.takeIf { it.mainEntryLoaded } ?: return
+        ToolNotificationOpens.deliver(toolId) { open ->
+            HardenedRuntimeWebView.emitEvent(host.webView, ToolNotificationOpens.EVENT_NOTIFICATION_OPEN, open.toEvent())
+        }
     }
 
     fun onSystemConfigurationChanged(updated: Configuration) {
@@ -518,6 +527,7 @@ internal class RuntimeSessionManager(
             stateFlow(toolId).value = current.toUiState()
             restoreReason?.let { reason -> current.emitRestore(reason) }
             refreshForegroundService()
+            deliverNotificationOpens(toolId)
             // The page can receive events now; replay alarms that fired while the tool was not running.
             try {
                 alarmService.deliverFired(toolId, current)

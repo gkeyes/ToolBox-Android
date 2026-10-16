@@ -358,7 +358,7 @@ alarms.schedule 登记的闹钟到点时，如果工具页面正在运行，立�
 
 background.enqueue/schedulePeriodic 是委托原生系统的 httpGet/notify 任务。WorkManager 周期至少 15 分钟是所用调度器的要求；短间隔持续任务使用 background.runtime 的计时器。Android 可以因进程生命周期或后台执行规则停止任务，宿主不会以任意总时长提前停止正常任务。httpGet 结果的 body 与 network.request 一样：text/* 与 JSON 响应按 Content-Type 声明的 charset 解码为文本（未声明时按 UTF-8），其他类型或缺少 Content-Type 的响应为 base64，用 TaskRunResult.bodyEncoding 区分。
 
-普通通知和实时通知沿用 notifications。实时通知绑定持续会话；Android 和桌面决定最终显示与固定快捷方式的结果。接口成功不表示用户已经看见通知、浏览器已加载页面或快捷方式已经固定。
+普通通知和实时通知沿用 notifications。用户点按工具发出的普通通知（包括后台 notify 任务）时，宿主打开该工具，并以 notifications.onOpen 事件交付通知 id 与点按时间；页面尚未加载完成时，加载后补发。工具可按 id 自行记录的内容跳转到对应页面。实时通知绑定持续会话；Android 和桌面决定最终显示与固定快捷方式的结果。接口成功不表示用户已经看见通知、浏览器已加载页面或快捷方式已经固定。
 
 ### 错误处理
 
@@ -576,6 +576,12 @@ export interface NetworkMediaSession {
   readonly url: string;
 }
 
+export interface NotificationOpenEvent {
+  /** The id passed to notifications.post/update, or the background notify task's key. */
+  readonly id: string;
+  readonly openedAt: number;
+}
+
 export type LiveNotificationTone = "neutral" | "positive" | "negative" | "warning";
 
 export interface LiveNotificationRequest {
@@ -782,6 +788,8 @@ export interface ToolBoxApi {
     post(id: string, title: string, body: string): Promise<void>;
     update(id: string, title: string, body: string): Promise<void>;
     cancel(id: string): Promise<void>;
+    /** The user tapped one of this tool's notifications. Taps made before the page loaded are replayed. */
+    onOpen(listener: (event: NotificationOpenEvent) => void): () => void;
     live: {
       start(request: LiveNotificationRequest): Promise<LiveNotificationResult>;
       update(request: LiveNotificationRequest): Promise<LiveNotificationResult>;

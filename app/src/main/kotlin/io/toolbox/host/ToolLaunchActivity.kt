@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
+import io.toolbox.host.runtime.ToolNotificationOpens
 import java.security.SecureRandom
 import java.util.Base64
 
@@ -22,15 +23,18 @@ class ToolLaunchActivity : Activity() {
     companion object {
         private const val ACTION_OPEN_TOOL = "io.toolbox.host.OPEN_TOOL"
         private const val EXTRA_TOOL_ID = "toolId"
+        private const val EXTRA_NOTIFICATION_ID = "notificationId"
         private const val ACTION_LAUNCH_TOOL = "io.toolbox.host.action.LAUNCH_TOOL"
         private const val EXTRA_LAUNCH_TOKEN = "io.toolbox.host.extra.LAUNCH_TOKEN"
         private val launchTokens = mutableMapOf<String, String>()
         private val random = SecureRandom()
 
-        internal fun openToolIntent(context: Context, toolId: String): Intent =
+        /** [notificationId] names the tool notification that was tapped; the tool receives it once its page loads. */
+        internal fun openToolIntent(context: Context, toolId: String, notificationId: String? = null): Intent =
             Intent(context, ToolLaunchActivity::class.java)
                 .setAction(ACTION_OPEN_TOOL)
                 .putExtra(EXTRA_TOOL_ID, toolId)
+                .apply { notificationId?.let { putExtra(EXTRA_NOTIFICATION_ID, it) } }
 
         /**
          * MainActivity with a token for the requested tool. A relaunch from Recents (the task may
@@ -49,6 +53,9 @@ class ToolLaunchActivity : Activity() {
                 .also(random::nextBytes)
                 .let { Base64.getUrlEncoder().withoutPadding().encodeToString(it) }
             synchronized(launchTokens) { launchTokens[token] = toolId }
+            intent?.getStringExtra(EXTRA_NOTIFICATION_ID)?.takeIf(String::isNotBlank)?.let {
+                ToolNotificationOpens.record(toolId, it)
+            }
             return target.setAction(ACTION_LAUNCH_TOOL).putExtra(EXTRA_LAUNCH_TOKEN, token)
         }
 
