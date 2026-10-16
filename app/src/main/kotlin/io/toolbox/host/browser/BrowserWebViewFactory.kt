@@ -81,8 +81,8 @@ internal class BrowserWebViewFactory(
     @SuppressLint("SetJavaScriptEnabled")
     fun configure(page: WebView) {
         // Until the first document paints, WebView fills itself with its background colour (white by
-        // default), which flashes in dark mode. Use the window colour until then; the first visible
-        // commit restores white, the base colour pages without their own background expect.
+        // default), which flashes in dark mode. Use the window colour until then; once the page has
+        // drawn (or finished loading) white returns, the base colour pages without a background expect.
         page.setBackgroundColor(activity.getColor(io.toolbox.host.R.color.toolbox_window_background))
         page.settings.apply {
             BrowserCompatibilityPolicy.apply(this)
@@ -110,7 +110,13 @@ internal class BrowserWebViewFactory(
             }
 
             override fun onPageCommitVisible(view: WebView, url: String) {
-                view.setBackgroundColor(android.graphics.Color.WHITE)
+                // The commit can draw before render-blocking CSS arrives, so white returns only once a
+                // frame with the page's own content has been drawn.
+                if (WebViewFeature.isFeatureSupported(WebViewFeature.VISUAL_STATE_CALLBACK)) {
+                    androidx.webkit.WebViewCompat.postVisualStateCallback(view, 0L) {
+                        view.setBackgroundColor(android.graphics.Color.WHITE)
+                    }
+                }
                 if (view === state.webView) filters.applyToPage()
             }
 
@@ -152,6 +158,7 @@ internal class BrowserWebViewFactory(
             }
 
             override fun onPageFinished(view: WebView, url: String) {
+                view.setBackgroundColor(android.graphics.Color.WHITE)
                 if (view !== state.webView) return
                 state.interaction = state.interaction.pageFinished()
                 state.loadProgress = 100
