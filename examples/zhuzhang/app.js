@@ -4,7 +4,7 @@
   // Ledger money is integer cents. DOM content originating from users is escaped.
   const KEY = 'ledger.v1';
   const runtime = window.ZZRuntime;
-  const VERSION = '1.11.1';
+  const VERSION = '1.11.2';
   const MAX_CENTS = 100000000000;
   const $ = s => document.querySelector(s);
   const $$ = s => [...document.querySelectorAll(s)];
@@ -54,10 +54,11 @@
     // 1.4.0: optional floor plan. Unknown template → dropped (the plan is derived from 户型 again); sizes clamped.
     const home=HM.sanitizeHome(p.home);if(home)out.project.home=home;
     if(source.completedDrafts!==undefined){if(!Array.isArray(source.completedDrafts))fail('草稿提交记录无效。');out.completedDrafts=[...new Set(source.completedDrafts.map(id=>string(id,100,false)))];}
-    const ids=new Set();
+    const ids=new Set(),raw=new Set(),renamed=new Map();
     for(const i of source.items){
-      if(!i||ids.has(i.id))fail('备份中费用项 ID 重复。');
-      const id=string(i.id,100,false);ids.add(id);
+      if(!i||ids.has(i.id)||raw.has(i.id))fail('备份中费用项 ID 重复。');raw.add(i.id);
+      // 1.11.2: ~ joins a record and its piece in 我的家; an older id with it is renamed (its payments follow).
+      let id=string(i.id,100,false);if(id.includes('~')){const was=id,stem=was.replace(/~/g,'_').slice(0,94);let n=0;do id=stem+(n++?'_'+n:'');while(ids.has(id)||source.items.some(x=>x!==i&&x?.id===id));renamed.set(was,id);}ids.add(id);
       if(!CATS.some(c=>c.id===i.category)||!['estimate','confirmed','settled'].includes(i.status))fail('备份中存在不支持的分类或状态。');
       if(i.due&&!validDate(i.due))fail('备份中付款日期无效。');
       out.items.push({id,name:string(i.name,100,false),category:i.category,room:string(i.room,50,false),budget:i.budget===null?null:cents(i.budget),price:i.price===null?null:cents(i.price),costMode:source.schemaVersion===1?'estimated':(i.costMode||'estimated'),status:i.status,merchant:string(i.merchant??'',100),due:string(i.due??'',10),note:string(i.note??'',1500)});
@@ -73,7 +74,8 @@
       }
     }
     const pids=new Set();
-    for(const t of source.payments){
+    for(let t of source.payments){
+      if(t&&renamed.has(t.itemId))t={...t,itemId:renamed.get(t.itemId)};
       if(!t||pids.has(t.id)||!ids.has(t.itemId)||!['payment','refund'].includes(t.kind)||!validDate(t.date))fail('备份中流水无效、重复或缺少关联项目。');
       pids.add(string(t.id,100,false));
       out.payments.push({id:t.id,itemId:t.itemId,amount:cents(t.amount,true),date:t.date,kind:t.kind,note:string(t.note??'',1500)});
@@ -84,7 +86,8 @@
       if(net<0)fail('备份中退款超过了关联项目已付金额。');if(i.status==='estimate'&&net>0)fail('有净付款的费用项不能标记为未确认。');
       if(i.status==='settled'&&i.costMode!=='actual'&&(i.price===null||net!==i.price))fail('已结算项目的金额与净付款不一致。');
     }
-    if(Array.isArray(source.changes))out.changes=source.changes.map(c=>({date:string(c?.date,40),itemId:string(c?.itemId,100),note:string(c?.note,2500)}));
+    idRenames=renamed;
+    if(Array.isArray(source.changes))out.changes=source.changes.map(c=>({date:string(c?.date,40),itemId:renamed.get(c?.itemId)??string(c?.itemId,100),note:string(c?.note,2500)}));
     const total=out.items.reduce((s,i)=>s+i.budget+(i.price??0),0)+out.payments.reduce((s,t)=>s+t.amount,0);
     if(!Number.isSafeInteger(total))fail('备份合计超出精确计算范围。');
     return out;
@@ -99,7 +102,7 @@
 
   let page=['overview','budget','ledger','statistics','home'].includes(location.hash.slice(1))?location.hash.slice(1):'overview';
   const ui={page,ledgerTab:'payments',category:'all',room:'all',merchant:null,query:'',statsGroup:'category'};
-  let pickerState=null, pendingImport=null, toastTimer;
+  let legacyCalc=false, legacyApply=false, idRenames=new Map(), renamedDrafts=false, pickerState=null, pendingImport=null, toastTimer;
   // The form's fields as they were when its save locked it: disabled controls drop out of FormData.
   let lockedForm=null, lockedFields=null;
   // background: a 我的家 change (moving furniture, the floor plan) that is not the open form's submission.
@@ -148,6 +151,9 @@
     return paymentIndex.get(source);
   }
   function paid(i,source=data){return cashIndex(source).get(i.id)||0;}
+  // 1.11.2: what was paid before refunds; a bundle's pieces split by it, so a refund never re-weights the shares.
+  const grossIndex=new WeakMap();
+  function gross(i,source=data){if(!grossIndex.has(source)){const m=new Map();for(const p of source.payments)if(p.kind!=='refund')m.set(p.itemId,(m.get(p.itemId)||0)+p.amount);grossIndex.set(source,m);}return grossIndex.get(source).get(i.id)||0;}
 
   /* ---------- 1.11.0 · 打包: one record (one payment) covers several pieces, each in its own room with its own look ---------- */
   const partsOf=i=>Array.isArray(i?.parts)&&i.parts.length>1?i.parts:null;
@@ -165,7 +171,7 @@
     for(const [,k]of raw.map((x,k)=>[x-out[k],k]).sort((a,b)=>b[0]-a[0])){if(left<=0)break;out[k]++;left--;}
     return out.map(x=>x*u);
   }
-  const refOf=(i,source=data)=>i.costMode!=='actual'&&i.price!==null?i.price:paid(i,source)>0?paid(i,source):i.budget??0;
+  const refOf=(i,source=data)=>i.costMode!=='actual'&&i.price!==null?i.price:gross(i,source)>0?gross(i,source):i.budget??0;
   const shares=(i,total,source=data)=>splitBy(total,weightsOf(i.parts,refOf(i,source)));
   const inRoom=(i,room)=>partsOf(i)?i.parts.some(p=>p.room===room):i.room===room;
   // This room's part of a money figure of the record: all of it, none, or its pieces' shares.
@@ -173,6 +179,37 @@
     if(!partsOf(i))return i.room===room?total:0;
     const s=shares(i,total,source);return i.parts.reduce((a,p,k)=>a+(p.room===room?s[k]:0),0);
   }
+  // 1.11.2: each payment's share per piece is the step of the running net total's split, so rounding never piles up:
+  // the rows 清单 shows add up to each piece's net paid, and a fully refunded bundle leaves every piece at 0.
+  const cashCache=new WeakMap();
+  function payShares(i,source=data){
+    if(!cashCache.has(source))cashCache.set(source,new Map());const c=cashCache.get(source);if(c.has(i.id))return c.get(i.id);
+    const w=weightsOf(i.parts,refOf(i,source)),rows=new Map();let net=0,prev=i.parts.map(()=>0);
+    // In date order (a payment before a refund on the same day), the order the cash timeline is checked in.
+    const ts=source.payments.map((p,n)=>[p,n]).filter(([p])=>p.itemId===i.id).sort(([a,x],[b,y])=>a.date.localeCompare(b.date)||(a.kind==='refund')-(b.kind==='refund')||x-y).map(([p])=>p);
+    for(const p of ts){const r=p.kind==='refund',d=Math.min(p.amount,r?net:Infinity);net+=r?-d:d;const step=stepSplit(prev,net,d,r,w);rows.set(p.id,step);prev=prev.map((v,k)=>r?v-step[k]:v+step[k]);}
+    const out={rows,cash:prev};c.set(i.id,out);return out;
+  }
+  const pieceCash=(i,source=data)=>payShares(i,source).cash;
+  // One step of the running split, never against its direction: a payment goes to the pieces below their share of the
+  // new total, a refund comes off the pieces above it (never more than a piece holds). Whole yuan when everything is.
+  function stepSplit(prev,net,d,refund,w){
+    const W=w.reduce((a,b)=>a+b,0),gap=prev.map((v,k)=>Math.max(0,refund?v-net*w[k]/W:net*w[k]/W-v));
+    const u=d%100===0&&prev.every(v=>v%100===0)?100:1,n=d/u,G=gap.reduce((a,b)=>a+b,0),wt=G>0?gap:refund?prev:w,T=wt.reduce((a,b)=>a+b,0);
+    const raw=wt.map(x=>T>0?n*x/T:0),out=raw.map(Math.floor);let left=n-out.reduce((a,b)=>a+b,0);
+    for(const [,k]of raw.map((x,k)=>[x-out[k],k]).sort((a,b)=>b[0]-a[0])){if(left<=0)break;if(refund&&(out[k]+1)*u>prev[k])continue;out[k]++;left--;}
+    for(let k=0;left>0&&k<out.length;k++)while(left>0&&(!refund||(out[k]+1)*u<=prev[k])){out[k]++;left--;}
+    return out.map(x=>x*u);
+  }
+  // One payment's amount for a room (a refund as the amount credited back), from the same running split.
+  const payRoom=(i,room,t,source=data)=>{const s=payShares(i,source).rows.get(t.id);return s?i.parts.reduce((a,p,k)=>a+(p.room===room?s[k]:0),0):0;};
+  const roomPaid=(i,room,source=data)=>pieceCash(i,source).reduce((a,v,k)=>a+(i.parts[k].room===room?v:0),0);
+  // Expected = what was paid when that is the larger figure (or the record is 按实际支出): then the room's paid, row by row.
+  // A room's figures from its own price share and its own paid, so paid + due always reconcile per room.
+  const roomPrice=(i,room,source=data)=>i.costMode==='actual'||i.price===null?null:roomShare(i,room,i.price,source);
+  const roomExpected=(i,room,source=data)=>{const q=roomPrice(i,room,source),p=roomPaid(i,room,source);return q===null?p:Math.max(p,q);};
+  const roomRemaining=(i,room,source=data)=>{const q=roomPrice(i,room,source);return q===null?0:Math.max(q-roomPaid(i,room,source),0);};
+  const roomOverpaid=(i,room,source=data)=>{const q=roomPrice(i,room,source);return q===null?0:Math.max(roomPaid(i,room,source)-q,0);};
   // The pieces as records of their own, for 我的家 (one look per piece) and the room counts.
   const pieceCache=new WeakMap();
   function piecesOf(source=data){
@@ -180,7 +217,7 @@
     const out=[];
     for(const i of source.items){
       const ps=partsOf(i);if(!ps){out.push(i);continue;}
-      const b=i.budget===null?null:shares(i,i.budget,source),pr=i.price===null?null:shares(i,i.price,source),pd=shares(i,paid(i,source),source);
+      const b=i.budget===null?null:shares(i,i.budget,source),pr=i.price===null?null:shares(i,i.price,source),pd=pieceCash(i,source);
       ps.forEach((p,k)=>{const piece={id:i.id+'~'+p.id,name:p.name,category:i.category,room:p.room,budget:b?b[k]:null,price:pr?pr[k]:null,costMode:i.costMode,status:i.status,bundle:{id:i.id,name:i.name,n:ps.length},paidShare:pd[k]};if(p.model)piece.model=p.model;out.push(piece);});
     }
     pieceCache.set(source,out);return out;
@@ -202,9 +239,9 @@
   function totals(source=data,items=source.items,room=null){
     return items.reduce((a,i)=>{
       const s=v=>room&&partsOf(i)?roomShare(i,room,v,source):v;
-      const p=s(paid(i,source)),r=s(remaining(i,source));
-      a.budget+=s(i.budget??0);a.expected+=s(expected(i,source));a.paid+=p;a.remaining+=r;
-      a.overpaid+=s(overpaid(i,source));a.unknown+=missingPrice(i)?1:0;a.unbudgeted+=i.budget===null?1:0;
+      const one=room&&partsOf(i),p=one?roomPaid(i,room,source):paid(i,source),r=one?roomRemaining(i,room,source):remaining(i,source);
+      a.budget+=s(i.budget??0);a.expected+=room&&partsOf(i)?roomExpected(i,room,source):expected(i,source);a.paid+=p;a.remaining+=r;
+      a.overpaid+=one?roomOverpaid(i,room,source):overpaid(i,source);a.unknown+=missingPrice(i)?1:0;a.unbudgeted+=i.budget===null?1:0;
       if(i.status==='estimate')a.unordered+=r;else a.confirmedUnpaid+=r;
       return a;
     },{budget:0,expected:0,paid:0,remaining:0,overpaid:0,unknown:0,unbudgeted:0,unordered:0,confirmedUnpaid:0});
@@ -212,7 +249,7 @@
   function groupItems(items=data.items,by='category'){
     if(by==='room'){
       const keys=[...new Set(items.flatMap(i=>partsOf(i)?i.parts.map(p=>p.room):[i.room||'未填写']))];
-      return keys.map(key=>{const list=items.filter(i=>inRoom(i,key));return {key,name:key,items:list,...totals(data,list,key),shared:list.filter(partsOf).map(i=>({i,parts:i.parts.filter(p=>p.room===key),amount:roomShare(i,key,expected(i))}))};}).filter(g=>g.items.length);
+      return keys.map(key=>{const list=items.filter(i=>inRoom(i,key));return {key,name:key,items:list,...totals(data,list,key),shared:list.filter(partsOf).map(i=>({i,parts:i.parts.filter(p=>p.room===key),amount:roomExpected(i,key)}))};}).filter(g=>g.items.length);
     }
     const keys=by==='category'?CATS.map(c=>c.id):[...new Set(items.map(i=>i[by]||'未填写'))];
     return keys.map(key=>({key,name:by==='category'?cat(key).name:key,items:items.filter(i=>(i[by]||'未填写')===key)})).filter(g=>g.items.length).map(g=>({...g,...totals(data,g.items)}));
@@ -309,15 +346,17 @@
   const filtering=()=>Boolean(ui.query||ui.category!=='all'||ui.room!=='all'||ui.merchant!==null);
 
   /* ---------- 1.11.0 · 预算: each budget's 项目策划 (the cap you set) against its 费用预算 (what it should cost) ---------- */
-  function budgetCard(i){
-    const ps=partsOf(i),exp=expected(i),known=!missingPrice(i),over=i.budget!==null&&known&&exp>i.budget,max=Math.max(i.budget??0,exp,1);
-    const tag=over?`<span class="bc-tag danger">超出策划 ${money(exp-i.budget)}</span>`:!known?'<span class="bc-tag warn">待估价</span>':i.status==='settled'?'<span class="bc-tag">已结算</span>':i.costMode==='actual'?'<span class="bc-tag">已记账</span>':i.status!=='estimate'?'<span class="bc-tag">报价已确认</span>':'<span class="bc-tag gray">待确认</span>';
-    const where=ps?`${esc(i.room)}：${esc(ps.map(pieceText).join('，'))}`:esc(i.room);
-    return `<button type="button" class="bcard" data-action="detail" data-id="${esc(i.id)}"><span class="bc-top"><span class="bc-left"><span class="bc-name">${esc(i.name)}${ps?` <span class="bundle-tag">${ps.length} 件</span>`:''}</span><span class="bc-sub">${where}</span></span>${tag}</span>${i.budget!==null&&known?`<span class="bc-bar${over?' over':''}" aria-hidden="true"><span style="width:${(over?100:exp/max*100).toFixed(1)}%"></span></span>`:''}<span class="bc-nums"><span>策划 <b class="num">${budgetText(i)}</b></span><span>预计 <b class="num ${over?'negative':known?'':'amber'}">${i.costMode==='actual'?money(paid(i)):known?money(exp):'待估价'}</b></span></span></button>`;
+  // room (1.11.2): under a room filter a bundle shows that room's share of its 策划 and 预计.
+  function budgetCard(i,room=null){
+    const ps=partsOf(i),part=room&&ps?v=>roomShare(i,room,v):v=>v,full=expected(i),exp=room&&ps?roomExpected(i,room):full,plan=i.budget===null?null:part(i.budget),known=!missingPrice(i),over=plan!==null&&known&&exp>plan,max=Math.max(i.budget===null?0:part(i.budget),exp,1);
+    const tag=over?`<span class="bc-tag danger">超出策划 ${money(exp-plan)}</span>`:!known?'<span class="bc-tag warn">待估价</span>':i.status==='settled'?'<span class="bc-tag">已结算</span>':i.costMode==='actual'?'<span class="bc-tag">已记账</span>':i.status!=='estimate'?'<span class="bc-tag">报价已确认</span>':'<span class="bc-tag gray">待确认</span>';
+    const here=room&&ps?ps.filter(p=>p.room===room):null,where=here?`${esc(room)}的份：${esc(here.map(pieceText).join('，'))}`:ps?`${esc(i.room)}：${esc(ps.map(pieceText).join('，'))}`:esc(i.room);
+    return `<button type="button" class="bcard" data-action="detail" data-id="${esc(i.id)}"><span class="bc-top"><span class="bc-left"><span class="bc-name">${esc(i.name)}${ps?` <span class="bundle-tag">${ps.length} 件</span>`:''}</span><span class="bc-sub">${where}</span></span>${tag}</span>${i.budget!==null&&known?`<span class="bc-bar${over?' over':''}" aria-hidden="true"><span style="width:${(over?100:exp/max*100).toFixed(1)}%"></span></span>`:''}<span class="bc-nums"><span>策划 <b class="num">${i.budget===null?'未设置':money(part(i.budget))}</b></span><span>预计 <b class="num ${over?'negative':known?'':'amber'}">${i.costMode==='actual'?money(here?roomPaid(i,room):paid(i)):known?money(exp):'待估价'}</b></span></span></button>`;
   }
   function renderBudget(){
-    const items=filteredItems(),all=totals(),hasBudget=data.project.budget>0,list=groupItems(items).map(g=>`<div class="budget-group-h">${g.name} · ${g.items.length} 项</div>${g.items.map(budgetCard).join('')}`).join('');
-    const summary=`<section class="card budget-sum" aria-label="预算汇总"><button type="button" data-action="project"><small>总预算</small><b class="num">${hasBudget?money(data.project.budget):'未设置'}</b></button><div><small>已策划</small><b class="num">${money(all.budget)}</b>${hasBudget?`<em class="${all.budget>data.project.budget?'negative':'positive'}">${all.budget>data.project.budget?'超出 ':'还能分 '}${money(Math.abs(data.project.budget-all.budget))}</em>`:''}</div><div><small>预计费用</small><b class="num">${money(all.expected)}</b>${all.unknown?`<em class="amber">${all.unknown} 项待估价</em>`:''}</div></section><div class="budget-legend"><span><i class="lg-plan"></i>项目策划（给多少钱）</span><span><i class="lg-cost"></i>费用预算（预计要付）</span></div>`;
+    // Filtered: the summary counts what is shown (a room filter counts only that room's share of a bundle).
+    const items=filteredItems(),room=ui.room==='all'?null:ui.room,narrow=filtering(),all=narrow?totals(data,items,room):totals(),hasBudget=data.project.budget>0&&!narrow,list=groupItems(items).map(g=>`<div class="budget-group-h">${g.name} · ${g.items.length} 项</div>${g.items.map(i=>budgetCard(i,room)).join('')}`).join('');
+    const summary=`<section class="card budget-sum" aria-label="预算汇总"><button type="button" data-action="project"><small>总预算</small><b class="num">${data.project.budget>0?money(data.project.budget):'未设置'}</b></button><div><small>${narrow?'筛选内已策划':'已策划'}</small><b class="num">${money(all.budget)}</b>${hasBudget?`<em class="${all.budget>data.project.budget?'negative':'positive'}">${all.budget>data.project.budget?'超出 ':'还能分 '}${money(Math.abs(data.project.budget-all.budget))}</em>`:''}</div><div><small>预计费用</small><b class="num">${money(all.expected)}</b>${all.unknown?`<em class="amber">${all.unknown} 项待估价</em>`:''}</div></section><div class="budget-legend"><span><i class="lg-plan"></i>项目策划（给多少钱）</span><span><i class="lg-cost"></i>费用预算（预计要付）</span></div>`;
     return heading('预算','先定每件事给多少钱，再填商家报价',`<button class="button outline" data-action="add-item">${icon('plus')}新增预算</button>`)+summary+`<div class="toolbar">${filtersBar()}</div>${ui.merchant!==null?`<div class="merchant-filter"><span>商家：${esc(ui.merchant)}</span><button class="text-button" data-action="clear-merchant">清除 ${icon('close','small-icon')}</button></div>`:''}`+(list?`<div class="budget-list">${list}</div>`:`<section class="card empty">${icon('budget')}<p>${filtering()?'没有符合筛选条件的预算':'还没有预算。先给每件事定个数，再填商家报价。'}</p><button class="button secondary" data-action="${filtering()?'clear-filters':'add-item'}">${filtering()?'清除筛选':'新增预算'}</button></section>`);
   }
 
@@ -325,19 +364,19 @@
   function payRow(t,room){
     const i=data.items.find(x=>x.id===t.itemId);if(!i)return '';const ps=partsOf(i);if(!ps)return rowActivity(t);
     const refund=t.kind==='refund',sign=refund?'+':'−',here=room?ps.filter(p=>p.room===room):[],rest=room?ps.filter(p=>p.room!==room):ps;
-    return `<button class="activity-row pay-bundle" data-action="transaction" data-id="${esc(t.id)}"><span class="row-icon">${icon(cat(i.category).icon)}</span><span class="activity-info"><span class="activity-title">${esc(i.name)} <span class="bundle-tag">打包 ${ps.length} 件</span></span><span class="activity-meta">${dateText(t.date)} · ${esc(cat(i.category).name)} · ${esc(i.room)}</span>${room?`<span class="bundle-share"><span>${esc(room)}的份：${esc(here.map(pieceText).join('，'))}</span><b class="num ${refund?'positive':''}">${sign}${money(roomShare(i,room,t.amount))}</b></span><span class="bundle-rest">这笔共 ${money(t.amount)}${rest.length?' · 其余：'+esc(rest.map(pieceText).join('，')):''}</span>`:`<span class="bundle-rest">${esc(ps.map(pieceText).join('，'))}</span>`}</span>${room?'':`<span class="activity-amount num ${refund?'positive':''}">${sign}${money(t.amount)}<small>${refund?'已退款':'已付款'}</small></span>`}</button>`;
+    return `<button class="activity-row pay-bundle" data-action="transaction" data-id="${esc(t.id)}"><span class="row-icon">${icon(cat(i.category).icon)}</span><span class="activity-info"><span class="activity-title">${esc(i.name)} <span class="bundle-tag">打包 ${ps.length} 件</span></span><span class="activity-meta">${dateText(t.date)} · ${esc(cat(i.category).name)} · ${esc(i.room)}</span>${room?`<span class="bundle-share"><span>${esc(room)}的份：${esc(here.map(pieceText).join('，'))}</span><b class="num ${refund?'positive':''}">${sign}${money(payRoom(i,room,t))}</b></span><span class="bundle-rest">这笔共 ${money(t.amount)}${rest.length?' · 其余：'+esc(rest.map(pieceText).join('，')):''}</span>`:`<span class="bundle-rest">${esc(ps.map(pieceText).join('，'))}</span>`}</span>${room?'':`<span class="activity-amount num ${refund?'positive':''}">${sign}${money(t.amount)}<small>${refund?'已退款':'已付款'}</small></span>`}</button>`;
   }
   function renderLedger(){
     if(!['payments','due'].includes(ui.ledgerTab))ui.ledgerTab='payments';
     const items=filteredItems(),room=ui.room==='all'?null:ui.room,t=totals(data,items,room);let content='',count=0;
     if(ui.ledgerTab==='payments'){
       const ids=new Set(items.map(i=>i.id)),ts=data.payments.filter(p=>ids.has(p.itemId)).sort((a,b)=>b.date.localeCompare(a.date)),months=[...new Set(ts.map(p=>p.date.slice(0,7)))];count=ts.length;
-      const amt=p=>{const v=room?roomShare(data.items.find(x=>x.id===p.itemId),room,p.amount):p.amount;return p.kind==='refund'?-v:v;};
+      const amt=p=>{const it=data.items.find(x=>x.id===p.itemId),v=room&&partsOf(it)?payRoom(it,room,p):p.amount;return p.kind==='refund'?-v:v;};
       content=months.map(m=>`<section class="card list-card" style="margin-bottom:17px"><div class="month-heading">${m.replace('-','年')}月 <span class="muted caption">净支出 ${(n=>(n<0?'−':'')+money(Math.abs(n)))(ts.filter(p=>p.date.startsWith(m)).reduce((v,p)=>v+amt(p),0))}</span></div>${ts.filter(p=>p.date.startsWith(m)).map(p=>payRow(p,room)).join('')}</section>`).join('');
     }
     if(ui.ledgerTab==='due'){
-      const ds=items.filter(i=>i.status!=='estimate'&&remaining(i)>0).sort((a,b)=>(a.due||'9999').localeCompare(b.due||'9999'));count=ds.length;
-      content=ds.map(i=>{const ps=partsOf(i);return `<section class="due-list-item"><div class="between"><div class="flex gap12"><span class="row-icon">${icon(cat(i.category).icon)}</span><div><h3>${esc(i.name)}${ps?` <span class="bundle-tag">打包 ${ps.length} 件</span>`:''}</h3><div class="date">${i.due?dateText(i.due)+' · '+(i.due<nowDate()?'已过计划日期':'计划付清'):'未设置计划日期'}</div>${ps&&room?`<div class="bundle-rest">${esc(room)}的份：${esc(ps.filter(p=>p.room===room).map(pieceText).join('，'))} · 这笔还要付 ${money(remaining(i))}</div>`:''}</div></div><strong class="num">${money(room?roomShare(i,room,remaining(i)):remaining(i))}</strong></div><div class="between"><span class="caption muted">${esc(i.merchant||'未填写商家')}</span><button class="button secondary" data-action="payment" data-id="${esc(i.id)}" data-full="true">记录支出 ${icon('plus','small-icon')}</button></div></section>`;}).join('');
+      const ds=items.filter(i=>i.status!=='estimate'&&(room&&partsOf(i)?roomRemaining(i,room):remaining(i))>0).sort((a,b)=>(a.due||'9999').localeCompare(b.due||'9999'));count=ds.length;
+      content=ds.map(i=>{const ps=partsOf(i);return `<section class="due-list-item"><div class="between"><div class="flex gap12"><span class="row-icon">${icon(cat(i.category).icon)}</span><div><h3>${esc(i.name)}${ps?` <span class="bundle-tag">打包 ${ps.length} 件</span>`:''}</h3><div class="date">${i.due?dateText(i.due)+' · '+(i.due<nowDate()?'已过计划日期':'计划付清'):'未设置计划日期'}</div>${ps&&room?`<div class="bundle-rest">${esc(room)}的份：${esc(ps.filter(p=>p.room===room).map(pieceText).join('，'))} · 这笔还要付 ${money(remaining(i))}</div>`:''}</div></div><strong class="num">${money(room&&ps?roomRemaining(i,room):remaining(i))}</strong></div><div class="between"><span class="caption muted">${esc(i.merchant||'未填写商家')}</span><button class="button secondary" data-action="payment" data-id="${esc(i.id)}" data-full="true">记录支出 ${icon('plus','small-icon')}</button></div></section>`;}).join('');
     }
     if(!content)content=`<section class="card empty">${icon('list')}<p>${filtering()?'没有符合筛选条件的记录':ui.ledgerTab==='due'?'暂无已确认的待付款项':'暂无支出记录'}</p><button class="button secondary" data-action="${filtering()?'clear-filters':'payment'}">${filtering()?'清除筛选':'记录支出'}</button></section>`;
     return heading('清单','真的付出去的钱和还要付的钱')+`
@@ -544,10 +583,13 @@
       return;
     }
     const sh=partShares(ps),th=homeState.mod?homeState.mod.thumbs():{};
-    box.innerHTML=`<div class="parts-head"><span>${payment?'这笔钱买了':'包含物品'} · ${ps.length} 件</span><small>金额不填就平分</small></div><div class="parts-list">${ps.map((p,k)=>{const lk=partLook(p);return `<div class="part"><button type="button" class="part-th" data-action="part-look" data-k="${k}" aria-label="${esc(lk.text||'只有家具家电能挑外观')}"${lk.off?' aria-disabled="true"':''}>${p.kind&&th[p.kind]&&!lk.off?`<img alt="" src="${th[p.kind]}">`:esc((p.name||'物品').slice(0,2))}</button><div class="part-main"><input class="part-name" data-k="${k}" value="${esc(p.name)}" placeholder="物品名称" maxlength="100" aria-label="第 ${k+1} 件的名称" autocomplete="off"><button type="button" class="part-room" data-action="part-room" data-k="${k}">${esc(p.room)}${lk.text?` · <span class="${lk.off?'muted':'accent'}">${esc(lk.text)}</span>`:''}</button></div><input class="part-amount num" data-k="${k}" inputmode="decimal" value="${esc(p.amount)}" placeholder="平分 ${money(sh[k])}" aria-label="第 ${k+1} 件的金额，不填就平分" autocomplete="off"><button type="button" class="part-del" data-action="part-del" data-k="${k}" aria-label="去掉第 ${k+1} 件">${icon('close')}</button></div>`;}).join('')}</div>${ps.length<PART_MAX?'<button type="button" class="parts-add" data-action="part-add">＋ 再加一件</button>':''}`;
+    box.innerHTML=`<div class="parts-head"><span>${payment?'这笔钱买了':'包含物品'} · ${ps.length} 件</span><small class="parts-note">金额不填就平分</small></div><div class="parts-list">${ps.map((p,k)=>{const lk=partLook(p);return `<div class="part"><button type="button" class="part-th" data-action="part-look" data-k="${k}" aria-label="${esc(lk.text||'只有家具家电能挑外观')}"${lk.off?' aria-disabled="true"':''}>${p.kind&&th[p.kind]&&!lk.off?`<img alt="" src="${th[p.kind]}">`:esc((p.name||'物品').slice(0,2))}</button><div class="part-main"><input class="part-name" data-k="${k}" value="${esc(p.name)}" placeholder="物品名称" maxlength="100" aria-label="第 ${k+1} 件的名称" autocomplete="off"><button type="button" class="part-room" data-action="part-room" data-k="${k}">${esc(p.room)}${lk.text?` · <span class="${lk.off?'muted':'accent'}">${esc(lk.text)}</span>`:''}</button></div><input class="part-amount num" data-k="${k}" inputmode="decimal" value="${esc(p.amount)}" placeholder="平分 ${money(sh[k])}" aria-label="第 ${k+1} 件的金额，不填就平分" autocomplete="off"><button type="button" class="part-del" data-action="part-del" data-k="${k}" aria-label="去掉第 ${k+1} 件">${icon('close')}</button></div>`;}).join('')}</div>${ps.length<PART_MAX?'<button type="button" class="parts-add" data-action="part-add">＋ 再加一件</button>':''}`;
     if(roomBtn){roomBtn.disabled=true;roomBtn.classList.add('locked');$('#item-room-label').textContent=bundleRoom(ps);}
+    partsNote(ps);
   }
-  function updatePartShares(){const ps=readParts();if(ps.length<2)return;const sh=partShares(ps);for(const el of $$('#parts-box .part-amount'))el.placeholder='平分 '+money(sh[Number(el.dataset.k)]||0);}
+  // Filled amounts above what the pieces split: said beside the list (the save still goes through).
+  function partsNote(ps){const el=$('#parts-box .parts-note');if(!el)return;const sum=ps.reduce((s,p)=>s+(centsOr(p.amount)??0),0),ref=partsRef(),over=ref>0&&sum>ref;el.classList.toggle('negative',over);el.textContent=over?`填的金额加起来 ${money(sum)}，超过了 ${money(ref)}`:'金额不填就平分';}
+  function updatePartShares(){const ps=readParts();if(ps.length<2)return;const sh=partShares(ps);for(const el of $$('#parts-box .part-amount'))el.placeholder='平分 '+money(sh[Number(el.dataset.k)]||0);partsNote(ps);}
   function partAction(a,b){
     const ps=readParts(),k=Number(b.dataset.k),focusName=n=>requestAnimationFrame(()=>$(`#parts-box .part-name[data-k="${n}"]`)?.focus());
     const commit=()=>{writeParts(ps);refreshParts();refreshLook();markDraft();};
@@ -987,6 +1029,9 @@
   function loadDrafts(record){
     const list=record?.schemaVersion===2&&Array.isArray(record.records)?record.records:record?[record]:[];
     const seen=new Set();storedDraftIds=new Set(list.filter(validDraft).map(d=>d.id).filter(id=>typeof id==='string'));
+    if(list.some(d=>d?.type==='apply'))legacyCalc=legacyApply=true;
+    // 1.11.2: a record renamed by validate() (an old id with ~) keeps its unfinished drafts.
+    if(idRenames.size)for(const d of list)if(d&&Array.isArray(d.fields))d.fields=d.fields.map(e=>{if(Array.isArray(e)&&['id','payment-item'].includes(e[0])&&idRenames.has(e[1])){renamedDrafts=true;return [e[0],idRenames.get(e[1])];}return e;});
     drafts=list.filter(validDraft).map(d=>({...d,id:typeof d.id==='string'&&d.id.length<=100?d.id:uid('d')})).filter(d=>{if(seen.has(d.id)||(data.completedDrafts||[]).includes(d.id))return false;seen.add(d.id);return true;});
   }
   function openDraftList(){
@@ -1066,12 +1111,16 @@
       if(rawBackup!==null){try{data=validate(typeof rawBackup==='string'?JSON.parse(rawBackup):rawBackup);}catch(error){restoreError='账本校验失败，原数据未覆盖。请在「项目与数据」导出原始数据并恢复有效备份。';data=emptyLedger();}}
       else data=emptyLedger();
       try{loadDrafts(await runtime.get('draft.v1'));}catch(_){drafts=[];draftsUnreadable=true;}
-      // 1.11.0: 测算 is gone, and so are its saved inputs.
+      // 1.11.0: 测算 is gone, and so are its saved inputs. 1.11.2: said once, when there was something to lose.
+      try{if(await runtime.get('calculator.v1')!==null)legacyCalc=true;}catch(_){}
       runtime.remove('calculator.v1').catch(()=>{});
       try{const v=await runtime.get('home.ui.v1');if(v&&typeof v.labels==='boolean'){homeState.ui={labels:v.labels};homeState.mod?.setUi(homeState.ui);}}catch(_){}
     }catch(error){bootError=runtime.explain(error);}
     render();
     resumeClosedForm();
+    // The notice once: the old 测算 inputs are gone after this boot, and an old 应用 draft is written out of the store.
+    if(legacyCalc){const say=()=>toast('测算已并入「预算」：旧的测算输入和测算草稿不再保留，账本不受影响',null,false,6000);if($('#sheet').open)setTimeout(say,3500);else say();}
+    if((legacyApply||renamedDrafts)&&storageOK)mutateDrafts(list=>list).catch(()=>{});
   }
   // The app was closed (e.g. system Back) with a form open and unsaved: reopen it as it was, once.
   function resumeClosedForm(){
