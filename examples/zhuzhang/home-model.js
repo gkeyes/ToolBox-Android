@@ -5,7 +5,9 @@
   const FURNITURE='furniture'; // CATS id of 家具家电 in app.js
   const WALL_T=.12, GAP=WALL_T/2+.02; // wall thickness and the clearance kept from a wall face
   const MAX_PER_ROOM=6;
-  // Footprint (metres, before rotation) of every look; wall:1 hangs on a wall facing into the room.
+  // Footprint (metres, before rotation) of every look; wall:1 hangs on a wall facing into the room;
+  // free:1 stands anywhere (tables), every other look turns its back to a wall it is dragged near.
+  // Every look's front faces +z at rot 0, so rot = the wall side (0 back, 1 left, 2 front, 3 right).
   const KINDS={
     fridgeA:{k:'app',w:.7,d:.7},fridgeB:{k:'app',w:.92,d:.72},fridgeC:{k:'app',w:.66,d:.66},
     tvA:{k:'app',w:1.7,d:.42},tvB:{k:'app',w:1.1,d:.5},
@@ -15,7 +17,7 @@
     washerA:{k:'app',w:.6,d:.6},washerB:{k:'app',w:.6,d:.62},
     sofaA:{k:'fur',w:2.1,d:.95},sofaB:{k:'fur',w:2.3,d:1.6},sofaC:{k:'fur',w:1.5,d:.85},
     bedA:{k:'fur',w:1.7,d:2.15},bedB:{k:'fur',w:1.75,d:2.2},
-    diningA:{k:'fur',w:1.7,d:1.7},diningB:{k:'fur',w:1.5,d:1.7},
+    diningA:{k:'fur',w:1.7,d:1.7,free:1},diningB:{k:'fur',w:1.5,d:1.7,free:1},
     deskA:{k:'fur',w:1.2,d:1.05},deskB:{k:'fur',w:1.3,d:1.0},
     cabA:{k:'fur',w:1.4,d:.62},cabB:{k:'fur',w:1.3,d:.45},cabC:{k:'fur',w:1.0,d:.36}
   };
@@ -91,9 +93,17 @@
   const footprint=(dims,rot)=>(rot&1)?[dims.d,dims.w]:[dims.w,dims.d];
   // Keep a look inside its own room: the nearest part of the room (an L-shaped 客餐厅 has two),
   // clear of the walls; a wall-mounted look snaps to the nearest wall and faces into the room.
-  function clampPlacement(dims,bb,x,z,rot){
+  // auto (a drag): a look that is not free and comes within SNAP of a wall turns its back to it and backs onto it.
+  const SNAP=.35;
+  function clampPlacement(dims,bb,x,z,rot,auto=false){
     const [x0,z0,x1,z1]=nearestRect(bb.rs,x,z).r,h=GAP;
     rot=((rot|0)%4+4)%4;
+    if(auto&&!dims.wall&&!dims.free){
+      // Gap between the look's back and each wall if it backed onto it; the depth faces the wall whatever the side, so no flicker.
+      const near=[[z-z0,0],[x-x0,1],[z1-z,2],[x1-x,3]].map(([g,sd])=>[g-h-dims.d/2,sd]).filter(([g])=>g<SNAP).sort((a,b)=>a[0]-b[0]);
+      if(near.length){const side=near.some(([,sd])=>sd===rot)?rot:near[0][1];rot=side;
+        if(side===0)z=z0;else if(side===2)z=z1;else if(side===1)x=x0;else x=x1;} // pushed flush below by the clamp
+    }
     if(dims.wall){
       const side=[[z-z0,0],[x-x0,1],[z1-z,2],[x1-x,3]].sort((a,b)=>a[0]-b[0])[0][1];
       const cl=(v,a,b,s)=>b-a<2*s?(a+b)/2:clamp(v,a+s,b-s);
