@@ -541,7 +541,7 @@ test('1.11.3 · 客餐厅 → 客厅/餐厅 keeps each look on its spot and file
 test('1.11.4 · a stored refund dated before its payment still loads, and comes off when the payment arrives', () => {
   const s = base(); s.payments.push({ id: 'r', itemId: 'a', amount: 500, date: '2026-09-30', kind: 'refund', note: '' });
   assert.equal(app.validate(s).payments.length, 2, 'the stored ledger is not locked');
-  assert.match(read('app.js'), /for\(const i of parsed\.items\)assertCashTimeline\(parsed,i\.id\);/, 'a restore still refuses it');
+  assert.doesNotMatch(read('app.js'), /for\(const i of parsed\.items\)assertCashTimeline\(parsed,i\.id\);/, '1.11.5: a restore takes it too, with a notice');
   const b = { ...s.items[0], id: 'bd', room: '多个空间', parts: [{ id: 'x', name: '甲', room: '主卧', amount: null }, { id: 'y', name: '乙', room: '次卧', amount: null }] };
   const L = app.validate({ ...base(), items: [b], payments: [{ id: 'r', itemId: 'bd', amount: 5000, date: '2026-09-30', kind: 'refund', note: '' }, { id: 'p', itemId: 'bd', amount: 10000, date: '2026-10-01', kind: 'payment', note: '' }] });
   const out = app.payShares(L.items[0], L), sum = (a) => a.reduce((x, y) => x + y, 0);
@@ -575,6 +575,30 @@ test('1.11.4 · the plan editor hands each old 客餐厅 record to HM.relocate, 
   const run = new Function('move', 'to', 'return ' + fix)((room, model) => room === '客餐厅' ? { room: '餐厅', model: { ...model, x: .1 } } : null, new Map([['次卧', '卧室']]));
   const a = { room: '客餐厅', model: { kind: 'tvA', x: .5 } }, b = { room: '次卧' }; run(a); run(b);
   assert.deepEqual(a, { room: '餐厅', model: { kind: 'tvA', x: .1 } }); assert.equal(b.room, '卧室');
+});
+
+test('1.11.5 · HM.relocate clamps on x too: a look in the notch beside the second part lands on its edge', () => {
+  const L = [{ id: 'p1', x: 0, z: 0, w: 4, d: 2 }, { id: 'p2', x: 0, z: 2, w: 2, d: 2 }];
+  // (3, 3.2): 1.2 m below p1, 1 m right of p2, so it goes to p2 and is pulled back to x 2 of a 0..4 餐厅.
+  const c = HM.relocate(L, [{ id: 'p1', name: '客厅', x: 0, z: 0, w: 4, d: 2 }, { id: 'p2', name: '餐厅', x: 0, z: 4, w: 2, d: 2 }, { id: 'q', name: '餐厅', x: 2, z: 4, w: 2, d: 2 }], { kind: 'diningA', x: .75, z: .8, rot: 0 });
+  assert.equal(c.room, '餐厅'); assert.equal(c.model.x, .5, 'clamped into p2 on x'); assert.equal(c.model.z, .6);
+});
+
+test('1.11.5 · 完成 hands the move to the ledger, which applies it with no bath renames and to bundle pieces too', () => {
+  // home3d: saveHome passes move through to api.saveHome.
+  const h3 = read('home3d.js'), fn = h3.slice(h3.indexOf('  function saveHome(home, renames, quiet, move) {'), h3.indexOf('  function', h3.indexOf('  function saveHome(home, renames, quiet, move) {') + 10));
+  const got = []; const api = { saveHome: (...a) => (got.push(a), Promise.resolve(false)), toast() {} };
+  const saveHome = new Function('HM', 'api', 'rebuildAll', 'setPlan', 'syncItems', 'renderTray', 'invalidate', 'let T, planKey, view;' + fn + 'return saveHome;')({ planOf: () => ({ key: 'k' }), sizesOf: () => ({}) }, api, () => {}, () => false, () => {}, () => {}, () => {});
+  const mv = () => null; saveHome({}, [], true, mv);
+  assert.equal(got[0][2], mv, 'move reaches api.saveHome');
+  // app.js: saveHome applies move even when nothing was renamed, to plain records and to each piece of a bundle.
+  const app = read('app.js'), src = app.match(/saveHome:(\(home,renames=\[\],move=null\)=>homeWrite\(next=>\{[\s\S]*?\}\}\)),\n/)[1];
+  const next = { project: {}, items: [{ id: 'a', room: '客餐厅', model: { kind: 'tvA', x: .5 } }, { id: 'b', room: '多个空间', parts: [{ id: 'x', room: '客餐厅', model: { kind: 'sofaA', x: .5 } }, { id: 'y', room: '主卧' }] }] };
+  const run = new Function('homeWrite', 'partsOf', 'bundleRoom', 'return ' + src)((f) => f(next), (i) => i.parts || null, (ps) => new Set(ps.map((p) => p.room)).size > 1 ? '多个空间' : ps[0].room);
+  run({ k: 1 }, [], (room, model) => room === '客餐厅' ? { room: '餐厅', model: { ...model, x: .1 } } : null);
+  assert.deepEqual(next.items[0], { id: 'a', room: '餐厅', model: { kind: 'tvA', x: .1 } });
+  assert.deepEqual(next.items[1].parts[0], { id: 'x', room: '餐厅', model: { kind: 'sofaA', x: .1 } }, 'the piece moves');
+  assert.equal(next.items[1].parts[1].room, '主卧'); assert.deepEqual(next.project.home, { k: 1 });
 });
 
 test('1.11.3 · the plan editor refuses drags past 60 rooms / 40 bathrooms and keeps a refused session as a draft', () => {

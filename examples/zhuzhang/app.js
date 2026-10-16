@@ -4,7 +4,7 @@
   // Ledger money is integer cents. DOM content originating from users is escaped.
   const KEY = 'ledger.v1';
   const runtime = window.ZZRuntime;
-  const VERSION = '1.11.4';
+  const VERSION = '1.11.5';
   const MAX_CENTS = 100000000000;
   const $ = s => document.querySelector(s);
   const $$ = s => [...document.querySelectorAll(s)];
@@ -1100,11 +1100,13 @@
     let parsed;
     try{parsed=validate(JSON.parse(text.replace(/^\uFEFF/,'')));}
     catch(error){if(error instanceof SyntaxError||error instanceof TypeError)throw new Error('文件不是有效的筑账备份，未更改当前数据。');throw error;}
-    for(const i of parsed.items)assertCashTimeline(parsed,i.id);
+    // 1.11.5: a backup with a refund dated before its payment comes in like the stored ledger it was saved from (the refund
+    // comes off as the later payments arrive); the dialog only says so. The forms still refuse to make one.
+    const early=parsed.items.filter(i=>{try{assertCashTimeline(parsed,i.id);return false;}catch(_){return true;}}).length;
     if(parsed.payments.some(p=>p.date>nowDate()))throw new Error('备份中存在晚于今天的收支记录，未更改当前数据。');
     pendingImport=parsed;
     const t=totals(pendingImport);
-    dialog('确认恢复备份',`<p class="dialog-sub">结构校验已通过。恢复会替换当前账本，而不是叠加导入；请确认现有数据已备份。</p><div class="detail-hero"><h3>${esc(pendingImport.project.name)}</h3><div class="value num">${money(t.expected)}</div><div class="caption muted">${pendingImport.items.length} 个费用项 · ${pendingImport.payments.length} 条流水${t.unknown?' · '+t.unknown+' 项待估价':''}</div></div><div class="dialog-actions"><button class="button outline" data-action="close-dialog">取消</button><button class="button primary" data-action="import-confirm">恢复并替换</button></div>`);
+    dialog('确认恢复备份',`<p class="dialog-sub">结构校验已通过。恢复会替换当前账本，而不是叠加导入；请确认现有数据已备份。</p>${early?`<p class="form-hint">有 ${early} 个项目的退款日期早于付款，会从之后的付款里扣，合计不受影响。</p>`:''}<div class="detail-hero"><h3>${esc(pendingImport.project.name)}</h3><div class="value num">${money(t.expected)}</div><div class="caption muted">${pendingImport.items.length} 个费用项 · ${pendingImport.payments.length} 条流水${t.unknown?' · '+t.unknown+' 项待估价':''}</div></div><div class="dialog-actions"><button class="button outline" data-action="close-dialog">取消</button><button class="button primary" data-action="import-confirm">恢复并替换</button></div>`);
   }
   async function exportPayments(){if(restoreError)throw new Error('账本未能读取，请使用「导出原始数据」。');
     const cell=v=>{let s=String(v??'');if(/^[=+\-@\t\r]/.test(s))s="'"+s;return '"'+s.replaceAll('"','""')+'"';};
