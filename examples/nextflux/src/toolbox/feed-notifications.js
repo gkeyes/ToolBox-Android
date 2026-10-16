@@ -26,7 +26,11 @@ function current() {
       storage: toolbox().storage,
       feedTitle: (feedId) => feeds.get().find((feed) => Number(feed.id) === Number(feedId))?.title || "",
       isForeground: () => runtimeForeground.get(),
-      isCached: async (entryId) => Boolean(await getArticleMetadata(entryId)),
+      // "read" when the sync cached it already read (read in another client meanwhile).
+      isCached: async (entryId) => {
+        const row = await getArticleMetadata(entryId);
+        return row ? (row.status === "read" ? "read" : true) : false;
+      },
       strings: () => ({
         untitledFeed: i18n.t("feedNotify.untitledFeed"),
         untitled: i18n.t("feedNotify.untitled"),

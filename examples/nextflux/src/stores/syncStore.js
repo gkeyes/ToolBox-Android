@@ -517,7 +517,7 @@ function checkFeedNotifications(result) {
   const run = (async () => {
     try {
       const { checkWatchedFeeds } = await import("../toolbox/feed-notifications.js");
-      await checkWatchedFeeds({ foreground: true });
+      await checkWatchedFeeds({ foreground: true, syncId: result.syncedAt });
     } catch { /* notifications never fail a sync */ }
   })();
   feedNotifyCheck = run;

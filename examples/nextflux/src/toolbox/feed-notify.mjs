@@ -116,7 +116,7 @@ export function createFeedNotifier({ api, notifications, storage, feedTitle = ()
    * Runs after a committed sync. One failing feed does not stop the others. `foreground` marks a
    * sync the reader ran on screen: it only moves the cursors, even if NextFlux leaves meanwhile.
    */
-  function check({ foreground = false, knownFeedIds = null } = {}) {
+  function check({ foreground = false, knownFeedIds = null, syncId = null } = {}) {
     return serial(async () => {
       const state = await load();
       const results = [];
@@ -143,13 +143,61 @@ export function createFeedNotifier({ api, notifications, storage, feedTitle = ()
           const { entries = [], total: reported = 0 } = await api.newUnreadEntries(feedId, watch.lastEntryId) || {};
           const newer = entries.filter((entry) => Number.isSafeInteger(entry?.id) && entry.id > watch.lastEntryId);
           // Only entries the committed sync wrote announce, so a tap never opens a missing one.
-          // The rest stay above the cursor and announce after the sync that caches them.
-          const cached = await Promise.all(newer.map((entry) => isCached(entry.id).catch(() => false)));
-          const fresh = newer.filter((_, index) => cached[index]).sort((a, b) => b.id - a.id);
-          const total = Math.max(fresh.length, (Number(reported) || 0) - (newer.length - fresh.length));
-          if (!fresh.length) { results.push({ feedId, outcome: "none" }); continue; }
+          // The cursor still moves past every new entry; uncached ones wait in `pending` and
+          // announce once a later sync caches them. A pending entry still uncached after two more
+          // distinct syncs is dropped, so one that never reaches the cache can't hold the feed.
+          const cached = await Promise.all(newer.map((entry) => isCached(entry.id).then((as) => as === true, () => false)));
+          const missingNew = newer.filter((_, index) => !cached[index]).map((entry) => entry.id);
+          const newSync = syncId == null || syncId !== watch.syncId;
+          const pendingNow = [];
+          const pendingFresh = [];
+          for (const item of Array.isArray(watch.pending) ? watch.pending : []) {
+            if (!Number.isSafeInteger(item?.id)) continue;
+            const cachedAs = await isCached(item.id).catch(() => false);
+            // Read elsewhere before a sync cached it: nothing new to announce.
+            if (cachedAs === "read") continue;
+            if (cachedAs) { pendingFresh.push({ id: item.id, title: item.title, feed: item.feed }); continue; }
+            const tries = (Number(item.tries) || 0) + (newSync ? 1 : 0);
+            if (tries < 2) pendingNow.push({ ...item, tries });
+          }
+          const pending = [
+            ...pendingNow,
+            ...newer.filter((entry) => missingNew.includes(entry.id)).map((entry) => ({ id: entry.id, title: entry.title, ...(entry.feed?.title ? { feed: { title: entry.feed.title } } : {}), tries: 0 })),
+          ];
+          const fresh = [...newer.filter((_, index) => cached[index]), ...pendingFresh].sort((a, b) => b.id - a.id);
+          // New entries beyond the 20 the server returned are only counted; a sync that announces
+          // nothing carries that count forward so the next notice still includes them.
+          const unlisted = Math.max(0, (Number(reported) || 0) - newer.length);
+          // The carried part is kept as id ranges and recounted against the server's unread
+          // entries, so ones read elsewhere meanwhile drop out of the count.
+          const ranges = Array.isArray(watch.backlog)
+            ? watch.backlog.filter((range) => Number.isSafeInteger(range?.after) && Number.isSafeInteger(range?.below)) : [];
+          let backlog = 0;
+          for (const range of ranges) {
+            const [from, to] = await Promise.all([
+              api.newUnreadEntries(feedId, range.after), api.newUnreadEntries(feedId, range.below - 1),
+            ]);
+            backlog += Math.max(0, (Number(from?.total) || 0) - (Number(to?.total) || 0));
+          }
+          const total = Math.max(fresh.length, fresh.length + unlisted + backlog);
+          const next = {
+            lastEntryId: newer.reduce((max, entry) => Math.max(max, entry.id), watch.lastEntryId),
+            ...(pending.length ? { pending } : {}),
+            ...(!fresh.length && unlisted + backlog ? {
+              backlog: [
+                ...ranges,
+                ...(unlisted ? [{ after: watch.lastEntryId, below: newer.reduce((min, entry) => Math.min(min, entry.id), Infinity) }] : []),
+              ],
+            } : {}),
+            ...(syncId != null ? { syncId } : {}),
+          };
+          if (!fresh.length) {
+            state.feeds[key] = next;
+            results.push({ feedId, outcome: "none" });
+            continue;
+          }
           if (foreground || isForeground()) {
-            state.feeds[key] = { lastEntryId: fresh[0].id };
+            state.feeds[key] = next;
             results.push({ feedId, outcome: "foreground", count: fresh.length });
             continue;
           }
@@ -163,7 +211,7 @@ export function createFeedNotifier({ api, notifications, storage, feedTitle = ()
             throw error;
           }
           state.blocked = null;
-          state.feeds[key] = { lastEntryId: fresh[0].id };
+          state.feeds[key] = next;
           state.opens[id] = { feedId, entryIds: fresh.map((entry) => entry.id), total };
           results.push({ feedId, outcome: "notified", count: Math.max(Number(total) || 0, fresh.length) });
         } catch (error) {
