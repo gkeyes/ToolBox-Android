@@ -4,7 +4,7 @@
   // Ledger money is integer cents. DOM content originating from users is escaped.
   const KEY = 'ledger.v1';
   const runtime = window.ZZRuntime;
-  const VERSION = '1.9.1';
+  const VERSION = '1.9.2';
   const MAX_CENTS = 100000000000;
   const $ = s => document.querySelector(s);
   const $$ = s => [...document.querySelectorAll(s)];
@@ -35,7 +35,7 @@
     {id:'furniture',name:'家具家电',icon:'sofa',color:'#c5ab8a'},
     {id:'soft',name:'软装杂项',icon:'lamp',color:'#cbd4c3'}
   ];
-  const ROOMS=['全屋','客餐厅','厨房','主卧','次卧','次卧2','卫生间','阳台'];
+  const ROOMS=['全屋','客厅','餐厅','客餐厅','厨房','主卧','次卧','次卧2','书房','卫生间','主卫','阳台']; // 1.9.2: 客厅 餐厅 书房 主卫, as in the 拼户型 draft
   const HM=window.ZZHomeModel; // 1.4.0 我的家: templates, saved-shape sanitizers, placement math (home-model.js)
   const NAV=[['overview','grid','总览','预算总览'],['ledger','list','清单','费用清单'],['statistics','chart','统计','预算统计'],['calculator','calc','测算','费用测算'],['home','home','我的家','我的家']];
   const cat = id => CATS.find(c=>c.id===id) || CATS[0];
@@ -374,6 +374,8 @@
   const homeApi=Object.freeze({
     data:()=>data,paid:i=>paid(i),money,esc,toast,
     saveModel:(id,model)=>homeWrite(next=>{const i=next.items.find(x=>x.id===id);if(!i)return false;i.model=model;}),
+    // A record whose room is gone from the plan, filed under a room of the plan (picked from the tray).
+    setRoom:(id,room,model)=>homeWrite(next=>{const i=next.items.find(x=>x.id===id);if(!i)return false;i.room=room;i.model=model;}),
     // renames: [[old,new]] room names from 拼户型 (a bathroom moved to another room), applied to the records in the same write.
     saveHome:(home,renames=[])=>homeWrite(next=>{next.project.home=home;const to=new Map(renames);if(to.size)for(const i of next.items)if(to.has(i.room))i.room=to.get(i.room);}),
     saveUi:value=>{homeState.ui=value;if(storageOK)runtime.set('home.ui.v1',value).catch(()=>{});}
@@ -803,7 +805,7 @@
   $('#guard').addEventListener('cancel',e=>{e.preventDefault();if(draftBusy)return;cancelWait();pendingNavigation=null;closeGuard();});
   document.addEventListener('input',e=>{if(e.target.closest('#sheet form'))markDraft();});
   document.addEventListener('change',e=>{if(e.target.closest('#sheet form'))markDraft();});
-  document.addEventListener('visibilitychange',()=>{if(document.hidden){if(isFormDirty())saveDraftNow().catch(()=>{});flushCalc();}});
+  document.addEventListener('visibilitychange',()=>{if(document.hidden){try{homeState.mod?.saveOpen?.();}catch(_){}if(isFormDirty())saveDraftNow().catch(()=>{});flushCalc();}});
   window.addEventListener('pagehide',()=>{try{homeState.mod?.flush?.();}catch(_){}flushCalc();if(isFormDirty())saveDraftNow().catch(()=>{});});
   runtime.onFlush(async()=>{
     let failure=null;flushCalc();const calcWrite=calcSaving;

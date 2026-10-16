@@ -477,3 +477,21 @@ test('1.9.1 · in a block plan, a side-wall bed in a converted 次卧 or a ➕ �
       for (const off of [0, .3, .6, .9]) { const n = Math.round(Math.hypot(off, 1) / .01), p = dragPath(bed, bb, xs, zh + 1, 1, off / n, -1 / n, n);
         assert.equal(p.at(-1).rot, 0, `${room} ${Math.round(off * 100)} cm sideways`); } } }
 });
+
+test('1.9.2 · a look in a room with a bathroom never pokes into the bathroom or through a wall, and findSpot never picks a part it does not fit', () => {
+  for (const [t, w, d, ax, az] of [['客厅', 4.5, 4.5, .5, .5], ['客厅', 4.5, 4.5, .5, 0], ['主卧', 3.6, 3.6, 1, 1], ['次卧', 3.0, 3.3, 0, .5], ['主卧', 3.6, 3.6, 1, .5]]) {
+    const home = { key: 'blocks', blocks: [{ id: 'a', type: t, name: t, x: 0, z: 0, w, d }, { id: 'k', type: '厨房', name: '厨房', x: w, z: 0, w: 2.4, d: 3 }], baths: [{ id: 'w', host: 'a', name: '公卫', w: 1.6, d: 1.6, ax, az }] };
+    const { rects } = HM.makeRects(HM.planOf(home)), bb = HM.bbox(rects, t), B = rects.find(r => r.type === '卫生间').r;
+    for (const k of Object.keys(HM.KINDS)) { const dims = HM.KINDS[k]; if (!HM.fitsRoom(dims, rects, t)) continue;
+      for (let i = 0; i <= 6; i++) for (let j = 0; j <= 6; j++) for (const rot of [0, 1, 2, 3]) {
+        const p = HM.clampPlacement(dims, bb, w * i / 6, d * j / 6, rot), [fw, fd] = HM.footprint(dims, p.rot), a = [p.x - fw / 2, p.z - fd / 2, p.x + fw / 2, p.z + fd / 2];
+        const inBath = Math.min(a[2], B[2]) - Math.max(a[0], B[0]) > .01 && Math.min(a[3], B[3]) - Math.max(a[1], B[1]) > .01;
+        assert.ok(!inBath && a[0] > -.01 && a[1] > -.01 && a[2] < w + .01 && a[3] < d + .01, `${t} bath ${ax},${az} ${k} at ${i},${j} rot ${rot}`);
+      }
+      const s = HM.findSpot(k, rects, t, []); assert.ok(s, `${t} ${k} gets a spot`);
+    }
+  }
+  const home = { key: 'blocks', blocks: [{ id: 'a', type: '次卧', name: '次卧', x: 0, z: 0, w: 3.0, d: 3.3 }], baths: [{ id: 'w', host: 'a', name: '公卫', w: 1.6, d: 2.0, ax: .5, az: .5 }] };
+  const { rects } = HM.makeRects(HM.planOf(home));
+  assert.equal(HM.fitsRoom(HM.KINDS.bedB, rects, '次卧'), false); assert.equal(HM.findSpot('bedB', rects, '次卧', []), null);
+});
