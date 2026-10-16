@@ -40,13 +40,14 @@ class GlassLiveThresholdsTest {
     @Test
     fun theRuntimeEntryHidesTheSourceExactlyWhereTheSourceLayerReachesZeroAlpha() {
         // The source layer's alpha during the entry is fadeThroughOutgoingAlpha(1 - entryProgress)
-        // (ToolBoxNavigation's graphicsLayer), so the glass must pause on the same edge, not before.
-        val edge = 1f - ToolBoxMotion.FadeThroughSplit
-        for (progress in listOf(edge + 0.01f, edge + 0.001f)) {
+        // (ToolBoxNavigation's graphicsLayer), so the glass must pause on the progress where that
+        // alpha reaches GlassHiddenEdge: 1 - FadeThroughSplit * (1 - GlassHiddenEdge).
+        val cutoff = 1f - ToolBoxMotion.FadeThroughSplit * (1f - GlassHiddenEdge)
+        for (progress in listOf(cutoff + 0.01f, cutoff + 0.0001f)) {
             assertTrue(ToolBoxMotion.fadeThroughOutgoingAlpha(1f - progress) > GlassHiddenEdge)
             assertFalse(hidden(entryCoverVisible = true, entryProgress = progress))
         }
-        for (progress in listOf(edge, edge - 0.01f)) {
+        for (progress in listOf(cutoff - 0.0001f, cutoff - 0.01f)) {
             assertTrue(ToolBoxMotion.fadeThroughOutgoingAlpha(1f - progress) <= GlassHiddenEdge)
             assertTrue(hidden(entryCoverVisible = true, entryProgress = progress))
         }
