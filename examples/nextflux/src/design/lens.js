@@ -202,9 +202,25 @@ export function installLens({ doc = document, win = window } = {}) {
   });
   mutations.observe(doc.body, { childList: true, subtree: true });
   scan();
+
+  // While anything scrolls, the glass keeps its blur but drops the edge
+  // bending (lens-host.css): re-running the displacement filter on every
+  // scrolled frame tripled the dropped frames on a phone. It comes back
+  // once scrolling has been still for a moment.
+  const root = doc.documentElement;
+  let still = 0;
+  const settle = () => { still = 0; delete root.dataset.nfScrolling; };
+  const onScroll = () => {
+    if (!still) root.dataset.nfScrolling = "";
+    else win.clearTimeout(still);
+    still = win.setTimeout(settle, 180);
+  };
+  doc.addEventListener("scroll", onScroll, { capture: true, passive: true });
   return {
     scan,
     dispose() {
+      doc.removeEventListener("scroll", onScroll, { capture: true });
+      if (still) { win.clearTimeout(still); settle(); }
       mutations.disconnect();
       resizes.disconnect();
       if (frame) win.cancelAnimationFrame(frame);

@@ -286,3 +286,43 @@ test("the board opens as its own page from the sidebar and Back returns to the l
   await expect.poll(() => page.evaluate(() => location.hash)).toBe("#/");
   expect(pageErrors).toEqual([]);
 });
+
+// Switching tabs reuses the mounted list instead of rebuilding it, an empty
+// list draws no footer, and the glass drops its edge bending only while
+// something scrolls.
+test("tab switches keep the list mounted and scrolling pauses the edge lens", async ({ page }) => {
+  const pageErrors = [];
+  page.on("pageerror", (error) => pageErrors.push(error.message));
+  await page.setViewportSize({ width: 400, height: 870 });
+  await installNativeBoundary(page, {
+    auth: {
+      serverUrl: "https://miniflux.xiaochen.win", username: "layout-test-user", password: "", userId: 7,
+      token: "fixed-synthetic-test-token", authType: "token",
+    },
+    settings: { ...STORED_SETTINGS, syncInterval: "0" },
+    cacheRoot: {
+      version: 3, revision: 1, account: { serverUrl: "https://miniflux.xiaochen.win", userId: "7" },
+      transaction: null, lastSyncTime: null,
+      tables: { articles: null, feeds: null, categories: null, feedIcons: null },
+    },
+  });
+  await page.goto(PRODUCTION_URL);
+  await expect(page.locator(".article-list-content [data-virtuoso-scroller]")).toBeVisible();
+  await page.evaluate(() => { window.__scroller = document.querySelector(".article-list-content [data-virtuoso-scroller]"); });
+  const tabs = page.locator(".article-list-inline-tabs .tabs__tab");
+  for (const index of [1, 0, 2]) {
+    await tabs.nth(index).evaluate((el) => el.click());
+    await expect(tabs.nth(index)).toHaveAttribute("aria-selected", "true");
+    await expect(page.locator(".article-list-empty")).toBeVisible();
+    expect(await page.evaluate(() => document.querySelector(".article-list-content [data-virtuoso-scroller]") === window.__scroller)).toBe(true);
+    await expect(page.locator(".vlist-footer")).toHaveCount(0);
+  }
+  const lensRule = await page.evaluate(() => {
+    const scroller = window.__scroller;
+    scroller.dispatchEvent(new Event("scroll"));
+    return document.documentElement.hasAttribute("data-nf-scrolling");
+  });
+  expect(lensRule).toBe(true);
+  await expect.poll(() => page.evaluate(() => document.documentElement.hasAttribute("data-nf-scrolling"))).toBe(false);
+  expect(pageErrors).toEqual([]);
+});

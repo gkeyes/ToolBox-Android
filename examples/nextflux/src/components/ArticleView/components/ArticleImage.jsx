@@ -25,7 +25,10 @@ function ArticleImage({ imgNode, type = "article" }) {
   const measured = imageSize(attributes.width, attributes.height)
     || (dimensions && dimensions.source === source && dimensions.epoch === epoch ? dimensions : null)
     || (source ? imageDimensions.get(source) : null);
-  const imageStyle = measured ? { width: measured.width, aspectRatio: `${measured.width} / ${measured.height}` } : undefined;
+  // An image of unknown size holds a 16:9 box until it loads, instead of a
+  // 48px strip that pushed the paragraphs below it down by hundreds of px.
+  const reserve = !measured && type === "article";
+  const imageStyle = measured ? { width: measured.width, aspectRatio: `${measured.width} / ${measured.height}` } : reserve ? { aspectRatio: "16 / 9" } : undefined;
   return (
     <div ref={containerRef} className={cn("flex justify-center my-2 min-h-12", type === "article" ? "max-w-[calc(100%+2.5rem)]! -mx-5" : "rounded-lg shadow-custom! mx-auto overflow-hidden w-fit")}>
       {failure || !source ? (
@@ -56,7 +59,7 @@ function ArticleImage({ imgNode, type = "article" }) {
                 onError={() => onError(url)}
               />
             </PhotoView>
-          ) : <div role="status" className={cn("bg-default w-full rounded-lg text-muted text-xs flex items-center justify-center", measured ? "h-full" : "min-h-12 p-4")}>图片加载中…</div>}
+          ) : <div role="status" className={cn("bg-default w-full rounded-lg text-muted text-xs flex items-center justify-center", measured || reserve ? "h-full" : "min-h-12 p-4")}>图片加载中…</div>}
         </div>
       )}
     </div>

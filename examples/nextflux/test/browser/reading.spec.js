@@ -56,6 +56,9 @@ async function geometry(page) {
   return { width: box.width, height: box.height, followingTop: paragraph.y };
 }
 
+// An image of unknown size holds a 16:9 box (400px wide here) while it loads.
+const UNKNOWN_HEIGHT = 400 * 9 / 16;
+
 async function loadingGeometry(page) {
   const fixture = page.getByTestId("image-fixture");
   await expect(fixture.locator("img")).toHaveCount(0);
@@ -91,12 +94,13 @@ test("an unknown image learns its decoded dimensions and reserves them after Blo
   await page.clock.install();
   await openFixture(page);
   const unknown = await loadingGeometry(page);
-  expect(unknown.height).toBeCloseTo(48, 0);
+  expect(unknown.height).toBeCloseTo(UNKNOWN_HEIGHT, 0);
   await resolveImage(page);
   await decodedImage(page, 640, 320);
   const learned = await geometry(page);
   expect(learned.height).toBeCloseTo(200, 0);
-  expect(learned.followingTop - unknown.followingTop).toBeGreaterThan(100);
+  // Only the difference from the reserved 16:9 box moves the text below.
+  expect(learned.followingTop - unknown.followingTop).toBeCloseTo(learned.height - UNKNOWN_HEIGHT, 0);
 
   await page.evaluate(() => window.readingFixture.unmountImage());
   await expect(page.getByTestId("image-fixture")).toHaveAttribute("data-mounted", "false");
@@ -120,7 +124,7 @@ test("changing only the signed source query does not reuse the previous image or
   const originalBlob = await page.getByTestId("image-fixture").locator("img").getAttribute("src");
   await page.evaluate((source) => window.readingFixture.setImage({ src: source }), OTHER_SOURCE);
   await pending(page, OTHER_SOURCE);
-  expect((await loadingGeometry(page)).height).toBeCloseTo(48, 0);
+  expect((await loadingGeometry(page)).height).toBeCloseTo(UNKNOWN_HEIGHT, 0);
   await resolveImage(page, OTHER_SOURCE, { width: 320, height: 640 });
   await decodedImage(page, 320, 640);
   expect((await geometry(page)).height).toBeCloseTo(640, 0);
@@ -134,12 +138,12 @@ test("the logout media cleanup invalidates learned geometry in retained and newl
   expect((await geometry(page)).height).toBeCloseTo(200, 0);
   await page.evaluate(() => window.readingFixture.clearSessionMedia());
   await expect(page.locator("#reading-surface")).toHaveAttribute("data-account-epoch", "1");
-  expect((await loadingGeometry(page)).height).toBeCloseTo(48, 0);
+  expect((await loadingGeometry(page)).height).toBeCloseTo(UNKNOWN_HEIGHT, 0);
   expect(await page.evaluate((source) => window.readingFixture.dimensions(source), SOURCE)).toBeNull();
 
   await page.evaluate(() => window.readingFixture.mountImage());
   await pending(page);
-  expect((await loadingGeometry(page)).height).toBeCloseTo(48, 0);
+  expect((await loadingGeometry(page)).height).toBeCloseTo(UNKNOWN_HEIGHT, 0);
   await resolveImage(page, SOURCE, { width: 320, height: 640 });
   await decodedImage(page, 320, 640);
   expect((await geometry(page)).height).toBeCloseTo(640, 0);

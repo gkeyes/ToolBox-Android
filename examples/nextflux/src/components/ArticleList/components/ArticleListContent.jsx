@@ -77,16 +77,24 @@ const ListHeader = () => (
   <div className="vlist-header" aria-hidden="true">
   </div>
 );
-const ListEmpty = ({ context: { t } }) => (
+// While a source loads, the same list stays mounted and shows the spinner in
+// place of its rows: unmounting it on every tab switch cost a full rebuild.
+const ListEmpty = ({ context: { t, loading: isLoading } }) => isLoading ? (
+  <div className="flex justify-center pt-6" role="progressbar" aria-label={t("common.loading")}>
+    <span className="ds-spinner" />
+  </div>
+) : (
   <div className="ds-empty article-list-empty">
     <span className="ds-empty-icon"><Inbox /></span>
     <p className="ds-empty-title">{t("articleList.emptyListTitle")}</p>
     <p className="ds-empty-text">{t("articleList.emptyListText")}</p>
   </div>
 );
-const ListFooter = ({ context: { feedId, categoryId, $filter, $isSyncing, $loadingMore, t, count } }) => (
+// No rows, no footer: an empty 96px footer drew at the top and was pushed down
+// when the rows arrived.
+const ListFooter = ({ context: { feedId, categoryId, $filter, $isSyncing, $loadingMore, t, count } }) => count > 0 && (
   <div className="vlist-footer h-24 pt-3 px-4">
-    {count > 0 && (
+    {(
       <Button
         size="md"
         variant="secondary"
@@ -105,6 +113,7 @@ const ListFooter = ({ context: { feedId, categoryId, $filter, $isSyncing, $loadi
   </div>
 );
 const listComponents = { Header: ListHeader, Footer: ListFooter, EmptyPlaceholder: ListEmpty };
+const EMPTY = [];
 const computeArticleKey = (_index, article) => article.id;
 
 export default function ArticleListContent({
@@ -170,7 +179,18 @@ export default function ArticleListContent({
     onCollapsedChange?.(value);
   }, [onCollapsedChange]);
   const chromeAnchor = useRef(0);
+  const scrollFrame = useRef(0);
+  // Once per frame, not per scroll event: reading scrollTop between events
+  // forced a layout each time while the list was still rendering rows.
   const handleScroll = useCallback(() => {
+    if (scrollFrame.current) return;
+    scrollFrame.current = requestAnimationFrame(() => {
+      scrollFrame.current = 0;
+      applyScrollRef.current();
+    });
+  }, []);
+  useEffect(() => () => cancelAnimationFrame(scrollFrame.current), []);
+  const applyScroll = useCallback(() => {
     const scroller = listScroller.current;
     const top = scroller?.scrollTop ?? 0;
     reportCollapsed(top > COLLAPSE_AT);
@@ -187,6 +207,8 @@ export default function ArticleListContent({
       chromeAnchor.current = top;
     }
   }, [reportCollapsed]);
+  const applyScrollRef = useRef(applyScroll);
+  applyScrollRef.current = applyScroll;
   const setListScroller = useCallback((element) => {
     listScroller.current?.removeEventListener?.("scroll", handleScroll);
     listScroller.current = element;
@@ -207,6 +229,8 @@ export default function ArticleListContent({
       const page = listScroller.current?.closest?.(".nextflux-article-list-page");
       if (page) page.dataset.chrome = "shown";
       chromeAnchor.current = 0;
+      // The list stays mounted across sources, so a new one starts at the top.
+      if (listScroller.current) listScroller.current.scrollTop = 0;
     }
   }, [$loading, reportCollapsed]);
 
@@ -259,20 +283,13 @@ export default function ArticleListContent({
 
   return (
     <div className="article-list-body min-h-0 flex-1">
-      {$loading ? (
-        <div className="article-list-loading h-full">
-          <div className="flex justify-center pt-6" role="progressbar" aria-label={t("common.loading")}>
-            <span className="ds-spinner" />
-          </div>
-        </div>
-      ) : (
         <div className="article-list-content h-full">
           <Virtuoso
             ref={virtuosoRef}
             scrollerRef={setListScroller}
             className="v-list h-full"
             overscan={{ main: 400, reverse: 200 }}
-            data={articles}
+            data={$loading ? EMPTY : articles}
             computeItemKey={computeArticleKey}
             rangeChanged={setVisibleRange}
             context={{
@@ -282,9 +299,10 @@ export default function ArticleListContent({
               $isSyncing,
               $loadingMore,
               t,
-              count: articles.length,
+              count: $loading ? 0 : articles.length,
+              loading: $loading,
             }}
-            totalCount={articles.length}
+            totalCount={$loading ? 0 : articles.length}
             endReached={handleEndReached}
             atBottomThreshold={600}
             atBottomStateChange={handleNearBottom}
@@ -307,7 +325,6 @@ export default function ArticleListContent({
             )}
           />
         </div>
-      )}
     </div>
   );
 }
