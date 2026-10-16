@@ -4,7 +4,7 @@
   // Ledger money is integer cents. DOM content originating from users is escaped.
   const KEY = 'ledger.v1';
   const runtime = window.ZZRuntime;
-  const VERSION = '1.11.3';
+  const VERSION = '1.11.4';
   const MAX_CENTS = 100000000000;
   const $ = s => document.querySelector(s);
   const $$ = s => [...document.querySelectorAll(s)];
@@ -83,7 +83,9 @@
     for(const i of out.items){
       const net=out.payments.filter(t=>t.itemId===i.id).reduce((s,t)=>s+(t.kind==='refund'?-t.amount:t.amount),0);
       if(!['estimated','actual'].includes(i.costMode)||(i.costMode==='actual'&&i.price!==null))fail('费用计价方式无效。');
-      if(net<0)fail('备份中退款超过了关联项目已付金额。');if(i.status==='estimate'&&net>0)fail('有净付款的费用项不能标记为未确认。');
+      if(net<0)fail('备份中退款超过了关联项目已付金额。');
+      // 1.11.4: also day by day, as an edit is checked: a refund dated before the money it returns is refused here too.
+      try{assertCashTimeline(out,i.id);}catch(_){fail('备份中有退款早于对应的付款，请核对日期。');}if(i.status==='estimate'&&net>0)fail('有净付款的费用项不能标记为未确认。');
       if(i.status==='settled'&&i.costMode!=='actual'&&(i.price===null||net!==i.price))fail('已结算项目的金额与净付款不一致。');
     }
     idRenames=renamed;

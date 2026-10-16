@@ -242,12 +242,13 @@ export function createHome(api) {
       if ((!b.host || h.name === b.host) && h.type !== '卫生间' && len(q) >= .9 && (!bathDoor.has(b.name) || len(q) > len(bathDoor.get(b.name)))) bathDoor.set(b.name, q);
     }
     // A kitchen opens onto the living spaces, never into a bedroom, a study or a walk-in wardrobe.
-    // One that touches only those keeps its longest such wall as its door, so it is never sealed.
-    const PRIVATE = new Set(['主卧', '次卧', '书房', '衣帽间']), kit = q => q.o && !q.bath ? (q.a.type === '厨房' ? [q.a, q.o] : q.o.type === '厨房' ? [q.o, q.a] : null) : null, keep = new Set();
+    // One that touches only those keeps its longest such wall as its door, so it is never sealed; on equal walls the
+    // door goes to a 次卧 before a study, a wardrobe or the 主卧.
+    const PRIVATE = new Set(['主卧', '次卧', '书房', '衣帽间']), RANK = { 次卧: 0, 书房: 1, 衣帽间: 2, 主卧: 3 }, kit = q => q.o && !q.bath ? (q.a.type === '厨房' ? [q.a, q.o] : q.o.type === '厨房' ? [q.o, q.a] : null) : null, keep = new Set();
     for (const k of new Set(segs.map(kit).filter(Boolean).map(([a]) => a.name))) {
       const mine = segs.filter(q => { const p = kit(q); return p && p[0].name === k && len(q) >= .9; });
       if (mine.some(q => !PRIVATE.has(kit(q)[1].type))) continue;
-      const best = mine.sort((a, b) => len(b) - len(a))[0]; if (best) keep.add(k + '|' + kit(best)[1].name);
+      const best = mine.sort((a, b) => (Math.abs(len(b) - len(a)) > .01 ? len(b) - len(a) : 0) || RANK[kit(a)[1].type] - RANK[kit(b)[1].type])[0]; if (best) keep.add(k + '|' + kit(best)[1].name);
     }
     const shut = q => { const p = kit(q); return !!p && PRIVATE.has(p[1].type) && !keep.has(p[0].name + '|' + p[1].name); };
     for (const q of segs) addWall(q.A, q.Bp, q.n, q.a.type, q.o ? q.o.type : null, q.bath ? [...bathDoor.values()].includes(q) : shut(q) ? false : undefined);
@@ -530,7 +531,7 @@ export function createHome(api) {
     selected = e; const bar = q('.hv-selbar'); bar.hidden = !e;
     // 1.11.0: a piece of a bundle names the record it belongs to; 拿走 takes only this piece's look.
     const b = e?.item.bundle;
-    if (e) q('.hv-who[data-hv="relook"]').innerHTML = `<b>${api.esc(e.name)}</b><span>${b ? api.esc(`${e.room} · 属于${b.name}（共 ${b.n} 件）`) : `${api.esc(itemLine(e.item))} · ${api.esc(e.room)}${HM.KINDS[e.model.kind].wall ? ' · 贴墙摆放' : ''}`}</span>`;
+    if (e) q('.hv-who[data-hv="relook"]').innerHTML = `<b>${api.esc(e.name)}</b><span>${b ? api.esc(`${e.room} · 属于${b.name}（共 ${b.n} 件）`) : `${api.esc(e.room)} · ${api.esc(itemLine(e.item))}${HM.KINDS[e.model.kind].wall ? ' · 贴墙摆放' : ''}`}</span>`;
     updateRing(); invalidate();
   }
   // A failed save puts the piece back where the ledger has it, so the screen never shows a spot that will not survive a restart.
