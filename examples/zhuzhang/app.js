@@ -4,7 +4,7 @@
   // Ledger money is integer cents. DOM content originating from users is escaped.
   const KEY = 'ledger.v1';
   const runtime = window.ZZRuntime;
-  const VERSION = '1.12.2';
+  const VERSION = '1.12.3';
   const MAX_CENTS = 100000000000;
   const $ = s => document.querySelector(s);
   const $$ = s => [...document.querySelectorAll(s)];
@@ -209,6 +209,12 @@
       net+=p.amount;const step=stepSplit(prev,net,p.amount,false,w);rows.set(p.id,step);prev=prev.map((v,k)=>v+step[k]);
       while(owed.length&&net>0){const o=owed[0],d=Math.min(o[1],net);take(o[0],d);o[1]-=d;if(!o[1])owed.shift();}
     }
+    // 1.12.3: a whole refund dated before later payments can still leave a piece short of what its aimed refunds take
+    // (the split follows the running total). The payments then hand that piece the difference from pieces with money to
+    // spare, latest payment first, so an aimed refund stays on its piece whenever the money is there.
+    hold.forEach((h,k)=>{let need=h-prev[k];
+      for(let j=0;need>0&&j<prev.length;j++){if(j===k)continue;let x=Math.min(need,prev[j]-hold[j]);if(x<=0)continue;
+        for(let n=ts.length-1;x>0&&n>=0;n--){const p=ts[n];if(p.kind!=='payment')continue;const r=rows.get(p.id),m=Math.min(x,r[j]);if(m<=0)continue;r[j]-=m;r[k]+=m;prev[j]-=m;prev[k]+=m;x-=m;need-=m;}}});
     // 1.12.0: a refund that names its piece comes off that piece only (what it can't cover comes off the rest by share).
     for(const p of aimed){const k=i.parts.findIndex(q=>q.id===p.part),d=Math.min(p.amount,prev[k]),row=prev.map(()=>0);row[k]=d;prev[k]-=d;net-=d;
       const left=Math.min(p.amount-d,net);if(left>0){const step=stepSplit(prev,net-left,left,true,w);step.forEach((v,j)=>{row[j]+=v;prev[j]-=v;});net-=left;}rows.set(p.id,row);}
@@ -425,7 +431,7 @@
   function render(){
     document.title='筑账 · '+NAV.find(n=>n[0]===ui.page)[3];
     paintNav();$('#crumb-page').textContent=NAV.find(n=>n[0]===ui.page)[3];
-    $$('.project-name').forEach(el=>el.textContent=data.project.name);$$('.project-meta').forEach(el=>{const bits=[data.project.area?data.project.area+'㎡':'',data.project.layout].filter(Boolean);el.replaceChildren(...(bits.length?bits:['项目与预算']).map(t=>Object.assign(document.createElement('span'),{textContent:t})));});
+    $$('.project-name').forEach(el=>el.textContent=data.project.name);fitNames();$$('.project-meta').forEach(el=>{const bits=[data.project.area?data.project.area+'㎡':'',data.project.layout].filter(Boolean);el.replaceChildren(...(bits.length?bits:['项目与预算']).map(t=>Object.assign(document.createElement('span'),{textContent:t})));});
     $('#main').innerHTML=`<div class="page-content">${({overview:renderOverview,budget:renderBudget,ledger:renderLedger,statistics:renderStatistics,home:renderHome}[ui.page])()}</div>`;
     $('#fab').classList.add('hidden');document.body.dataset.page=ui.page;updateChrome();updateDraftBanner();
     const warning=restoreError||bootError;$('#storage-warning').textContent=warning;$('#storage-warning').classList.toggle('hidden',!warning);
@@ -445,7 +451,7 @@
     pill.style.opacity='1';pill.style.width=on.offsetWidth+'px';pill.style.transform=`translateX(${on.offsetLeft}px)`;
     if(!pill.dataset.ready)requestAnimationFrame(()=>{pill.dataset.ready='1';});
   }
-  window.addEventListener('resize',()=>{movePill();if(ui.page==='home')homeTop();});
+  window.addEventListener('resize',()=>{movePill();fitNames();if(ui.page==='home')homeTop();});
 
   /* ---------- 1.4.0 · 我的家 bridge: the 3D module is imported only when the card or the tab is shown ---------- */
   const homeState={mod:null,loading:null,failed:false,ui:{labels:true}};
@@ -458,6 +464,16 @@
     if(!homeState.failed)return `<div class="home-host" id="home-host"><div class="home-loading">${HM.planSvg(placedItems().t)}<span>正在搭建我的家…</span></div></div>`;
     const {t,rects,list}=placedItems(),counts={};for(const i of list)counts[i.room]=(counts[i.room]||0)+1;
     return heading('我的家','这台设备暂不支持 3D 显示，下面是户型平面')+`<section class="card card-pad home-fallback">${HM.planSvg(t,counts,{text:true,label:t.n+'平面图'})}<p class="form-hint">${esc(t.n)} · ${HM.roomNames(rects).length} 个空间 · 已放进 ${list.length} 件家具家电。账本的记录与统计不受影响。</p></section>`;
+  }
+  // 1.12.3: a name too long for the phone's top bar keeps its end (the unit number, 「…12栋1202」) and loses the middle.
+  function fitNames(){
+    for(const el of $$('.mobile-project .project-name')){
+      const full=data.project.name,ch=[...full];el.textContent=full;el.title=full;
+      const fits=()=>el.scrollHeight<=el.clientHeight+1;if(fits())continue;
+      const tl=Math.min(7,Math.ceil(ch.length/2)),tail=ch.slice(-tl).join('');let lo=0,hi=ch.length-tl;
+      while(lo<hi){const m=(lo+hi+1)>>1;el.textContent=ch.slice(0,m).join('')+'…'+tail;if(fits())lo=m;else hi=m-1;}
+      el.textContent=ch.slice(0,lo).join('')+'…'+tail;
+    }
   }
   function homeTop(){const bar=$('.topbar');if(bar)document.documentElement.style.setProperty('--home-top',Math.max(0,bar.getBoundingClientRect().bottom)+'px');}
   function homeWrite(mutate){
@@ -1177,6 +1193,6 @@
   }
 
   // validate() is exposed for the unit tests; the 3D module talks to the ledger only through homeApi.
-  window.ZZApp=Object.freeze({validate,payShares,assertCashTimeline,applyHome,importBody,lookOnSave,lookRow,version:VERSION});
+  window.ZZApp=Object.freeze({validate,payShares,assertCashTimeline,applyHome,importBody,previewImport,homeApi,lookOnSave,lookRow,version:VERSION});
   boot();
 })();

@@ -639,7 +639,9 @@ body[data-page="home"] #toast.has-action{top:calc(var(--home-top,64px) + 78px);b
 @media(max-width:700px){.mobile-project{flex:0 100 auto}.mobile-project>span:not(.brand-mark){min-width:0}.mobile-project strong{max-width:100%}.top-actions{flex:none}.top-actions>.demo-mark{white-space:nowrap}}
 .rp-note.rp-over{color:var(--red);background:var(--red-bg)}
 @media (prefers-color-scheme:dark){.rp-note.rp-over{color:#f2a79c;background:#3b2523}}
-/* 1.12.2: with large text the project name takes up to three lines before it is cut; the meta line keeps one line and drops
-   a piece that doesn't fit whole (with its dot) instead of breaking after the dot. */
-@media(max-width:700px){.mobile-project strong{white-space:normal;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow-wrap:anywhere}.mobile-project small{display:flex;flex-wrap:wrap;column-gap:.4em;line-height:1.4;height:1.4em;overflow:hidden}.mobile-project small>span{white-space:nowrap}.mobile-project small>span+span::before{margin:0 .4em 0 0}}
+/* 1.12.3: with large text the project name takes up to three lines (fitNames keeps its end when it is longer); the meta
+   line wraps between whole pieces, and the dot that would start a new line sits outside the box and is clipped. */
+@media(max-width:700px){.mobile-project strong{white-space:normal;line-height:1.35;max-height:calc(1.35em * 3);overflow:hidden;overflow-wrap:anywhere}.mobile-project small{display:flex;flex-wrap:wrap;column-gap:.9em;overflow:hidden}.mobile-project small>span{white-space:nowrap;position:relative}.mobile-project small>span+span::before{position:absolute;right:100%;width:.9em;margin:0;text-align:center}}
 .project-meta>span+span::before{content:'·';margin:0 .4em}
+/* 1.12.3: a date that wraps at large text makes its box taller instead of spilling over the label. */
+.date-button{height:auto}

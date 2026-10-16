@@ -53,7 +53,8 @@ export function feedNotificationText(feedTitle, entries, total = entries.length,
 export function routeForOpen(record) {
   if (!record || !(Number(record.feedId) > 0)) return null;
   const ids = Array.isArray(record.entryIds) ? record.entryIds.filter((id) => Number(id) > 0) : [];
-  return ids.length === 1 ? `/feed/${record.feedId}/article/${ids[0]}` : `/feed/${record.feedId}`;
+  const single = ids.length === 1 && !(Number(record.total) > 1);
+  return single ? `/feed/${record.feedId}/article/${ids[0]}` : `/feed/${record.feedId}`;
 }
 
 /**
@@ -71,7 +72,8 @@ export function createFeedNotifier({ api, notifications, storage, feedTitle = ()
     queue = run;
     return run;
   };
-  const load = async () => normalizeState(await storage.get(FEED_NOTIFY_KEY).catch(() => null));
+  // A failed read aborts the run: saving an empty state over it would erase every watch.
+  const load = async () => normalizeState(await storage.get(FEED_NOTIFY_KEY));
   const save = (state) => storage.set(FEED_NOTIFY_KEY, state);
 
   async function watchedFeedIds() {
@@ -100,6 +102,8 @@ export function createFeedNotifier({ api, notifications, storage, feedTitle = ()
         // Fails with PERMISSION_DENIED while the tool's notification grant is off. It can't see
         // Android's own switch; only a refused post shows that, recorded as state.blocked.
         await notifications.cancel(feedNotificationId(id));
+        // The probe proves the tool's grant is back; it can't see Android's own switch.
+        if (state.blocked === "PERMISSION_DENIED") state.blocked = null;
         // An empty feed starts at 0, so its first entry notifies.
         state.feeds[id] = { lastEntryId: Number(await api.latestEntryId(id)) || 0 };
         await save(state);
@@ -108,8 +112,11 @@ export function createFeedNotifier({ api, notifications, storage, feedTitle = ()
     });
   }
 
-  /** Runs after a committed background sync. One failing feed does not stop the others. */
-  function check() {
+  /**
+   * Runs after a committed sync. One failing feed does not stop the others. `foreground` marks a
+   * sync the reader ran on screen: it only moves the cursors, even if NextFlux leaves meanwhile.
+   */
+  function check({ foreground = false } = {}) {
     return serial(async () => {
       const state = await load();
       const results = [];
@@ -130,7 +137,7 @@ export function createFeedNotifier({ api, notifications, storage, feedTitle = ()
           const fresh = newer.filter((_, index) => cached[index]).sort((a, b) => b.id - a.id);
           const total = Math.max(fresh.length, (Number(reported) || 0) - (newer.length - fresh.length));
           if (!fresh.length) { results.push({ feedId, outcome: "none" }); continue; }
-          if (isForeground()) {
+          if (foreground || isForeground()) {
             state.feeds[key] = { lastEntryId: fresh[0].id };
             results.push({ feedId, outcome: "foreground", count: fresh.length });
             continue;
@@ -146,7 +153,7 @@ export function createFeedNotifier({ api, notifications, storage, feedTitle = ()
           }
           state.blocked = null;
           state.feeds[key] = { lastEntryId: fresh[0].id };
-          state.opens[id] = { feedId, entryIds: fresh.map((entry) => entry.id) };
+          state.opens[id] = { feedId, entryIds: fresh.map((entry) => entry.id), total };
           results.push({ feedId, outcome: "notified", count: Math.max(Number(total) || 0, fresh.length) });
         } catch (error) {
           results.push({ feedId, outcome: "failed", code: error?.code || "ERROR" });
@@ -172,7 +179,8 @@ export function createFeedNotifier({ api, notifications, storage, feedTitle = ()
   /** Logout: forgets every watch, cursor and pending open, and withdraws posted notices. */
   function clear() {
     return serial(async () => {
-      const state = await load();
+      // Removal runs even when the state can't be read; only the notice cleanup needs it.
+      const state = await load().catch(() => emptyState());
       await storage.remove(FEED_NOTIFY_KEY);
       await Promise.all(Object.keys(state.feeds).map((key) =>
         notifications?.cancel?.(feedNotificationId(Number(key))).catch(() => {})));

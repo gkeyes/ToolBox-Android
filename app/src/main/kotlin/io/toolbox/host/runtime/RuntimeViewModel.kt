@@ -28,6 +28,8 @@ internal class RuntimeViewModel(
     val exitRevision = mutableExitRevision.asStateFlow()
     private var closeJob: Job? = null
     private var exitAfterSave: (() -> Unit)? = null
+    /** Back asked to leave: the save may still run, or have sealed the bridge for the exit. */
+    private var exitRequested = false
 
     init { sessions.openForeground(toolId) }
 
@@ -36,6 +38,7 @@ internal class RuntimeViewModel(
     fun requestExit(onSaved: () -> Unit) {
         if (closeJob?.isActive == true) return
         exitAfterSave = onSaved
+        exitRequested = true
         beginClose(reloading = false)
     }
 
@@ -76,10 +79,19 @@ internal class RuntimeViewModel(
     }
 
     fun cancelClose() {
+        exitRequested = false
         closeJob?.cancel()
         sessions.cancelForegroundClose(toolId)
         mutableCloseState.value = null
         mutableExitRevision.value += 1
+    }
+
+    /**
+     * The tool was opened again while Back was taking it away: stop a save still running for the
+     * exit, or reopen the bridge a finished save sealed. Nothing to undo when no exit was asked.
+     */
+    fun reopen() {
+        if (exitRequested) cancelClose()
     }
 
     fun discardAndClose() {

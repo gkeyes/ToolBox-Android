@@ -6,7 +6,8 @@ import {
 
 // A stand-in for the Miniflux server and the ToolBox host. The server holds entries; the host
 // stores tool data, records posted notifications and turns a tap into a notifications.open event.
-function world({ notificationsGranted = true, uncached = new Set() } = {}) {
+function world({ notificationsGranted: granted = true, uncached = new Set() } = {}) {
+  let notificationsGranted = granted;
   const entries = [];
   const failingFeeds = new Set();
   const data = new Map();
@@ -55,6 +56,7 @@ function world({ notificationsGranted = true, uncached = new Set() } = {}) {
     tap(id) { openListeners.forEach((listener) => listener({ id, openedAt: Date.now() })); },
     setForeground(value) { foreground = value; },
     setSystemNotifications(value) { systemAllowed = value; },
+    setGranted(value) { notificationsGranted = value; },
   };
   const titles = { 12: "少数派", 13: "Hacker News" };
   const notifier = createFeedNotifier({
@@ -192,6 +194,8 @@ test("text and route helpers", () => {
   assert.deepEqual(feedNotificationText("A", [{ title: "x" }, { title: "y" }]), { title: "A", body: "2 篇新文章：x；y" });
   assert.equal(routeForOpen({ feedId: 3, entryIds: [9] }), "/feed/3/article/9");
   assert.equal(routeForOpen({ feedId: 3, entryIds: [9, 8] }), "/feed/3");
+  // One entry listed but several announced (the rest were past the page): open the feed.
+  assert.equal(routeForOpen({ feedId: 3, entryIds: [9], total: 4 }), "/feed/3");
   assert.equal(routeForOpen(null), null);
 });
 
@@ -230,4 +234,53 @@ test("notification text follows the strings NextFlux passes for its language", (
   assert.deepEqual(feedNotificationText("", [{ title: "A" }, { title: "" }], 2, strings),
     { title: "Feed update", body: "2 new entries: A; Untitled" });
   assert.deepEqual(feedNotificationText("HN", [], 1, strings), { title: "HN", body: "1 new entry" });
+});
+
+test("re-enabling a feed clears a tool-grant block but keeps Android's own", async () => {
+  const { server, host, notifier } = world();
+  await notifier.setWatched(12, true);
+  host.setGranted(false);
+  server.add(12, 1, "一篇");
+  await notifier.check();
+  host.setGranted(true);
+  await notifier.setWatched(12, false);
+  assert.equal(await notifier.setWatched(12, true), true);
+
+  host.setSystemNotifications(false);
+  server.add(12, 2, "两篇");
+  await notifier.check();
+  await notifier.setWatched(12, false);
+  // cancel() can't see Android's switch, so the block stays until a post succeeds.
+  assert.equal(await notifier.setWatched(12, true), "blocked");
+});
+
+test("clear removes the state even when it can't be read", async () => {
+  const { toolbox, notifier, data } = world();
+  await notifier.setWatched(12, true);
+  const get = toolbox.storage.get;
+  toolbox.storage.get = async () => { throw new Error("io"); };
+  await notifier.clear();
+  toolbox.storage.get = get;
+  assert.equal(data.has(FEED_NOTIFY_KEY), false);
+});
+
+test("a foreground check only moves the cursor", async () => {
+  const { server, notifier, posted } = world();
+  await notifier.setWatched(12, true);
+  server.add(12, 1, "一篇");
+  assert.deepEqual(await notifier.check({ foreground: true }), [{ feedId: 12, outcome: "foreground", count: 1 }]);
+  assert.deepEqual(await notifier.check(), [{ feedId: 12, outcome: "none" }]);
+  assert.equal(posted.length, 0);
+});
+
+test("a failed storage read aborts the check and keeps the watches", async () => {
+  const { toolbox, notifier, data } = world();
+  await notifier.setWatched(12, true);
+  const saved = structuredClone(data.get(FEED_NOTIFY_KEY));
+  const get = toolbox.storage.get;
+  toolbox.storage.get = async () => { throw Object.assign(new Error("io"), { code: "IO" }); };
+  await assert.rejects(notifier.check(), (error) => error.code === "IO");
+  toolbox.storage.get = get;
+  assert.deepEqual(data.get(FEED_NOTIFY_KEY), saved);
+  assert.deepEqual(await notifier.watchedFeedIds(), [12]);
 });

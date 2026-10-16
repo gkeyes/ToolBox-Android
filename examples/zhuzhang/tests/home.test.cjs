@@ -22,16 +22,48 @@ function loadApp() {
   return window.ZZApp;
 }
 const app = loadApp(), ZZ = app;
-// One function declaration of a source file, found by name and its braces (not by exact spacing), for code that only
-// runs inside a module we can't load here (home3d.js needs three.js).
-function fnSource(src, name) {
-  const m = new RegExp('function\\s+' + name + '\\s*\\(').exec(src); assert.ok(m, name + ' exists');
-  let k = src.indexOf('{', src.indexOf(')', m.index)), depth = 0, q = null;
-  for (; k < src.length; k++) {
-    const ch = src[k];
-    if (q) { if (ch === '\\') k++; else if (ch === q) q = null; continue; }
-    if (ch === "'" || ch === '"' || ch === '`') q = ch; else if (ch === '{') depth++; else if (ch === '}' && !--depth) return src.slice(m.index, k + 1);
+// The app with a DOM that remembers what is written to it, and a runtime that starts from a stored ledger.
+function loadRecordingApp(stored) {
+  const inert = new Proxy(function () {}, {
+    get: (target, key) => key === Symbol.iterator ? function* () {} : key === Symbol.toPrimitive ? () => '' : key === 'then' ? undefined : inert,
+    apply: () => inert, construct: () => inert, set: () => true,
+  });
+  const dom = {}, sets = [];
+  const el = (sel) => dom[sel] || (dom[sel] = new Proxy({}, { get: (t, k) => k in t ? t[k] : k === 'then' ? undefined : inert, set: (t, k, v) => { t[k] = v; return true; } }));
+  const document = new Proxy({}, { get: (t, key) => key === 'querySelectorAll' ? () => [] : key === 'querySelector' ? el : inert });
+  const store = new Map([['ledger.v1', JSON.parse(JSON.stringify(stored))]]);
+  const window = { ZZHomeModel: HM, ZZRuntime: { init: async () => {}, get: async (k) => store.has(k) ? JSON.parse(JSON.stringify(store.get(k))) : null, set: async (k, v) => { sets.push([k, JSON.parse(JSON.stringify(v))]); store.set(k, v); }, remove: async () => {}, onFlush() {}, onState() {}, explain: (e) => String(e?.message || e), isNative: true }, addEventListener() {}, visualViewport: null, scrollTo() {}, innerHeight: 800 };
+  const quiet = { ...console, log() {}, warn() {}, error() {} };
+  const matchMedia = () => ({ matches: false, addEventListener() {}, addListener() {} }); window.matchMedia = matchMedia;
+  const context = { window, document, matchMedia, getComputedStyle: () => inert, location: { hash: '' }, history: { replaceState() {} }, crypto: globalThis.crypto, setTimeout: () => 0, clearTimeout() {}, requestAnimationFrame: () => 0, console: quiet, Promise, Event: class {}, FormData: class { entries() { return [][Symbol.iterator](); } get() { return null; } }, TextDecoder, URL, Blob: class {} };
+  window.window = window;
+  vm.runInNewContext(read('app.js'), context);
+  return { app: window.ZZApp, dom, sets };
+}
+// One function declaration of a source file, found by name and its braces, for code that only runs inside a module we
+// can't load here (home3d.js needs three.js and a canvas). A small scanner marks what is code, so comments, strings,
+// template literals (nested too) and regex literals never count as braces, and a commented-out copy is never found.
+function codeMask(src) {
+  const mask = new Uint8Array(src.length), stack = []; let k = 0, prev = '';
+  const regexOk = () => !prev || /[(,=:[!&|?{};+\-*%<>~^]/.test(prev) || /\b(return|typeof|case|in|of|delete|void|throw)$/.test(src.slice(Math.max(0, k - 8), k));
+  while (k < src.length) {
+    const ch = src[k], nx = src[k + 1];
+    if (ch === '/' && nx === '/') { while (k < src.length && src[k] !== '\n') k++; continue; }
+    if (ch === '/' && nx === '*') { const e = src.indexOf('*/', k + 2); k = e < 0 ? src.length : e + 2; continue; }
+    if (ch === "'" || ch === '"') { k++; while (k < src.length && src[k] !== ch) k += src[k] === '\\' ? 2 : 1; k++; prev = ch; continue; }
+    if (ch === '`') { k++; for (;;) { if (k >= src.length) break; if (src[k] === '\\') { k += 2; continue; } if (src[k] === '`') { k++; break; } if (src[k] === '$' && src[k + 1] === '{') { stack.push(0); k += 2; break; } k++; } prev = '`'; if (stack.length && src[k - 1] === '{' && src[k - 2] === '$') prev = '{'; continue; }
+    if (ch === '/' && regexOk()) { k++; let cls = false; while (k < src.length && (cls || src[k] !== '/')) { if (src[k] === '\\') k++; else if (src[k] === '[') cls = true; else if (src[k] === ']') cls = false; k++; } k++; while (/[a-z]/i.test(src[k] || '')) k++; prev = ')'; continue; }
+    if (stack.length && ch === '{') stack[stack.length - 1]++;
+    if (stack.length && ch === '}') { if (stack[stack.length - 1] === 0) { stack.pop(); k++; for (;;) { if (k >= src.length) break; if (src[k] === '\\') { k += 2; continue; } if (src[k] === '`') { k++; break; } if (src[k] === '$' && src[k + 1] === '{') { stack.push(0); k += 2; break; } k++; } prev = '`'; continue; } stack[stack.length - 1]--; }
+    mask[k] = 1; if (!/\s/.test(ch)) prev = ch; k++;
   }
+  return mask;
+}
+function fnSource(src, name) {
+  const mask = codeMask(src), code = [...src].map((c, k) => mask[k] ? c : ' ').join('');
+  const m = new RegExp('function\\s+' + name + '\\s*\\(').exec(code); assert.ok(m, name + ' exists');
+  let depth = 0, k = code.indexOf('{', code.indexOf(')', m.index));
+  for (; k < code.length; k++) { if (code[k] === '{') depth++; else if (code[k] === '}' && !--depth) return src.slice(m.index, k + 1); }
   throw new Error('unbalanced ' + name);
 }
 const home3dSaveHome = (api) => new Function('HM', 'api', 'rebuildAll', 'setPlan', 'syncItems', 'renderTray', 'invalidate', 'let T, planKey, view;' + fnSource(read('home3d.js'), 'saveHome') + 'return saveHome;')(
@@ -631,6 +663,67 @@ test('1.12.1 · a failed plan save says so; moved pieces re-file their bundle; t
   assert.doesNotMatch(html, /\shidden\b|display\s*:\s*none|visibility\s*:\s*hidden/, 'nothing in the dialog is hidden');
   B.payments = B.payments.filter((p) => p.itemId === 'b');
   assert.ok(!app.importBody(app.validate(B)).includes('退款日期早于付款'), 'no early refund, no line');
+});
+
+test('1.12.3 · an aimed refund stays on its piece when a big or backdated whole refund comes along', () => {
+  const pure = (L, ids) => { const V = app.validate(L), out = app.payShares(V.items[0], V);
+    for (const id of ids) { const p = V.payments.find((q) => q.id === id), k = V.items[0].parts.findIndex((q) => q.id === p.part), row = out.rows.get(id);
+      assert.deepEqual(row.map((v, j) => j === k ? 0 : v), row.map(() => 0), id + ' only touches its piece'); assert.equal(row[k], p.amount); }
+    assert.ok(out.cash.every((v) => v >= 0)); return out; };
+  // A whole refund nearly as big as the rest of the bundle: only what the aimed refunds don't hold can go.
+  const b = { id: 'bd', name: '电器打包', category: 'furniture', room: '多个空间', budget: null, price: 1409700, costMode: 'estimated', status: 'confirmed', merchant: '', due: '', note: '',
+    parts: [{ id: 'pa', name: '空调', room: '次卧', amount: 319900 }, { id: 'pb', name: '电脑', room: '次卧2', amount: null }, { id: 'pc', name: '电视', room: '客餐厅', amount: null }] };
+  const out = pure({ ...base(), items: [b], payments: [{ id: 'p', itemId: 'bd', amount: 1409700, date: '2026-10-01', kind: 'payment', note: '' },
+    { id: 'r1', itemId: 'bd', amount: 300000, date: '2026-10-05', kind: 'refund', note: '', part: 'pa' },
+    { id: 'w', itemId: 'bd', amount: 1000000, date: '2026-10-05', kind: 'refund', note: '' }] }, ['r1']);
+  assert.equal(out.cash[0], 19900);
+  // Found by fuzzing: a whole refund dated before later payments (actual cost, so the shares move with every payment).
+  const c = { id: 'b', name: '包', category: 'furniture', room: '多个空间', budget: null, price: null, costMode: 'actual', status: 'confirmed', merchant: '', due: '', note: '',
+    parts: [{ id: 'p0', name: '件0', room: '房0', amount: null }, { id: 'p1', name: '件1', room: '房1', amount: 355500 }] };
+  pure({ ...base(), items: [c], payments: [{ id: 'e0', itemId: 'b', amount: 376700, date: '2026-09-11', kind: 'payment', note: '' }, { id: 'e1', itemId: 'b', amount: 193800, date: '2026-09-09', kind: 'payment', note: '' },
+    { id: 'e2', itemId: 'b', amount: 304200, date: '2026-09-07', kind: 'payment', note: '' }, { id: 'e3', itemId: 'b', amount: 304300, date: '2026-09-18', kind: 'refund', note: '', part: 'p0' },
+    { id: 'e4', itemId: 'b', amount: 477400, date: '2026-09-10', kind: 'refund', note: '' }] }, ['e3']);
+});
+
+test('1.12.3 · fnSource reads past comments, strings, regex and nested templates', () => {
+  const tricky = [
+    "// function saveHome(old) { return 'commented out'; }",
+    '/* function saveHome(older) { } */',
+    'function other() { return 1; }',
+    'function saveHome(home, renames, quiet, move) {',
+    "  // the ledger's write may fail }",
+    "  const re = /'/g, br = /[}{]/, s = '}', d = \"{\";",
+    '  const t = `a ${ `b ${ home ? `}` : "{" } c` } d`;',
+    '  /* } */ if (quiet) { return { ok: true }; }',
+    '  return move;',
+    '}',
+    'function after() { }',
+  ].join('\n');
+  const got = fnSource(tricky, 'saveHome');
+  assert.ok(got.startsWith('function saveHome(home, renames, quiet, move) {'));
+  assert.ok(got.endsWith('return move;\n}'));
+  assert.equal(new Function(got + 'return saveHome;')()(null, [], false, 7), 7);
+});
+
+test('1.12.3 · the restore dialog and 拼户型 save go through importBody and applyHome', async () => {
+  // A second copy of the app whose DOM remembers what is written, with a stored ledger to save over.
+  const B = base(); B.items[1].status = 'confirmed';
+  B.items.push({ ...B.items[0], id: 'w', name: '马桶', room: '公卫' }, { ...B.items[0], id: 'k', name: '电视柜', room: '客餐厅', model: { kind: 'tvA', x: .5, z: .5, rot: 0 } });
+  B.payments = [{ id: 'r1', itemId: 'a', amount: 500, date: '2026-09-01', kind: 'refund', note: '' }, { id: 'p1', itemId: 'a', amount: 900, date: '2026-09-02', kind: 'payment', note: '' }];
+  const { app: A, dom, sets } = loadRecordingApp(B);
+  for (let n = 0; n < 30; n++) await new Promise((r) => setImmediate(r));
+  A.previewImport(JSON.stringify(B));
+  const body = String(dom['#sheet-body']?.innerHTML || '');
+  const hint = '<p class="form-hint">有 1 个项目的退款日期早于付款，会从之后的付款里扣，合计不受影响。</p>', at = body.indexOf(hint);
+  assert.ok(at >= 0, 'the hint is in the dialog as a plain hint');
+  const before = body.slice(0, at), open = (before.match(/<(?!\/)(?!br\b|input\b|img\b)[a-z]+[^>]*>/g) || []).length, close = (before.match(/<\/[a-z]+>/g) || []).length;
+  assert.equal(open, close, 'not inside another element (a hidden or faded wrapper)');
+  const home = { template: HM.TEMPLATE_ORDER[0] };
+  assert.equal(await A.homeApi.saveHome(home, [['公卫', '公卫2']], (room, model) => model && room === '客餐厅' ? { room: '餐厅', model } : null), true);
+  const saved = sets.filter(([k]) => k === 'ledger.v1').at(-1)[1];
+  assert.equal(saved.items.find((i) => i.id === 'w').room, '公卫2', 'renames reach the ledger');
+  assert.equal(saved.items.find((i) => i.id === 'k').room, '餐厅', 'move reaches the ledger');
+  assert.equal(saved.project.home.template, home.template);
 });
 
 test('1.12.0 · a refund that names its piece comes off that piece only; one whose piece is gone falls back to the shares', () => {
