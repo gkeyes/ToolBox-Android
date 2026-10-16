@@ -121,7 +121,18 @@ test("article references keep their numbers: lists, ranges and 2.0 are not glued
   assert.deepEqual(articleNumbers("1-10", 9), [1, 2, 3, 4, 5, 6, 7, 8, 9]);
   assert.deepEqual(articleNumbers("8-100", 9), [8, 9]);
   assert.deepEqual(articleNumbers("12-20", 9), []);
-  assert.equal(articleNumbers("1-99999999", Infinity).length, 100);
+  // A range longer than 100 is junk and names nothing, so later topics keep their articles.
+  assert.deepEqual(articleNumbers("1-99999", 9), []);
+  assert.deepEqual(articleNumbers("1-99999999", Infinity), []);
+  assert.deepEqual(articleNumbers("1-100", 120).length, 100);
+  const junk = parseTopics('{"topics":[{"title":"甲","articles":["1-99999"]},{"title":"乙","articles":[2,3]}]}', 9);
+  assert.deepEqual(junk.map((topic) => [topic.title, topic.articles]), [["乙", [2, 3]]]);
+  // Spaces between numbers separate them; around a range dash they do not.
+  assert.deepEqual(articleNumbers("1 2", 9), [1, 2]);
+  assert.deepEqual(articleNumbers("第3篇 第5篇", 9), [3, 5]);
+  assert.deepEqual(articleNumbers("1 - 3", 9), [1, 2, 3]);
+  assert.deepEqual(articleNumbers("1〜3", 9), [1, 2, 3]);
+  assert.deepEqual(articleNumbers("1−3", 9), [1, 2, 3]);
   assert.deepEqual(articleNumbers("3-1", 9), [1, 2, 3]);
   assert.deepEqual(articleNumbers("1,2-3", 9), [1, 2, 3]);
   assert.deepEqual(articleNumbers("３、４", 9), [3, 4]);
@@ -137,6 +148,39 @@ test("article references keep their numbers: lists, ranges and 2.0 are not glued
   assert.deepEqual(salvaged[0].articles, [1, 2, 2, 4, 5]);
   const closed = salvageTopics('{"title":"丙","gist":"he said "hi"","articles":["1-2", 3.0, "4、5"]}');
   assert.deepEqual(closed[0].articles, [1, 2, 3, 4, 5]);
+});
+
+test("a broken reply keeps each topic's own articles, at every cut point and in either key order", async () => {
+  const { parseTopics } = await import("../src/toolbox/board/board.mjs");
+  const topics = [["台风登陆", [1, 2]], ["AI 模型降价潮", [3, 4]], ["央行降息", [5, 6]]];
+  for (const articlesFirst of [false, true]) {
+    const reply = JSON.stringify({ topics: topics.map(([title, articles]) => articlesFirst
+      ? { articles, title, gist: "要点", summary: "摘要" }
+      : { title, gist: "要点", summary: "摘要", articles }) });
+    for (let cut = 1; cut < reply.length; cut += 1) {
+      let got;
+      try { got = parseTopics(reply.slice(0, cut), 9); } catch { continue; }
+      for (const topic of got) {
+        const want = topics.find(([title]) => title === topic.title);
+        assert.ok(want, `cut ${cut}: unknown topic ${topic.title}`);
+        assert.ok(topic.articles.every((n) => want[1].includes(n)), `cut ${cut}, articles first ${articlesFirst}: ${topic.title} got ${topic.articles}`);
+      }
+    }
+  }
+});
+
+test("an object-like fragment inside a summary does not split its topic", async () => {
+  const { salvageTopics } = await import("../src/toolbox/board/board.mjs");
+  const got = salvageTopics('{"topics":[{"title":"甲","summary":"他说 {"gist":"inner"} 然后","articles":[1,2]},{"articles":[3],"title":"乙"},{"title":"丙","articles":[4', 9);
+  assert.deepEqual(got.map((topic) => [topic.title, topic.articles]), [["甲", [1, 2]], ["乙", [3]]]);
+  const comma = salvageTopics('{"topics":[{"title":"甲","summary":"a, {"gist":"inner"} b","articles":[1,2]},{"title":"乙","articles":[3]} oops', 9);
+  assert.deepEqual(comma.map((topic) => [topic.title, topic.articles]), [["甲", [1, 2]], ["乙", [3]]]);
+});
+
+test("a nested list inside a broken reply still salvages the topics", async () => {
+  const { parseTopics } = await import("../src/toolbox/board/board.mjs");
+  const got = parseTopics('{"topics":[{"title":"甲","gist":"g","summary":"s","articles":[[3],4,5]},{"title":"乙","articles":[6', 9);
+  assert.deepEqual(got.map((topic) => [topic.title, topic.articles]), [["甲", [3, 4, 5]]]);
 });
 
 test("the trailing-comma repair leaves commas inside text alone", async () => {

@@ -122,23 +122,27 @@ function looseJson(text) {
 }
 
 // An article reference as the AI wrote it: 3, "3", "[3]", "2.0", "第3篇",
-// full-width "３", a list "1,2" / "1、2" / "1,2-3", or a range "1-3" (also
-// reversed "3-1"). A range is trimmed to the articles there are; anything
-// else names no article.
+// full-width "３", a list "1,2" / "1、2" / "1 2" / "1,2-3", or a range "1-3"
+// (also reversed "3-1", "1〜3", "1−3"). A range running a little past the
+// last article is trimmed to it; one longer than MAX_RANGE ("1-99999") is
+// junk and names no article, nor does anything else.
 const MAX_RANGE = 100;
 const ITEM = /^\[?第?(\d+)(?:\.0+)?篇?\]?$/;
-const RANGE = /^\[?第?(\d+)篇?\s*[-–—~至到]\s*第?(\d+)篇?\]?$/;
+const RANGE = /^\[?第?(\d+)篇?\s*[-–—~〜−‐‑‒―至到]\s*第?(\d+)篇?\]?$/;
 export function articleNumbers(value, count) {
   if (typeof value === "number") return Number.isInteger(value) ? [value] : [];
-  // NFKC turns full-width digits and ～ into their ASCII forms.
-  const parts = String(value ?? "").normalize("NFKC").trim().split(/\s*[,，、;；]\s*/);
+  // NFKC turns full-width digits and ～ into their ASCII forms. A space
+  // between two numbers separates them; one around a range dash does not.
+  const text = String(value ?? "").normalize("NFKC").trim().replace(/([\d篇\]])\s+(?=[[第\d])/g, "$1,");
+  const parts = text.split(/\s*[,，、;；]\s*/);
   return parts.flatMap((part) => {
     const range = part.match(RANGE);
     if (range) {
       const [a, b] = [Number(range[1]), Number(range[2])];
+      if (Math.abs(a - b) + 1 > MAX_RANGE) return [];
       const from = Math.max(1, Math.min(a, b));
-      const to = Math.min(Math.max(a, b), Number.isFinite(count) ? count : from + MAX_RANGE - 1);
-      return to < from ? [] : Array.from({ length: Math.min(to - from + 1, MAX_RANGE) }, (_, index) => from + index);
+      const to = Math.min(Math.max(a, b), Number.isFinite(count) ? count : Infinity);
+      return to < from ? [] : Array.from({ length: to - from + 1 }, (_, index) => from + index);
     }
     const item = part.match(ITEM);
     return item ? [Number(item[1])] : [];
@@ -152,9 +156,21 @@ export function articleNumbers(value, count) {
 // never closed is left out.
 const unescape = (value) => value.replace(/\\n/g, " ").replace(/\\(["\\/])/g, "$1");
 export function salvageTopics(raw, count = Infinity) {
-  const starts = [...String(raw || "").matchAll(/"title"\s*:/g)].map((match) => match.index);
-  return starts.map((start, index) => {
-    const part = raw.slice(start, starts[index + 1] ?? raw.length);
+  raw = String(raw || "");
+  // Each topic is read from its own object, so a model that writes
+  // "articles" before "title" keeps its own list; without objects, from
+  // each "title" to the next. An object starts after [ or , ; a piece with
+  // no title (a {"…"} written inside a summary) belongs to the one before.
+  const objects = [...raw.matchAll(/[[,]\s*(\{\s*"(?:title|gist|summary|articles)"\s*:)/g)].map((match) => match.index + match[0].indexOf("{"));
+  const titles = [...raw.matchAll(/"title"\s*:/g)].map((match) => match.index);
+  const bounds = objects.length >= titles.length ? objects : titles;
+  const parts = [];
+  bounds.forEach((start, index) => {
+    const part = raw.slice(start, bounds[index + 1] ?? raw.length);
+    if (parts.length && !/"title"\s*:/.test(part)) parts[parts.length - 1] += part;
+    else parts.push(part);
+  });
+  return parts.map((part) => {
     const field = (key) => {
       const open = part.match(new RegExp(`"${key}"\\s*:\\s*"`));
       if (!open) return "";
@@ -176,7 +192,7 @@ export function parseTopics(text, count) {
   // The first JSON object with topics, or array of topic objects, in the
   // reply; text around it (a fence, a note, a remark with its own brackets)
   // is ignored.
-  const usable = (value) => Array.isArray(value?.topics) || (Array.isArray(value) && value.some((item) => item && typeof item === "object"));
+  const usable = (value) => Array.isArray(value?.topics) || (Array.isArray(value) && value.some((item) => item && typeof item === "object" && !Array.isArray(item)));
   let data = null;
   search: for (const { index: start } of raw.matchAll(/[[{]/g)) {
     const close = raw[start] === "{" ? "}" : "]";

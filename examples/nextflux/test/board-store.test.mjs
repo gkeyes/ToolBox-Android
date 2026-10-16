@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { register } from "node:module";
@@ -71,6 +72,7 @@ test("a sync while the digest is written leaves it running and it finishes", asy
   (await call).onChunk(TOPICS); calls.at(-1).resolve();
   await tick(); await tick();
   assert.equal(board.get().status, "done");
+  assert.equal(board.get().cut, false);
 
   call = waitCall();
   writeDigest();
@@ -122,6 +124,19 @@ test("a reply cut off mid-way keeps what had arrived", async () => {
   assert.deepEqual(board.get().raw, { thinking: "想", text: '{"topics":[' });
 });
 
+test("a reply stopped at the token limit is marked cut", async () => {
+  rows = [article(7), article(8)];
+  const call = waitCall();
+  refreshBoard();
+  const live = await call;
+  live.onChunk('{"topics":[{"title":"甲","gist":"g","summary":"s","articles":[1]},{"title":"乙","articles":[2');
+  live.resolve({ finishReason: "length" });
+  await tick(); await tick();
+  assert.equal(board.get().status, "done");
+  assert.deepEqual(board.get().topics.map((topic) => topic.title), ["甲"]);
+  assert.equal(board.get().cut, true);
+});
+
 test("a reply cut off after whole topics still makes a board from them", async () => {
   rows = [article(7), article(8)];
   const call = waitCall();
@@ -132,5 +147,8 @@ test("a reply cut off after whole topics still makes a board from them", async (
   await tick(); await tick();
   assert.equal(board.get().status, "done");
   assert.deepEqual(board.get().topics.map((topic) => topic.title), ["甲"]);
+  assert.equal(board.get().cut, true);
+  const page = readFileSync(new URL("../src/components/Board/BoardPage.jsx", import.meta.url), "utf8");
+  assert.match(page, /state\.cut && tab === "topics" \? "。AI 的回答中途断开，只列出完整收到的主题"/);
 });
 
