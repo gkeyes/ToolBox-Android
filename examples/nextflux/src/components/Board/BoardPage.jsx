@@ -147,7 +147,8 @@ function LiveRun({ stream }) {
     </section>
     {stream.first && <section className="nf-board-card nf-board-live-card">
       <div className="nf-board-live-head"><span className="nf-board-live-tag is-receive">第一次</span><h3>回答太长，被截在长度上限，没有一个完整的主题</h3></div>
-      {stream.first.text && <LiveText text={stream.first.text} />}
+      {stream.first.thinking && <LiveText className="is-thinking" text={stream.first.thinking} tail />}
+      {stream.first.text && <LiveText text={stream.first.text} tail />}
     </section>}
     <section className="nf-board-card nf-board-live-card">
       <div className="nf-board-live-head"><span className="nf-board-live-tag is-receive">{stream.first ? "第二次" : "接收"}</span><h3>{stream.first ? `请 AI 回答得短一点 · ${phase}` : phase}</h3><Spinner /></div>
@@ -158,18 +159,20 @@ function LiveRun({ stream }) {
 }
 
 // When the AI's answer could not be read: what it actually said.
+// After a retry the first reply is shown too, above the second.
 function RawOutput({ raw }) {
-  if (!raw || !(raw.text || raw.thinking)) return null;
-  return <section className="nf-board-card nf-board-live-card">
-    <div className="nf-board-live-head"><span className="nf-board-live-tag is-receive">AI 原文</span><h3>{raw.text ? `${raw.text.length} 字` : "只有思考，没有回答"}</h3></div>
-    {raw.thinking && <LiveText className="is-thinking" text={raw.thinking} />}
-    {raw.text && <LiveText text={raw.text} />}
-  </section>;
+  if (!raw) return null;
+  const parts = [raw.first && ["第一次", raw.first], [raw.first ? "第二次" : "", raw]].filter((part) => part && (part[1].text || part[1].thinking));
+  return parts.map(([label, reply]) => <section key={label} className="nf-board-card nf-board-live-card">
+    <div className="nf-board-live-head"><span className="nf-board-live-tag is-receive">{label ? `AI 原文 · ${label}` : "AI 原文"}</span><h3>{reply.text ? `${reply.text.length} 字` : "只有思考，没有回答"}</h3></div>
+    {reply.thinking && <LiveText className="is-thinking" text={reply.thinking} />}
+    {reply.text && <LiveText text={reply.text} />}
+  </section>);
 }
 
 function caption(state, stream) {
   if (state.status === "loading" || state.updating) {
-    const phase = !stream ? "正在读取未读文章" : stream.first && !stream.text ? "第一次的回答被截断，正在请 AI 回答得短一点" : stream.text ? `AI 正在输出 · ${stream.text.length} 字` : stream.thinking ? "AI 正在思考" : `已发送 ${stream.sent.length} 篇，等待 AI`;
+    const phase = !stream ? "正在读取未读文章" : stream.text ? `${stream.first ? "第二次，" : ""}AI 正在输出 · ${stream.text.length} 字` : stream.first ? "第一次的回答被截断，正在请 AI 回答得短一点" : stream.thinking ? "AI 正在思考" : `已发送 ${stream.sent.length} 篇，等待 AI`;
     return state.updating && state.at ? `${phase}，下面是 ${clock(state.at)} 的版本，进度在卡片下方` : phase;
   }
   if (state.status === "done") return `${state.total} 篇未读 · ${clock(state.at)} 更新`;
