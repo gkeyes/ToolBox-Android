@@ -17,7 +17,9 @@ const GENERIC_TITLES = new Set(["图片", "图片分享", "视频", "无标题",
 // Only hashtags, optionally after an emoji or symbol: "#系统资讯", "🖼 #系统资讯",
 // full-width "＃系统资讯", "# 系统".
 const HASHTAGS_ONLY = /^[\p{Extended_Pictographic}\p{S}\uFE0F\u200D\s]*(?:[#＃]\s?[^\s#＃]+\s*)+$/u;
-const generic = (title) => GENERIC_TITLES.has(title.toLowerCase()) || HASHTAGS_ONLY.test(title);
+// Leading emoji and symbols ("🖼 图片") do not make a placeholder a real title.
+const DECORATION = /^[\p{Extended_Pictographic}\p{S}\uFE0F\u200D\s]+/u;
+const generic = (title) => GENERIC_TITLES.has(title.toLowerCase()) || GENERIC_TITLES.has(title.replace(DECORATION, "").toLowerCase()) || HASHTAGS_ONLY.test(title);
 export const duplicateTitle = (article) => {
   const title = text(article?.titleText || article?.title);
   return title && !generic(title) ? title : "";

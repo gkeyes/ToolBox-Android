@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { dedupeArticles } from "../src/toolbox/dedupe.mjs";
 import { createArticleCache } from "../src/toolbox/cache.js";
+import { hiddenFeedIds, mergeCounts } from "../src/stores/count-merge.mjs";
 
 const ids = (rows) => rows.map((row) => row.id);
 
@@ -171,6 +172,47 @@ test("placeholder titles and hashtag-only titles never match by title", () => {
     { id: 9, title: "#旅行 真实标题", url: "https://a.example/9" },
   ];
   assert.deepEqual(ids(dedupeArticles(rows)), [1, 2, 3, 4, 5, 6, 8]);
+});
+
+test("an emoji before a placeholder word does not make it a real title", () => {
+  const rows = [
+    { id: 1, title: "🖼 图片", url: "https://a.example/1" },
+    { id: 2, title: "🖼 图片", url: "https://a.example/2" },
+    { id: 3, title: "📷Photo", url: "https://a.example/3" },
+    { id: 4, title: "📷 photo", url: "https://a.example/4" },
+    { id: 5, title: "🖼 图片集锦", url: "https://a.example/5" },
+    { id: 6, title: "🖼 图片集锦", url: "https://a.example/6" },
+  ];
+  assert.deepEqual(ids(dedupeArticles(rows)), [1, 2, 3, 4, 5]);
+});
+
+test("after reading or starring, the sidebar counts leave out globally hidden feeds", async () => {
+  const account = { serverUrl: "https://miniflux.example", userId: "7" };
+  const syncedAt = "2026-10-16T03:30:00.000Z";
+  const at = (minute) => `2026-10-16T03:${String(minute).padStart(2, "0")}:00.000Z`;
+  const entry = (id, feedId, minute, starred = 0) => ({ id, feedId, title: `第 ${id} 篇`, url: `https://a.example/${id}`, content: "<p>正文</p>", enclosures: [],
+    status: "unread", starred, published_at: at(minute), changed_at: syncedAt });
+  const cache = createArticleCache(memoryStorage(), { autoGc: false, tokenPrefix: "dedupe-hidden-feed" });
+  const token = await cache.prepareSync({ account, syncedAt });
+  await cache.applySyncBatch(token, [entry(1, 1, 10), entry(2, 1, 9), entry(3, 2, 8, 1), entry(4, 2, 7), entry(5, 2, 6)]);
+  const feeds = [{ id: 1, title: "甲" }, { id: 2, title: "乙", hide_globally: true }];
+  await cache.commitSync(token, { feeds, categories: [] });
+  const view = { hideDuplicates: true, field: "published_at", direction: "desc", feedIds: [1] };
+  // The sidebar as loaded: only the visible feed 甲.
+  let unread = { 1: 2 };
+  let starred = { 1: 0 };
+  const merge = (counts, show = false) => {
+    const hidden = hiddenFeedIds(feeds, show);
+    unread = mergeCounts(unread, counts.unread, hidden);
+    starred = mergeCounts(starred, counts.starred, hidden);
+  };
+  merge((await cache.patchState([{ id: 1, status: "read" }], view)).counts);
+  assert.deepEqual(unread, { 1: 1 });
+  merge((await cache.patchState([{ id: 2, starred: 1 }], view)).counts);
+  assert.deepEqual(starred, { 1: 1 });
+  // With 显示隐藏订阅 on, the hidden feed counts again.
+  merge((await cache.patchState([{ id: 4, status: "read" }], view)).counts, true);
+  assert.deepEqual([unread[1], unread[2], starred[2]], [1, 2, 1]);
 });
 
 test("hashtag-only titles after an emoji, with a full-width ＃ or with a space never match by title", () => {
