@@ -21,10 +21,12 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
@@ -49,6 +51,7 @@ import io.toolbox.host.settings.SettingsViewModel
 import io.toolbox.host.ui.MainDestination
 import io.toolbox.host.ui.PrimaryScreen
 import io.toolbox.host.ui.RuntimeShellPreviewContent
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.nav.core.NavKey
 import top.yukonga.miuix.kmp.nav.core.rememberNavBackStack
@@ -110,6 +113,14 @@ internal class RuntimeTransition(
             savedLeaving.value = value
         }
     var entryCoverMeasured by mutableStateOf(false)
+    /** The running return (or the animation cancelling it), so a reopen or Back can stop it. */
+    var returnJob: Job? = null
+    /** Bumped when a return is cancelled, so the tool's runtime reopens what Back closed. */
+    var reopenRevision by mutableIntStateOf(0)
+
+    /** Returning from a settled tool: the source fades in over the tool, not over the cover. */
+    val returningFromSettled: Boolean
+        get() = sourceAboveRuntime && !entryCoverVisible
 
     /** True once the transition fully hides the source layer (primary screen and retained pages). */
     val sourceHidden: Boolean
@@ -123,7 +134,7 @@ internal class RuntimeTransition(
 
     /** Where this transition stands, as the entry progress a replacing tool should start from. */
     fun entryEquivalent(): Float = runtimeEntryEquivalent(
-        sourceAboveRuntime = sourceAboveRuntime,
+        sourceAboveRuntime = returningFromSettled,
         sourceReturnProgress = sourceReturnProgress.value,
         entryProgress = entryProgress.value,
     )
@@ -148,7 +159,9 @@ internal fun rememberRuntimeTransition(runtimeRoute: RuntimeRoute?): RuntimeTran
                 opening = runtimeRoute != null,
                 carriedEntry = replaced?.entryEquivalent() ?: if (shownBefore) 0f else null,
             ),
-            coverBeneathSource = replaced?.sourceAboveRuntime == true,
+            // Only a settled tool sits beneath the returning source; a cover still fading in
+            // (Back while loading) hands its own entry progress on and stays on top.
+            coverBeneathSource = replaced?.returningFromSettled == true,
             // A switch opens normally; only a restored tool resumes its saved return.
             returnInterrupted = runtimeRoute != null && replaced == null && savedLeaving.value,
             savedLeaving = savedLeaving,
@@ -195,6 +208,10 @@ internal fun runtimeEntryEquivalent(
     } else {
         entryProgress.coerceIn(0f, 1f)
     }
+
+/** Opening [route] while that same tool is returning cancels the return rather than pushing. */
+internal fun reopensReturningTool(route: ToolBoxRoute, runtimeRoute: RuntimeRoute?, leaving: Boolean): Boolean =
+    leaving && runtimeRoute != null && route == runtimeRoute
 
 /** Entry progress a tool starts at: 1 for a fresh open, or where the replaced tool stood. */
 internal fun runtimeEntryStart(opening: Boolean, carriedEntry: Float?): Float = when {
@@ -256,8 +273,6 @@ internal fun ToolBoxNavigation(
     val coroutineScope = rememberCoroutineScope()
     val onPickPackage = rememberPackageImportPicker(importViewModel, contentResolver)
 
-    fun navigate(route: ToolBoxRoute) = secondaryBackStack.pushSecondary(route)
-
     fun navigateMain(destination: MainDestination) {
         homeEditing = false
         homeCreatingGroup = false
@@ -275,14 +290,6 @@ internal fun ToolBoxNavigation(
 
     fun goBackPrimary() {
         if (primaryBackStack.size > 1) primaryBackStack.removeLastOrNull()
-    }
-
-    LaunchedEffect(catalogViewModel) {
-        catalogViewModel.navigation.collect { intent ->
-            when (intent) {
-                is CatalogNavigationIntent.RequestRuntimeLaunch -> navigate(RuntimeRoute(intent.toolId))
-            }
-        }
     }
 
     val allSecondaryRoutes = secondaryBackStack.filterIsInstance<ToolBoxRoute>()
@@ -335,8 +342,11 @@ internal fun ToolBoxNavigation(
         }
     }
 
-    LaunchedEffect(runtimeRoute, runtimeLayerEnabled, runtimePresentationReady) {
-        if (runtimeRoute != null && runtimeLayerEnabled && runtimePresentationReady && !runtimeLeaving) {
+    LaunchedEffect(runtimeRoute, runtimeLayerEnabled, runtimePresentationReady, runtimeLeaving, sourceAboveRuntime) {
+        if (
+            runtimeRoute != null && runtimeLayerEnabled && runtimePresentationReady &&
+            !runtimeLeaving && !sourceAboveRuntime
+        ) {
             withFrameNanos { }
             withFrameNanos { }
             entryCoverVisible = false
@@ -347,14 +357,17 @@ internal fun ToolBoxNavigation(
         val activeRoute = runtimeRoute
         if (activeRoute != null && !runtimeLeaving) {
             runtimeLeaving = true
-            coroutineScope.launch {
+            // A cancelled return may still be animating back; continue from where it stands.
+            val resuming = sourceAboveRuntime
+            transition.returnJob?.cancel()
+            transition.returnJob = coroutineScope.launch {
                 if (runtimeLayerEnabled && !entryCoverVisible) {
-                    sourceReturnProgress.snapTo(1f)
+                    if (!resuming) sourceReturnProgress.snapTo(1f)
                     sourceAboveRuntime = true
                     withFrameNanos { }
                     sourceReturnProgress.animateTo(0f, animationSpec = RetainedPageMotion)
                 } else {
-                    sourceReturnProgress.snapTo(0f)
+                    if (!resuming) sourceReturnProgress.snapTo(0f)
                     sourceAboveRuntime = true
                     withFrameNanos { }
                     entryProgress.animateTo(1f, animationSpec = RetainedPageMotion)
@@ -362,6 +375,45 @@ internal fun ToolBoxNavigation(
                 if (secondaryBackStack.lastOrNull() == activeRoute) {
                     secondaryBackStack.removeLastOrNull()
                 }
+            }
+        }
+    }
+
+    // Reopening the tool that is returning (a notification or shortcut mid-return) cancels the
+    // return and brings the tool back, instead of being dropped while the return completes.
+    val cancelReturn: () -> Unit = {
+        if (runtimeRoute != null && runtimeLeaving) {
+            runtimeLeaving = false
+            transition.reopenRevision += 1
+            transition.returnJob?.cancel()
+            transition.returnJob = coroutineScope.launch {
+                if (entryCoverVisible) {
+                    entryProgress.animateTo(0f, animationSpec = RetainedPageMotion)
+                    // Back may have cut the entry short before it enabled the tool.
+                    runtimeLayerEnabled = true
+                } else {
+                    sourceReturnProgress.animateTo(1f, animationSpec = RetainedPageMotion)
+                }
+                sourceAboveRuntime = false
+                sourceReturnProgress.snapTo(0f)
+            }
+        }
+    }
+
+    fun navigate(route: ToolBoxRoute) {
+        // The live stack top, not the composed route: the return may have just popped it.
+        if (reopensReturningTool(route, secondaryBackStack.lastOrNull() as? RuntimeRoute, runtimeLeaving)) {
+            cancelReturn()
+        } else {
+            secondaryBackStack.pushSecondary(route)
+        }
+    }
+
+    val currentNavigate by rememberUpdatedState<(ToolBoxRoute) -> Unit>(::navigate)
+    LaunchedEffect(catalogViewModel) {
+        catalogViewModel.navigation.collect { intent ->
+            when (intent) {
+                is CatalogNavigationIntent.RequestRuntimeLaunch -> currentNavigate(RuntimeRoute(intent.toolId))
             }
         }
     }
@@ -531,6 +583,7 @@ internal fun ToolBoxNavigation(
                     onPresentationReady = { runtimePresentationReady = true },
                     onBack = leaveRuntime,
                     toolName = runtimeTitle,
+                    reopenRevision = transition.reopenRevision,
                     modifier = Modifier
                         .fillMaxSize()
                         .zIndex(1f)
