@@ -7,6 +7,7 @@ import CodeBlock from "./CodeBlock.jsx";
 import { createReadingRenderer } from "@/reading/renderer.js";
 import { createHighlightQueue, startProgressiveReading } from "@/reading/client.js";
 import { sameReadingSource } from "@/lib/articleReadingState.js";
+import { imageIsInline } from "@/reading/inlineImage.mjs";
 
 function ReadingPortal({ item, highlights }) {
   useEffect(() => {
@@ -15,9 +16,7 @@ function ReadingPortal({ item, highlights }) {
   }, [item]);
   let content;
   if (item.type === "image") {
-    // Text in the same block, at any depth: an icon or emoji in a sentence.
-    const inline = Boolean(item.target.parentElement?.textContent.trim());
-    content = <ArticleImage imgNode={{ attribs: item.attrs }} inline={inline} />;
+    content = <ArticleImage imgNode={{ attribs: item.attrs }} inline={imageIsInline(item.target)} />;
   }
   else if (item.type === "media") content = <Iframe sources={item.sources} domNode={{ name: item.kind, attribs: { "data-media-kind": item.kind, "data-media-url": item.url } }} />;
   else if (item.type === "code") content = <CodeBlock code={item.code} language={item.language} highlights={highlights} plainElement={item.plainElement} container={item.container} />;
