@@ -85,7 +85,8 @@ export async function refreshBoard({ onlyIfNew = false } = {}) {
     if (!live()) return;
     const known = new Set(keep || failed ? previous.ids : []);
     const fresh = all.filter((article) => !known.has(article.id));
-    if (onlyIfNew && (keep || failed) && !fresh.length) { if (run === controller) run = null; return; }
+    // Nothing new: the finally below still reads a sync that landed meanwhile.
+    if (onlyIfNew && (keep || failed) && !fresh.length) return;
     if (!all.length) {
       stopDigest();
       board.set({ ...EMPTY, status: "empty", at: Date.now(), day: today, filter });
@@ -155,7 +156,14 @@ export async function refreshBoard({ onlyIfNew = false } = {}) {
       read = await ask();
     } catch (error) {
       if (!error?.length || !live()) throw error;
-      read = await ask({ text: error.raw?.text || "" });
+      const first = { text: error.raw?.text || "", thinking: error.raw?.thinking || "" };
+      try {
+        read = await ask(first);
+      } catch (again) {
+        // A second failure keeps the first reply next to its own.
+        if (again && typeof again === "object") again.raw = { thinking: "", text: "", ...again.raw, first };
+        throw again;
+      }
     }
     if (!live()) return;
     const { topics, cut } = read;
