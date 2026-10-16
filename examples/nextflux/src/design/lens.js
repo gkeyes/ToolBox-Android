@@ -299,8 +299,10 @@ export function installGlassPress({ doc = document } = {}) {
     release();
     if (element.matches(DISABLED) || element.querySelector(":scope > input:disabled")) return;
     pressed = element;
-    element.dataset.nfPressed = "true";
+    // Measure before flagging the press, so the read uses the layout that is
+    // already there instead of forcing a style pass for the new flag.
     place(element, point.clientX, point.clientY);
+    element.dataset.nfPressed = "true";
   };
   const move = (event) => {
     const point = event.touches ? event.touches[0] : event;
