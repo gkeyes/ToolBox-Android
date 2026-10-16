@@ -4,7 +4,7 @@
   // Ledger money is integer cents. DOM content originating from users is escaped.
   const KEY = 'ledger.v1';
   const runtime = window.ZZRuntime;
-  const VERSION = '1.7.3';
+  const VERSION = '1.7.4';
   const MAX_CENTS = 100000000000;
   const $ = s => document.querySelector(s);
   const $$ = s => [...document.querySelectorAll(s)];
@@ -90,6 +90,8 @@
   let page=['overview','ledger','calculator','statistics','home'].includes(location.hash.slice(1))?location.hash.slice(1):'overview';
   const ui={page,ledgerTab:'items',category:'all',room:'all',merchant:null,query:'',statsGroup:'category',calcMode:'area',calc:{quantity:'',price:'',loss:'0',labor:'0',auxiliary:'0',freight:'0',install:'0',pack:'',packing:false,fixed:''},baseline:null};
   let pickerState=null, pendingImport=null, applyResult=null, toastTimer;
+  // The form's fields as they were when its save locked it: disabled controls drop out of FormData.
+  let lockedForm=null, lockedFields=null;
   // background: a 我的家 change (moving furniture, the floor plan) that is not the open form's submission.
   async function write(next,{background=false}={}){
     if(busy&&(background||!busyBackground))return false;
@@ -97,10 +99,11 @@
     if(!background)document.body.classList.add('saving');
     const submit=background?null:$('#sheet [type="submit"]');
     const label=submit?.innerHTML;
+    if(!background){lockedForm=$('#sheet form[data-form]');lockedFields=lockedForm?formFields(lockedForm):null;}
     const controls=background?[]:$$('#sheet input,#sheet button,#sheet textarea').map(el=>[el,el.disabled]);
     controls.forEach(([el])=>el.disabled=true);
     if(submit){submit.disabled=true;submit.textContent='正在保存…';}
-    const unlock=()=>{if(!background)document.body.classList.remove('saving');controls.forEach(([el,wasDisabled])=>{if(el.isConnected)el.disabled=wasDisabled;});if(submit?.isConnected){submit.disabled=false;submit.innerHTML=label;}};
+    const unlock=()=>{if(!background){document.body.classList.remove('saving');lockedForm=lockedFields=null;}controls.forEach(([el,wasDisabled])=>{if(el.isConnected)el.disabled=wasDisabled;});if(submit?.isConnected){submit.disabled=false;submit.innerHTML=label;}};
     if(busy){
       const before=data;
       for(let n=0;n<200&&busy;n++)await new Promise(r=>setTimeout(r,50));
@@ -833,6 +836,7 @@
     $('#main .page-heading').after(banner);
   }
   function formFields(form){
+    if(form===lockedForm&&lockedFields)return lockedFields.map(e=>[...e]);
     const fields=[...new FormData(form).entries()];
     for(const c of form.querySelectorAll('input[type="checkbox"][name]:not(:disabled)'))if(!c.checked)fields.push([c.name,'off']);
     return fields;

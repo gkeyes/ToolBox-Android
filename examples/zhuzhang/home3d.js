@@ -418,7 +418,7 @@ export function createHome(api) {
     inertia = null;
     if (mode === 'place') {
       const e = itemAt(x, y);
-      if (e) { select(e); const p = floorHit(x, y); if (p) { drag = { e, off: [e.x - p.x, e.z - p.z], moved: false }; e.g.position.y = .08; } gesture = { kind: 'drag', x, y, t: performance.now() }; invalidate(); return; }
+      if (e) { select(e); const p = floorHit(x, y); if (p) { drag = { e, off: [e.x - p.x, e.z - p.z], moved: false, last: [e.x, e.z] }; e.g.position.y = .08; } gesture = { kind: 'drag', x, y, t: performance.now() }; invalidate(); return; }
     }
     gesture = { kind: 'rotate', x, y, lx: x, ly: y, t: performance.now(), moved: false };
   }
