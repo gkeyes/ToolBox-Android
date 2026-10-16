@@ -300,3 +300,27 @@ test("a feed missing from the committed catalog stops being watched", async () =
   await notifier.check({ knownFeedIds: new Set() });
   assert.deepEqual(await notifier.watchedFeedIds(), []);
 });
+
+test("older entries the sync has not cached yet are not skipped by a newer cached one", async () => {
+  const uncached = new Set([300, 301]);
+  const { server, notifier, posted } = world({ uncached });
+  await notifier.setWatched(12, true);
+  server.add(12, 300, "旧一");
+  server.add(12, 301, "旧二");
+  server.add(12, 302, "最新");
+  assert.deepEqual(await notifier.check(), [{ feedId: 12, outcome: "none" }]);
+  uncached.clear();
+  assert.deepEqual(await notifier.check(), [{ feedId: 12, outcome: "notified", count: 3 }]);
+  assert.match(posted.at(-1).body, /最新.*旧二.*旧一/);
+});
+
+test("an entry still uncached after the next sync no longer holds the feed back", async () => {
+  const uncached = new Set([400]);
+  const { server, notifier, posted } = world({ uncached });
+  await notifier.setWatched(12, true);
+  server.add(12, 400, "进不了缓存");
+  server.add(12, 401, "新");
+  assert.deepEqual(await notifier.check(), [{ feedId: 12, outcome: "none" }]);
+  assert.deepEqual(await notifier.check(), [{ feedId: 12, outcome: "notified", count: 1 }]);
+  assert.match(posted.at(-1).body, /^新$/);
+});

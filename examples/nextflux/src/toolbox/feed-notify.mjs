@@ -143,13 +143,23 @@ export function createFeedNotifier({ api, notifications, storage, feedTitle = ()
           const { entries = [], total: reported = 0 } = await api.newUnreadEntries(feedId, watch.lastEntryId) || {};
           const newer = entries.filter((entry) => Number.isSafeInteger(entry?.id) && entry.id > watch.lastEntryId);
           // Only entries the committed sync wrote announce, so a tap never opens a missing one.
-          // The rest stay above the cursor and announce after the sync that caches them.
+          // The cursor stops below the oldest uncached entry, so it and anything newer announce
+          // after the sync that caches them. An entry still uncached after that sync is let go,
+          // so one that never reaches the cache can't hold the feed back.
           const cached = await Promise.all(newer.map((entry) => isCached(entry.id).catch(() => false)));
-          const fresh = newer.filter((_, index) => cached[index]).sort((a, b) => b.id - a.id);
+          const missing = newer.filter((_, index) => !cached[index]).map((entry) => entry.id)
+            .filter((id) => id !== watch.held);
+          const holdAt = missing.length ? Math.min(...missing) : Infinity;
+          const fresh = newer.filter((entry, index) => cached[index] && entry.id < holdAt).sort((a, b) => b.id - a.id);
           const total = Math.max(fresh.length, (Number(reported) || 0) - (newer.length - fresh.length));
-          if (!fresh.length) { results.push({ feedId, outcome: "none" }); continue; }
+          const held = Number.isFinite(holdAt) ? holdAt : undefined;
+          if (!fresh.length) {
+            if (held !== watch.held) state.feeds[key] = { ...watch, held };
+            results.push({ feedId, outcome: "none" });
+            continue;
+          }
           if (foreground || isForeground()) {
-            state.feeds[key] = { lastEntryId: fresh[0].id };
+            state.feeds[key] = { lastEntryId: fresh[0].id, held };
             results.push({ feedId, outcome: "foreground", count: fresh.length });
             continue;
           }
@@ -163,7 +173,7 @@ export function createFeedNotifier({ api, notifications, storage, feedTitle = ()
             throw error;
           }
           state.blocked = null;
-          state.feeds[key] = { lastEntryId: fresh[0].id };
+          state.feeds[key] = { lastEntryId: fresh[0].id, held };
           state.opens[id] = { feedId, entryIds: fresh.map((entry) => entry.id), total };
           results.push({ feedId, outcome: "notified", count: Math.max(Number(total) || 0, fresh.length) });
         } catch (error) {
