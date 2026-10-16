@@ -758,3 +758,16 @@ fieldset, .fieldset { min-inline-size: 0; max-inline-size: 100%; }
     pointer-events: none;
   }
 }
+
+/* Tabs: the name with its count on a smaller line below (no icons), which
+   leaves room for the 看板 button beside the capsule. */
+:is(.article-list-inline-tabs, .article-list-scoped-tabs) .article-list-tabs .tabs__tab svg { display: none; }
+.article-tab-label { display: inline-flex; flex-direction: column; align-items: center; line-height: 1.1; }
+.article-tab-label .article-tab-count {
+  margin: 1px 0 0;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  color: var(--ds-text-tertiary, var(--muted));
+}
+.article-list-tabs .tabs__tab[data-selected="true"] .article-tab-count { color: var(--accent); }
+:is(.article-list-inline-tabs, .article-list-scoped-tabs)[data-fit="small"] .article-tab-label .article-tab-count { font-size: 0.625rem; }

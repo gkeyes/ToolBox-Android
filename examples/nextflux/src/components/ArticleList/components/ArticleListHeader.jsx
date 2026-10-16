@@ -15,6 +15,7 @@ import {
 import MenuButton from "./MenuButton";
 import FeedTitleFilterButton from "./FeedTitleFilterButton.jsx";
 import ArticleListTabs from "./ArticleListFooter.jsx";
+import { BoardButton, BoardPanel } from "./TodayBoard.jsx";
 import { useEffect, useLayoutEffect, useRef } from "react";
 
 const TAB_DENSITIES = ["full", "compact", "tight", "small"];
@@ -141,6 +142,12 @@ export function useArticleListTitle() {
     transientStatus: $isSyncing ? $syncProgress || t("common.syncing") : $syncError?.message || "",
     hasError: !$isSyncing && Boolean($syncError?.message),
     activeCount: Number.isFinite(activeCount) ? activeCount : null,
+    // Counts shown under the inactive tabs, where they are known.
+    tabCounts: {
+      starred: feedId || categoryId ? null : $totalStarredCount,
+      unread: !feedId && !categoryId ? $totalUnreadCount : feedId ? $getFeedCount(feedId) : $getCategoryCount(categoryId),
+      all: null,
+    },
   };
 }
 
@@ -168,12 +175,12 @@ export function ArticleListLargeTitle() {
 // category, its name gets a compact row and the tabs sit below it. The count
 // appears only beside the active tab. Sync progress/errors show as a caption.
 export default function ArticleListHeader({ collapsed = false }) {
-  const { feedId, categoryId, title, transientStatus, hasError, activeCount } = useArticleListTitle();
+  const { feedId, categoryId, title, transientStatus, hasError, activeCount, tabCounts } = useArticleListTitle();
   const scoped = Boolean(feedId || categoryId);
   const wrapRef = useRef(null);
   const tabsRef = useRef(null);
   const { i18n } = useTranslation();
-  useTabsFit(tabsRef, [scoped, activeCount, i18n.language]);
+  useTabsFit(tabsRef, [scoped, activeCount, tabCounts.starred, tabCounts.unread, i18n.language]);
   // The header floats over the list (so it can slide away without relayout);
   // publish its height so the list reserves exactly that much space on top.
   useEffect(() => {
@@ -220,18 +227,20 @@ export default function ArticleListHeader({ collapsed = false }) {
           <>
             <h1 className="sr-only">{title}</h1>
             <div ref={tabsRef} className="article-list-inline-tabs min-w-0 flex-1" data-fit="full">
-              <ArticleListTabs activeCount={activeCount} />
+              <ArticleListTabs activeCount={activeCount} counts={tabCounts} />
             </div>
+            <BoardButton />
           </>
         )}
         {actions}
       </div>
       {scoped && (
         <div ref={tabsRef} className="article-list-scoped-tabs" data-fit="full">
-          <ArticleListTabs activeCount={activeCount} />
+          <ArticleListTabs activeCount={activeCount} counts={tabCounts} />
         </div>
       )}
       {!scoped && caption && <div className="article-list-caption-row">{caption}</div>}
+      {!scoped && <BoardPanel />}
     </div>
   );
 }
