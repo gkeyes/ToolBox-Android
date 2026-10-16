@@ -23,11 +23,17 @@ function visibleStream(text) {
   return "…前文已截断，仅保留最近输出…\n" + value.slice(-STREAM_VIEW_LIMIT);
 }
 
+const UNSET_RULE="（未设置，使用 Miniflux Readability/预置规则）";
+const owedFrom=(e)=>({failure:e.failure,candidate:e.candidate||"",baselineRule:e.baselineRule||""});
+
 export default function FullTextAdaptButton() {
   const article = useStore(activeArticle);
   const allFeeds = useStore(feeds);
   const settings = useStore(settingsState);
-  const [open,setOpen]=useState(false), [phase,setPhase]=useState("idle"), [error,setError]=useState(""), [refused,setRefused]=useState(false);
+  const [open,setOpen]=useState(false), [phase,setPhase]=useState("idle"), [error,setError]=useState("");
+  // The rollback still owed for this feed ({failure, candidate, baselineRule}),
+  // and the steps of keeping its test rule instead.
+  const [owed,setOwed]=useState(null), [confirmKeep,setConfirmKeep]=useState(false), [dropping,setDropping]=useState(false);
   const [baseline,setBaseline]=useState(null), [candidate,setCandidate]=useState(null), [tested,setTested]=useState(null);
   const [aiReasoning,setAiReasoning]=useState(""), [aiOutput,setAiOutput]=useState("");
   const controller=useRef(null);
@@ -67,7 +73,7 @@ export default function FullTextAdaptButton() {
   };
 
   async function start(previousTest=null){
-    setOpen(true); setError(""); setRefused(false); setTested(null); setCandidate(null); resetStream(); setPhase("loading");
+    setOpen(true); setError(""); setOwed(null); setConfirmKeep(false); setDropping(false); setTested(null); setCandidate(null); resetStream(); setPhase("loading");
     controller.current?.abort();
     const run=new AbortController(); controller.current=run;
     // A cancelled (closed) run must never touch a later run's state.
@@ -94,20 +100,21 @@ export default function FullTextAdaptButton() {
       if(run.signal.aborted) return;
       flushStream();
       if(e?.code!=="CANCELLED"){
-        setRefused(e?.code==="ROLLBACK_PENDING"&&e.failure==="server");
+        setOwed(e?.code==="ROLLBACK_PENDING"?owedFrom(e):null);
         setError(e.message||"全文适配未完成。");setPhase("error");
       }
     }
   }
 
-  // Miniflux keeps refusing the rollback: keep the rule it has now and drop
-  // the owed rollback, so this feed can be adapted again.
-  async function keepCurrentRule(){
+  // Miniflux keeps refusing the rollback: once confirmed, keep the test rule
+  // it holds now and drop the owed rollback, so this feed can be adapted again.
+  async function keepTestRule(){
     // Closing the sheet meanwhile aborts this run: then stay closed.
     const run=controller.current;
+    setDropping(true);
     try{ await rollbackJournal(authState.get())?.clear(feedId); }
-    catch{ if(!run?.signal.aborted) setError("没能放弃这次恢复，请重试。"); return; }
-    if(run?.signal.aborted) return;
+    catch{ setDropping(false); if(!run?.signal.aborted) setError("没能放弃这次恢复，请重试。"); return; }
+    if(run?.signal.aborted){ setDropping(false); return; }
     start();
   }
 
@@ -120,7 +127,7 @@ export default function FullTextAdaptButton() {
       setError(e.message||"测试抓取失败。");
       // A rollback still owed blocks every further test: offer the same way
       // out as when the adapter opens.
-      if(e?.code==="ROLLBACK_FAILED"||e?.code==="ROLLBACK_PENDING"){setRefused(e.failure==="server");setPhase("error");}
+      if(e?.code==="ROLLBACK_FAILED"||e?.code==="ROLLBACK_PENDING"){setOwed(owedFrom(e));setConfirmKeep(false);setPhase("error");}
       else setPhase("candidate");
     }
   }
@@ -136,10 +143,14 @@ export default function FullTextAdaptButton() {
 
   const current=contentMetrics(article?.content||"");
   const miniMax=isMiniMaxProvider(settings);
+  const refused=phase==="error"&&owed?.failure==="server";
   const footer=phase==="done"
     ? <Button fullWidth onPress={close}>完成</Button>
+    : refused&&confirmKeep
+    ? <><Button variant="tertiary" fullWidth onPress={()=>setConfirmKeep(false)} isDisabled={dropping}>返回</Button>
+      <Button variant="danger" fullWidth onPress={keepTestRule} isPending={dropping}>确定保留</Button></>
     : <><Button variant="tertiary" fullWidth onPress={close} isDisabled={locked}>取消</Button>
-      {phase==="error"&&refused&&<Button fullWidth onPress={keepCurrentRule}>保留现有规则</Button>}
+      {refused&&<Button fullWidth onPress={()=>setConfirmKeep(true)}>保留测试规则</Button>}
       {phase==="error"&&!refused&&<Button fullWidth onPress={()=>start()}>重新生成</Button>}
       {phase==="candidate"&&<Button fullWidth onPress={test}>测试全文抓取</Button>}
       {phase==="tested"&&<Button fullWidth onPress={apply}>应用此规则</Button>}</>;
@@ -168,7 +179,8 @@ export default function FullTextAdaptButton() {
           <pre className="nf-fulltext-stream">{aiOutput}</pre>
         </details>}
 
-        {baseline&&<div className="nf-fulltext-card"><strong>当前服务器采集规则</strong><code className="nf-fulltext-rule">{baseline.scraper_rules||"（未设置，使用 Miniflux Readability/预置规则）"}</code></div>}
+        {phase==="error"&&owed&&<div className="nf-fulltext-card"><strong>{owed.failure==="server"?"服务器上现在的测试规则":"上次测试的规则（可能还在服务器上）"}</strong><code className="nf-fulltext-rule">{owed.candidate}</code><strong>待恢复的原规则</strong><code className="nf-fulltext-rule">{owed.baselineRule||UNSET_RULE}</code>{confirmKeep&&<p className="nf-fulltext-note">保留测试规则后，原规则不会再自动恢复，这一步不能撤销。</p>}</div>}
+        {baseline&&!(phase==="error"&&owed)&&<div className="nf-fulltext-card"><strong>当前服务器采集规则</strong><code className="nf-fulltext-rule">{baseline.scraper_rules||UNSET_RULE}</code></div>}
         {candidate&&<div className="nf-fulltext-card"><strong>AI 候选规则</strong><code className="nf-fulltext-rule">{candidate.rule}</code><p className="nf-fulltext-note">{candidate.reason||"已根据网页结构生成。"}{candidate.confidence!=null?` · 置信度 ${Math.round(candidate.confidence*100)}%`:""}</p><p className="nf-fulltext-note">本地结构匹配 {candidate.local.matches} 个节点，约 {candidate.local.textChars} 字 · P {candidate.local.paragraphs} · BR {candidate.local.breaks} · 列表 {candidate.local.listItems} · 标题 {candidate.local.headings} · 图注 {candidate.local.captions}。</p></div>}
         {tested&&<div className="nf-fulltext-card"><strong>Miniflux 实测结果</strong><div className="nf-fulltext-metrics"><span className="nf-fulltext-metric"><b>{tested.metrics.textChars}</b>字</span><span className="nf-fulltext-metric"><b>{tested.metrics.paragraphs}</b>P段</span><span className="nf-fulltext-metric"><b>{tested.metrics.breaks+tested.metrics.meaningfulNewlines}</b>换行</span><span className="nf-fulltext-metric"><b>{tested.metrics.listItems}</b>列表</span><span className="nf-fulltext-metric"><b>{tested.metrics.headings}</b>标题</span><span className="nf-fulltext-metric"><b>{tested.metrics.images}</b>图</span></div>{tested.metrics.needsRepair&&<p className="nf-fulltext-note" style={{color:"var(--warning, #b7791f)"}}>{tested.metrics.normalizationMode==="restore-lines"?"正文内容已抓取，但 HTML 段落结构较稀疏。阅读规范化层会保留原始换行；建议再让 AI 优化一次规则，优先获得原生 P/BR/列表结构。":"正文内容已抓取，但段落结构已被压平。阅读规范化层只会恢复高置信度的小标题边界，无法凭空还原全部原始段落；建议让 AI 重新选择更语义化的正文容器。"}</p>}<p className="nf-fulltext-note">当前正文约 {current.textChars} 字。测试时规则已临时写入 Miniflux 并安全回滚；只有点击“应用此规则”才永久保存。</p><div className="nf-fulltext-preview">{tested.metrics.sample}</div><Button variant="ghost" size="sm" onPress={()=>start({rule:candidate.rule,metrics:tested.metrics})}>让 AI 再优化</Button></div>}
         {phase==="done"&&<div className="nf-fulltext-card"><strong>规则已应用</strong><p className="nf-fulltext-note">以后点击正文栏现有的“全文”按钮，Miniflux 会直接使用这条 scraper_rules；新条目自动全文仍由订阅的 crawler 开关决定。</p></div>}
