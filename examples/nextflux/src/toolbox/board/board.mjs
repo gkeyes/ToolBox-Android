@@ -129,7 +129,7 @@ function looseJson(text) {
 // (also reversed "3-1", "1〜3", "1−3"). A range running a little past the
 // last article is trimmed to it; one longer than the board has articles, by
 // more than one ("1-50" of 12), or than MAX_RANGE ("1-99999") is junk and
-// names no article, nor does anything else.
+// names no article, nor does a range over the whole board, nor anything else.
 const MAX_RANGE = 100;
 const ITEM = /^\[?第?(\d+)(?:\.0+)?篇?\]?$/;
 const RANGE = /^\[?第?(\d+)篇?\s*[-–—~〜−‐‑‒―至到]\s*第?(\d+)篇?\]?$/;
@@ -146,6 +146,9 @@ export function articleNumbers(value, count) {
       if (Math.abs(a - b) + 1 > (Number.isFinite(count) ? Math.min(MAX_RANGE, count + 1) : MAX_RANGE)) return [];
       const from = Math.max(1, Math.min(a, b));
       const to = Math.min(Math.max(a, b), Number.isFinite(count) ? count : Infinity);
+      // "1-12" on a 12-article board puts every article in one topic and
+      // leaves none for the rest: not a grouping.
+      if (count > 3 && from === 1 && to === count) return [];
       return to < from ? [] : Array.from({ length: to - from + 1 }, (_, index) => from + index);
     }
     const item = part.match(ITEM);

@@ -88,8 +88,10 @@ export async function refreshBoard({ onlyIfNew = false } = {}) {
     const { articles, skipped } = fitArticles(all);
     const sent = articles.map(({ title, feedTitle }) => ({ title, feedTitle }));
     // One AI call. A reply that ran into the length limit before one topic
-    // was whole is asked again, once, for a shorter answer.
-    const ask = async (brief) => {
+    // was whole is asked again, once, for a shorter answer; the first reply
+    // stays on screen above the second, marked as cut.
+    const ask = async (first = null) => {
+      const brief = Boolean(first);
       let text = "";
       let thinking = "";
       let frame = null;
@@ -98,7 +100,7 @@ export async function refreshBoard({ onlyIfNew = false } = {}) {
         if (live()) boardStream.set({ ...boardStream.get(), thinking, text });
       };
       const later = () => { frame ??= setTimeout(publish, 80); };
-      boardStream.set({ sent, skipped, thinking: "", text: "" });
+      boardStream.set({ sent, skipped, thinking: "", text: "", first });
       let read = null;
       let length = false;
       try {
@@ -140,10 +142,10 @@ export async function refreshBoard({ onlyIfNew = false } = {}) {
     };
     let read;
     try {
-      read = await ask(false);
+      read = await ask();
     } catch (error) {
       if (!error?.length || !live()) throw error;
-      read = await ask(true);
+      read = await ask({ text: error.raw?.text || "" });
     }
     if (!live()) return;
     const { topics, cut } = read;

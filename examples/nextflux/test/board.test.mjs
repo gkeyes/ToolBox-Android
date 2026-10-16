@@ -119,11 +119,18 @@ test("article references keep their numbers: lists, ranges and 2.0 are not glued
   assert.deepEqual(articleNumbers("第三篇", 9), []);
   // A range one past the last article is trimmed, not dropped; one longer
   // than the board by more ("1-50" of 12) is junk.
-  assert.deepEqual(articleNumbers("1-10", 9), [1, 2, 3, 4, 5, 6, 7, 8, 9]);
+  assert.deepEqual(articleNumbers("2-10", 9), [2, 3, 4, 5, 6, 7, 8, 9]);
   assert.deepEqual(articleNumbers("8-10", 9), [8, 9]);
   assert.deepEqual(articleNumbers("8-100", 9), []);
   assert.deepEqual(articleNumbers("1-50", 12), []);
-  assert.deepEqual(articleNumbers("1-13", 12).length, 12);
+  // A range over the whole board is no grouping (a small board may be one topic).
+  assert.deepEqual(articleNumbers("1-13", 12), []);
+  assert.deepEqual(articleNumbers("1-12", 12), []);
+  assert.deepEqual(articleNumbers("12-1", 12), []);
+  assert.deepEqual(articleNumbers("1-11", 12).length, 11);
+  assert.deepEqual(articleNumbers("1-3", 3), [1, 2, 3]);
+  const whole = parseTopics('{"topics":[{"title":"全部","articles":["1-12"]},{"title":"台风","articles":[4,5]}]}', 12);
+  assert.deepEqual(whole.map((topic) => [topic.title, topic.articles]), [["台风", [4, 5]]]);
   assert.deepEqual(articleNumbers("1-14", 12), []);
   const fifty = parseTopics('{"topics":[{"title":"一到五十","articles":["1-50"]},{"title":"台风","articles":[4,5]}]}', 12);
   assert.deepEqual(fifty.map((topic) => [topic.title, topic.articles]), [["台风", [4, 5]]]);

@@ -145,8 +145,12 @@ function LiveRun({ stream }) {
       </ol>
       {!all && stream.sent.length > 3 && <button type="button" className="nf-board-chip is-more" onClick={() => setAll(true)}>展开全部 {stream.sent.length} 篇</button>}
     </section>
+    {stream.first && <section className="nf-board-card nf-board-live-card">
+      <div className="nf-board-live-head"><span className="nf-board-live-tag is-receive">第一次</span><h3>回答太长，被截在长度上限，没有一个完整的主题</h3></div>
+      {stream.first.text && <LiveText text={stream.first.text} />}
+    </section>}
     <section className="nf-board-card nf-board-live-card">
-      <div className="nf-board-live-head"><span className="nf-board-live-tag is-receive">接收</span><h3>{phase}</h3><Spinner /></div>
+      <div className="nf-board-live-head"><span className="nf-board-live-tag is-receive">{stream.first ? "第二次" : "接收"}</span><h3>{stream.first ? `请 AI 回答得短一点 · ${phase}` : phase}</h3><Spinner /></div>
       {stream.thinking && <LiveText className="is-thinking" text={stream.thinking} tail />}
       {stream.text ? <LiveText text={stream.text} tail /> : null}
     </section>
@@ -165,7 +169,7 @@ function RawOutput({ raw }) {
 
 function caption(state, stream) {
   if (state.status === "loading" || state.updating) {
-    const phase = !stream ? "正在读取未读文章" : stream.text ? `AI 正在输出 · ${stream.text.length} 字` : stream.thinking ? "AI 正在思考" : `已发送 ${stream.sent.length} 篇，等待 AI`;
+    const phase = !stream ? "正在读取未读文章" : stream.first && !stream.text ? "第一次的回答被截断，正在请 AI 回答得短一点" : stream.text ? `AI 正在输出 · ${stream.text.length} 字` : stream.thinking ? "AI 正在思考" : `已发送 ${stream.sent.length} 篇，等待 AI`;
     return state.updating && state.at ? `${phase}，上面是 ${clock(state.at)} 的版本` : phase;
   }
   if (state.status === "done") return `${state.total} 篇未读 · ${clock(state.at)} 更新`;
