@@ -2,11 +2,6 @@ import { useStore } from "@nanostores/react";
 import { filter } from "@/stores/articlesStore.js";
 import { totalStarredCount, totalUnreadCount } from "@/stores/feedsStore.js";
 import {
-  UnreadIcon as CircleDot,
-  AllIcon as Infinity,
-  StarredIcon as Star,
-} from "@/components/ui/icons.jsx";
-import {
   SidebarGroup,
   SidebarGroupLabel,
   SidebarMenu,
@@ -16,7 +11,7 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar.jsx";
 import { Link, useLocation, useParams } from "react-router";
-import { BoardSidebarIcon } from "@/components/Board/BoardPage.jsx";
+import SidebarBadge from "./SidebarBadge.jsx";
 import { useTranslation } from "react-i18next";
 
 const ArticlesGroup = () => {
@@ -32,19 +27,19 @@ const ArticlesGroup = () => {
     switch ($filter) {
       case "unread":
         return {
-          icon: <CircleDot />,
+          icon: <SidebarBadge kind="unread" />,
           text: t("articleList.unread"),
           count: $totalUnreadCount,
         };
       case "starred":
         return {
-          icon: <Star />,
+          icon: <SidebarBadge kind="starred" />,
           text: t("articleList.starred"),
           count: $totalStarredCount,
         };
       default:
         return {
-          icon: <Infinity />,
+          icon: <SidebarBadge kind="all" />,
           text: t("articleList.all"),
           count: $totalUnreadCount,
         };
@@ -59,7 +54,7 @@ const ArticlesGroup = () => {
         <SidebarMenuItem>
           <SidebarMenuButton asChild size="lg" isActive={!feedId && !categoryId && !onBoard}>
             <Link to="/" onClick={() => isMobile && setOpenMobile(false)}>
-              <span className="ds-icon-badge sidebar-row-icon">{icon}</span>
+              {icon}
               <span className="font-semibold">{text}</span>
             </Link>
           </SidebarMenuButton>
@@ -70,7 +65,7 @@ const ArticlesGroup = () => {
         <SidebarMenuItem>
           <SidebarMenuButton asChild size="lg" isActive={onBoard}>
             <Link to="/board" onClick={() => isMobile && setOpenMobile(false)}>
-              <span className="ds-icon-badge sidebar-row-icon"><BoardSidebarIcon /></span>
+              <SidebarBadge kind="board" />
               <span className="font-semibold">今日看板</span>
             </Link>
           </SidebarMenuButton>

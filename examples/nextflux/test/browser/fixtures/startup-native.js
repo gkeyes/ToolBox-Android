@@ -34,6 +34,7 @@ export const STORED_SETTINGS = {
   interfaceFontSize: "16",
   showIndicator: true,
   floatingSidebar: false,
+  sidebarIconStyle: "a",
   aiBaseUrl: "https://api.openai.com/v1",
   aiModel: "startup-regression-model",
   speechRegion: "global",

@@ -1,0 +1,134 @@
+/* Sidebar icon styles (Settings › Appearance › Sidebar icons). The tile keeps
+   the size the sidebar gives .sidebar-row-icon; only its look changes. */
+.sidebar-row .sidebar-row-icon.nf-sb {
+  position: relative;
+  isolation: isolate;
+  overflow: visible;
+}
+.sidebar-row .sidebar-row-icon.nf-sb > svg {
+  inline-size: 72%;
+  block-size: 72%;
+  position: relative;
+  z-index: 2;
+  overflow: visible;
+  stroke-width: 2;
+}
+.nf-sb .nf-sb-fx { position: absolute; inset: 0; border-radius: inherit; overflow: hidden; z-index: 1; pointer-events: none; }
+.nf-sb.is-new::after {
+  content: "";
+  position: absolute;
+  z-index: 3;
+  inset-block-start: -3px;
+  inset-inline-end: -3px;
+  inline-size: 10px;
+  block-size: 10px;
+  border-radius: 50%;
+  background: var(--nf-sb-dot, #FF3B30);
+  box-shadow: 0 0 0 2px var(--nf-sb-card, var(--surface, #fff));
+}
+
+/* ---------- A 日出: vivid gradient squircles ---------- */
+.sidebar-row .sidebar-row-icon.nf-sb-a {
+  border-radius: 28%;
+  color: #FFFFFF;
+  box-shadow: inset 0 0.5px 0 rgb(255 255 255 / 0.45), 0 1px 2px rgb(0 0 0 / 0.10);
+}
+.sidebar-row .nf-sb-a[data-k="unread"]  { background: linear-gradient(165deg, #4FA3FF 0%, #1F6FEB 55%, #1554C4 100%); }
+.sidebar-row .nf-sb-a[data-k="starred"] { background: linear-gradient(165deg, #FFCF4A 0%, #FFA41B 55%, #F08A00 100%); }
+.sidebar-row .nf-sb-a[data-k="all"]     { background: linear-gradient(165deg, #5BD6C9 0%, #20A9A0 55%, #138A86 100%); }
+.sidebar-row .nf-sb-a[data-k="board"]   { background: linear-gradient(160deg, #FFB547 0%, #FF7A59 48%, #F2477E 100%); }
+.nf-sb-a.is-new { --nf-sb-dot: #2F6BD8; }
+.nf-sb-a.is-gen .sun { animation: nf-sb-a-rise 2.6s cubic-bezier(.45,0,.25,1) infinite; transform-box: view-box; }
+.nf-sb-a.is-gen .rays { animation: nf-sb-a-rays 2.6s ease-in-out infinite; }
+.nf-sb-a.is-gen .nf-sb-fx { background: radial-gradient(circle at 50% 100%, rgb(255 255 255 / 0.35), transparent 60%); animation: nf-sb-a-glow 2.6s ease-in-out infinite; }
+@keyframes nf-sb-a-rise { 0% { transform: translateY(6px); } 55%, 80% { transform: translateY(0); } 100% { transform: translateY(6px); } }
+@keyframes nf-sb-a-rays { 0%, 30% { opacity: 0; } 60%, 80% { opacity: 1; } 100% { opacity: 0; } }
+@keyframes nf-sb-a-glow { 0%, 100% { opacity: 0.2; } 60% { opacity: 1; } }
+
+/* ---------- B 晨报: round dark gem seals ---------- */
+.sidebar-row .sidebar-row-icon.nf-sb-b {
+  border-radius: 50%;
+  color: #FFFFFF;
+  box-shadow: inset 0 1px 1px rgb(255 255 255 / 0.35), inset 0 -2px 4px rgb(0 0 0 / 0.18), 0 2px 6px -2px var(--nf-sb-sh, rgb(0 0 0 / 0.3));
+}
+.nf-sb-b::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  z-index: 1;
+  background: radial-gradient(120% 70% at 35% 8%, rgb(255 255 255 / 0.38), transparent 55%);
+  pointer-events: none;
+}
+.sidebar-row .nf-sb-b[data-k="unread"]  { background: linear-gradient(150deg, #3B7BFF, #1B3FB8); --nf-sb-sh: rgb(27 63 184 / 0.55); }
+.sidebar-row .nf-sb-b[data-k="starred"] { background: linear-gradient(150deg, #F3B23C, #C2650A); --nf-sb-sh: rgb(194 101 10 / 0.5); }
+.sidebar-row .nf-sb-b[data-k="all"]     { background: linear-gradient(150deg, #6D7A90, #343C4D); --nf-sb-sh: rgb(52 60 77 / 0.5); }
+.sidebar-row .nf-sb-b[data-k="board"]   { background: linear-gradient(145deg, #4B46E8 0%, #6A3BE4 50%, #9B3FE0 100%); --nf-sb-sh: rgb(106 59 228 / 0.55); }
+.nf-sb-b.is-new { --nf-sb-dot: #FFC53D; }
+.nf-sb-b.is-gen .spk { animation: nf-sb-b-twinkle 1.8s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+.nf-sb-b.is-gen .nf-sb-fx::before {
+  content: "";
+  position: absolute;
+  inset-block: -20%;
+  inline-size: 45%;
+  left: -60%;
+  background: linear-gradient(100deg, transparent, rgb(255 255 255 / 0.45), transparent);
+  animation: nf-sb-b-sweep 1.8s ease-in-out infinite;
+}
+@keyframes nf-sb-b-twinkle { 0%, 100% { transform: scale(0.7) rotate(0deg); opacity: 0.7; } 50% { transform: scale(1.15) rotate(45deg); opacity: 1; } }
+@keyframes nf-sb-b-sweep { 0% { left: -60%; } 60%, 100% { left: 120%; } }
+
+/* ---------- C 液态玻璃: tinted translucent glass ---------- */
+.sidebar-row .nf-sb-c[data-k="unread"]  { --nf-sb-c: 47 107 216;  --nf-sb-cl: 120 165 255; }
+.sidebar-row .nf-sb-c[data-k="starred"] { --nf-sb-c: 222 146 0;   --nf-sb-cl: 255 196 72; }
+.sidebar-row .nf-sb-c[data-k="all"]     { --nf-sb-c: 88 100 118;  --nf-sb-cl: 168 180 198; }
+.sidebar-row .nf-sb-c[data-k="board"]   { --nf-sb-c: 128 82 236;  --nf-sb-cl: 178 150 255; }
+.sidebar-row .sidebar-row-icon.nf-sb-c {
+  --nf-sb-t: var(--nf-sb-c);
+  --nf-sb-hl: rgb(255 255 255 / 0.9);
+  --nf-sb-sheen: rgb(255 255 255 / 0.55);
+  border-radius: 30%;
+  color: rgb(var(--nf-sb-t));
+  background: linear-gradient(165deg, rgb(var(--nf-sb-t) / 0.20), rgb(var(--nf-sb-t) / 0.09));
+  box-shadow: inset 0 1px 0 var(--nf-sb-hl), inset 0 0 0 0.5px rgb(var(--nf-sb-t) / 0.35), 0 1px 3px rgb(var(--nf-sb-t) / 0.16);
+}
+.dark .sidebar-row .sidebar-row-icon.nf-sb-c {
+  --nf-sb-t: var(--nf-sb-cl);
+  --nf-sb-hl: rgb(255 255 255 / 0.22);
+  --nf-sb-sheen: rgb(255 255 255 / 0.12);
+  background: linear-gradient(165deg, rgb(var(--nf-sb-t) / 0.26), rgb(var(--nf-sb-t) / 0.10));
+}
+.nf-sb-c::before {
+  content: "";
+  position: absolute;
+  inset: 1px 1px 50%;
+  border-radius: 8px 8px 5px 5px;
+  z-index: 1;
+  background: linear-gradient(180deg, var(--nf-sb-sheen), transparent);
+  pointer-events: none;
+}
+.nf-sb-c.is-new { --nf-sb-dot: rgb(var(--nf-sb-t)); }
+.nf-sb-c.is-new::after { box-shadow: 0 0 0 2px var(--nf-sb-card, var(--surface, #fff)), 0 0 8px rgb(var(--nf-sb-t) / 0.7); }
+.nf-sb-c.is-gen .nf-sb-fx::before {
+  content: "";
+  position: absolute;
+  inline-size: 200%;
+  block-size: 200%;
+  left: -50%;
+  top: 62%;
+  border-radius: 43%;
+  background: rgb(var(--nf-sb-t) / 0.30);
+  animation: nf-sb-c-spin 4.5s linear infinite, nf-sb-c-fill 4.5s ease-in-out infinite;
+}
+.nf-sb-c.is-gen .spk { animation: nf-sb-c-pulse 1.5s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+@keyframes nf-sb-c-spin { to { transform: rotate(360deg); } }
+@keyframes nf-sb-c-fill { 0% { top: 85%; } 70% { top: 22%; } 100% { top: 85%; } }
+@keyframes nf-sb-c-pulse { 0%, 100% { transform: scale(0.8); opacity: 0.6; } 50% { transform: scale(1.12); opacity: 1; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .nf-sb *, .nf-sb .nf-sb-fx::before { animation: none !important; }
+  .nf-sb-a.is-gen .sun { transform: translateY(3px); }
+  .nf-sb-b.is-gen .nf-sb-fx::before { left: 30%; }
+  .nf-sb-c.is-gen .nf-sb-fx::before { top: 45%; }
+}
+html[data-reduce-motion="true"] .nf-sb *, html[data-reduce-motion="true"] .nf-sb .nf-sb-fx::before { animation: none !important; }

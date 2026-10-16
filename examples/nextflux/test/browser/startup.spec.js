@@ -399,3 +399,77 @@ test("the selected tab stays in view and the capsule keeps its place across tabs
     expect(await place()).toEqual(before);
   }
 });
+
+// Settings › Appearance › Sidebar icons switches the 未读 and 今日看板 tiles
+// between A (default), B, C and the classic grey tile; the board tile shows
+// a dot when a board is new and moves while one is written (NextFlux 1.18.0).
+test("sidebar icon style switches the tiles and the board shows new and writing", async ({ page }) => {
+  const pageErrors = [];
+  page.on("pageerror", (error) => pageErrors.push(error.message));
+  await page.setViewportSize({ width: 390, height: 800 });
+  await installNativeBoundary(page, {
+    auth: {
+      serverUrl: "https://miniflux.xiaochen.win", username: "layout-test-user", password: "", userId: 7,
+      token: "fixed-synthetic-test-token", authType: "token",
+    },
+    settings: { ...STORED_SETTINGS, syncInterval: "0", aiApiKey: undefined, showUnreadByDefault: true },
+    cacheRoot: {
+      version: 3, revision: 1, account: { serverUrl: "https://miniflux.xiaochen.win", userId: "7" },
+      transaction: null, lastSyncTime: null,
+      tables: { articles: null, feeds: null, categories: null, feedIcons: null },
+    },
+  });
+  await page.goto(PRODUCTION_URL);
+  await expect(page.locator(".article-list-inline-tabs .tabs__list")).toBeVisible();
+  await page.locator('.article-list-header > [data-sidebar="trigger"]').evaluate((el) => el.click());
+  const boardTile = page.locator('a[href="#/board"] .sidebar-row-icon');
+  await expect(boardTile).toBeVisible();
+  const tiles = () => page.evaluate(() => [...document.querySelectorAll('[data-sidebar="menu-button"] .sidebar-row-icon')]
+    .slice(0, 2).map((el) => {
+      const style = getComputedStyle(el);
+      const box = el.getBoundingClientRect();
+      return { cls: el.className, kind: el.dataset.k || null, image: style.backgroundImage, color: style.color, radius: style.borderRadius, w: box.width, h: box.height };
+    }));
+  const setStyle = (value) => page.evaluate(async (v) => {
+    const { updateSettings } = await import("/src/stores/settingsStore.js");
+    await updateSettings({ sidebarIconStyle: v });
+  }, value);
+
+  const sizes = {};
+  for (const style of ["a", "b", "c", "classic"]) {
+    if (style !== "a") await setStyle(style);
+    await expect.poll(async () => (await tiles())[1].cls).toContain(style === "classic" ? "ds-icon-badge" : `nf-sb-${style}`);
+    const [first, second] = await tiles();
+    sizes[style] = [first.w, first.h, second.w, second.h];
+    if (style === "classic") {
+      expect(second.cls).not.toContain("nf-sb");
+      await expect(boardTile.locator(".nf-board-side-icon")).toHaveCount(1);
+    } else {
+      expect(first.kind).not.toBeNull();
+      expect(second.kind).toBe("board");
+      // A and B are solid gradient tiles with white glyphs; C is tinted glass.
+      expect(first.image).toContain("gradient");
+      expect(second.image).toContain("gradient");
+      if (style !== "c") expect(second.color).toBe("rgb(255, 255, 255)");
+      else expect(second.color).not.toBe("rgb(255, 255, 255)");
+      if (style === "b") expect(second.radius).toBe("50%");
+    }
+  }
+  // Switching only changes the look, not the row layout.
+  expect(new Set(Object.values(sizes).map(String)).size).toBe(1);
+
+  await setStyle("c");
+  await page.evaluate(async () => {
+    const { board } = await import("/src/toolbox/board/boardStore.js");
+    board.set({ ...board.get(), unseen: true, updating: false });
+  });
+  await expect(boardTile).toHaveAttribute("data-state", "new");
+  expect(await boardTile.evaluate((el) => getComputedStyle(el, "::after").content)).not.toBe("none");
+  await page.evaluate(async () => {
+    const { board } = await import("/src/toolbox/board/boardStore.js");
+    board.set({ ...board.get(), updating: true });
+  });
+  await expect(boardTile).toHaveAttribute("data-state", "working");
+  expect(await boardTile.evaluate((el) => getComputedStyle(el.querySelector(".nf-sb-fx"), "::before").animationName)).toContain("nf-sb-c-fill");
+  expect(pageErrors).toEqual([]);
+});
