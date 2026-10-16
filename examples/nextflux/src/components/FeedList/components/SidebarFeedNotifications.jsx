@@ -17,8 +17,8 @@ export default function SidebarFeedNotifications() {
     .map((id) => $feeds.find((feed) => Number(feed.id) === id))
     .filter(Boolean);
   const titles = watchedList.map((feed) => feed.title);
-  // Before the catalog loads, count every watch; afterwards only feeds that still exist.
-  const count = $feeds.length ? titles.length : watched.length;
+  // Only feeds that still exist in the catalog count; an empty catalog means none are left.
+  const count = titles.length;
   const caption = count
     ? t("feedNotify.watching", { count })
     : t("feedNotify.none");
