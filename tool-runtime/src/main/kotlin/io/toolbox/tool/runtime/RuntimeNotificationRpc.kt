@@ -50,7 +50,7 @@ internal suspend fun RuntimeRpcDispatcher.invokeNotifications(
     "notifications.post" -> {
         params.requireOnly("id", "title", "body")
         requireHandler(serviceHandlers.notifications).post(
-            notificationId = params.requiredNotificationId(),
+            notificationId = params.requiredIdentifier("id"),
             title = params.requiredString("title", rpcMaxResponseBytes),
             body = params.requiredText("body", rpcMaxResponseBytes),
         )
@@ -59,7 +59,7 @@ internal suspend fun RuntimeRpcDispatcher.invokeNotifications(
     "notifications.update" -> {
         params.requireOnly("id", "title", "body")
         requireHandler(serviceHandlers.notifications).update(
-            notificationId = params.requiredNotificationId(),
+            notificationId = params.requiredIdentifier("id"),
             title = params.requiredString("title", rpcMaxResponseBytes),
             body = params.requiredText("body", rpcMaxResponseBytes),
         )
@@ -68,7 +68,7 @@ internal suspend fun RuntimeRpcDispatcher.invokeNotifications(
     "notifications.cancel" -> {
         params.requireOnly("id")
         requireHandler(serviceHandlers.notifications).cancel(
-            params.requiredNotificationId(),
+            params.requiredIdentifier("id"),
         )
         RpcValue.Null
     }
@@ -140,9 +140,3 @@ private fun RpcValue.ObjectValue.toLiveNotificationRequest(): RuntimeLiveNotific
 }
 
 private val LIVE_NOTIFICATION_COLOR = Regex("^#[0-9A-Fa-f]{6}$")
-
-/** Longest notification id a tool may use; the host drops taps on anything longer. */
-const val MAX_NOTIFICATION_ID_LENGTH = 256
-
-private fun RpcValue.ObjectValue.requiredNotificationId(): String =
-    requiredIdentifier("id").also { require(it.length <= MAX_NOTIFICATION_ID_LENGTH) }
