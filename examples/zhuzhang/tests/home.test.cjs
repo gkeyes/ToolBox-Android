@@ -147,7 +147,8 @@ test('1.7.3 · in a narrow room only the wall a drag heads for can turn a look; 
   const down = { dx: 0, dz: .06 }, up = { dx: 0, dz: -.06 };
   assert.equal(HM.clampPlacement(bed, bb, cx, 1.8, 0, down).rot, 0, 'crossing the middle keeps the bed facing the room');
   assert.equal(HM.clampPlacement(bed, bb, cx, 1.8, 1, up).rot, 1, 'no wall ahead yet: keeps its turn');
-  assert.equal(HM.clampPlacement(bed, bb, cx, 1.2, 1, up).rot, 0, '1.8.2: dragged back to the head wall it backs onto it again');
+  assert.equal(HM.clampPlacement(bed, bb, cx, 1.2, 1, up).rot, 1, '1.8.4: slid straight along the side wall into the corner it keeps the side wall');
+  assert.equal(HM.clampPlacement(bed, bb, cx, 1.2, 1, { dx: .04, dz: -.05 }).rot, 0, '1.8.2: dragged back towards the head wall and off the side wall it backs onto it again');
   assert.equal(HM.clampPlacement(bed, bb, x0 + .93, 1.8, 0, { dx: -.06, dz: .01 }).rot, 1, 'pushed into a side wall it turns to it');
   const f = HM.KINDS.fridgeA, mb = HM.bbox(rects, '主卧');
   assert.equal(HM.clampPlacement(f, mb, 3.6 - HM.GAP - f.d / 2 - .35, 1.8, 0, true).rot, 3, 'exactly 35 cm away snaps');
@@ -173,13 +174,18 @@ test('1.8.1 · the wall a look backs onto keeps it until it leaves that wall; no
     const a = deg * Math.PI / 180, h = { dx: .05 * Math.cos(a), dz: .05 * Math.sin(a) };
     assert.equal(HM.clampPlacement(f, mb, 3.6 - HM.GAP - f.d / 2 - .1, 1.8, 0, h).rot, 3, `${deg}° off square still backs onto the wall`);
   }
-  assert.equal(HM.clampPlacement(f, mb, 3.6 - HM.GAP - f.d / 2 - .1, 1.8, 0, { dx: 0, dz: 0 }).rot, 3, 'no heading: nearest wall');
+  assert.equal(HM.clampPlacement(f, mb, 3.6 - HM.GAP - f.d / 2 - .1, 1.8, 0, true).rot, 3, 'no heading known: nearest wall');
+  assert.equal(HM.clampPlacement(f, mb, 3.6 - HM.GAP - f.d / 2 - .1, 1.8, 0, { dx: 0, dz: 0 }).rot, 0, '1.8.4: a finger back at its anchor heads for no wall');
 });
 
-// Feeds a drag step by step like home3d does: the raw target moves, the look's turn carries over.
+// Feeds a drag step by step like home3d does: the raw target moves, the look's turn carries over, and the heading is
+// measured from the last point more than 5 cm back.
 function dragPath(dims, bb, x, z, rot, dx, dz, steps) {
-  const out = [];
-  for (let i = 1; i <= steps; i++) { const p = HM.clampPlacement(dims, bb, x + dx * i, z + dz * i, rot, { dx, dz }); rot = p.rot; out.push(p); }
+  const out = []; let last = [x, z];
+  for (let i = 1; i <= steps; i++) {
+    const tx = x + dx * i, tz = z + dz * i, mv = { dx: tx - last[0], dz: tz - last[1] }; if (Math.hypot(mv.dx, mv.dz) > .05) last = [tx, tz];
+    const p = HM.clampPlacement(dims, bb, tx, tz, rot, mv); rot = p.rot; out.push(p);
+  }
   return out;
 }
 
@@ -202,8 +208,10 @@ test('1.8.2 · pulling a bed off its head wall never swings it to a side wall; i
   assert.ok([...seeded, ...nudge].every(p => p.rot === 0), 'a small sideways nudge after the pull does not turn it');
   const side = HM.clampPlacement(bed, bb, x0 + .5, 2.0, 0, { dx: -.06, dz: 0 });
   assert.equal(side.rot, 1, 'pushed hard into a side wall it turns to it');
-  const back = dragPath(bed, bb, side.x, side.z, 1, 0, -.05, 20);
-  assert.equal(back.at(-1).rot, 0, 'dragged straight back to the head wall it backs onto it again');
+  assert.equal(dragPath(bed, bb, side.x, side.z, 1, 0, -.01, 100).at(-1).rot, 1, '1.8.4: slid straight along the side wall into the corner it keeps the side wall');
+  const cx = (bb.rs[0].r[0] + bb.rs[0].r[2]) / 2, tx = cx - side.x, tz = z0 + HM.GAP + bed.d / 2 - side.z, n = Math.ceil(Math.hypot(tx, tz) / .01);
+  const back = dragPath(bed, bb, side.x, side.z, 1, tx / n, tz / n, n);
+  assert.equal(back.at(-1).rot, 0, 'dragged back to the head wall centre it backs onto it again');
   assert.ok(Math.abs(back.at(-1).z - (z0 + HM.GAP + bed.d / 2)) < 1e-9, 'flush with the head wall');
   const across = dragPath(bed, bb, (bb.rs[0].r[0] + bb.rs[0].r[2]) / 2, 2.0, 0, .05, 0, 4);
   assert.ok(across.every(p => p.rot !== 3) || across.at(-1).rot === 3, 'no flip-flop crossing the room');
@@ -240,6 +248,26 @@ test('1.8.3 · one footprint for every wall: no flip-flops, corners keep their w
   assert.equal(to(1.8, mz1 - HM.GAP - bed.d / 2 - .15), 2, '... the foot wall');
   const onLeft = HM.clampPlacement(bed, mb, .3, 1.8, 1, { dx: -.06, dz: 0 }), tx = 1.8 - onLeft.x, tz = 1.155 - onLeft.z, n = Math.ceil(Math.hypot(tx, tz) / .01);
   assert.equal(dragPath(bed, mb, onLeft.x, onLeft.z, 1, tx / n, tz / n, n).at(-1).rot, 0, 'a side-wall bed dragged to the head wall centre backs onto it, no extra push');
+});
+
+test('1.8.4 · sliding along a wall of a narrow pair into a corner keeps that wall; a finger held still turns nothing', () => {
+  const { rects } = HM.makeRects(HM.planOf({ template: 't3l2' }));
+  const bal = HM.bbox(rects, '阳台'), [bx0, bz0, bx1, bz1] = bal.rs[0].r;
+  for (const k of ['washerA', 'fridgeA', 'armA', 'microB', 'catTree']) { const d = HM.KINDS[k], zf = bz0 + HM.GAP + d.d / 2, cx = (bx0 + bx1) / 2;
+    for (const [end, label] of [[bx0 + HM.GAP + d.w / 2, 'left'], [bx1 - HM.GAP - d.w / 2, 'right']]) for (const inw of [0, .1]) {
+      const n = Math.round(Math.abs(end - cx) / .01), p = dragPath(d, bal, cx, zf, 0, (end - cx) / n, inw / n, n);
+      assert.ok(p.every(q => q.rot === 0), `阳台 ${k}: slid into the ${label} corner (${inw * 100} cm inward) keeps the back wall`);
+    }
+  }
+  const ch = HM.KINDS.armA, there = dragPath(ch, bal, (bx0 + bx1) / 2, bz0 + HM.GAP + ch.d / 2, 0, 0, .05, 10);
+  assert.equal(there.at(-1).rot, 2, 'a chair pushed across the balcony still turns to the far wall');
+  const ki = HM.bbox(rects, '厨房'), [kx0, kz0, kx1] = ki.rs[0].r, bed = HM.KINDS.bedA, kz = kz0 + HM.GAP + bed.d / 2, kc = (kx0 + kx1) / 2;
+  const kEnd = kx0 + HM.GAP + bed.w / 2, kn = Math.max(1, Math.round((kc - kEnd) / .01));
+  assert.ok(dragPath(bed, ki, kc, kz, 0, (kEnd - kc) / kn, 0, kn).every(q => q.rot === 0), '厨房 bed slid into the corner keeps its wall');
+  // A finger held still with a few px of jitter: headings shorter than 3 cm head for no wall.
+  const mb = HM.bbox(rects, '主卧'), f = HM.KINDS.fridgeA, x = 3.6 - HM.GAP - f.d / 2 - .3;
+  for (const [dx, dz] of [[.01, 0], [.02, .01], [-.01, .02], [0, 0]]) assert.equal(HM.clampPlacement(f, mb, x, 1.8, 0, { dx, dz }).rot, 0, `jitter (${dx}, ${dz}) turns nothing`);
+  assert.equal(HM.clampPlacement(f, mb, x, 1.8, 0, { dx: .04, dz: 0 }).rot, 3, 'a 4 cm push towards the wall still snaps');
 });
 
 test('a saved position survives a room resize as a fraction of the room', () => {
