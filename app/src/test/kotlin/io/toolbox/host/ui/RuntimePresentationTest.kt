@@ -89,6 +89,48 @@ class RuntimePresentationTest {
     }
 
     @Test
+    fun aPlainLiftWellBeforeABackRestartsTheCount() {
+        val streak = PageBackStreak()
+        streak.pageTook(10_000L)
+        streak.pageTook(11_000L)
+        assertTrue(!streak.hostTakes(12_000L, pageTouchedAt = 11_600L))
+    }
+
+    @Test
+    fun liftsExactlyAtTheNearWindowStillBelongToTheGesture() {
+        // The last handled Back is 2 s before this press, so only the gap to this press decides.
+        fun hostTakes(liftBeforePress: Long, edge: Boolean): Boolean {
+            val streak = PageBackStreak()
+            streak.pageTook(9_000L)
+            streak.pageTook(10_000L)
+            return streak.hostTakes(12_000L, pageTouchedAt = 12_000L - liftBeforePress, fromGestureEdge = edge)
+        }
+        assertTrue(hostTakes(PAGE_TOUCH_NEAR_BACK_MS, edge = false))
+        assertTrue(!hostTakes(PAGE_TOUCH_NEAR_BACK_MS + 1, edge = false))
+        assertTrue(hostTakes(PAGE_EDGE_TOUCH_NEAR_BACK_MS, edge = true))
+        assertTrue(!hostTakes(PAGE_EDGE_TOUCH_NEAR_BACK_MS + 1, edge = true))
+
+        fun hostTakesAfter(liftAfterLast: Long, edge: Boolean): Boolean {
+            val streak = PageBackStreak()
+            streak.pageTook(10_000L)
+            streak.pageTook(11_000L)
+            return streak.hostTakes(13_000L, pageTouchedAt = 11_000L + liftAfterLast, fromGestureEdge = edge)
+        }
+        assertTrue(hostTakesAfter(PAGE_TOUCH_NEAR_BACK_MS, edge = false))
+        assertTrue(!hostTakesAfter(PAGE_TOUCH_NEAR_BACK_MS + 1, edge = false))
+        assertTrue(hostTakesAfter(PAGE_EDGE_TOUCH_NEAR_BACK_MS, edge = true))
+        assertTrue(!hostTakesAfter(PAGE_EDGE_TOUCH_NEAR_BACK_MS + 1, edge = true))
+    }
+
+    @Test
+    fun aLiftIsDatedByItsEventTimeNotWhenItWasHandled() {
+        // Handled 120 ms after the finger lifted: the lift is dated 120 ms earlier on the Back clock.
+        assertEquals(49_880L, liftedAtElapsed(nowElapsed = 50_000L, nowUptime = 20_000L, eventTime = 19_880L))
+        // A clock reading that puts the event in the future never dates it after now.
+        assertEquals(50_000L, liftedAtElapsed(nowElapsed = 50_000L, nowUptime = 20_000L, eventTime = 20_050L))
+    }
+
+    @Test
     fun aHostTakenBackRestartsTheCount() {
         val streak = PageBackStreak()
         streak.pageTook(10_000L)

@@ -75,8 +75,15 @@ internal class BrowserWebViewFactory(
         }
     }
 
+    /** One shared transparent poster; WebView asks for it on every video element. */
+    private val transparentVideoPoster: Bitmap by lazy { Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888) }
+
     @SuppressLint("SetJavaScriptEnabled")
     fun configure(page: WebView) {
+        // Until the first document paints, WebView fills itself with its background colour (white by
+        // default), which flashes in dark mode. Use the window colour until then; once the page has
+        // drawn (or finished loading) white returns, the base colour pages without a background expect.
+        page.setBackgroundColor(activity.getColor(io.toolbox.host.R.color.toolbox_window_background))
         page.settings.apply {
             BrowserCompatibilityPolicy.apply(this)
             applyUserAgent(this)
@@ -103,6 +110,13 @@ internal class BrowserWebViewFactory(
             }
 
             override fun onPageCommitVisible(view: WebView, url: String) {
+                // The commit can draw before render-blocking CSS arrives, so white returns only once a
+                // frame with the page's own content has been drawn.
+                if (WebViewFeature.isFeatureSupported(WebViewFeature.VISUAL_STATE_CALLBACK)) {
+                    androidx.webkit.WebViewCompat.postVisualStateCallback(view, 0L) {
+                        view.setBackgroundColor(android.graphics.Color.WHITE)
+                    }
+                }
                 if (view === state.webView) filters.applyToPage()
             }
 
@@ -144,6 +158,7 @@ internal class BrowserWebViewFactory(
             }
 
             override fun onPageFinished(view: WebView, url: String) {
+                view.setBackgroundColor(android.graphics.Color.WHITE)
                 if (view !== state.webView) return
                 state.interaction = state.interaction.pageFinished()
                 state.loadProgress = 100
@@ -254,8 +269,7 @@ internal class BrowserWebViewFactory(
             }
             // WebView's stock poster is a grey square with a play circle that flashes before the site's own
             // poster or first frame; a transparent poster lets the page show through instead.
-            override fun getDefaultVideoPoster(): Bitmap =
-                Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888)
+            override fun getDefaultVideoPoster(): Bitmap = transparentVideoPoster
             override fun onReceivedTitle(view: WebView, newTitle: String?) {
                 if (view === state.webView) state.title = newTitle.orEmpty()
             }
