@@ -71,12 +71,11 @@ export function extractReasoningText(choice) {
   const message = choice?.message;
   const source = delta || message;
   // Providers name the field reasoning_content, reasoning or reasoning_details;
-  // some send the same text under two names, so the first one with text wins.
-  for (const value of [source?.reasoning_content, source?.reasoning, source?.reasoning_details]) {
-    const text = textFragments(value).join("");
-    if (text) return text;
-  }
-  return "";
+  // some send the same text under two names, which is shown once.
+  const texts = [source?.reasoning_content, source?.reasoning, source?.reasoning_details]
+    .map((value) => textFragments(value).join(""))
+    .filter(Boolean);
+  return [...new Set(texts)].join("");
 }
 
 export function extractContentText(choice) {

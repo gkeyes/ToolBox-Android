@@ -123,13 +123,14 @@ function looseJson(text) {
 
 // An article reference as the AI wrote it: 3, "3", "[3]", "2.0", a list
 // "1,2" / "1、2", or a range "1-3". Anything else names no article.
+const MAX_RANGE = 100;
 export function articleNumbers(value, count) {
   if (typeof value === "number") return Number.isInteger(value) ? [value] : [];
   const text = String(value ?? "").trim();
   const range = text.match(/^\[?(\d+)\s*[-–—~～至到]\s*(\d+)\]?$/);
   if (range) {
     const [from, to] = [Number(range[1]), Number(range[2])];
-    if (from > to || to - from >= count) return [];
+    if (from > to || to - from >= Math.min(count, MAX_RANGE)) return [];
     return Array.from({ length: to - from + 1 }, (_, index) => from + index);
   }
   const whole = text.match(/^\[?(\d+)(?:\.0+)?\]?$/);
@@ -144,7 +145,7 @@ export function articleNumbers(value, count) {
 // stray quote inside it stays part of the text; a topic whose article list
 // never closed is left out.
 const unescape = (value) => value.replace(/\\n/g, " ").replace(/\\(["\\/])/g, "$1");
-export function salvageTopics(raw) {
+export function salvageTopics(raw, count = Infinity) {
   const starts = [...String(raw || "").matchAll(/"title"\s*:/g)].map((match) => match.index);
   return starts.map((start, index) => {
     const part = raw.slice(start, starts[index + 1] ?? raw.length);
@@ -156,7 +157,7 @@ export function salvageTopics(raw) {
       return end >= 0 ? unescape(rest.slice(0, end)) : "";
     };
     const numbers = part.match(/"articles"\s*:\s*\[([^\]]*)\]/);
-    return { title: field("title"), gist: field("gist"), summary: field("summary"), articles: numbers ? (numbers[1].match(/"[^"]*"|[^,\s"]+/g) || []).flatMap((item) => articleNumbers(item.replace(/^"|"$/g, ""), Infinity)) : [] };
+    return { title: field("title"), gist: field("gist"), summary: field("summary"), articles: numbers ? (numbers[1].match(/"[^"]*"|[^,\s"]+/g) || []).flatMap((item) => articleNumbers(item.replace(/^"|"$/g, ""), count)) : [] };
   }).filter((topic) => topic.title && topic.articles.length);
 }
 
@@ -177,7 +178,7 @@ export function parseTopics(text, count) {
       if (usable(value)) { data = value; break search; }
     }
   }
-  const salvaged = data ? null : salvageTopics(raw);
+  const salvaged = data ? null : salvageTopics(raw, count);
   const list = Array.isArray(data?.topics) ? data.topics : Array.isArray(data) ? data : salvaged?.length ? salvaged : null;
   if (!list) throw new Error("AI 返回的内容无法识别，请重新生成。");
   const taken = new Set();

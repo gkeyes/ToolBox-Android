@@ -117,6 +117,10 @@ test("article references keep their numbers: lists, ranges and 2.0 are not glued
   assert.deepEqual(articleNumbers("[4]", 9), [4]);
   assert.deepEqual(articleNumbers(2.5, 9), []);
   assert.deepEqual(articleNumbers("第三篇", 9), []);
+  assert.deepEqual(articleNumbers("1-100", 9), []);
+  assert.deepEqual(articleNumbers("1-99999999", Infinity), []);
+  const cut = parseTopics('{"topics":[{"title":"丁","articles":["1-100", 2]', 9);
+  assert.deepEqual(cut.map((topic) => topic.articles), [[2]]);
   const topics = parseTopics('{"topics":[{"title":"甲","articles":["1-3","5、6","2.0"]},{"title":"乙","articles":["13", 7]}]}', 9);
   assert.deepEqual(topics.map((topic) => topic.articles), [[1, 2, 3, 5, 6], [7]]);
   const salvaged = salvageTopics('{"topics":[{"title":"丙","gist":"x","articles":["1-2", 2.0, "4、5"]');
