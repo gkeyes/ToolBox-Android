@@ -131,6 +131,18 @@ class RuntimePresentationTest {
     }
 
     @Test
+    fun aStalledUiThreadNeverTurnsTheGesturesOwnLiftIntoATap() {
+        val streak = PageBackStreak()
+        streak.pageTook(9_000L)
+        streak.pageTook(10_000L)
+        // The gesture's lift happened at 11 900 but the UI thread stalled: the lift was handled at
+        // 12 300 and its Back at 12 310. By event time the lift looks 410 ms old; it is the gesture.
+        assertTrue(streak.hostTakes(12_310L, pageTouchedAt = 11_900L, pageTouchHandledAt = 12_300L))
+        // A real tap handled well before the Back still restarts the count.
+        assertTrue(!streak.hostTakes(12_310L, pageTouchedAt = 11_600L, pageTouchHandledAt = 11_605L))
+    }
+
+    @Test
     fun aHostTakenBackRestartsTheCount() {
         val streak = PageBackStreak()
         streak.pageTook(10_000L)

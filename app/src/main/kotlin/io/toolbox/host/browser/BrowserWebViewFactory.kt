@@ -75,6 +75,16 @@ internal class BrowserWebViewFactory(
         }
     }
 
+    /** The current document's main frame failed: its page stays on the pre-paint colour, never white. */
+    private var mainFrameFailed = false
+
+    private fun prePaintColor() = activity.getColor(io.toolbox.host.R.color.toolbox_window_background)
+
+    /** White is the base colour pages without their own background expect, once a real page has drawn. */
+    private fun restorePageBase(view: WebView) {
+        if (view !== state.webView || !mainFrameFailed) view.setBackgroundColor(android.graphics.Color.WHITE)
+    }
+
     /** One shared transparent poster; WebView asks for it on every video element. */
     private val transparentVideoPoster: Bitmap by lazy { Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888) }
 
@@ -83,7 +93,7 @@ internal class BrowserWebViewFactory(
         // Until the first document paints, WebView fills itself with its background colour (white by
         // default), which flashes in dark mode. Use the window colour until then; once the page has
         // drawn (or finished loading) white returns, the base colour pages without a background expect.
-        page.setBackgroundColor(activity.getColor(io.toolbox.host.R.color.toolbox_window_background))
+        page.setBackgroundColor(prePaintColor())
         page.settings.apply {
             BrowserCompatibilityPolicy.apply(this)
             applyUserAgent(this)
@@ -113,9 +123,7 @@ internal class BrowserWebViewFactory(
                 // The commit can draw before render-blocking CSS arrives, so white returns only once a
                 // frame with the page's own content has been drawn.
                 if (WebViewFeature.isFeatureSupported(WebViewFeature.VISUAL_STATE_CALLBACK)) {
-                    androidx.webkit.WebViewCompat.postVisualStateCallback(view, 0L) {
-                        view.setBackgroundColor(android.graphics.Color.WHITE)
-                    }
+                    androidx.webkit.WebViewCompat.postVisualStateCallback(view, 0L) { restorePageBase(view) }
                 }
                 if (view === state.webView) filters.applyToPage()
             }
@@ -138,6 +146,7 @@ internal class BrowserWebViewFactory(
 
             override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) {
                 if (view !== state.webView) return
+                mainFrameFailed = false
                 if (ssl.onNavigationStarted(view, url)) {
                     capabilities.cancelPage(view)
                     navigation.cancelPage(view)
@@ -158,7 +167,7 @@ internal class BrowserWebViewFactory(
             }
 
             override fun onPageFinished(view: WebView, url: String) {
-                view.setBackgroundColor(android.graphics.Color.WHITE)
+                restorePageBase(view)
                 if (view !== state.webView) return
                 state.interaction = state.interaction.pageFinished()
                 state.loadProgress = 100
@@ -196,6 +205,10 @@ internal class BrowserWebViewFactory(
                     )?.let(host::recordMediaDiagnosticEvent)
                 }
                 if (request.isForMainFrame && !state.interaction.stoppedByUser) {
+                    // The error overlay fades out over the page on retry: keep the pre-paint colour under it,
+                    // not white, until the next document draws.
+                    mainFrameFailed = true
+                    view.setBackgroundColor(prePaintColor())
                     state.error = "网页加载失败，请检查网络后重试。"
                     state.interaction = state.interaction.pageFinished()
                     state.loadProgress = 100

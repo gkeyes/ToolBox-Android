@@ -147,6 +147,7 @@ internal fun RuntimeShellScreen(
     val immersiveNavigationBar = isHyperOsGestureNavigation(LocalContext.current)
     // When a finger last lifted on the page; a touch ends a run of Backs the page took (see RuntimeExitConfirmation).
     var pageTouchedAt by remember { mutableLongStateOf(0L) }
+    var pageTouchHandledAt by remember { mutableLongStateOf(0L) }
     var pageTouchFromEdge by remember { mutableStateOf(false) }
     ToolBoxRuntimeScaffold(
         modifier = Modifier
@@ -178,9 +179,9 @@ internal fun RuntimeShellScreen(
                                     when (event.actionMasked) {
                                         android.view.MotionEvent.ACTION_DOWN -> downInGestureEdge = inGestureEdge(event)
                                         android.view.MotionEvent.ACTION_UP -> {
-                                            pageTouchedAt = liftedAtElapsed(
-                                                SystemClock.elapsedRealtime(), SystemClock.uptimeMillis(), event.eventTime,
-                                            )
+                                            val handledAt = SystemClock.elapsedRealtime()
+                                            pageTouchedAt = liftedAtElapsed(handledAt, SystemClock.uptimeMillis(), event.eventTime)
+                                            pageTouchHandledAt = handledAt
                                             pageTouchFromEdge = downInGestureEdge
                                         }
                                     }
@@ -222,6 +223,7 @@ internal fun RuntimeShellScreen(
                     askPage = ready?.webView?.let { webView -> { answer: (Boolean) -> Unit -> askPageToHandleBack(webView, answer) } },
                     pageTouchedAt = { pageTouchedAt },
                     pageTouchFromEdge = { pageTouchFromEdge },
+                    pageTouchHandledAt = { pageTouchHandledAt },
                     modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 48.dp),
                 )
             }
@@ -423,6 +425,7 @@ internal fun RuntimeExitConfirmation(
     askPage: ((answer: (Boolean) -> Unit) -> Unit)? = null,
     pageTouchedAt: () -> Long = { 0L },
     pageTouchFromEdge: () -> Boolean = { false },
+    pageTouchHandledAt: () -> Long = pageTouchedAt,
 ) {
     val hintText = remember(toolName) { runtimeExitHint(toolName) }
     var lastBackAt by remember { mutableLongStateOf(0L) }
@@ -467,7 +470,7 @@ internal fun RuntimeExitConfirmation(
 
     fun offerBack(now: Long) {
         val ask = currentAskPage
-        val pageKeepsBack = pageBackStreak.hostTakes(now, pageTouchedAt(), pageTouchFromEdge())
+        val pageKeepsBack = pageBackStreak.hostTakes(now, pageTouchedAt(), pageTouchFromEdge(), pageTouchHandledAt())
         // While the exit hint shows, the next Back confirms it rather than going to the page again.
         val hintShowing = shouldExitRuntimeOnBack(lastBackAt, now)
         if (ask == null || pageKeepsBack || hintShowing) {
