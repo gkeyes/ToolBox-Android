@@ -9,7 +9,7 @@ async function touchAt(page, type, x, y) {
     window.__nf1Target = type === "touchstart" ? document.elementFromPoint(x, y) : window.__nf1Target;
     const target = window.__nf1Target;
     const point = new Touch({ identifier: 1, target, clientX: x, clientY: y, pageX: x, pageY: y, screenX: x, screenY: y });
-    const ev = new TouchEvent(type, { touches: type === "touchend" ? [] : [point], targetTouches: type === "touchend" ? [] : [point], changedTouches: [point], bubbles: true, cancelable: true, composed: true });
+    const ev = new TouchEvent(type, { touches: type === "touchend" || type === "touchcancel" ? [] : [point], targetTouches: type === "touchend" || type === "touchcancel" ? [] : [point], changedTouches: [point], bubbles: true, cancelable: true, composed: true });
     target.dispatchEvent(ev);
     return { prevented: ev.defaultPrevented, target: target.className?.toString?.().slice(0, 60) || target.tagName };
   }, { type, x, y });
@@ -32,18 +32,24 @@ async function state(page) {
     };
   });
 }
-async function openArticleWithImage(page) {
+async function openArticleWithImage(page, second = false) {
   await page.goto("/article-navigation.html#/");
-  await page.evaluate(async (src) => {
+  await page.evaluate(async ({ src, second }) => {
     const { rows } = await import("/article-navigation-state.js");
-    rows[0].content = `<p>前言段落。</p><p><img src="${src}" alt="nf1" width="640" height="320"></p>` + rows[0].content;
-  }, IMG);
+    const more = second ? `<p><img src="${src}&b=2" alt="nf2" width="640" height="320"></p>` : "";
+    rows[0].content = `<p>前言段落。</p><p><img src="${src}" alt="nf1" width="640" height="320"></p>${more}` + rows[0].content;
+  }, { src: IMG, second });
   await page.getByRole("button", { name: "打开文章 1", exact: true }).click();
   await expect(page.locator(".article-scroll-area .article-title")).toHaveText("文章 1");
   await expect(page.locator(".nextflux-article-page")).toHaveAttribute("data-navigation-state", "idle");
   await expect.poll(() => page.evaluate(async (s) => (await import("/media-transport.js")).pendingRequests(s), IMG)).toBe(1);
   await page.evaluate(async (s) => (await import("/media-transport.js")).settleImage(s), IMG);
   await expect(page.locator(".article-scroll-area img[alt=nf1]")).toBeVisible();
+  if (!second) return;
+  const src2 = IMG + "&b=2";
+  await expect.poll(() => page.evaluate(async (s) => (await import("/media-transport.js")).pendingRequests(s), src2)).toBe(1);
+  await page.evaluate(async (s) => (await import("/media-transport.js")).settleImage(s), src2);
+  await expect(page.locator(".article-scroll-area img[alt=nf2]")).toBeVisible();
 }
 // Clicks via element.click(): a click event only, no pointer events.
 const openImage = (page) => page.locator(".article-scroll-area img[alt=nf1]").evaluate((el) => el.click());
@@ -94,4 +100,27 @@ test("a pull for the next article dragged back below its start still allows swip
   await expect.poll(() => page.locator(".nextflux-article-page").evaluate((el) => el.dataset.readingMotion ?? null)).toBe(null);
   await swipeBack(page);
   await expect.poll(() => page.evaluate(() => location.hash)).toBe("#/");
+});
+
+// A screenshot gesture cancels the touch mid-drag: the viewer must not stay
+// locked to that drag (NF gallery after screenshot).
+test("a cancelled drag in the viewer still lets the next swipe change image, and the article scrolls after closing", async ({ page }) => {
+  await openArticleWithImage(page, true);
+  await openImage(page);
+  await expect(page.locator(".PhotoView-Portal")).toBeVisible();
+  await page.waitForTimeout(1000);
+  await touchAt(page, "touchstart", 200, 400);
+  for (const y of [430, 470]) { await touchAt(page, "touchmove", 200, y); await page.waitForTimeout(30); }
+  await touchAt(page, "touchcancel", 200, 470);
+  await page.waitForTimeout(500);
+  await touchAt(page, "touchstart", 300, 420);
+  for (const x of [280, 240, 180, 120, 80]) { await touchAt(page, "touchmove", x, 421); await page.waitForTimeout(30); }
+  await touchAt(page, "touchend", 80, 421);
+  await expect(page.locator(".PhotoView-Slider__Counter")).toHaveText("2 / 2");
+  await closeGallery(page);
+  await page.waitForTimeout(1500);
+  expect((await state(page)).galleryActive).toBe(false);
+  await touchAt(page, "touchstart", 200, 600);
+  expect((await touchAt(page, "touchmove", 201, 560)).prevented, "the article scrolls again").toBe(false);
+  await touchAt(page, "touchend", 201, 560);
 });

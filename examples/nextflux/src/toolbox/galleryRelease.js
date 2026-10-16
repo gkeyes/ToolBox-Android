@@ -42,3 +42,32 @@ export function releaseStuckGallery(isOpen = () => false) {
     }, 250);
   }, GALLERY_CLOSE_MS + 400);
 }
+
+// react-photo-view finishes a drag only on touchend; it ignores touchcancel.
+// The system cancels the touch when a screenshot gesture (three fingers, or
+// the region-select overlay) takes over, so the viewer kept the half-finished
+// gesture: swipes stayed locked to the old direction and a pull no longer
+// closed it. Turn the cancel into the touchend the viewer waits for, nudged
+// one pixel so it never counts as a tap (a tap would zoom or close).
+const OPEN_PORTAL = ".PhotoView-Portal:not([style*='visibility: hidden'])";
+
+function finishCancelledGalleryTouch(event) {
+  if (!document.querySelector(OPEN_PORTAL)) return;
+  const last = event.changedTouches?.[0];
+  if (!last) return;
+  const x = last.clientX + 1;
+  const y = last.clientY;
+  let end;
+  try {
+    const touch = new Touch({ identifier: last.identifier, target: last.target, clientX: x, clientY: y, pageX: x, pageY: y, screenX: x, screenY: y });
+    end = new TouchEvent("touchend", { changedTouches: [touch], cancelable: true });
+  } catch {
+    end = new Event("touchend", { cancelable: true });
+    Object.defineProperty(end, "changedTouches", { value: [{ identifier: last.identifier, clientX: x, clientY: y }] });
+  }
+  window.dispatchEvent(end);
+}
+
+if (typeof window !== "undefined") {
+  window.addEventListener("touchcancel", finishCancelledGalleryTouch, true);
+}
