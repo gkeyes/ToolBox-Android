@@ -124,3 +124,56 @@ test("a cancelled drag in the viewer still lets the next swipe change image, and
   expect((await touchAt(page, "touchmove", 201, 560)).prevented, "the article scrolls again").toBe(false);
   await touchAt(page, "touchend", 201, 560);
 });
+
+async function openTwoImageViewer(page) {
+  await openArticleWithImage(page, true);
+  await openImage(page);
+  await expect(page.locator(".PhotoView-Portal")).toBeVisible();
+  await page.waitForTimeout(1000);
+}
+async function drag(page, from, points) {
+  await touchAt(page, "touchstart", ...from);
+  for (const point of points) { await touchAt(page, "touchmove", ...point); await page.waitForTimeout(30); }
+}
+const counter = (page) => page.locator(".PhotoView-Slider__Counter");
+
+// A cancelled gesture must snap back, not finish: a three-finger screenshot
+// swipe must not close the viewer or change the image behind it.
+test("a cancelled long pull-down leaves the viewer open", async ({ page }) => {
+  await openTwoImageViewer(page);
+  await drag(page, [200, 300], [[200, 330], [200, 380], [200, 450], [200, 520]]);
+  await touchAt(page, "touchcancel", 200, 520);
+  await page.waitForTimeout(1200);
+  await expect(page.locator(".PhotoView-Portal")).toBeVisible();
+  expect((await state(page)).galleryActive).toBe(true);
+  await expect(counter(page)).toHaveText("1 / 2");
+});
+
+test("a cancelled long sideways drag keeps the same image", async ({ page }) => {
+  await openTwoImageViewer(page);
+  await drag(page, [300, 420], [[280, 421], [240, 421], [180, 421], [120, 421]]);
+  await touchAt(page, "touchcancel", 120, 421);
+  await page.waitForTimeout(800);
+  await expect(counter(page)).toHaveText("1 / 2");
+});
+
+// The page can be hidden or lose focus mid-drag without any touchcancel.
+for (const lost of ["hidden", "blur"]) test(`a drag interrupted by ${lost} releases the viewer`, async ({ page }) => {
+  await openTwoImageViewer(page);
+  const photo = page.locator(".PhotoView__PhotoBox").first();
+  const rest = await photo.evaluate((el) => el.style.transform);
+  await drag(page, [200, 400], [[200, 430], [200, 470]]);
+  expect(await photo.evaluate((el) => el.style.transform), "the drag moved the image").not.toBe(rest);
+  await page.evaluate((lost) => {
+    if (lost === "hidden") {
+      Object.defineProperty(document, "visibilityState", { value: "hidden", configurable: true });
+      document.dispatchEvent(new Event("visibilitychange"));
+    } else window.dispatchEvent(new Event("blur"));
+  }, lost);
+  await page.waitForTimeout(500);
+  await page.evaluate(() => { delete document.visibilityState; });
+  await expect.poll(() => photo.evaluate((el) => el.style.transform), { message: "the image snapped back" }).toBe(rest);
+  await drag(page, [300, 420], [[280, 421], [240, 421], [180, 421], [120, 421], [80, 421]]);
+  await touchAt(page, "touchend", 80, 421);
+  await expect(counter(page)).toHaveText("2 / 2");
+});
