@@ -47,27 +47,46 @@ export function releaseStuckGallery(isOpen = () => false) {
 // The system cancels the touch when a screenshot gesture (three fingers, or
 // the region-select overlay) takes over, so the viewer kept the half-finished
 // gesture: swipes stayed locked to the old direction and a pull no longer
-// closed it. Turn the cancel into the touchend the viewer waits for, nudged
-// one pixel so it never counts as a tap (a tap would zoom or close).
+// closed it. The page can also be hidden or lose focus mid-drag with no
+// cancel at all. In each case give the viewer the touchend it waits for, at
+// the point the touch started: a cancelled pull or swipe snaps back instead
+// of closing the viewer or changing the image. It is nudged one pixel so it
+// never counts as a tap (a tap would zoom or close).
 const OPEN_PORTAL = ".PhotoView-Portal:not([style*='visibility: hidden'])";
+let touchStart = null;
 
-function finishCancelledGalleryTouch(event) {
-  if (!document.querySelector(OPEN_PORTAL)) return;
-  const last = event.changedTouches?.[0];
-  if (!last) return;
-  const x = last.clientX + 1;
-  const y = last.clientY;
+function rememberTouchStart(event) {
+  const first = event.touches?.[0];
+  if (!touchStart && first) touchStart = { identifier: first.identifier, target: first.target, x: first.clientX, y: first.clientY };
+}
+
+function forgetTouchStart(event) {
+  if (!event.touches?.length) touchStart = null;
+}
+
+function releaseGalleryTouch() {
+  const start = touchStart;
+  touchStart = null;
+  if (!start || !document.querySelector(OPEN_PORTAL)) return;
+  const x = start.x + 1;
+  const y = start.y;
   let end;
   try {
-    const touch = new Touch({ identifier: last.identifier, target: last.target, clientX: x, clientY: y, pageX: x, pageY: y, screenX: x, screenY: y });
+    const touch = new Touch({ identifier: start.identifier, target: start.target, clientX: x, clientY: y, pageX: x, pageY: y, screenX: x, screenY: y });
     end = new TouchEvent("touchend", { changedTouches: [touch], cancelable: true });
   } catch {
     end = new Event("touchend", { cancelable: true });
-    Object.defineProperty(end, "changedTouches", { value: [{ identifier: last.identifier, clientX: x, clientY: y }] });
+    Object.defineProperty(end, "changedTouches", { value: [{ identifier: start.identifier, clientX: x, clientY: y }] });
   }
   window.dispatchEvent(end);
 }
 
 if (typeof window !== "undefined") {
-  window.addEventListener("touchcancel", finishCancelledGalleryTouch, true);
+  window.addEventListener("touchstart", rememberTouchStart, true);
+  window.addEventListener("touchend", forgetTouchStart, true);
+  window.addEventListener("touchcancel", releaseGalleryTouch, true);
+  window.addEventListener("blur", releaseGalleryTouch);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") releaseGalleryTouch();
+  });
 }
