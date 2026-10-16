@@ -23,6 +23,13 @@ export const boardOpen = atom(false);
 export const boardStream = atom(null);
 
 let run = null;
+// The article settings the running board is made under.
+let runFilter = null;
+// A pending settings change.
+let settle = null;
+// A sync finished that the board has not read yet (it was being made, its
+// settings were settling, or it was closed and out of date).
+let unsynced = false;
 let digestRun = null;
 
 const aiReady = () => Boolean(settingsState.get().aiApiKey);
@@ -57,6 +64,8 @@ async function todaysArticles() {
 export async function refreshBoard({ onlyIfNew = false } = {}) {
   const previous = board.get();
   if (onlyIfNew && run) return;
+  // This run reads today's articles afresh.
+  unsynced = false;
   run?.abort();
   const controller = new AbortController();
   run = controller;
@@ -64,6 +73,7 @@ export async function refreshBoard({ onlyIfNew = false } = {}) {
   const live = () => run === controller && !controller.signal.aborted && authState.get().userId === account;
   const today = startOfDay().getTime();
   const filter = articleFilter();
+  runFilter = filter;
   const keep = previous.status === "done" && previous.day === today && previous.filter === filter;
   // A failed board remembers the articles it tried, so a sync that brings
   // nothing new does not ask the AI again.
@@ -84,7 +94,7 @@ export async function refreshBoard({ onlyIfNew = false } = {}) {
     // The written digest belongs to the board on screen: it keeps streaming
     // while a newer board is made and stops only when that board replaces it.
     if (!keep) stopDigest();
-    board.set(keep ? { ...previous, updating: true, error: "" } : { ...EMPTY, status: "loading", day: today });
+    board.set(keep ? { ...previous, updating: true, error: "" } : { ...EMPTY, status: "loading", day: today, filter });
     const { articles, skipped } = fitArticles(all);
     const sent = articles.map(({ title, feedTitle }) => ({ title, feedTitle }));
     // One AI call. A reply that ran into the length limit before one topic
@@ -178,7 +188,10 @@ export async function refreshBoard({ onlyIfNew = false } = {}) {
       : { ...EMPTY, status: "error", error: message, raw: error?.raw ?? null, day: today, filter, ids: all.map((article) => article.id) });
     boardStream.set(null);
   } finally {
-    if (run === controller) run = null;
+    if (run === controller) {
+      run = null;
+      catchUp();
+    }
   }
 }
 
@@ -195,6 +208,19 @@ export function openBoard(open = !boardOpen.get()) {
   board.set({ ...state, unseen: false });
   const stale = state.day !== startOfDay().getTime() || state.filter !== articleFilter();
   if (!run && (state.status === "idle" || state.status === "error" || stale)) refreshBoard();
+  else catchUp();
+}
+
+// Reads a sync the board missed, once nothing else is under way: a board
+// made under today's settings takes only what is new; one under other
+// settings is made again if open, else when it is next opened.
+function catchUp() {
+  if (!unsynced || run || settle || !authState.get().userId || !aiReady()) return;
+  const state = board.get();
+  if (state.status === "idle") return;
+  const current = state.filter === articleFilter() && state.day === startOfDay().getTime();
+  if (current) refreshBoard({ onlyIfNew: true });
+  else if (boardOpen.get()) refreshBoard();
 }
 
 // The digest is written once per board, on first view of the 文章 tab.
@@ -256,20 +282,32 @@ isSyncing.listen((syncing) => {
   wasSyncing = syncing;
   if (!finished || !authState.get().userId || !aiReady()) return;
   if (board.get().status === "idle") return;
-  // A board made under other article settings is made again when it is
-  // next opened; settings changed and changed back cost nothing.
-  if (board.get().filter !== articleFilter() && !boardOpen.get()) return;
-  refreshBoard({ onlyIfNew: true });
+  // Read now, or after the board being made, the settings settling, or
+  // (closed and out of date) the next opening; settings changed and
+  // changed back cost nothing.
+  unsynced = true;
+  catchUp();
 });
 
 // Settings changed while the board is open (from the settings sheet over
-// it): the board on screen follows them at once.
+// it): the board on screen follows them once they settle, so flipping
+// through the options asks the AI once, and flipping back asks nothing.
+const SETTLE_MS = 600;
 let lastFilter = articleFilter();
 settingsState.listen(() => {
   const filter = articleFilter();
   if (filter === lastFilter) return;
   lastFilter = filter;
-  const state = board.get();
-  if (!boardOpen.get() || state.status === "idle" || state.filter === filter || !authState.get().userId) return;
-  refreshBoard();
+  clearTimeout(settle);
+  settle = setTimeout(() => {
+    settle = null;
+    const state = board.get();
+    if (state.status === "idle" || !authState.get().userId) return;
+    const made = run ? runFilter : state.filter;
+    // An open board follows at once; a closed one waits to be opened.
+    if ((made !== articleFilter() || state.day !== startOfDay().getTime()) && boardOpen.get()) refreshBoard();
+    // Back to the settings the board was made under: only what a sync
+    // meanwhile brought in, after the board being made, if any.
+    else catchUp();
+  }, SETTLE_MS);
 });
