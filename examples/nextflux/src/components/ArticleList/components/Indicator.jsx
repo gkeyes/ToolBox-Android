@@ -27,7 +27,7 @@ export default function Indicator({ virtuosoRef }) {
           exit={{ opacity: 0, scale: 0.8, transition: reduced ? { duration: 0 } : exitTween }}
           whileTap={reduced ? undefined : { scale: 0.965, transition: spring.pressIn }}
           onClick={handleClick}
-          className="indicator article-list-indicator absolute cursor-pointer select-none right-4 rounded-full z-10 min-h-8 py-1.5 px-3 flex gap-1 items-center ds-tnum text-xs font-semibold"
+          className="indicator article-list-indicator absolute cursor-pointer select-none inset-x-0 mx-auto w-fit rounded-full z-10 min-h-8 py-1.5 px-3 flex gap-1 items-center ds-tnum text-xs font-semibold"
         >
           {$visibleRange.startIndex}
           <ArrowUp strokeWidth={3} className="size-3 opacity-70" />

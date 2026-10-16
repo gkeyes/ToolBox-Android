@@ -117,10 +117,20 @@ test("article references keep their numbers: lists, ranges and 2.0 are not glued
   assert.deepEqual(articleNumbers("[4]", 9), [4]);
   assert.deepEqual(articleNumbers(2.5, 9), []);
   assert.deepEqual(articleNumbers("第三篇", 9), []);
-  assert.deepEqual(articleNumbers("1-100", 9), []);
-  assert.deepEqual(articleNumbers("1-99999999", Infinity), []);
-  const cut = parseTopics('{"topics":[{"title":"丁","articles":["1-100", 2]', 9);
-  assert.deepEqual(cut.map((topic) => topic.articles), [[2]]);
+  // A range past the last article is trimmed, not dropped; an open-ended one stays bounded.
+  assert.deepEqual(articleNumbers("1-10", 9), [1, 2, 3, 4, 5, 6, 7, 8, 9]);
+  assert.deepEqual(articleNumbers("8-100", 9), [8, 9]);
+  assert.deepEqual(articleNumbers("12-20", 9), []);
+  assert.equal(articleNumbers("1-99999999", Infinity).length, 100);
+  assert.deepEqual(articleNumbers("3-1", 9), [1, 2, 3]);
+  assert.deepEqual(articleNumbers("1,2-3", 9), [1, 2, 3]);
+  assert.deepEqual(articleNumbers("３、４", 9), [3, 4]);
+  assert.deepEqual(articleNumbers("第4篇", 9), [4]);
+  assert.deepEqual(articleNumbers("[1,2]", 9), [1, 2]);
+  const cut = parseTopics('{"topics":[{"title":"丁","articles":["1-100", 2]', 3);
+  assert.deepEqual(cut.map((topic) => topic.articles), [[1, 2, 3]]);
+  const bracketed = salvageTopics('{"topics":[{"title":"戊","articles":["[3]", [4], 5]} oops', 9);
+  assert.deepEqual(bracketed[0].articles, [3, 4, 5]);
   const topics = parseTopics('{"topics":[{"title":"甲","articles":["1-3","5、6","2.0"]},{"title":"乙","articles":["13", 7]}]}', 9);
   assert.deepEqual(topics.map((topic) => topic.articles), [[1, 2, 3, 5, 6], [7]]);
   const salvaged = salvageTopics('{"topics":[{"title":"丙","gist":"x","articles":["1-2", 2.0, "4、5"]');

@@ -121,3 +121,16 @@ test("a reply cut off mid-way keeps what had arrived", async () => {
   assert.doesNotMatch(board.get().error, /摘要/);
   assert.deepEqual(board.get().raw, { thinking: "想", text: '{"topics":[' });
 });
+
+test("a reply cut off after whole topics still makes a board from them", async () => {
+  rows = [article(7), article(8)];
+  const call = waitCall();
+  refreshBoard();
+  const live = await call;
+  live.onChunk('{"topics":[{"title":"甲","gist":"g","summary":"s","articles":[1]},{"title":"乙","articles":[2');
+  live.reject(Object.assign(new Error("AI 响应意外中断，请重新生成。"), { code: "INCOMPLETE_STREAM" }));
+  await tick(); await tick();
+  assert.equal(board.get().status, "done");
+  assert.deepEqual(board.get().topics.map((topic) => topic.title), ["甲"]);
+});
+

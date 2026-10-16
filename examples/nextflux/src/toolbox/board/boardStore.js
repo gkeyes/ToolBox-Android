@@ -86,6 +86,7 @@ export async function refreshBoard({ onlyIfNew = false } = {}) {
     };
     const later = () => { frame ??= setTimeout(publish, 80); };
     boardStream.set({ sent: articles.map(({ title, feedTitle }) => ({ title, feedTitle })), skipped, thinking: "", text: "" });
+    let topics;
     try {
       await streamChat(topicsMessages(articles), {
         signal: controller.signal,
@@ -93,19 +94,26 @@ export async function refreshBoard({ onlyIfNew = false } = {}) {
         onThink: (chunk) => { thinking += chunk; later(); },
       });
     } catch (error) {
-      // A reply cut off mid-way keeps what had arrived on screen.
-      if ((text || thinking) && error && typeof error === "object") error.raw ??= { thinking, text };
-      throw error;
+      // A reply cut off mid-way still makes a board from the topics that
+      // arrived whole; when none did, what had arrived stays on screen.
+      if (error?.code === "INCOMPLETE_STREAM" && text) {
+        try { topics = parseTopics(text, articles.length); } catch { /* nothing whole arrived */ }
+      }
+      if (!topics) {
+        if ((text || thinking) && error && typeof error === "object") error.raw ??= { thinking, text };
+        throw error;
+      }
     } finally {
       clearTimeout(frame);
       publish();
     }
     if (!live()) return;
-    let topics;
-    try { topics = parseTopics(text, articles.length); } catch (error) {
-      // Keep what the AI said on screen so the reader can see why.
-      error.raw = { thinking, text };
-      throw error;
+    if (!topics) {
+      try { topics = parseTopics(text, articles.length); } catch (error) {
+        // Keep what the AI said on screen so the reader can see why.
+        error.raw = { thinking, text };
+        throw error;
+      }
     }
     boardStream.set(null);
     stopDigest();
