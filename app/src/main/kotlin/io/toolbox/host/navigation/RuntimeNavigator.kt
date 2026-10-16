@@ -5,6 +5,8 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import io.toolbox.host.HostTrace
@@ -14,7 +16,7 @@ import top.yukonga.miuix.kmp.nav.core.NavKey
 
 /**
  * Opens, leaves and reopens tools on the secondary [stack], driving the composed [transition].
- * ToolBoxNavigation sets [transition] on every composition; the decisions read the live stack.
+ * [rememberRuntimeNavigator] sets [transition] on every composition; the decisions read the live stack.
  */
 @Stable
 internal class RuntimeNavigator(
@@ -92,11 +94,31 @@ internal class RuntimeNavigator(
         }
     }
 
+    /** The runtime cancelled the exit the reopen asked about: Back leaves the tool again. */
+    fun reopenHandled() {
+        transition.reopenRequested = false
+    }
+
     /** A tool restored mid-return (rotation) finishes the return: its route comes off. */
     fun finishInterruptedReturn() {
         val current = transition
         if (current.returnInterrupted && stack.lastOrNull() == current.route) stack.removeLastOrNull()
     }
+}
+
+/**
+ * The navigator for the tool on top of [stack] ([runtimeRoute]), with its transition and the
+ * effects that drive it. ToolBoxNavigation and the tests compose the same wiring through this.
+ */
+@Composable
+internal fun rememberRuntimeNavigator(stack: MutableList<NavKey>, runtimeRoute: RuntimeRoute?): RuntimeNavigator {
+    val scope = rememberCoroutineScope()
+    val navigator = remember(stack, scope) { RuntimeNavigator(stack, scope) }
+    val transition = rememberRuntimeTransition(runtimeRoute, navigator.generation)
+    navigator.transition = transition
+    LaunchedEffect(transition) { navigator.finishInterruptedReturn() }
+    RuntimeTransitionEffects(transition)
+    return navigator
 }
 
 /** The entry and cover hand-off for [transition]: what runs once the cover is in place. */
