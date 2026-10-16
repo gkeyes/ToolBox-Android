@@ -37,13 +37,13 @@ export function arrivedAt(row, now = Date.now()) {
 // Unread articles that arrived since local midnight, newest first, from feeds
 // the list would show. With `hideDuplicates`, later copies of a title or
 // original URL are left out as in the article lists (the newest copy stays).
-export function todaysUnread(rows, { now = new Date(), isVisibleFeed = () => true, hideDuplicates = false } = {}) {
+export function todaysUnread(rows, { now = new Date(), isVisibleFeed = () => true, hideDuplicates = false, duplicateMatch = "either" } = {}) {
   const since = startOfDay(now).getTime();
   const at = now.getTime();
   const today = rows
     .filter((row) => row?.status === "unread" && isVisibleFeed(row.feedId) && arrivedAt(row, at) >= since)
     .sort((a, b) => arrivedAt(b, at) - arrivedAt(a, at) || b.id - a.id);
-  return dedupeArticles(today, { enabled: hideDuplicates });
+  return dedupeArticles(today, { enabled: hideDuplicates, match: duplicateMatch });
 }
 
 // Preview text is already plain text; only tidy its whitespace.

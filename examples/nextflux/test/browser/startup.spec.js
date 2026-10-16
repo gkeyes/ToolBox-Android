@@ -590,3 +590,39 @@ for (const [width, scale] of [[320, 2], [320, 1], [390, 1.3]]) test(`sidebar unr
     expect(gap.label, `${count}`).toBeLessThanOrEqual(gap.badge - 4);
   }
 });
+
+// Settings › General: 查重方式 sits under 隐藏重复条目 and is offered only
+// while that is on (NextFlux 1.19.0).
+test("查重方式 picks title, URL or both, and hides with 隐藏重复条目 off", async ({ page }) => {
+  const pageErrors = [];
+  page.on("pageerror", (error) => pageErrors.push(error.message));
+  await page.setViewportSize({ width: 393, height: 850 });
+  await installNativeBoundary(page, {
+    auth: {
+      serverUrl: "https://miniflux.xiaochen.win", username: "layout-test-user", password: "", userId: 7,
+      token: "fixed-synthetic-test-token", authType: "token",
+    },
+    settings: { ...STORED_SETTINGS, syncInterval: "0" },
+    cacheRoot: {
+      version: 3, revision: 1, account: { serverUrl: "https://miniflux.xiaochen.win", userId: "7" },
+      transaction: null, lastSyncTime: null,
+      tables: { articles: null, feeds: null, categories: null, feedIcons: null },
+    },
+  });
+  await page.goto(PRODUCTION_URL);
+  await expect(page.locator(".article-list-inline-tabs .tabs__list")).toBeVisible();
+  await page.evaluate(async () => (await import("/src/stores/modalStore.js")).settingsModalOpen.set(true));
+  const dialog = page.getByRole("dialog");
+  await dialog.getByRole("button", { name: /常规|General/ }).first().click();
+  const row = dialog.getByRole("button", { name: /查重方式/ });
+  await expect(row).toBeVisible();
+  await expect(row).toContainText("同时");
+  await row.click();
+  await page.getByRole("menuitemradio", { name: "标题" }).or(page.getByRole("menuitem", { name: "标题" })).or(page.getByRole("option", { name: "标题" })).first().click();
+  await expect(row).toContainText("标题");
+  expect(await page.evaluate(async () => (await import("/src/stores/settingsStore.js")).settingsState.get().duplicateMatch)).toBe("title");
+  await expect(dialog.getByText("标题完全相同的文章只显示第一条")).toBeVisible();
+  await page.evaluate(async () => (await import("/src/stores/settingsStore.js")).updateSettings({ hideDuplicateArticles: false }));
+  await expect(row).toHaveCount(0);
+  expect(pageErrors).toEqual([]);
+});

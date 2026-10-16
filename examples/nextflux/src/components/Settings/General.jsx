@@ -11,6 +11,7 @@ import {
   FolderOpen,
   RefreshCw,
   CalendarDays,
+  ScanSearch,
 } from "lucide-react";
 import { useStore } from "@nanostores/react";
 import {
@@ -34,6 +35,7 @@ export default function General() {
     defaultExpandCategory,
     showUnreadByDefault,
     hideDuplicateArticles,
+    duplicateMatch,
   } = useStore(settingsState);
   const { t } = useTranslation();
   return (
@@ -135,7 +137,7 @@ export default function General() {
         />
         <SwitchItem
           label={t("settings.general.hideDuplicateArticles")}
-          description={t("settings.general.hideDuplicateArticlesDescription")}
+          description={t(`settings.general.hideDuplicateArticlesDescription${{ title: "Title", url: "Url" }[duplicateMatch] ?? ""}`)}
           icon={
             <SettingIcon variant="blue">
               <CopyMinus />
@@ -144,6 +146,23 @@ export default function General() {
           settingName="hideDuplicateArticles"
           settingValue={hideDuplicateArticles}
         />
+        {hideDuplicateArticles !== false && (
+          <SelItem
+            label={t("settings.general.duplicateMatch")}
+            icon={
+              <SettingIcon variant="blue">
+                <ScanSearch />
+              </SettingIcon>
+            }
+            settingName="duplicateMatch"
+            settingValue={duplicateMatch || "either"}
+            options={[
+              { value: "title", label: t("settings.general.duplicateMatchTitle") },
+              { value: "url", label: t("settings.general.duplicateMatchUrl") },
+              { value: "either", label: t("settings.general.duplicateMatchEither") },
+            ]}
+          />
+        )}
         <SwitchItem
           label={t("settings.general.markAsReadOnScroll")}
           icon={

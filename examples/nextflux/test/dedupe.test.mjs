@@ -2,11 +2,48 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { dedupeArticles } from "../src/toolbox/dedupe.mjs";
 import { createArticleCache } from "../src/toolbox/cache.js";
-import { readFileSync } from "node:fs";
 import { atom } from "nanostores";
 import { createPublishCounts } from "../src/stores/count-merge.mjs";
 
 const ids = (rows) => rows.map((row) => row.id);
+
+test("查重方式 picks the fields: title only, URL only, or either", () => {
+  const rows = [
+    { id: 1, title: "同一篇", url: "https://a.example/1" },
+    { id: 2, title: "同一篇", url: "https://b.example/2" },
+    { id: 3, title: "另一篇", url: "https://a.example/1" },
+    { id: 4, title: "第四篇", url: "https://d.example/4" },
+  ];
+  assert.deepEqual(ids(dedupeArticles(rows, { match: "title" })), [1, 3, 4]);
+  assert.deepEqual(ids(dedupeArticles(rows, { match: "url" })), [1, 2, 4]);
+  assert.deepEqual(ids(dedupeArticles(rows, { match: "either" })), [1, 4]);
+  // Missing or unknown settings keep the either rule.
+  assert.deepEqual(ids(dedupeArticles(rows)), [1, 4]);
+  assert.deepEqual(ids(dedupeArticles(rows, { match: "bogus" })), [1, 4]);
+});
+
+test("the sidebar counts and the list follow 查重方式", async () => {
+  const account = { serverUrl: "https://miniflux.example", userId: "7" };
+  const syncedAt = "2026-10-16T03:30:00.000Z";
+  const at = (minute) => `2026-10-16T03:${String(minute).padStart(2, "0")}:00.000Z`;
+  const entry = (id, title, url, minute) => ({ id, feedId: 1, title, url, content: "<p>正文</p>", enclosures: [],
+    status: "unread", starred: 0, published_at: at(minute), changed_at: syncedAt });
+  const cache = createArticleCache(memoryStorage(), { autoGc: false, tokenPrefix: "dedupe-match" });
+  const token = await cache.prepareSync({ account, syncedAt });
+  await cache.applySyncBatch(token, [entry(1, "同一篇", "https://a.example/1", 10), entry(2, "同一篇", "https://b.example/2", 9),
+    entry(3, "另一篇", "https://a.example/1", 8), entry(4, "第四篇", "https://d.example/4", 7)]);
+  await cache.commitSync(token, { feeds: [{ id: 1, title: "甲" }], categories: [] });
+  const view = (match) => ({ hideDuplicates: true, match, field: "published_at", direction: "desc", feedIds: [1] });
+  assert.equal((await cache.counts([1], view("title"))).unread[1], 3);
+  assert.equal((await cache.counts([1], view("url"))).unread[1], 3);
+  assert.equal((await cache.counts([1], view("either"))).unread[1], 2);
+  for (const [match, shown] of [["title", [1, 3, 4]], ["url", [1, 2, 4]], ["either", [1, 4]]]) {
+    const query = await cache.openQuery({ feedIds: [1], filter: "all", field: "published_at", direction: "desc", pageSize: 10,
+      hideDuplicates: true, duplicateFeedIds: [1], duplicateMatch: match });
+    assert.equal(query.total, shown.length, match);
+    assert.deepEqual(ids((await cache.readQueryPage(query.queryId, 1)).items), shown, match);
+  }
+});
 
 test("same title with a different URL is a duplicate", () => {
   const rows = [
@@ -208,9 +245,8 @@ test("after reading or starring, the sidebar counts leave out globally hidden fe
   const feeds = [{ id: 1, title: "甲" }, { id: 2, title: "乙", hide_globally: true }];
   await cache.commitSync(token, { feeds, categories: [] });
   const view = { hideDuplicates: true, field: "published_at", direction: "desc", feedIds: [1] };
-  // The sidebar's own merge, on stores loaded with only the visible feed 甲.
-  const source = readFileSync(new URL("../src/stores/articlesStore.js", import.meta.url), "utf8");
-  assert.match(source, /const publishCounts = \(counts\) => \(countPublisher \?\?= createPublishCounts\(\{ unreadCounts, starredCounts, feeds: feedList, settings: settingsState \}\)\)\(counts\)/);
+  // The merge on stores loaded with only the visible feed 甲. That
+  // articlesStore uses it is checked in articles-store-counts.test.mjs.
   const unreadCounts = atom({ 1: 2 });
   const starredCounts = atom({ 1: 0 });
   const settings = atom({ showHiddenFeeds: false });
