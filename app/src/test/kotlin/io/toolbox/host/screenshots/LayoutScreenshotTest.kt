@@ -113,6 +113,7 @@ import io.toolbox.core.ui.component.ToolBoxNavigationItem
 import io.toolbox.core.ui.component.rememberToolBoxGlassState
 import io.toolbox.core.ui.component.toolBoxBackdropSource
 import androidx.compose.ui.test.getBoundsInRoot
+import androidx.compose.ui.test.onAllNodesWithTag
 
 /**
  * Renders the main host screens on a narrow phone (320dp) at normal and the largest font size,
@@ -328,8 +329,10 @@ class LayoutScreenshotTest(private val fontScale: Float) {
      */
     @Test fun tabBarStandIn() {
         render("tab_bar_standin") { TabBars() }
-        val live = (0..2).map { compose.onNodeWithTag("live-$it", useUnmergedTree = true).getBoundsInRoot() }
-        val standIn = (0..2).map { compose.onNodeWithTag("standin-$it", useUnmergedTree = true).getBoundsInRoot() }
+        // Kyant also lays the tabs out a second time, invisibly, for the lens's accent copy: same bounds.
+        fun bounds(tag: String) = compose.onAllNodesWithTag(tag, useUnmergedTree = true).onFirst().getBoundsInRoot()
+        val live = (0..2).map { bounds("live-$it") }
+        val standIn = (0..2).map { bounds("standin-$it") }
         val dy = standIn[0].top - live[0].top
         live.zip(standIn).forEachIndexed { index, (a, b) ->
             assertEquals("tab $index left", a.left.value, b.left.value, 0.5f)
