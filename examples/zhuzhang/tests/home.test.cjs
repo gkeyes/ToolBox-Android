@@ -312,10 +312,10 @@ test('1.9.0 · block plans: old templates turn into blocks with the same rooms; 
   assert.equal(HM.nextName('公卫', new Set(['公卫', '公卫2'])), '公卫3');
 });
 
-test('1.9.0 · 拼户型 is wired in: the editor ships, 户型 opens it, renamed bathrooms carry their records', () => {
-  assert.match(read('home3d.js'), /import \{ createPlanEditor \} from '\.\/plan-editor\.js'/);
+test('1.9.0 · 拼户型 is wired in: the editor ships in home3d.js, 户型 opens it, renamed bathrooms carry their records', () => {
+  assert.match(read('home3d.js'), /function createPlanEditor\(/);
   assert.match(read('home3d.js'), /a === 'layout'\) \{ setMode\('normal'\); editor\.open\(T\); \}/);
-  assert.match(read('plan-editor.js'), /addEventListener\('touchstart'/, 'touch drives the drags');
+  assert.match(read('home3d.js').slice(read('home3d.js').indexOf('function createPlanEditor(')), /addEventListener\('touchstart'/, 'touch drives the drags');
   assert.match(read('app.js'), /saveHome:\(home,renames=\[\]\)=>homeWrite\(next=>\{next\.project\.home=home;const to=new Map\(renames\);/);
   assert.match(read('app.js'), /HM\.roomNames\(planRects\(data\)\)/, 'the plan\'s rooms are offered as 所在空间');
 });
@@ -371,7 +371,7 @@ test('1.4.0 ships 我的家 as a lazily imported module with vendored three.js',
   assert.match(read('vendor/LICENSE'), /MIT License/);
   assert.ok(html.indexOf('home-model.js') < html.indexOf('app.js'), 'the model loads before app.js validates');
   const entries = read('package.sh');
-  for (const f of ['home-model.js', 'home3d.js', 'plan-editor.js', 'vendor/three.module.min.js', 'vendor/LICENSE']) assert.ok(entries.includes(f), f);
+  for (const f of ['home-model.js', 'home3d.js', 'vendor/three.module.min.js', 'vendor/LICENSE']) assert.ok(entries.includes(f), f);
   assert.match(read('home3d.js'), /mapSize\.set\(1024, 1024\)/);
   assert.match(read('home3d.js'), /Math\.min\(window\.devicePixelRatio \|\| 1, 2\)/);
   assert.ok(!/PointLight/.test(read('home3d.js')), 'no point lights: the night glow is emissive');
