@@ -775,3 +775,13 @@ fieldset, .fieldset { min-inline-size: 0; max-inline-size: 100%; }
 }
 .article-list-tabs .tabs__tab[data-selected="true"] .article-tab-count { color: var(--accent); }
 :is(.article-list-inline-tabs, .article-list-scoped-tabs):is([data-fit="small"], [data-fit="minimal"]) .article-tab-label .article-tab-count { font-size: 0.625rem; }
+
+/* The sync caption floats just under the header instead of growing it: a
+   taller header changed --list-header-h and pushed the whole list down 30px
+   each time a sync started, then pulled it back up when it ended. */
+.article-list-caption-row {
+  position: absolute;
+  inset-inline: 0;
+  inset-block-start: 100%;
+  pointer-events: none;
+}

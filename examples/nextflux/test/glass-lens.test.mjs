@@ -43,3 +43,9 @@ test("buttons grow into glass on press instead of shrinking", () => {
   assert.match(source("render.jsx"), /\ninstallGlassPress\(\);\n/);
   assert.doesNotMatch(source("components/Settings/Settings.jsx"), /size-10 min-w-10/);
 });
+
+// Scrolling swaps the edge lens for the same blur without bending.
+test("the edge lens pauses while the page scrolls", () => {
+  assert.match(source("design/lens.js"), /doc\.addEventListener\("scroll", onScroll, \{ capture: true, passive: true \}\)/);
+  assert.match(source("design/lens-host.css"), /:root\[data-nf-scrolling\] \[style\*="--nf-lens"\] \{ --nf-lens: blur\(0px\) !important; \}/);
+});
