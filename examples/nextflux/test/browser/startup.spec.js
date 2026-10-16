@@ -484,20 +484,38 @@ test("sidebar icon style switches the tiles and the board shows new and writing"
     board.set({ ...board.get(), updating: true });
   });
   await expect(boardTile).toHaveAttribute("data-state", "working");
-  expect(await boardTile.evaluate((el) => getComputedStyle(el.querySelector(".nf-sb-fx"), "::before").animationName)).toContain("nf-sb-c-fill");
-  // Moves only by transform, and holds still while the phone sidebar is closed.
-  const wave = () => boardTile.evaluate((el) => {
-    const fx = getComputedStyle(el.querySelector(".nf-sb-fx"), "::before");
-    return { top: fx.top, state: fx.animationPlayState };
+  expect(await boardTile.evaluate((el) => getComputedStyle(el.querySelector(".nf-sb-wave")).animationName)).toContain("nf-sb-c-fill");
+  // The moving parts animate whole elements, so no set lays the page out on
+  // every frame (Chrome does for animated shapes inside an <svg>).
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send("Performance.enable");
+  const layouts = async () => (await cdp.send("Performance.getMetrics")).metrics.find((m) => m.name === "LayoutCount").value;
+  for (const style of ["a", "b", "c"]) {
+    await setStyle(style);
+    await expect(boardTile).toHaveAttribute("data-state", "working");
+    await page.waitForTimeout(300);
+    const before = await layouts();
+    await page.waitForTimeout(1000);
+    expect(await layouts() - before, `set ${style}`).toBeLessThan(6);
+  }
+  // Holds still while the phone sidebar is closed, and moves again once it opens.
+  const wave = () => boardTile.evaluate((el) => getComputedStyle(el.querySelector(".nf-sb-wave"), "::before").animationPlayState);
+  expect(await wave()).toBe("running");
+  const panel = page.locator(".sidebar-mobile-panel");
+  await panel.evaluate((el) => el.setAttribute("data-open", "false"));
+  expect(await wave()).toBe("paused");
+  await panel.evaluate((el) => el.setAttribute("data-open", "true"));
+  expect(await wave()).toBe("running");
+  // Same for the folded sidebar on wider screens.
+  await boardTile.evaluate((el) => {
+    const host = document.createElement("div");
+    host.setAttribute("data-state", "collapsed");
+    host.className = "nf-test-collapsed sidebar-row";
+    const copy = el.cloneNode(true);
+    host.append(copy);
+    document.body.append(host);
   });
-  expect(await wave()).toEqual({ top: "0px", state: "running" });
-  const closedState = await boardTile.evaluate((el) => {
-    const panel = el.closest(".sidebar-mobile-panel");
-    panel.setAttribute("data-open", "false");
-    const state = getComputedStyle(el.querySelector(".nf-sb-fx"), "::before").animationPlayState;
-    panel.setAttribute("data-open", "true");
-    return state;
-  });
-  expect(closedState).toBe("paused");
+  expect(await page.locator(".nf-test-collapsed .nf-sb-wave").evaluate((el) => getComputedStyle(el, "::before").animationPlayState)).toBe("paused");
+  await page.evaluate(() => document.querySelector(".nf-test-collapsed").remove());
   expect(pageErrors).toEqual([]);
 });

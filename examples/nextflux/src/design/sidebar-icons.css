@@ -15,6 +15,10 @@
   overflow: visible;
   stroke-width: 2;
 }
+/* A glyph's moving parts: an <svg> laid exactly over the glyph (64% of the
+   tile, centred), animated as a whole so only the compositor works. */
+.sidebar-row .sidebar-row-icon.nf-sb > .nf-sb-layer { position: absolute; inset: 18%; z-index: 2; display: block; pointer-events: none; }
+.nf-sb-layer svg, .nf-sb-sun { display: block; inline-size: 100%; block-size: 100%; overflow: visible; color: inherit; stroke-width: 2; }
 .nf-sb .nf-sb-fx { position: absolute; inset: 0; border-radius: inherit; overflow: hidden; z-index: 1; pointer-events: none; }
 .nf-sb.is-new::after {
   content: "";
@@ -40,10 +44,13 @@
 .sidebar-row .nf-sb-a[data-k="all"]     { background: linear-gradient(165deg, #5BD6C9 0%, #20A9A0 55%, #138A86 100%); }
 .sidebar-row .nf-sb-a[data-k="board"]   { background: linear-gradient(160deg, #FFB547 0%, #FF7A59 48%, #F2477E 100%); }
 .nf-sb-a.is-new { --nf-sb-dot: #2F6BD8; }
-.nf-sb-a.is-gen .sun { animation: nf-sb-a-rise 2.6s cubic-bezier(.45,0,.25,1) infinite; transform-box: view-box; }
-.nf-sb-a.is-gen .rays { animation: nf-sb-a-rays 2.6s ease-in-out infinite; }
+/* The glyph's horizon line is at y 16 of 24: the sun shows only above it. */
+.nf-sb-horizon { clip-path: inset(0 0 33.75% 0); }
+.nf-sb-a.is-gen .nf-sb-sun { animation: nf-sb-a-rise 2.6s cubic-bezier(.45,0,.25,1) infinite; }
+.nf-sb-a.is-gen .nf-sb-rays { animation: nf-sb-a-rays 2.6s ease-in-out infinite; }
 .nf-sb-a.is-gen .nf-sb-fx { background: radial-gradient(circle at 50% 100%, rgb(255 255 255 / 0.35), transparent 60%); animation: nf-sb-a-glow 2.6s ease-in-out infinite; }
-@keyframes nf-sb-a-rise { 0% { transform: translateY(6px); } 55%, 80% { transform: translateY(0); } 100% { transform: translateY(6px); } }
+/* 25% of the glyph is 6 of its 24 units. */
+@keyframes nf-sb-a-rise { 0% { transform: translateY(25%); } 55%, 80% { transform: translateY(0); } 100% { transform: translateY(25%); } }
 @keyframes nf-sb-a-rays { 0%, 30% { opacity: 0; } 60%, 80% { opacity: 1; } 100% { opacity: 0; } }
 @keyframes nf-sb-a-glow { 0%, 100% { opacity: 0.2; } 60% { opacity: 1; } }
 
@@ -67,7 +74,10 @@
 .sidebar-row .nf-sb-b[data-k="all"]     { background: linear-gradient(150deg, #6D7A90, #343C4D); --nf-sb-sh: rgb(52 60 77 / 0.5); }
 .sidebar-row .nf-sb-b[data-k="board"]   { background: linear-gradient(145deg, #4B46E8 0%, #6A3BE4 50%, #9B3FE0 100%); --nf-sb-sh: rgb(106 59 228 / 0.55); }
 .nf-sb-b.is-new { --nf-sb-dot: #FFC53D; }
-.nf-sb-b.is-gen .spk { animation: nf-sb-b-twinkle 1.8s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+/* Each sparkle turns about its own centre: (19, 5.2) for B, (10.4, 13.4) for C. */
+.nf-sb-spk-b { transform-origin: 79.2% 21.7%; }
+.nf-sb-spk-c { transform-origin: 43.3% 55.8%; }
+.nf-sb-b.is-gen .nf-sb-spk { animation: nf-sb-b-twinkle 1.8s ease-in-out infinite; }
 .nf-sb-b.is-gen .nf-sb-fx::before {
   content: "";
   position: absolute;
@@ -113,7 +123,11 @@
 }
 .nf-sb-c.is-new { --nf-sb-dot: rgb(var(--nf-sb-t)); }
 .nf-sb-c.is-new::after { box-shadow: 0 0 0 2px var(--nf-sb-card, var(--surface, #fff)), 0 0 8px rgb(var(--nf-sb-t) / 0.7); }
-.nf-sb-c.is-gen .nf-sb-fx::before {
+/* The wave: its box rises and falls (eased), and the rounded square inside
+   it spins at a steady rate, as in the draft. */
+.nf-sb .nf-sb-wave { position: absolute; inset: 0; display: none; }
+.nf-sb-c.is-gen .nf-sb-wave { display: block; transform: translateY(62%); animation: nf-sb-c-fill 4.5s ease-in-out infinite; }
+.nf-sb-c.is-gen .nf-sb-wave::before {
   content: "";
   position: absolute;
   inline-size: 200%;
@@ -122,27 +136,26 @@
   top: 0;
   border-radius: 43%;
   background: rgb(var(--nf-sb-t) / 0.30);
-  transform: translateY(31%);
-  animation: nf-sb-c-fill 4.5s ease-in-out infinite;
+  animation: nf-sb-c-spin 4.5s linear infinite;
 }
-.nf-sb-c.is-gen .spk { animation: nf-sb-c-pulse 1.5s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
-/* The level is a fraction of the tile; the wave is 2× the tile, so 42.5% of
-   its own height is 85% of the tile. */
-@keyframes nf-sb-c-fill {
-  0% { transform: translateY(42.5%) rotate(0deg); }
-  70% { transform: translateY(11%) rotate(252deg); }
-  100% { transform: translateY(42.5%) rotate(360deg); }
-}
+.nf-sb-c.is-gen .nf-sb-spk { animation: nf-sb-c-pulse 1.5s ease-in-out infinite; }
+/* The level, as a share of the tile: 85% at the bottom, 22% at the top. */
+@keyframes nf-sb-c-fill { 0% { transform: translateY(85%); } 70% { transform: translateY(22%); } 100% { transform: translateY(85%); } }
+@keyframes nf-sb-c-spin { to { transform: rotate(360deg); } }
 @keyframes nf-sb-c-pulse { 0%, 100% { transform: scale(0.8); opacity: 0.6; } 50% { transform: scale(1.12); opacity: 1; } }
 
 @media (prefers-reduced-motion: reduce) {
-  .nf-sb *, .nf-sb .nf-sb-fx::before { animation: none !important; }
-  .nf-sb-a.is-gen .sun { transform: translateY(3px); }
+  .nf-sb *, .nf-sb *::before { animation: none !important; }
+  .nf-sb-a.is-gen .nf-sb-sun { transform: translateY(12.5%); }
   .nf-sb-b.is-gen .nf-sb-fx::before { transform: translateX(65%); }
-  .nf-sb-c.is-gen .nf-sb-fx::before { transform: translateY(22.5%); }
+  .nf-sb-c.is-gen .nf-sb-wave { transform: translateY(45%); }
 }
-html[data-reduce-motion="true"] .nf-sb *, html[data-reduce-motion="true"] .nf-sb .nf-sb-fx::before { animation: none !important; }
+html[data-reduce-motion="true"] .nf-sb *, html[data-reduce-motion="true"] .nf-sb *::before { animation: none !important; }
 
 /* A closed phone sidebar is only moved off-screen: its tiles stop moving. */
+/* A closed sidebar only moves off-screen (phone) or folds away (wider
+   screens): its tiles stop moving. */
 .sidebar-mobile-panel[data-open="false"] .nf-sb *,
-.sidebar-mobile-panel[data-open="false"] .nf-sb .nf-sb-fx::before { animation-play-state: paused !important; }
+.sidebar-mobile-panel[data-open="false"] .nf-sb *::before,
+[data-state="collapsed"] .nf-sb *,
+[data-state="collapsed"] .nf-sb *::before { animation-play-state: paused !important; }
