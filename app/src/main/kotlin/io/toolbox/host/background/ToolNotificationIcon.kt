@@ -14,8 +14,8 @@ import io.toolbox.host.R
  * and there the tool icon must stay the large icon.
  */
 internal fun isMiuiNotificationShade(
-    property: (String) -> String? = ::systemProperty,
     incremental: String = Build.VERSION.INCREMENTAL.orEmpty(),
+    property: (String) -> String? = ::systemProperty,
 ): Boolean {
     val values = MIUI_VERSION_PROPERTIES.map(property)
     if (values.any { !it.isNullOrBlank() }) return true
