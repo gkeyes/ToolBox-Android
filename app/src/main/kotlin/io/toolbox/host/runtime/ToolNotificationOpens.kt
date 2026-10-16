@@ -1,17 +1,17 @@
 package io.toolbox.host.runtime
 
-import io.toolbox.tool.runtime.MAX_NOTIFICATION_ID_LENGTH
+import android.os.SystemClock
 import io.toolbox.tool.runtime.RpcValue
 import java.util.concurrent.CopyOnWriteArraySet
 
 internal data class ToolNotificationOpen(
     val notificationId: String,
     val openedAt: Long,
-    /** Monotonic tap time for expiry; [openedAt] is wall-clock time for the tool and can jump. */
+    /** Tap time on the boot clock (counts deep sleep) for expiry; [openedAt] is wall-clock time and can jump. */
     val tappedAtMonotonic: Long = openedAt,
 )
 
-private fun monotonicMillis(): Long = System.nanoTime() / 1_000_000
+private fun monotonicMillis(): Long = SystemClock.elapsedRealtime()
 
 /**
  * Taps on a tool's own notifications, kept until the tool's page has loaded and received them as
@@ -32,8 +32,6 @@ internal object ToolNotificationOpens {
         openedAt: Long = System.currentTimeMillis(),
         tappedAtMonotonic: Long = monotonicMillis(),
     ) {
-        // notifications.post caps ids, so a longer one didn't come from a tool's notification.
-        if (notificationId.length > MAX_NOTIFICATION_ID_LENGTH) return
         synchronized(pending) {
             val opens = pending.getOrPut(toolId, ::mutableListOf)
             // A second tap on the same notification before the page loaded is one open.

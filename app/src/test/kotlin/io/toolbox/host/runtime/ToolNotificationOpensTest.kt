@@ -4,7 +4,10 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Before
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
 
+@RunWith(RobolectricTestRunner::class)
 class ToolNotificationOpensTest {
     @Before @After fun reset() = ToolNotificationOpens.resetForTest()
 
@@ -65,14 +68,12 @@ class ToolNotificationOpensTest {
         assertEquals(listOf("new"), delivered)
     }
 
-    @Test fun discardedAndOversizedTapsAreNeverDelivered() {
+    @Test fun discardedTapsAreNeverDelivered() {
         ToolNotificationOpens.record("tool.a", "n1", openedAt = 1)
         ToolNotificationOpens.discard("tool.a")
-        ToolNotificationOpens.record("tool.b", "x".repeat(257), openedAt = 1)
 
         val delivered = mutableListOf<String>()
         ToolNotificationOpens.deliver("tool.a", now = 10) { delivered += it.notificationId; true }
-        ToolNotificationOpens.deliver("tool.b", now = 10) { delivered += it.notificationId; true }
 
         assertEquals(emptyList<String>(), delivered)
     }
