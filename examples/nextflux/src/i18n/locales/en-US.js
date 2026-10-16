@@ -268,6 +268,8 @@ export default {
       markAsReadOnScroll: "Mark as read on scroll",
       showUnreadByDefault: "Show unread articles by default",
       showUnreadByDefaultDescription: "Refresh the page for changes to take effect",
+      hideDuplicateArticles: "Hide duplicate entries",
+      hideDuplicateArticlesDescription: "Articles with the exact same title or original link are shown only once",
     },
     appearance: {
       title: "Appearance",

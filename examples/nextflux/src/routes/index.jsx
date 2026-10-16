@@ -4,6 +4,7 @@ import ArticleList from "@/components/ArticleList/ArticleList";
 import LoginPage from "@/pages/LoginPage";
 import ErrorPage from "@/pages/ErrorPage";
 import ProtectedRoute from "@/components/ProtectedRoute";
+import BoardPage from "@/components/Board/BoardPage.jsx";
 
 export const router = createHashRouter(
   [
@@ -44,6 +45,14 @@ export const router = createHashRouter(
         {
           path: "article/:articleId",
           element: <ArticleList />,
+        },
+        {
+          path: "board",
+          element: <BoardPage />,
+        },
+        {
+          path: "board/article/:articleId",
+          element: <BoardPage />,
         },
       ],
     },

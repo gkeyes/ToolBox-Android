@@ -1,117 +1,44 @@
-/* 今日看板: the button beside the tabs, the panel under the top bar and its sheet. */
-.article-list-header .article-board-button {
-  position: relative;
-  flex: 0 0 44px;
-  display: inline-flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 0;
-  inline-size: 44px;
-  min-inline-size: 44px;
-  max-inline-size: 44px;
-  block-size: 44px;
-  min-block-size: 44px;
-  max-block-size: 44px;
-  padding: 0;
-  border-radius: 50%;
-  line-height: 1.1;
-  color: var(--accent);
-}
-/* A 44px circle like the sidebar button. Open, it stays glass and only takes
-   an accent tint, so it never turns into a large solid blue pill. */
-.article-list-header .article-board-button[aria-expanded="true"] {
-  --nf-btn-glass: color-mix(in srgb, var(--accent) 16%, var(--nf-glass, var(--surface)));
-}
-.article-board-button-icon { display: grid; place-items: center; inline-size: 1rem; block-size: 1rem; }
-.article-board-button-label { font-size: 0.625rem; font-weight: 600; white-space: nowrap; }
-.article-board-button[data-label="hidden"] .article-board-button-label { position: absolute; visibility: hidden; }
-/* The new-board dot sits inside the circle (a corner of the box would be outside it). */
-.article-board-badge {
+/* 今日看板: its own page (#/board), opened from the sidebar. */
+.nf-board-side-icon { position: relative; display: inline-flex; color: var(--accent); }
+.nf-board-side-badge {
   position: absolute;
-  inset-block-start: 7px;
-  inset-inline-end: 9px;
+  inset-block-start: -2px;
+  inset-inline-end: -3px;
   inline-size: 7px;
   block-size: 7px;
   border-radius: 50%;
   background: var(--danger, #e8613d);
   pointer-events: none;
 }
-/* While the board is made, a ring takes the icon's place inside the button. */
-.article-board-spinner {
-  inline-size: 14px;
-  block-size: 14px;
+.nf-board-side-badge.is-working {
+  inline-size: 9px;
+  block-size: 9px;
   box-sizing: border-box;
-  border-radius: 50%;
+  background: none;
   border: 2px solid color-mix(in srgb, currentColor 25%, transparent);
   border-top-color: currentColor;
   animation: nf-board-spin 0.8s linear infinite;
 }
-@keyframes nf-board-spin { to { transform: rotate(360deg); } }
-@media (prefers-reduced-motion: reduce) {
-  .article-board-spinner, .nf-board-spinner { animation-duration: 1.8s; }
-}
-
-.nf-board-panel {
-  margin: 0 16px 8px;
-  padding: 14px 16px;
-  border-radius: 26px;
-  background: var(--surface);
-  box-shadow: 0 1px 2px rgb(0 0 0 / 0.04), 0 6px 18px rgb(0 0 0 / 0.06);
-  max-block-size: min(70vh, 560px);
+.nf-board-page .article-list-caption.is-working { color: var(--accent); }
+.nf-board-page .article-list-actions .nf-board-spinner { inline-size: 18px; block-size: 18px; flex-basis: 18px; color: var(--accent); }
+.nf-board-scroll {
+  flex: 1;
+  min-block-size: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
-}
-.nf-board-head { display: flex; align-items: center; gap: 6px; min-block-size: 32px; }
-.nf-board-head h2 { margin: 0; font-size: 1.0625rem; font-weight: 700; }
-.nf-board-icon { inline-size: 16px; block-size: 16px; color: var(--accent); flex: 0 0 16px; }
-.nf-board-new {
-  padding: 1px 6px;
-  border-radius: 8px;
-  font-size: 0.6875rem;
-  font-weight: 600;
-  color: #fff;
-  background: var(--danger, #e8613d);
-}
-.nf-board-when {
-  margin-inline-start: auto;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 0.75rem;
-  color: var(--ds-text-secondary, var(--muted));
-  font-variant-numeric: tabular-nums;
-}
-.nf-board-when.is-working { color: var(--accent); }
-.nf-board-collapse {
-  margin-inline: auto -6px;
-  inline-size: 32px;
-  block-size: 32px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: 0;
-  padding: 0;
-  background: transparent;
-  color: var(--ds-text-tertiary, var(--muted));
-  border-radius: 50%;
-}
-.nf-board-when + .nf-board-collapse { margin-inline-start: 0; }
-.nf-board-summary { margin: 2px 0 10px; font-size: 0.8125rem; line-height: 1.5; color: var(--ds-text-secondary, var(--muted)); }
-.nf-board-rows.is-stale { opacity: 0.55; }
-.nf-board-row {
+  padding: calc(var(--list-header-h, 120px) + 4px) 16px calc(24px + env(safe-area-inset-bottom, 0px));
   display: flex;
+  flex-direction: column;
   gap: 10px;
-  align-items: flex-start;
-  inline-size: 100%;
-  padding: 10px 0;
-  border: 0;
-  border-block-start: 0.5px solid var(--ds-hairline, rgb(0 0 0 / 0.08));
-  background: transparent;
-  color: inherit;
-  text-align: start;
-  font: inherit;
 }
+.nf-board-cards { display: flex; flex-direction: column; gap: 10px; }
+.nf-board-cards.is-stale { opacity: 0.55; }
+@keyframes nf-board-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .nf-board-side-badge.is-working, .nf-board-spinner { animation-duration: 1.8s; }
+}
+
+.nf-board-summary { margin: 0 4px; font-size: 0.8125rem; line-height: 1.5; color: var(--ds-text-secondary, var(--muted)); }
 .nf-board-rank {
   flex: 0 0 auto;
   min-inline-size: 1.375rem;
@@ -127,9 +54,6 @@
 }
 .nf-board-rank[data-rank="2"] { background: color-mix(in srgb, var(--accent) 78%, #fff); }
 .nf-board-rank:not([data-rank="1"], [data-rank="2"]) { color: var(--ds-on-surface, var(--foreground)); background: color-mix(in srgb, var(--ds-on-surface, var(--foreground)) 10%, transparent); }
-.nf-board-row-text { flex: 1; min-inline-size: 0; }
-.nf-board-row-title { display: block; font-size: 0.9375rem; font-weight: 600; line-height: 1.35; }
-.nf-board-row-gist { display: block; font-size: 0.8125rem; line-height: 1.45; color: var(--ds-text-secondary, var(--muted)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .nf-board-row-count { padding-block-start: 2px; font-size: 0.75rem; color: var(--ds-text-tertiary, var(--muted)); white-space: nowrap; }
 .nf-board-actions { display: flex; gap: 10px; margin-block-start: 8px; }
 /* Large text: the two buttons share the width and wrap their labels inside. */
@@ -157,8 +81,6 @@
 .nf-board-error p, .nf-board-inline-error { margin: 0; flex: 1; font-size: 0.8125rem; line-height: 1.5; color: var(--danger); }
 .nf-board-inline-error { margin-block-end: 6px; }
 
-.nf-board-sheet { display: flex; flex-direction: column; gap: 10px; padding: 0 16px 16px; min-inline-size: 0; }
-.nf-board-sheet .nf-board-summary { margin: 0; }
 .nf-board-card {
   border-radius: 22px;
   padding: 14px 16px;
@@ -202,4 +124,17 @@
   background: color-mix(in srgb, var(--accent) 12%, transparent);
   text-decoration: none;
 }
-.nf-board-chip:active, .nf-board-cite:active { background: color-mix(in srgb, var(--accent) 22%, transparent); }
+/* Chips and source links answer a press like the glass buttons: they grow
+   and glow under the finger, never shrink or grey. */
+.nf-board-chip, .nf-board-cite { transition: scale var(--nf-press-out, 240ms ease-out), box-shadow 160ms ease-out; }
+:is(.nf-board-chip, .nf-board-cite):is(:active, [data-nf-pressed="true"]) {
+  scale: 1.08;
+  background: radial-gradient(circle at var(--nf-gx, 50%) var(--nf-gy, 50%), color-mix(in srgb, var(--accent) 30%, transparent), color-mix(in srgb, var(--accent) 14%, transparent) 70%);
+  box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--accent) 35%, transparent), 0 4px 14px color-mix(in srgb, var(--accent) 28%, transparent);
+  transition: scale var(--nf-press-in, 120ms ease-out), box-shadow 120ms ease-out;
+}
+.nf-board-page .nf-board-card { background: var(--surface); box-shadow: 0 1px 2px rgb(0 0 0 / 0.04); }
+.nf-board-digest h4 { margin: 14px 0 0; font-size: 1.0625rem; font-weight: 700; line-height: 1.4; }
+.nf-board-digest section:first-of-type h4 { margin-block-start: 6px; }
+.nf-board-digest p { font-size: 1.0625rem; line-height: 1.75; }
+.nf-board-card p.nf-board-digest-meta { margin: 0; font-size: 0.8125rem; line-height: 1.5; color: var(--ds-text-secondary, var(--muted)); }

@@ -7,6 +7,7 @@ import {
   CircleDot,
   ClockArrowDown,
   ClockArrowUp,
+  CopyMinus,
   FolderOpen,
   RefreshCw,
   CalendarDays,
@@ -32,6 +33,7 @@ export default function General() {
     syncInterval,
     defaultExpandCategory,
     showUnreadByDefault,
+    hideDuplicateArticles,
   } = useStore(settingsState);
   const { t } = useTranslation();
   return (
@@ -130,6 +132,17 @@ export default function General() {
           }
           settingName="showUnreadByDefault"
           settingValue={showUnreadByDefault}
+        />
+        <SwitchItem
+          label={t("settings.general.hideDuplicateArticles")}
+          description={t("settings.general.hideDuplicateArticlesDescription")}
+          icon={
+            <SettingIcon variant="blue">
+              <CopyMinus />
+            </SettingIcon>
+          }
+          settingName="hideDuplicateArticles"
+          settingValue={hideDuplicateArticles}
         />
         <SwitchItem
           label={t("settings.general.markAsReadOnScroll")}

@@ -18,10 +18,6 @@ export const board = atom({ ...EMPTY });
 export const digest = atom({ status: "idle", text: "", error: "", boardAt: null });
 export const boardOpen = atom(false);
 
-const USED_KEY = "nextflux.board.used";
-const readUsed = () => { try { return localStorage.getItem(USED_KEY) === "1"; } catch { return false; } };
-const markUsed = () => { try { localStorage.setItem(USED_KEY, "1"); } catch { /* per-viewer convenience only */ } };
-
 let run = null;
 let digestRun = null;
 
@@ -32,7 +28,10 @@ async function todaysArticles() {
   const feeds = new Map((await getFeeds())
     .filter((feed) => settings.showHiddenFeeds || !feed.hide_globally)
     .map((feed) => [feed.id, feed]));
-  const rows = todaysUnread(await getCachedArticleMetadata({ filter: "unread" }), { isVisibleFeed: (id) => feeds.has(id) });
+  const rows = todaysUnread(await getCachedArticleMetadata({ filter: "unread" }), {
+    isVisibleFeed: (id) => feeds.has(id),
+    hideDuplicates: settings.hideDuplicateArticles !== false,
+  });
   return rows.map((row) => ({
     id: row.id,
     title: row.titleText || row.title || "",
@@ -111,8 +110,8 @@ function stopDigest() {
 
 export function openBoard(open = !boardOpen.get()) {
   boardOpen.set(open);
-  if (!open) return;
-  markUsed();
+  // Leaving the board clears its "N new articles" note: it has been seen.
+  if (!open) { if (board.get().newCount) board.set({ ...board.get(), newCount: 0 }); return; }
   const state = board.get();
   board.set({ ...state, unseen: false });
   const stale = state.day !== startOfDay().getTime();
@@ -169,12 +168,13 @@ authState.listen((auth) => {
   reset();
 });
 
-// After each sync, bring a board the reader uses up to date with new articles.
+// After each sync, bring a board made this session up to date with new
+// articles. A launch makes none until the board page is opened.
 let wasSyncing = isSyncing.get();
 isSyncing.listen((syncing) => {
   const finished = wasSyncing && !syncing;
   wasSyncing = syncing;
   if (!finished || !authState.get().userId || !aiReady()) return;
-  if (!readUsed() && board.get().status === "idle") return;
+  if (board.get().status === "idle") return;
   refreshBoard({ onlyIfNew: true });
 });

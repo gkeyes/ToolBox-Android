@@ -267,6 +267,8 @@ export default {
       markAsReadOnScroll: "滚动时标记为已读",
       showUnreadByDefault: "默认显示未读文章",
       showUnreadByDefaultDescription: "修改后需要刷新页面才能生效",
+      hideDuplicateArticles: "隐藏重复条目",
+      hideDuplicateArticlesDescription: "标题完全相同或原文链接相同的文章只显示第一条",
     },
     appearance: {
       title: "外观",
