@@ -36,6 +36,7 @@ const defaultValue = {
   interfaceFontSize: "16",
   showIndicator: true,
   floatingSidebar: false,
+  sidebarIconStyle: "a", // classic, a (日出), b (晨报), c (液态玻璃)
   aiApiKey: "",
   aiBaseUrl: "https://api.openai.com/v1",
   aiModel: "gpt-4o-mini",
@@ -49,6 +50,13 @@ const defaultValue = {
   aiPrompt:
     "You are a helpful assistant that summarizes articles concisely. Provide a clear, structured summary in the same language as the article. Format: just plain text, no markdown.",
 };
+
+// Settings › Appearance › Sidebar icons: classic, or one of the three sets from
+// the round-1 draft (A 日出, B 晨报, C 液态玻璃). Unknown values read as A.
+export const SIDEBAR_ICON_STYLES = ["classic", "a", "b", "c"];
+export function sidebarIconStyle(value) {
+  return SIDEBAR_ICON_STYLES.includes(value) ? value : "a";
+}
 
 // A damaged stored value must not stop the app from starting: fall back to the
 // defaults for anything that is not a plain JSON object.

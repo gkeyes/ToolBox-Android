@@ -1,4 +1,4 @@
-import { settingsState } from "@/stores/settingsStore";
+import { settingsState, sidebarIconStyle as iconStyleOf } from "@/stores/settingsStore";
 import { useStore } from "@nanostores/react";
 import {
   ItemWrapper,
@@ -21,6 +21,7 @@ import {
   SquareArrowUp,
   PanelLeft,
   SquareRoundCorner,
+  Shapes,
 } from "lucide-react";
 import Theme from "./components/Theme";
 import { useTranslation } from "react-i18next";
@@ -43,6 +44,7 @@ export default function Appearance() {
     feedFontScale,
     showIndicator,
     floatingSidebar,
+    sidebarIconStyle,
   } = useStore(settingsState);
   const { t } = useTranslation();
   return (
@@ -114,6 +116,22 @@ export default function Appearance() {
           }
           settingName="floatingSidebar"
           settingValue={floatingSidebar}
+        />
+        <SelItem
+          label={t("settings.appearance.sidebarIcons")}
+          icon={
+            <SettingIcon variant="default">
+              <Shapes />
+            </SettingIcon>
+          }
+          settingName="sidebarIconStyle"
+          settingValue={iconStyleOf(sidebarIconStyle)}
+          options={[
+            { value: "a", label: t("settings.appearance.sidebarIconsA") },
+            { value: "b", label: t("settings.appearance.sidebarIconsB") },
+            { value: "c", label: t("settings.appearance.sidebarIconsC") },
+            { value: "classic", label: t("settings.appearance.sidebarIconsClassic") },
+          ]}
         />
         <SliderItem
           label={t("settings.appearance.feedFontSize")}
