@@ -6,8 +6,10 @@
   overflow: visible;
 }
 .sidebar-row .sidebar-row-icon.nf-sb > svg {
-  inline-size: 72%;
-  block-size: 72%;
+  /* The tile's own colour: ios27.css paints every badge glyph white. */
+  color: inherit;
+  inline-size: 64%;
+  block-size: 64%;
   position: relative;
   z-index: 2;
   overflow: visible;
@@ -20,8 +22,8 @@
   z-index: 3;
   inset-block-start: -3px;
   inset-inline-end: -3px;
-  inline-size: 10px;
-  block-size: 10px;
+  inline-size: 12px;
+  block-size: 12px;
   border-radius: 50%;
   background: var(--nf-sb-dot, #FF3B30);
   box-shadow: 0 0 0 2px var(--nf-sb-card, var(--surface, #fff));
@@ -71,12 +73,13 @@
   position: absolute;
   inset-block: -20%;
   inline-size: 45%;
-  left: -60%;
+  left: 0;
+  transform: translateX(-135%);
   background: linear-gradient(100deg, transparent, rgb(255 255 255 / 0.45), transparent);
   animation: nf-sb-b-sweep 1.8s ease-in-out infinite;
 }
 @keyframes nf-sb-b-twinkle { 0%, 100% { transform: scale(0.7) rotate(0deg); opacity: 0.7; } 50% { transform: scale(1.15) rotate(45deg); opacity: 1; } }
-@keyframes nf-sb-b-sweep { 0% { left: -60%; } 60%, 100% { left: 120%; } }
+@keyframes nf-sb-b-sweep { 0% { transform: translateX(-135%); } 60%, 100% { transform: translateX(265%); } }
 
 /* ---------- C 液态玻璃: tinted translucent glass ---------- */
 .sidebar-row .nf-sb-c[data-k="unread"]  { --nf-sb-c: 47 107 216;  --nf-sb-cl: 120 165 255; }
@@ -94,6 +97,7 @@
 }
 .dark .sidebar-row .sidebar-row-icon.nf-sb-c {
   --nf-sb-t: var(--nf-sb-cl);
+  box-shadow: inset 0 1px 0 var(--nf-sb-hl), inset 0 0 0 0.5px rgb(var(--nf-sb-t) / 0.35);
   --nf-sb-hl: rgb(255 255 255 / 0.22);
   --nf-sb-sheen: rgb(255 255 255 / 0.12);
   background: linear-gradient(165deg, rgb(var(--nf-sb-t) / 0.26), rgb(var(--nf-sb-t) / 0.10));
@@ -115,20 +119,30 @@
   inline-size: 200%;
   block-size: 200%;
   left: -50%;
-  top: 62%;
+  top: 0;
   border-radius: 43%;
   background: rgb(var(--nf-sb-t) / 0.30);
-  animation: nf-sb-c-spin 4.5s linear infinite, nf-sb-c-fill 4.5s ease-in-out infinite;
+  transform: translateY(31%);
+  animation: nf-sb-c-fill 4.5s ease-in-out infinite;
 }
 .nf-sb-c.is-gen .spk { animation: nf-sb-c-pulse 1.5s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
-@keyframes nf-sb-c-spin { to { transform: rotate(360deg); } }
-@keyframes nf-sb-c-fill { 0% { top: 85%; } 70% { top: 22%; } 100% { top: 85%; } }
+/* The level is a fraction of the tile; the wave is 2× the tile, so 42.5% of
+   its own height is 85% of the tile. */
+@keyframes nf-sb-c-fill {
+  0% { transform: translateY(42.5%) rotate(0deg); }
+  70% { transform: translateY(11%) rotate(252deg); }
+  100% { transform: translateY(42.5%) rotate(360deg); }
+}
 @keyframes nf-sb-c-pulse { 0%, 100% { transform: scale(0.8); opacity: 0.6; } 50% { transform: scale(1.12); opacity: 1; } }
 
 @media (prefers-reduced-motion: reduce) {
   .nf-sb *, .nf-sb .nf-sb-fx::before { animation: none !important; }
   .nf-sb-a.is-gen .sun { transform: translateY(3px); }
-  .nf-sb-b.is-gen .nf-sb-fx::before { left: 30%; }
-  .nf-sb-c.is-gen .nf-sb-fx::before { top: 45%; }
+  .nf-sb-b.is-gen .nf-sb-fx::before { transform: translateX(65%); }
+  .nf-sb-c.is-gen .nf-sb-fx::before { transform: translateY(22.5%); }
 }
 html[data-reduce-motion="true"] .nf-sb *, html[data-reduce-motion="true"] .nf-sb .nf-sb-fx::before { animation: none !important; }
+
+/* A closed phone sidebar is only moved off-screen: its tiles stop moving. */
+.sidebar-mobile-panel[data-open="false"] .nf-sb *,
+.sidebar-mobile-panel[data-open="false"] .nf-sb .nf-sb-fx::before { animation-play-state: paused !important; }
