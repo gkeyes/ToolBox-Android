@@ -519,7 +519,9 @@ export function createHome(api) {
   }
   function select(e) {
     selected = e; const bar = q('.hv-selbar'); bar.hidden = !e;
-    if (e) q('.hv-who[data-hv="relook"]').innerHTML = `<b>${api.esc(e.name)}</b><span>${api.esc(itemLine(e.item))} · ${api.esc(e.room)}${HM.KINDS[e.model.kind].wall ? ' · 贴墙摆放' : ''}</span>`;
+    // 1.11.0: a piece of a bundle names the record it belongs to; 拿走 takes only this piece's look.
+    const b = e?.item.bundle;
+    if (e) q('.hv-who[data-hv="relook"]').innerHTML = `<b>${api.esc(e.name)}</b><span>${b ? api.esc(`${e.room} · 属于${b.name}（共 ${b.n} 件）`) : `${api.esc(itemLine(e.item))} · ${api.esc(e.room)}${HM.KINDS[e.model.kind].wall ? ' · 贴墙摆放' : ''}`}</span>`;
     updateRing(); invalidate();
   }
   // A failed save puts the piece back where the ledger has it, so the screen never shows a spot that will not survive a restart.

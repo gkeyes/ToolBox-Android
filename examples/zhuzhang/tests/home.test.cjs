@@ -495,3 +495,23 @@ test('1.9.2 · a look in a room with a bathroom never pokes into the bathroom or
   const { rects } = HM.makeRects(HM.planOf(home));
   assert.equal(HM.fitsRoom(HM.KINDS.bedB, rects, '次卧'), false); assert.equal(HM.findSpot('bedB', rects, '次卧', []), null);
 });
+
+test('1.11.0 · a bundle keeps its pieces, each with its own room and look, and its room says 多个空间', () => {
+  const src = base();
+  src.items[0].parts = [
+    { id: 'x', name: '空调', room: '次卧', amount: 319900, model: { kind: 'acA', x: .5, z: .5, rot: 0 } },
+    { id: 'y', name: '电脑', room: '书房', amount: null, extra: 1 },
+  ];
+  src.items[0].model = { kind: 'sofaA', x: .5, z: .5, rot: 0 };
+  const out = app.validate(src);
+  assert.equal(out.items[0].room, '多个空间');
+  assert.ok(!('model' in out.items[0]), 'a bundle has no look of its own');
+  assert.equal(JSON.stringify(out.items[0].parts[1]), JSON.stringify({ id: 'y', name: '电脑', room: '书房', amount: null }));
+  assert.equal(out.items[0].parts[0].model.kind, 'acA');
+  assert.equal(JSON.stringify(app.validate(JSON.parse(JSON.stringify(out))).items[0].parts), JSON.stringify(out.items[0].parts), 'it round-trips');
+  const same = base(); same.items[0].parts = [{ id: 'x', name: 'A', room: '次卧', amount: null }, { id: 'y', name: 'B', room: '次卧', amount: null }];
+  assert.equal(app.validate(same).items[0].room, '次卧', 'pieces all in one room: that room');
+  for (const bad of [[{ id: 'x', name: 'A', room: '次卧', amount: null }], [{ id: 'x', name: 'A', room: '多个空间', amount: null }, { id: 'y', name: 'B', room: '次卧', amount: null }], [{ id: 'x', name: 'A', room: '次卧', amount: null }, { id: 'x', name: 'B', room: '次卧', amount: null }]]) {
+    const s = base(); s.items[0].parts = bad; assert.throws(() => app.validate(s));
+  }
+});

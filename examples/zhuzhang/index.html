@@ -6,7 +6,7 @@
 <meta content="width=device-width, initial-scale=1, viewport-fit=cover" name="viewport"/>
 <meta content="#f6f5f1" media="(prefers-color-scheme: light)" name="theme-color"/><meta content="#0c0f0e" media="(prefers-color-scheme: dark)" name="theme-color"/>
 <meta content="light dark" name="color-scheme"/>
-<meta content="筑账：离线装修预算、付款记录、费用测算与统计。" name="description"/>
+<meta content="筑账：离线装修预算、付款记录、打包记账与统计。" name="description"/>
 <title>筑账 · 装修预算</title>
 
 <link href="style.css" rel="stylesheet"/><link href="icon.svg" rel="icon" type="image/svg+xml"/><script defer="True" src="runtime.js"></script><script defer="True" src="calendar.js"></script><script defer="True" src="home-model.js"></script><script defer="True" src="app.js"></script><script defer="True" src="lens.js"></script></head>
@@ -15,6 +15,7 @@
 <symbol id="i-home" viewBox="0 0 24 24"><path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1Z"></path><path d="M9 7h6"></path></symbol>
 <symbol id="i-grid" viewBox="0 0 24 24"><rect height="7" rx="1.5" width="7" x="3" y="3"></rect><rect height="7" rx="1.5" width="7" x="14" y="3"></rect><rect height="7" rx="1.5" width="7" x="3" y="14"></rect><rect height="7" rx="1.5" width="7" x="14" y="14"></rect></symbol>
 <symbol id="i-list" viewBox="0 0 24 24"><rect height="18" rx="2" width="14" x="5" y="3"></rect><path d="M9 8h6M9 12h6M9 16h4"></path></symbol>
+<symbol id="i-budget" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle><path d="M12 3v9l6.4 6.4"></path></symbol>
 <symbol id="i-calc" viewBox="0 0 24 24"><rect height="19" rx="2.5" width="15" x="4.5" y="2.5"></rect><path d="M8 6.5h8M8 11h1M15 11h1M8 15h1M15 15h1M8 18h1M15 18h1"></path></symbol>
 <symbol id="i-chart" viewBox="0 0 24 24"><path d="M4 20h17M6 16V9M12 16V4M18 16v-5"></path></symbol>
 <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"></path></symbol>
@@ -48,7 +49,7 @@
 <button aria-label="编辑当前项目与预算" class="project-switch" data-action="project"><span class="project-square"><svg class="icon" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><use href="#i-home"></use></svg></span><span><strong class="project-name small medium">装修项目</strong><span class="project-meta caption muted" style="display:block;margin-top:2px">项目设置</span></span><svg class="icon small-icon chevron" fill="none" stroke="currentColor"><use href="#i-down"></use></svg></button>
 <nav class="side-nav" id="side-nav"></nav>
 <button class="button primary sidebar-add" data-action="payment"><svg class="icon" fill="none" stroke="currentColor"><use href="#i-plus"></use></svg>记一笔</button>
-<div class="sidebar-bottom"><button class="text-button" data-action="settings"><svg class="icon small-icon" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><use href="#i-settings"></use></svg>项目与数据</button><p class="sidebar-foot">筑账 1.10.0 · 离线账本</p></div>
+<div class="sidebar-bottom"><button class="text-button" data-action="settings"><svg class="icon small-icon" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><use href="#i-settings"></use></svg>项目与数据</button><p class="sidebar-foot">筑账 1.11.0 · 离线账本</p></div>
 </aside>
 <div class="workspace">
 <header class="topbar"><div class="crumb"><svg class="icon" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><use href="#i-home"></use></svg><span class="project-name">装修项目</span><span>/</span><span id="crumb-page">预算总览</span></div><button class="mobile-project" data-action="project"><span class="brand-mark"><svg class="icon" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><use href="#i-home"></use></svg></span><span><strong class="project-name">装修项目</strong><small class="project-meta">项目设置</small></span><svg class="icon" fill="none" stroke="currentColor"><use href="#i-down"></use></svg></button><div class="top-actions"><span class="demo-mark" id="runtime-badge">正在连接</span><button aria-label="项目与数据设置" class="icon-button" data-action="settings"><svg class="icon" fill="none" stroke="currentColor" stroke-linecap="round"><use href="#i-dots"></use></svg></button></div></header>
