@@ -17,12 +17,7 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
-import com.kyant.backdrop.backdrops.layerBackdrop
-import io.toolbox.core.ui.component.LocalToolBoxButtonBackdrop
-import io.toolbox.core.ui.component.LocalToolBoxButtonBlur
 import io.toolbox.core.ui.component.ToolBoxIconKey
-import io.toolbox.core.ui.component.glassRendersLive
-import io.toolbox.core.ui.component.rememberToolBoxListBackdrop
 import io.toolbox.core.ui.component.ToolBoxTextButton
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 
@@ -78,27 +73,23 @@ internal fun BrowserScreen(
     val reserveChrome by remember(chromeVisible) { derivedStateOf { chromeVisible || chromeShown > 0.001f } }
     var bottomBarHeight by remember { mutableIntStateOf(0) }
     val density = androidx.compose.ui.platform.LocalDensity.current
-    // The close circle floats over the live page: record the page as its sibling so the circle blurs
-    // the text under it instead of letting it show through sharply.
-    val glassLive = glassRendersLive()
-    val pageBackdrop = rememberToolBoxListBackdrop()
+    // Never record the WebView as a glass backdrop: re-drawing a live page into a Compose layer makes
+    // it flash white while it repaints (scrolling, video) and cannot capture a video surface at all.
+    // The close circle keeps its near-opaque tint instead of blurring the page under it.
 
     Box(Modifier.fillMaxSize().background(colors.background)) {
         Box(Modifier.fillMaxSize().safeDrawingPadding().imePadding().clipToBounds()) {
             Box(
                 Modifier.fillMaxSize().padding(
                     bottom = with(density) { if (reserveChrome) bottomBarHeight.toDp() else 0.dp },
-                ).then(if (glassLive) Modifier.layerBackdrop(pageBackdrop) else Modifier),
+                ),
             ) {
                 state.webView?.let { page -> key(page) { AndroidView(factory = { page }, modifier = Modifier.fillMaxSize()) } }
                 BrowserErrorOverlay(state, actions)
                 BrowserLoadProgress(state)
             }
             if (reserveChrome) {
-                if (state.fullScreenView == null) CompositionLocalProvider(
-                    LocalToolBoxButtonBackdrop provides (if (glassLive) pageBackdrop else LocalToolBoxButtonBackdrop.current),
-                    LocalToolBoxButtonBlur provides 8.dp,
-                ) {
+                if (state.fullScreenView == null) {
                     BrowserCloseButton(
                         actions,
                         Modifier.align(Alignment.TopStart).padding(start = 16.dp, top = 8.dp)
