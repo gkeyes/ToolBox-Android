@@ -120,6 +120,19 @@ test('wall-mounted looks snap to the nearest wall and face into the room', () =>
   assert.equal(HM.clampPlacement(dims, bb, 3.4, 1.8, 0).rot, 3);
 });
 
+test('1.7.0 · a dragged look turns its back to a wall it comes near; tables stay as they are', () => {
+  const { rects } = HM.makeRects(HM.planOf({ template: 't3l2' }));
+  const bb = HM.bbox(rects, '主卧'), f = HM.KINDS.fridgeA; // 主卧 is [0,0]-[3.6,3.6]
+  const right = HM.clampPlacement(f, bb, 3.6 - HM.GAP - f.d / 2 - .2, 1.8, 0, true);
+  assert.equal(right.rot, 3); assert.ok(Math.abs(right.x - (3.6 - HM.GAP - f.d / 2)) < 1e-9, 'backed flush');
+  assert.equal(HM.clampPlacement(f, bb, 1.8, 3.3, 0, true).rot, 2);
+  assert.equal(HM.clampPlacement(f, bb, 1.8, 1.8, 1, true).rot, 1, 'mid-room keeps its turn');
+  assert.equal(HM.clampPlacement(f, bb, 3.2, 1.8, 0).rot, 0, 'no auto turn without a drag');
+  assert.equal(HM.clampPlacement(HM.KINDS.diningB, bb, 3.0, 1.8, 0, true).rot, 0, 'tables never turn');
+  const corner = HM.clampPlacement(f, bb, .5, .5, 1, true);
+  assert.equal(corner.rot, 1, 'in a corner the current wall wins');
+});
+
 test('a saved position survives a room resize as a fraction of the room', () => {
   const t = HM.planOf({ template: 't3l2' });
   const model = { kind: 'cabB', x: .5, z: .5, rot: 0 };
