@@ -4,6 +4,7 @@ import { runtimeForeground } from "./foreground.js";
 import { getLatestFeedEntryId, getNewUnreadFeedEntries } from "../api/miniflux.js";
 import { createFeedNotifier } from "./feed-notify.mjs";
 import { getArticleMetadata } from "../db/storage.js";
+import i18n from "../i18n/index.js";
 
 // Feed ids with update notifications on, for the sidebar's bell marks and menu labels.
 export const watchedFeeds = atom([]);
@@ -26,6 +27,13 @@ function current() {
       feedTitle: (feedId) => feeds.get().find((feed) => Number(feed.id) === Number(feedId))?.title || "",
       isForeground: () => runtimeForeground.get(),
       isCached: async (entryId) => Boolean(await getArticleMetadata(entryId)),
+      strings: () => ({
+        untitledFeed: i18n.t("feedNotify.untitledFeed"),
+        untitled: i18n.t("feedNotify.untitled"),
+        one: i18n.t("feedNotify.one"),
+        separator: i18n.t("feedNotify.separator"),
+        many: (count, titles) => i18n.t("feedNotify.many", { count, titles }),
+      }),
     });
   }
   return notifier;

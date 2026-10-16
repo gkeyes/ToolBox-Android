@@ -492,7 +492,7 @@ export function stopAutoSync() {
 async function performSync() {
   if (!autoSyncActive || !runtimeForeground.get() || nativeTimerEffective.get()) { resetSyncInterval(); return; }
   const scheduled = claimAutoSync();
-  if (scheduled) try { await scheduled; } catch { /* sync already reports a user-visible error */ }
+  if (scheduled) try { checkFeedNotifications(await scheduled); } catch { /* sync already reports a user-visible error */ }
   resetSyncInterval();
 }
 
@@ -504,5 +504,12 @@ export async function flushSyncWork() {
   await iconQueue;
 }
 
-export const forceSync = () => sync("foreground");
+// A sync on screen still moves the update-notification cursors (without posting), so the next
+// background run does not announce entries the reader already saw.
+function checkFeedNotifications(result) {
+  if (result?.outcome !== "committed") return;
+  void import("../toolbox/feed-notifications.js").then((module) => module.checkWatchedFeeds()).catch(() => {});
+}
+
+export const forceSync = () => sync("foreground").then((result) => { checkFeedNotifications(result); return result; });
 export const backgroundSync = () => sync("background");

@@ -142,6 +142,11 @@ export default {
     permissionTitle: "请允许 NextFlux 发通知",
     permission: "在 ToolBox 的「工具权限 › NextFlux」里打开「通知」，再回来开启。系统通知权限也要允许 ToolBox。没送出的文章会在下次同步时补发。",
     gotIt: "知道了",
+    untitledFeed: "订阅源更新",
+    untitled: "无标题",
+    one: "有 1 篇新文章",
+    separator: "；",
+    many: "{{count}} 篇新文章：{{titles}}",
     failed: "未能开启更新通知，请重试。",
   },
   articleList: {

@@ -30,14 +30,23 @@ function cleanTitle(value, fallback) {
   return text || fallback;
 }
 
+// The notification wording; NextFlux passes its selected language's strings.
+export const DEFAULT_NOTIFY_STRINGS = {
+  untitledFeed: "订阅源更新",
+  untitled: "无标题",
+  one: "有 1 篇新文章",
+  separator: "；",
+  many: (count, titles) => `${count} 篇新文章：${titles}`,
+};
+
 /** Notification text for one feed: the entry title, or a count with the newest titles. */
-export function feedNotificationText(feedTitle, entries, total = entries.length) {
-  const title = cleanTitle(feedTitle, "订阅源更新");
-  const titles = entries.slice(0, MAX_LISTED_TITLES).map((entry) => cleanTitle(entry.title, "无标题"));
+export function feedNotificationText(feedTitle, entries, total = entries.length, strings = DEFAULT_NOTIFY_STRINGS) {
+  const title = cleanTitle(feedTitle, strings.untitledFeed);
+  const titles = entries.slice(0, MAX_LISTED_TITLES).map((entry) => cleanTitle(entry.title, strings.untitled));
   const count = Math.max(Number(total) || 0, entries.length);
-  if (count <= 1) return { title, body: titles[0] || "有 1 篇新文章" };
+  if (count <= 1) return { title, body: titles[0] || strings.one };
   const more = count > titles.length ? `…` : "";
-  return { title, body: `${count} 篇新文章：${titles.join("；")}${more}` };
+  return { title, body: strings.many(count, `${titles.join(strings.separator)}${more}`) };
 }
 
 /** The NextFlux route a tapped notification opens; null when the tap is not one of ours. */
@@ -55,7 +64,7 @@ export function routeForOpen(record) {
  * feedTitle(feedId) -> string
  * isForeground() -> boolean   the reader is on screen, so a system notification would be noise
  */
-export function createFeedNotifier({ api, notifications, storage, feedTitle = () => "", isForeground = () => false, isCached = async () => true }) {
+export function createFeedNotifier({ api, notifications, storage, feedTitle = () => "", isForeground = () => false, isCached = async () => true, strings = () => DEFAULT_NOTIFY_STRINGS }) {
   let queue = Promise.resolve();
   const serial = (work) => {
     const run = queue.catch(() => {}).then(work);
@@ -127,7 +136,7 @@ export function createFeedNotifier({ api, notifications, storage, feedTitle = ()
             continue;
           }
           const id = feedNotificationId(feedId);
-          const text = feedNotificationText(feedTitle(feedId) || fresh[0].feed?.title, fresh, total);
+          const text = feedNotificationText(feedTitle(feedId) || fresh[0].feed?.title, fresh, total, strings());
           try {
             await notifications.post(id, text.title, text.body);
           } catch (error) {

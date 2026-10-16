@@ -221,3 +221,13 @@ test("clear forgets every watch and withdraws posted notices", async () => {
   assert.deepEqual(await notifier.watchedFeedIds(), []);
   assert.deepEqual(cancelled.sort(), [feedNotificationId(12), feedNotificationId(13)].sort());
 });
+
+test("notification text follows the strings NextFlux passes for its language", () => {
+  const strings = {
+    untitledFeed: "Feed update", untitled: "Untitled", one: "1 new entry", separator: "; ",
+    many: (count, titles) => `${count} new entries: ${titles}`,
+  };
+  assert.deepEqual(feedNotificationText("", [{ title: "A" }, { title: "" }], 2, strings),
+    { title: "Feed update", body: "2 new entries: A; Untitled" });
+  assert.deepEqual(feedNotificationText("HN", [], 1, strings), { title: "HN", body: "1 new entry" });
+});

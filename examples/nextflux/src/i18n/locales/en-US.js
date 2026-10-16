@@ -143,6 +143,11 @@ export default {
     permissionTitle: "Allow NextFlux to notify",
     permission: "Turn on “Notifications” for NextFlux in ToolBox tool permissions, then try again. Android must also allow ToolBox notifications. Missed entries are sent at the next sync.",
     gotIt: "Got it",
+    untitledFeed: "Feed update",
+    untitled: "Untitled",
+    one: "1 new entry",
+    separator: "; ",
+    many: "{{count}} new entries: {{titles}}",
     failed: "Could not turn on update notifications. Please try again.",
   },
   articleList: {
