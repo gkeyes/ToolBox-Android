@@ -107,3 +107,17 @@ test("the live stream is published and an unreadable answer is kept", async () =
   assert.deepEqual(board.get().raw, { thinking: "先看看", text: "今天没有主题。" });
   assert.equal(boardStream.get(), null);
 });
+
+test("a reply cut off mid-way keeps what had arrived", async () => {
+  rows = [article(7), article(8)];
+  const call = waitCall();
+  refreshBoard();
+  const live = await call;
+  live.onThink("想");
+  live.onChunk('{"topics":[');
+  live.reject(Object.assign(new Error("AI 响应意外中断，请重新生成。"), { code: "INCOMPLETE_STREAM" }));
+  await tick(); await tick();
+  assert.match(board.get().error, /意外中断/);
+  assert.doesNotMatch(board.get().error, /摘要/);
+  assert.deepEqual(board.get().raw, { thinking: "想", text: '{"topics":[' });
+});

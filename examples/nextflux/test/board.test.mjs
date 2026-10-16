@@ -107,3 +107,32 @@ test("parseTopics reads topics from replies that are not valid JSON", () => {
   assert.deepEqual(parseTopics(cut, 5).map((topic) => [topic.title, topic.articles]), [["A", [1, 2]]]);
   assert.throws(() => parseTopics("今天没有什么值得看的。", 5), /无法识别/);
 });
+
+test("article references keep their numbers: lists, ranges and 2.0 are not glued together", async () => {
+  const { articleNumbers, parseTopics, salvageTopics } = await import("../src/toolbox/board/board.mjs");
+  assert.deepEqual(articleNumbers("1-3", 9), [1, 2, 3]);
+  assert.deepEqual(articleNumbers("1,2", 9), [1, 2]);
+  assert.deepEqual(articleNumbers("1、2", 9), [1, 2]);
+  assert.deepEqual(articleNumbers("2.0", 9), [2]);
+  assert.deepEqual(articleNumbers("[4]", 9), [4]);
+  assert.deepEqual(articleNumbers(2.5, 9), []);
+  assert.deepEqual(articleNumbers("第三篇", 9), []);
+  assert.deepEqual(articleNumbers("1-100", 9), []);
+  assert.deepEqual(articleNumbers("1-99999999", Infinity), []);
+  const cut = parseTopics('{"topics":[{"title":"丁","articles":["1-100", 2]', 9);
+  assert.deepEqual(cut.map((topic) => topic.articles), [[2]]);
+  const topics = parseTopics('{"topics":[{"title":"甲","articles":["1-3","5、6","2.0"]},{"title":"乙","articles":["13", 7]}]}', 9);
+  assert.deepEqual(topics.map((topic) => topic.articles), [[1, 2, 3, 5, 6], [7]]);
+  const salvaged = salvageTopics('{"topics":[{"title":"丙","gist":"x","articles":["1-2", 2.0, "4、5"]');
+  assert.deepEqual(salvaged[0].articles, [1, 2, 2, 4, 5]);
+  const closed = salvageTopics('{"title":"丙","gist":"he said "hi"","articles":["1-2", 3.0, "4、5"]}');
+  assert.deepEqual(closed[0].articles, [1, 2, 3, 4, 5]);
+});
+
+test("the trailing-comma repair leaves commas inside text alone", async () => {
+  const { parseTopics } = await import("../src/toolbox/board/board.mjs");
+  const [topic] = parseTopics('{"topics":[{"title":"甲","gist":"A, }","summary":"x, ]","articles":[1,],},]}', 3);
+  assert.equal(topic.gist, "A, }");
+  assert.equal(topic.summary, "x, ]");
+  assert.deepEqual(topic.articles, [1]);
+});

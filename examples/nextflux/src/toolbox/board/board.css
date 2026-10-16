@@ -169,7 +169,7 @@
   word-break: break-word;
   color: var(--ds-on-surface, var(--foreground));
 }
-.nf-board-live-text.is-thinking { max-block-size: 8rem; font-style: italic; color: var(--ds-text-tertiary, var(--muted)); }
+.nf-board-live-text.is-thinking { max-block-size: 8rem; font-style: italic; color: var(--ds-text-secondary, var(--muted)); }
 
 /* A topic with articles new since the previous board. */
 .nf-board-new {
