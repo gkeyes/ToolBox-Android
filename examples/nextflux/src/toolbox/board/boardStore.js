@@ -254,5 +254,20 @@ isSyncing.listen((syncing) => {
   wasSyncing = syncing;
   if (!finished || !authState.get().userId || !aiReady()) return;
   if (board.get().status === "idle") return;
+  // A board made under other article settings is made again when it is
+  // next opened; settings changed and changed back cost nothing.
+  if (board.get().filter !== articleFilter() && !boardOpen.get()) return;
   refreshBoard({ onlyIfNew: true });
+});
+
+// Settings changed while the board is open (from the settings sheet over
+// it): the board on screen follows them at once.
+let lastFilter = articleFilter();
+settingsState.listen(() => {
+  const filter = articleFilter();
+  if (filter === lastFilter) return;
+  lastFilter = filter;
+  const state = board.get();
+  if (!boardOpen.get() || state.status === "idle" || state.filter === filter || !authState.get().userId) return;
+  refreshBoard();
 });

@@ -229,3 +229,35 @@ test("changing 查重方式 makes today's board out of date", async () => {
   openBoard(false);
   assert.equal(boardOpen.get(), false);
 });
+
+test("the open board follows 查重方式 at once; a closed one waits to be opened, and a change undone costs nothing", async () => {
+  rows = [article(1), article(2)];
+  settingsState.set({ ...settingsState.get(), duplicateMatch: "either" });
+  let call = waitCall();
+  refreshBoard();
+  (await call).onChunk(TOPICS); calls.at(-1).resolve();
+  await tick(); await tick();
+  assert.equal(board.get().status, "done");
+  // Open: a new board right away.
+  openBoard(true);
+  call = waitCall();
+  settingsState.set({ ...settingsState.get(), duplicateMatch: "title" });
+  const now = await call;
+  assert.equal(now.kind, "topics");
+  now.onChunk(TOPICS); now.resolve();
+  await tick(); await tick();
+  openBoard(false);
+  // Closed: changed, synced and changed back, no AI call.
+  const before = calls.length;
+  settingsState.set({ ...settingsState.get(), duplicateMatch: "url" });
+  await sync();
+  settingsState.set({ ...settingsState.get(), duplicateMatch: "title" });
+  openBoard(true);
+  await tick(); await tick();
+  assert.equal(calls.length, before, "no AI call for a change undone");
+  openBoard(false);
+  // Other settings changing leave the board alone.
+  settingsState.set({ ...settingsState.get(), aiApiKey: "k2" });
+  await tick();
+  assert.equal(calls.length, before);
+});
