@@ -98,10 +98,11 @@ class RuntimePresentationTest {
 
     @Test
     fun liftsExactlyAtTheNearWindowStillBelongToTheGesture() {
+        // The last handled Back is 2 s before this press, so only the gap to this press decides.
         fun hostTakes(liftBeforePress: Long, edge: Boolean): Boolean {
             val streak = PageBackStreak()
+            streak.pageTook(9_000L)
             streak.pageTook(10_000L)
-            streak.pageTook(11_000L)
             return streak.hostTakes(12_000L, pageTouchedAt = 12_000L - liftBeforePress, fromGestureEdge = edge)
         }
         assertTrue(hostTakes(PAGE_TOUCH_NEAR_BACK_MS, edge = false))
