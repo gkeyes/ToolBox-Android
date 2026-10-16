@@ -129,11 +129,13 @@ function looseJson(text) {
 // (also reversed "3-1", "1〜3", "1−3"). A range running a little past the
 // last article is trimmed to it; one longer than the board has articles, by
 // more than one ("1-50" of 12), or than MAX_RANGE ("1-99999") is junk and
-// names no article, nor does a range over the whole board, nor anything else.
+// names no article, nor does anything else. Numbers a range names are also
+// added to `ranged`, when given, so a topic can tell how much its ranges
+// cover (see catchAll).
 const MAX_RANGE = 100;
 const ITEM = /^\[?第?(\d+)(?:\.0+)?篇?\]?$/;
 const RANGE = /^\[?第?(\d+)篇?\s*[-–—~〜−‐‑‒―至到]\s*第?(\d+)篇?\]?$/;
-export function articleNumbers(value, count) {
+export function articleNumbers(value, count, ranged = null) {
   if (typeof value === "number") return Number.isInteger(value) ? [value] : [];
   // NFKC turns full-width digits and ～ into their ASCII forms. A space
   // between two numbers separates them; one around a range dash does not.
@@ -146,10 +148,9 @@ export function articleNumbers(value, count) {
       if (Math.abs(a - b) + 1 > (Number.isFinite(count) ? Math.min(MAX_RANGE, count + 1) : MAX_RANGE)) return [];
       const from = Math.max(1, Math.min(a, b));
       const to = Math.min(Math.max(a, b), Number.isFinite(count) ? count : Infinity);
-      // "1-12" on a 12-article board puts every article in one topic and
-      // leaves none for the rest: not a grouping.
-      if (count > 3 && from === 1 && to === count) return [];
-      return to < from ? [] : Array.from({ length: to - from + 1 }, (_, index) => from + index);
+      const numbers = to < from ? [] : Array.from({ length: to - from + 1 }, (_, index) => from + index);
+      ranged?.push(...numbers);
+      return numbers;
     }
     const item = part.match(ITEM);
     return item ? [Number(item[1])] : [];
@@ -187,13 +188,21 @@ export function salvageTopics(raw, count = Infinity) {
     };
     // The list may hold bracketed items ("[3]" or [3]), so an inner ] does not end it.
     const numbers = part.match(/"articles"\s*:\s*\[((?:"[^"]*"|\[(?:"[^"]*"|[^\]"])*\]|[^\]"[])*)\]/);
-    const topic = { title: field("title"), gist: field("gist"), summary: field("summary"), articles: numbers ? (numbers[1].match(/"[^"]*"|[^,\s"\[\]]+/g) || []).flatMap((item) => articleNumbers(item.replace(/^"|"$/g, ""), count)) : [] };
+    const ranged = [];
+    const topic = { title: field("title"), gist: field("gist"), summary: field("summary"), articles: numbers ? (numbers[1].match(/"[^"]*"|[^,\s"\[\]]+/g) || []).flatMap((item) => articleNumbers(item.replace(/^"|"$/g, ""), count, ranged)) : [], ranged };
     // The last topic of a reply cut off mid-way, before its summary arrived
     // or its object closed, is not whole.
     const last = index === parts.length - 1;
     return last && !topic.summary && !/\}/.test(part) ? null : topic;
   }).filter((topic) => topic?.title && topic.articles.length);
 }
+
+// Ranges that together reach (nearly) every article of a board over 3 —
+// "1-12", "1-11", "1-6,7-12" of 12 — lump the board into one topic and leave
+// none for the rest: when the reply has other topics, those numbers are not
+// this topic's. A topic that lists the articles one by one keeps them, and
+// so does a reply whose only topic is the whole board.
+const catchAll = (ranged, count) => count > 3 && new Set(ranged).size >= count - Math.floor(count / 10);
 
 // Reads the AI's topics. Article numbers must name a real article; each
 // article belongs to at most one topic (the higher ranked); a topic left
@@ -224,12 +233,32 @@ export function readTopics(text, count) {
   if (!list) throw new Error("AI 返回的内容无法识别，请重新生成。");
   const taken = new Set();
   const topics = [];
-  for (const item of list) {
+  // Each topic's numbers, and the numbers its ranges named.
+  const read = list.map((item) => {
+    const listed = Array.isArray(item?.articles) ? item.articles : [];
+    // Salvaged topics come with their numbers already read.
+    const ranged = salvaged ? item.ranged : [];
+    const numbers = listed.flatMap((n) => articleNumbers(n, count, salvaged ? null : ranged));
+    return { item, numbers, ranged, lumps: catchAll(ranged, count) };
+  });
+  const real = (n) => Number.isInteger(n) && n >= 1 && n <= count;
+  // A catch-all range gives way only to a topic that groups real articles itself.
+  const others = read.some(({ item, numbers, lumps }) => !lumps && clean(item?.title, 40) && numbers.some(real));
+  for (const { item, ranged, lumps, numbers: all } of read) {
     if (topics.length >= MAX_TOPICS) break;
     const title = clean(item?.title, 40);
-    const numbers = (Array.isArray(item?.articles) ? item.articles : [])
-      .flatMap((n) => articleNumbers(n, count))
-      .filter((n) => Number.isInteger(n) && n >= 1 && n <= count && !taken.has(n));
+    let numbers = all;
+    if (others && lumps) {
+      // Only what the ranges named goes; a number also written on its own stays.
+      const lumped = new Map();
+      ranged.forEach((n) => lumped.set(n, (lumped.get(n) || 0) + 1));
+      numbers = numbers.filter((n) => {
+        const left = lumped.get(n);
+        if (left) lumped.set(n, left - 1);
+        return !left;
+      });
+    }
+    numbers = numbers.filter((n) => real(n) && !taken.has(n));
     if (!title || !numbers.length) continue;
     const unique = [...new Set(numbers)];
     unique.forEach((n) => taken.add(n));

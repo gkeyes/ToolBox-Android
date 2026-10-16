@@ -30,7 +30,8 @@ const calls = [];
 let next = null;
 globalThis.localStorage = { getItem: () => "1", setItem() {} };
 globalThis.__board = {
-  rows: () => rows,
+  // onRead, when set, runs right after the articles are read.
+  rows: () => { const read = rows; const after = globalThis.__board.onRead; globalThis.__board.onRead = null; after?.(); return read; },
   // Each AI call waits for the test to answer it.
   stream: (messages, { onChunk, onThink, signal }) => new Promise((resolve, reject) => {
     const call = { messages, kind: messages[0].content.includes("文章") && messages[1].content.startsWith("主题") ? "digest" : "topics", onChunk, onThink, resolve, reject, signal };
@@ -165,7 +166,7 @@ test("a reply stopped at the token limit before one whole topic asks once more f
   assert.equal(second.kind, "topics");
   assert.match(second.messages[0].content, /被截断了。这次回答要短/);
   // The first, cut reply stays on screen above the second.
-  assert.deepEqual(boardStream.get().first, { text: '{"topics":[{"title":"甲","articles":[1],"summary":"写到一半' });
+  assert.deepEqual(boardStream.get().first, { text: '{"topics":[{"title":"甲","articles":[1],"summary":"写到一半', thinking: "" });
   assert.equal(boardStream.get().text, "");
   // The shorter answer fits: a board.
   second.onChunk('{"topics":[{"title":"甲","gist":"g","summary":"s","articles":[1]}]}');
@@ -189,9 +190,31 @@ test("a reply stopped at the token limit before one whole topic asks once more f
   const before = calls.length;
   assert.match(board.get().error, /太长，在写完第一个主题之前就被截断/);
   assert.doesNotMatch(board.get().error, /无法识别/);
-  assert.deepEqual(board.get().raw, { thinking: "", text: '{"topics":[{"title":"乙","articles":[2],"summ' });
+  // Both replies stay: the first beside the second.
+  assert.deepEqual(board.get().raw, { thinking: "", text: '{"topics":[{"title":"乙","articles":[2],"summ', first: { thinking: "", text: '{"topics":[{"title":"甲","articles":[1],"summary":"写' } });
   await tick();
   assert.equal(calls.length, before, "asked again only once");
+});
+
+test("a first reply that only thought keeps its thinking on the first card", async () => {
+  rows = [article(11), article(12)];
+  let call = waitCall();
+  refreshBoard();
+  const first = await call;
+  call = waitCall();
+  first.onThink("想了很久");
+  first.resolve({ finishReason: "length" });
+  const second = await call;
+  assert.deepEqual(boardStream.get().first, { text: "", thinking: "想了很久" });
+  second.onChunk('{"topics":[{"title":"甲","gist":"g","summary":"s","articles":[1]}]}');
+  second.resolve({ finishReason: "stop" });
+  await tick(); await tick();
+  assert.equal(board.get().status, "done");
+  const page = readFileSync(new URL("../src/components/Board/BoardPage.jsx", import.meta.url), "utf8");
+  assert.match(page, /stream\.first\.thinking && <LiveText/);
+  // While the second reply streams, the caption still says it is the second.
+  assert.match(page, /stream\.text \? `\$\{stream\.first \? "第二次，" : ""\}AI 正在输出/);
+  assert.match(page, /raw\.first && \["第一次", raw\.first\]/);
 });
 
 test("a reply cut off after whole topics still makes a board from them", async () => {
@@ -234,7 +257,7 @@ test("changing 查重方式 makes today's board out of date", async () => {
   assert.equal(boardOpen.get(), false);
 });
 
-test("the open board follows 查重方式 at once; a closed one waits to be opened, and a change undone costs nothing", async () => {
+test("the open board follows 查重方式 once it settles; a closed one waits to be opened, and a change undone costs nothing", async () => {
   rows = [article(1), article(2)];
   settingsState.set({ ...settingsState.get(), duplicateMatch: "either" });
   let call = waitCall();
@@ -264,4 +287,213 @@ test("the open board follows 查重方式 at once; a closed one waits to be open
   settingsState.set({ ...settingsState.get(), aiApiKey: "k2" });
   await tick();
   assert.equal(calls.length, before);
+});
+
+test("flipping 查重方式 on the open board asks the AI once, and flipping back asks nothing", async () => {
+  const settled = () => new Promise((resolve) => setTimeout(resolve, 700));
+  rows = [article(1), article(2)];
+  settingsState.set({ ...settingsState.get(), duplicateMatch: "either" });
+  await settled();
+  let call = waitCall();
+  refreshBoard();
+  (await call).onChunk(TOPICS); calls.at(-1).resolve();
+  await tick(); await tick();
+  openBoard(true);
+  // Through all three options quickly: one call, for the last.
+  let before = calls.length;
+  for (const match of ["title", "url", "title"]) settingsState.set({ ...settingsState.get(), duplicateMatch: match });
+  call = waitCall();
+  await settled();
+  const one = await call;
+  assert.equal(calls.length, before + 1, "one AI call for a quick run of changes");
+  // Changed back while that board is still being made: no second call.
+  settingsState.set({ ...settingsState.get(), duplicateMatch: "url" });
+  settingsState.set({ ...settingsState.get(), duplicateMatch: "title" });
+  await settled();
+  assert.equal(calls.length, before + 1, "changed and changed back: nothing more");
+  assert.equal(one.signal.aborted, false);
+  assert.equal(board.get().filter, "false|true|title");
+  one.onChunk(TOPICS); one.resolve();
+  await tick(); await tick();
+  assert.equal(board.get().status, "done");
+  // Changed and changed back once the board is made: nothing.
+  before = calls.length;
+  settingsState.set({ ...settingsState.get(), duplicateMatch: "either" });
+  settingsState.set({ ...settingsState.get(), duplicateMatch: "title" });
+  await settled();
+  assert.equal(calls.length, before);
+  openBoard(false);
+});
+
+test("a sync while settings settle waits for them; changed back, it still brings in new articles", async () => {
+  const settled = () => new Promise((resolve) => setTimeout(resolve, 700));
+  rows = [article(1), article(2)];
+  settingsState.set({ ...settingsState.get(), duplicateMatch: "either" });
+  await settled();
+  let call = waitCall();
+  refreshBoard();
+  (await call).onChunk(TOPICS); calls.at(-1).resolve();
+  await tick(); await tick();
+  openBoard(true);
+  // A sync inside the window makes no call of its own.
+  const before = calls.length;
+  settingsState.set({ ...settingsState.get(), duplicateMatch: "url" });
+  rows = [article(1), article(2), article(3)];
+  await sync();
+  assert.equal(calls.length, before, "the sync waits for the settings");
+  settingsState.set({ ...settingsState.get(), duplicateMatch: "either" });
+  call = waitCall();
+  await settled();
+  // Back to the board's settings: one call, for the new article.
+  const fresh = await call;
+  assert.equal(calls.length, before + 1);
+  fresh.onChunk(TOPICS); fresh.resolve();
+  await tick(); await tick();
+  assert.equal(board.get().newCount, 1);
+  openBoard(false);
+});
+
+test("a board from yesterday is made again even when the settings end where they began", async () => {
+  const settled = () => new Promise((resolve) => setTimeout(resolve, 700));
+  rows = [article(1), article(2)];
+  let call = waitCall();
+  refreshBoard();
+  (await call).onChunk(TOPICS); calls.at(-1).resolve();
+  await tick(); await tick();
+  board.set({ ...board.get(), day: board.get().day - 86400000 });
+  openBoard(true);
+  // (Opening a stale board makes it again; answer that first.)
+  const reopened = calls.at(-1);
+  reopened.onChunk(TOPICS); reopened.resolve();
+  await tick(); await tick();
+  board.set({ ...board.get(), day: board.get().day - 86400000 });
+  const before = calls.length;
+  settingsState.set({ ...settingsState.get(), duplicateMatch: "title" });
+  settingsState.set({ ...settingsState.get(), duplicateMatch: "either" });
+  call = waitCall();
+  await settled();
+  const again = await call;
+  assert.equal(calls.length, before + 1);
+  again.onChunk(TOPICS); again.resolve();
+  await tick(); await tick();
+  openBoard(false);
+});
+
+test("a sync deferred by settling settings is kept when the board closes, and after a board still being made", async () => {
+  const settled = () => new Promise((resolve) => setTimeout(resolve, 700));
+  rows = [article(1), article(2)];
+  settingsState.set({ ...settingsState.get(), duplicateMatch: "either" });
+  await settled();
+  let call = waitCall();
+  refreshBoard();
+  (await call).onChunk(TOPICS); calls.at(-1).resolve();
+  await tick(); await tick();
+  // Closed before the settings settle: the sync's article still comes in.
+  openBoard(true);
+  let before = calls.length;
+  settingsState.set({ ...settingsState.get(), duplicateMatch: "url" });
+  rows = [article(1), article(2), article(3)];
+  await sync();
+  settingsState.set({ ...settingsState.get(), duplicateMatch: "either" });
+  openBoard(false);
+  call = waitCall();
+  await settled();
+  const closed = await call;
+  assert.equal(calls.length, before + 1, "one call for the synced article");
+  closed.onChunk(TOPICS); closed.resolve();
+  await tick(); await tick();
+  assert.ok(board.get().ids.includes(3));
+
+  // A board being made when the sync lands: brought up to date after it.
+  call = waitCall();
+  refreshBoard();
+  const running = await call;
+  before = calls.length;
+  rows = [article(1), article(2), article(3), article(4)];
+  await sync();
+  assert.equal(calls.length, before, "nothing while the board is made");
+  call = waitCall();
+  running.onChunk(TOPICS); running.resolve();
+  const after = await call;
+  assert.equal(after.kind, "topics", "the synced article is asked about once the board is made");
+  after.onChunk(TOPICS); after.resolve();
+  await tick(); await tick();
+  assert.ok(board.get().ids.includes(4));
+});
+
+test("a sync while a closed board is out of date is read once the settings return; a queued sync waits for settling settings", async () => {
+  const settled = () => new Promise((resolve) => setTimeout(resolve, 700));
+  rows = [article(1), article(2)];
+  settingsState.set({ ...settingsState.get(), duplicateMatch: "either" });
+  await settled();
+  let call = waitCall();
+  refreshBoard();
+  (await call).onChunk(TOPICS); calls.at(-1).resolve();
+  await tick(); await tick();
+  // Changed while open, closed, synced while out of date, then changed back.
+  openBoard(true);
+  let before = calls.length;
+  settingsState.set({ ...settingsState.get(), duplicateMatch: "url" });
+  openBoard(false);
+  await settled();
+  rows = [article(1), article(2), article(5)];
+  await sync();
+  assert.equal(calls.length, before, "closed and out of date: nothing yet");
+  call = waitCall();
+  settingsState.set({ ...settingsState.get(), duplicateMatch: "either" });
+  await settled();
+  const back = await call;
+  assert.equal(calls.length, before + 1, "the synced article is read");
+  back.onChunk(TOPICS); back.resolve();
+  await tick(); await tick();
+  assert.ok(board.get().ids.includes(5));
+
+  // A sync queued behind a board being made, then settings start changing
+  // before it is done: nothing until they settle.
+  openBoard(true);
+  call = waitCall();
+  refreshBoard();
+  const running = await call;
+  rows = [article(1), article(2), article(5), article(6)];
+  await sync();
+  settingsState.set({ ...settingsState.get(), duplicateMatch: "title" });
+  before = calls.length;
+  running.onChunk(TOPICS); running.resolve();
+  await tick(); await tick();
+  assert.equal(calls.length, before, "the queued sync waits for the settings");
+  settingsState.set({ ...settingsState.get(), duplicateMatch: "either" });
+  call = waitCall();
+  await settled();
+  const last = await call;
+  assert.equal(calls.length, before + 1, "one call once they settle");
+  last.onChunk(TOPICS); last.resolve();
+  await tick(); await tick();
+  assert.ok(board.get().ids.includes(6));
+  openBoard(false);
+});
+
+test("a sync landing while a refresh finds nothing new is read after it", async () => {
+  const settled = () => new Promise((resolve) => setTimeout(resolve, 700));
+  rows = [article(1), article(2)];
+  settingsState.set({ ...settingsState.get(), duplicateMatch: "either" });
+  await settled();
+  let call = waitCall();
+  refreshBoard();
+  (await call).onChunk(TOPICS); calls.at(-1).resolve();
+  await tick(); await tick();
+  openBoard(true);
+  const before = calls.length;
+  // The refresh reads nothing new; a sync bringing article 7 finishes right after the read.
+  globalThis.__board.onRead = () => {
+    rows = [article(1), article(2), article(7)];
+    globalThis.__board.isSyncing.set(true); globalThis.__board.isSyncing.set(false);
+  };
+  call = waitCall();
+  refreshBoard({ onlyIfNew: true });
+  const after = await call;
+  assert.equal(calls.length, before + 1, "the sync's article is asked about");
+  after.onChunk(TOPICS); after.resolve();
+  await tick(); await tick();
+  assert.ok(board.get().ids.includes(7));
+  openBoard(false);
 });

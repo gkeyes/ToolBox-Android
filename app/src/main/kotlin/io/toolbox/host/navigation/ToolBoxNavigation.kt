@@ -25,7 +25,6 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -339,7 +338,6 @@ internal fun ToolBoxNavigation(
     val settingsListState = rememberLazyListState()
     var homeEditing by rememberSaveable { mutableStateOf(false) }
     var homeCreatingGroup by rememberSaveable { mutableStateOf(false) }
-    val coroutineScope = rememberCoroutineScope()
     val onPickPackage = rememberPackageImportPicker(importViewModel, contentResolver)
 
     fun navigateMain(destination: MainDestination) {
@@ -377,11 +375,8 @@ internal fun ToolBoxNavigation(
     fun progressFor(route: ToolBoxRoute) = pageProgress.getOrPut(route) { Animatable(1f) }
     SideEffect { pageProgress.keys.retainAll(retainedRoutes.toSet()) }
     val firstRetainedProgress = retainedRoutes.firstOrNull()?.let(::progressFor)
-    val navigator = remember(secondaryBackStack, coroutineScope) {
-        RuntimeNavigator(secondaryBackStack, coroutineScope)
-    }
-    val transition = rememberRuntimeTransition(runtimeRoute, navigator.generation)
-    navigator.transition = transition
+    val navigator = rememberRuntimeNavigator(secondaryBackStack, runtimeRoute)
+    val transition = navigator.transition
     val entryProgress = transition.entryProgress
     var runtimeLayerEnabled by transition::runtimeLayerEnabled
     var entryCoverVisible by transition::entryCoverVisible
@@ -395,10 +390,6 @@ internal fun ToolBoxNavigation(
         enabled = retainedRoutes.isEmpty() && runtimeRoute == null && primaryBackStack.size > 1,
         onBack = ::goBackPrimary,
     )
-
-    LaunchedEffect(transition) { navigator.finishInterruptedReturn() }
-
-    RuntimeTransitionEffects(transition)
 
     fun navigate(route: ToolBoxRoute) = navigator.navigate(route)
 
@@ -569,7 +560,7 @@ internal fun ToolBoxNavigation(
                     onBack = navigator::leave,
                     toolName = runtimeTitle,
                     reopenRevision = navigator.reopenRevision,
-                    onReopenHandled = { transition.reopenRequested = false },
+                    onReopenHandled = navigator::reopenHandled,
                     modifier = Modifier
                         .fillMaxSize()
                         .zIndex(1f)
