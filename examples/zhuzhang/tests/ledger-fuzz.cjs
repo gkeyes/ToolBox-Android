@@ -9,7 +9,7 @@
 function run(app, { n = 20000, seed = 1, backdate = true } = {}) {
   let s = seed >>> 0 || 1;
   const R = () => (s = (Math.imul(s, 1103515245) + 12345) >>> 0) / 4294967296, ri = (k) => Math.floor(R() * k);
-  const st = { ledgers: n, entries: 0, rowSign: 0, rowSum: 0, cashSum: 0, negCash: 0, leak: 0, first: null };
+  const st = { ledgers: n, entries: 0, made: { payment: 0, whole: 0, aimed: 0 }, rowSign: 0, rowSum: 0, cashSum: 0, negCash: 0, leak: 0, first: null };
   const fail = (key, L) => { st[key]++; if (!st.first) st.first = { key, ledger: JSON.parse(JSON.stringify(L)) }; };
   for (let t = 0; t < n; t++) {
     const np = 2 + ri(3), yuan = R() < .5, actual = R() < .4;
@@ -28,7 +28,7 @@ function run(app, { n = 20000, seed = 1, backdate = true } = {}) {
       L.payments.push(p);
       let W;
       try { W = app.validate(JSON.parse(JSON.stringify(L))); app.assertCashTimeline(W, 'b'); } catch (_) { L.payments.pop(); continue; }
-      st.entries++;
+      st.entries++; st.made[p.part ? 'aimed' : p.kind === 'refund' ? 'whole' : 'payment']++;
       const o = app.payShares(W.items[0], W), tot = o.cash.map(() => 0);
       for (const q of W.payments) {
         const row = o.rows.get(q.id);
