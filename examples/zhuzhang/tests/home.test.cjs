@@ -538,6 +538,45 @@ test('1.11.3 · 客餐厅 → 客厅/餐厅 keeps each look on its spot and file
   assert.equal(HM.relocate(parts, blocks.filter((b) => !parts.some((p) => p.id === b.id)), null), null, 'both parts deleted: untouched');
 });
 
+test('1.11.4 · a stored refund dated before its payment still loads, and comes off when the payment arrives', () => {
+  const s = base(); s.payments.push({ id: 'r', itemId: 'a', amount: 500, date: '2026-09-30', kind: 'refund', note: '' });
+  assert.equal(app.validate(s).payments.length, 2, 'the stored ledger is not locked');
+  assert.match(read('app.js'), /for\(const i of parsed\.items\)assertCashTimeline\(parsed,i\.id\);/, 'a restore still refuses it');
+  const b = { ...s.items[0], id: 'bd', room: '多个空间', parts: [{ id: 'x', name: '甲', room: '主卧', amount: null }, { id: 'y', name: '乙', room: '次卧', amount: null }] };
+  const L = app.validate({ ...base(), items: [b], payments: [{ id: 'r', itemId: 'bd', amount: 5000, date: '2026-09-30', kind: 'refund', note: '' }, { id: 'p', itemId: 'bd', amount: 10000, date: '2026-10-01', kind: 'payment', note: '' }] });
+  const out = app.payShares(L.items[0], L), sum = (a) => a.reduce((x, y) => x + y, 0);
+  assert.equal(sum(out.cash), 5000, 'pieces add up to the net paid, ¥50');
+  assert.equal(sum(out.rows.get('r')), 5000, 'the refund row carries its whole ¥50');
+  assert.ok(out.cash.every((v) => v >= 0));
+});
+
+test('1.11.4 · HM.relocate scales a look into a resized part and clamps one standing outside every part', () => {
+  // The 客餐厅 was 0..6 × 0..3 (p1 4 m wide, p2 2 m); 客厅 (p1) is now 2 m wide. 1 m in = a quarter of p1 → a quarter of 客厅.
+  const parts = [{ id: 'p1', x: 0, z: 0, w: 4, d: 3 }, { id: 'p2', x: 4, z: 0, w: 2, d: 3 }];
+  const r = HM.relocate(parts, [{ id: 'p1', name: '客厅', x: 0, z: 0, w: 2, d: 3 }, { id: 'p2', name: '餐厅', x: 2, z: 0, w: 2, d: 3 }], { kind: 'sofaA', x: 1 / 6, z: .5, rot: 0 });
+  assert.equal(r.room, '客厅'); assert.equal(r.model.x, .25, 'scaled with the part, not kept at 1 m'); assert.equal(r.model.z, .5);
+  // An L: the look at (3.2, 3) sits in the notch, nearest p1 (1 m below it), so it is pulled to p1's edge (z 2 of a 0..4 客厅).
+  const L = [{ id: 'p1', x: 0, z: 0, w: 4, d: 2 }, { id: 'p2', x: 0, z: 2, w: 2, d: 2 }];
+  const c = HM.relocate(L, [{ id: 'p1', name: '客厅', x: 0, z: 0, w: 4, d: 2 }, { id: 'p2', name: '餐厅', x: 0, z: 4, w: 2, d: 2 }, { id: 'q', name: '客厅', x: 0, z: 2, w: 4, d: 2 }], { kind: 'tvA', x: .8, z: .75, rot: 0 });
+  assert.equal(c.room, '客厅'); assert.equal(c.model.x, .8); assert.equal(c.model.z, .5, 'clamped into p1, not left in the notch');
+});
+
+test('1.11.4 · the plan editor hands each old 客餐厅 record to HM.relocate, and the ledger applies the answer', () => {
+  const src = read('home3d.js'), body = src.slice(src.indexOf('  function relocator(home) {'), src.indexOf('  const keyOf = '));
+  const calls = []; const HMx = { relocate: (parts, blocks, model) => (calls.push([parts, blocks, model]), { room: '餐厅', model: { ...model, x: .1 } }) };
+  const relocator = new Function('living', 'livingAt', 'HM', body + 'return relocator;')([['客餐厅', '客厅']], new Map([['客餐厅', ['P']]]), HMx);
+  const home = { blocks: ['B'] }, move = relocator(home);
+  assert.equal(typeof move, 'function');
+  assert.deepEqual(move('客餐厅', { kind: 'tvA', x: .5 }), { room: '餐厅', model: { kind: 'tvA', x: .1 } });
+  assert.deepEqual(calls, [[['P'], ['B'], { kind: 'tvA', x: .5 }]]);
+  assert.equal(move('主卧', null), null, 'other rooms untouched');
+  assert.equal((src.match(/onDone\(home, renamesOf\(home\), (true|false), relocator\(home\)\)/g) || []).length, 2, '完成 and the background save both pass it');
+  const app = read('app.js'), fix = app.match(/const fix=(o=>\{const m=move&&move\(o\.room,o\.model\);[^\n]*?\});/)[1];
+  const run = new Function('move', 'to', 'return ' + fix)((room, model) => room === '客餐厅' ? { room: '餐厅', model: { ...model, x: .1 } } : null, new Map([['次卧', '卧室']]));
+  const a = { room: '客餐厅', model: { kind: 'tvA', x: .5 } }, b = { room: '次卧' }; run(a); run(b);
+  assert.deepEqual(a, { room: '餐厅', model: { kind: 'tvA', x: .1 } }); assert.equal(b.room, '卧室');
+});
+
 test('1.11.3 · the plan editor refuses drags past 60 rooms / 40 bathrooms and keeps a refused session as a draft', () => {
   const src = read('home3d.js');
   assert.match(src, /freeBath\(it\) && rooms\.length >= HM\.BLOCK_MAX\) toast\(`最多\$\{HM\.BLOCK_MAX\}个房间/);
