@@ -21,3 +21,12 @@
 @media (display-mode: standalone) {
   .action-buttons { padding-block-start: env(safe-area-inset-top, 0px); }
 }
+
+/* After a touch (design/lens.js sets data-nf-input), a tapped control can
+   stay marked focus-visible: a blue ring left behind when the finger lifts.
+   No control draws a focus ring until a key is pressed again. */
+:root[data-nf-input="touch"] :is(button, a, [role="button"], [role="tab"], [role="switch"], [role="menuitem"], .button, .nextflux-close-button):is(:focus-visible, [data-focus-visible="true"]) {
+  outline: none !important;
+  --tw-ring-color: transparent !important;
+  --tw-ring-offset-color: transparent !important;
+}

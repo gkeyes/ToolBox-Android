@@ -326,3 +326,30 @@ test("tab switches keep the list mounted and scrolling pauses the edge lens", as
   await expect.poll(() => page.evaluate(() => document.documentElement.hasAttribute("data-nf-scrolling"))).toBe(false);
   expect(pageErrors).toEqual([]);
 });
+
+// A tap leaves no focus ring behind; a key press brings rings back.
+test("a tapped control shows no focus ring until a key is pressed", async ({ page }) => {
+  await page.setViewportSize({ width: 400, height: 870 });
+  await installNativeBoundary(page, {
+    auth: {
+      serverUrl: "https://miniflux.xiaochen.win", username: "layout-test-user", password: "", userId: 7,
+      token: "fixed-synthetic-test-token", authType: "token",
+    },
+    settings: { ...STORED_SETTINGS, syncInterval: "0" },
+    cacheRoot: {
+      version: 3, revision: 1, account: { serverUrl: "https://miniflux.xiaochen.win", userId: "7" },
+      transaction: null, lastSyncTime: null,
+      tables: { articles: null, feeds: null, categories: null, feedIcons: null },
+    },
+  });
+  await page.goto(PRODUCTION_URL);
+  const trigger = page.locator('.article-list-header > [data-sidebar="trigger"]');
+  await expect(trigger).toBeVisible();
+  await page.keyboard.press("Shift");
+  await trigger.focus();
+  await page.evaluate(() => document.activeElement.dispatchEvent(new TouchEvent("touchstart", { bubbles: true, touches: [] })));
+  expect(await page.evaluate(() => document.documentElement.dataset.nfInput)).toBe("touch");
+  await expect.poll(() => trigger.evaluate((el) => getComputedStyle(el).outlineStyle)).not.toBe("solid");
+  await page.keyboard.press("Shift");
+  expect(await page.evaluate(() => document.documentElement.dataset.nfInput)).toBe("keyboard");
+});

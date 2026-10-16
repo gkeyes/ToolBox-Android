@@ -138,3 +138,35 @@
 .nf-board-digest section:first-of-type h4 { margin-block-start: 6px; }
 .nf-board-digest p { font-size: 1.0625rem; line-height: 1.75; }
 .nf-board-card p.nf-board-digest-meta { margin: 0; font-size: 0.8125rem; line-height: 1.5; color: var(--ds-text-secondary, var(--muted)); }
+
+/* Live run: what was sent, then the AI's thinking and answer as they stream. */
+.nf-board-live { display: flex; flex-direction: column; gap: 10px; }
+.nf-board-live-head { display: flex; align-items: center; gap: 8px; }
+.nf-board-live-head h3 { flex: 1; min-inline-size: 0; margin: 0; font-size: 0.9375rem; font-weight: 600; }
+.nf-board-live-tag {
+  flex: 0 0 auto;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+.nf-board-live-tag.is-receive { color: #0f9d76; background: color-mix(in srgb, #0f9d76 13%, transparent); }
+.nf-board-live-sent { margin: 8px 0 4px; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; }
+.nf-board-live-sent li { font-size: 0.8125rem; line-height: 1.4; color: var(--ds-text-secondary, var(--muted)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nf-board-live-sent li span { margin-inline-end: 6px; color: var(--ds-text-tertiary, var(--muted)); }
+.nf-board-live-text {
+  margin: 8px 0 0;
+  max-block-size: 14rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--ds-on-surface, var(--foreground)) 5%, transparent);
+  font: 0.75rem/1.55 ui-monospace, "SF Mono", Menlo, monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--ds-on-surface, var(--foreground));
+}
+.nf-board-live-text.is-thinking { max-block-size: 8rem; font-style: italic; color: var(--ds-text-tertiary, var(--muted)); }

@@ -252,7 +252,7 @@ export default function ArticleListHeader({ collapsed = false }) {
           <>
             <h1 className="sr-only">{title}</h1>
             <div ref={tabsRef} className="article-list-inline-tabs min-w-0 flex-1" data-fit="full">
-              <ArticleListTabs activeCount={activeCount} counts={tabCounts} />
+              <ArticleListTabs />
             </div>
           </>
         )}
@@ -260,7 +260,7 @@ export default function ArticleListHeader({ collapsed = false }) {
       </div>
       {scoped && (
         <div ref={tabsRef} className="article-list-scoped-tabs" data-fit="full">
-          <ArticleListTabs activeCount={activeCount} counts={tabCounts} />
+          <ArticleListTabs />
         </div>
       )}
       {!scoped && caption && <div className="article-list-caption-row">{caption}</div>}

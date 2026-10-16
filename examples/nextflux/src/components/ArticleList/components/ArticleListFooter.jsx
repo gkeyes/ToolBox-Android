@@ -4,25 +4,12 @@ import { Tabs } from "@heroui/react";
 import { useStore } from "@nanostores/react";
 import { useTranslation } from "react-i18next";
 
-// Each tab shows its name with its count on a smaller line below. `counts`
-// holds the counts that are known ({starred, unread, all}); the active tab
-// always shows `activeCount`.
-export default function ArticleListFooter({ activeCount = null, counts = {} }) {
+// Each tab shows only its name: the counts under the names were dropped at
+// the reader's request (1.17.0).
+export default function ArticleListFooter() {
   const { t } = useTranslation();
   const $filter = useStore(filter);
-  // A known count wins over activeCount, which still holds the previous
-  // filter's total for one render after a switch.
-  const countOf = (key) => {
-    const value = Number.isFinite(counts[key]) ? counts[key] : $filter === key ? activeCount : null;
-    return Number.isFinite(value) ? value.toLocaleString("en-US") : null;
-  };
-  const label = (key, text) => {
-    const count = countOf(key);
-    return <span className="article-tab-label">
-      <span>{text}</span>
-      {count != null && <span className="article-tab-count ds-tnum">{count}</span>}
-    </span>;
-  };
+  const label = (_key, text) => <span className="article-tab-label"><span>{text}</span></span>;
 
   return (
     <div className="article-list-tabs px-3">

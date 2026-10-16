@@ -7,7 +7,7 @@ import { AISummaryIcon } from "@/components/ui/icons.jsx";
 import { SidebarTrigger } from "@/components/ui/sidebar.jsx";
 import ArticleView from "@/components/ArticleView/ArticleView.jsx";
 import { settingsState } from "@/stores/settingsStore.js";
-import { board, digest, openBoard, refreshBoard, writeDigest } from "@/toolbox/board/boardStore.js";
+import { board, boardStream, digest, openBoard, refreshBoard, writeDigest } from "@/toolbox/board/boardStore.js";
 import { parseDigest } from "@/toolbox/board/board.mjs";
 import { registerBackHandler } from "@/toolbox/systemBack.js";
 import "@/toolbox/board/board.css";
@@ -100,15 +100,70 @@ function Digest({ state, onOpen }) {
   </>;
 }
 
-function caption(state) {
-  if (state.status === "loading") return "正在生成…";
-  if (state.updating) return state.at ? `正在更新，下面是 ${clock(state.at)} 的版本` : "正在更新";
+// A box of streamed text that stays scrolled to its newest line while the
+// reader has not scrolled it back.
+function LiveText({ text, className }) {
+  const ref = useRef(null);
+  const pinned = useRef(true);
+  useEffect(() => {
+    const box = ref.current;
+    if (box && pinned.current) box.scrollTop = box.scrollHeight;
+  }, [text]);
+  return <pre
+    ref={ref}
+    className={cn("nf-board-live-text", className)}
+    onScroll={(event) => {
+      const box = event.currentTarget;
+      pinned.current = box.scrollHeight - box.scrollTop - box.clientHeight < 24;
+    }}
+  >{text}</pre>;
+}
+
+// While a board is made: what was sent to the AI, then its thinking and its
+// answer as they stream in.
+function LiveRun({ stream }) {
+  const [all, setAll] = useState(false);
+  if (!stream) return <p className="nf-board-status" role="status"><Spinner />正在读取今天的未读文章…</p>;
+  const shown = all ? stream.sent : stream.sent.slice(0, 3);
+  const phase = stream.text ? "AI 正在输出" : stream.thinking ? "AI 正在思考" : "等待 AI 回应";
+  return <div className="nf-board-live" aria-live="off">
+    <section className="nf-board-card nf-board-live-card">
+      <div className="nf-board-live-head"><span className="nf-board-live-tag">发送</span><h3>今天的 {stream.sent.length} 篇未读{stream.skipped > 0 ? `（另有 ${stream.skipped} 篇较早的没有发送）` : ""}</h3></div>
+      <ol className="nf-board-live-sent">
+        {shown.map((article, index) => <li key={index}><span className="ds-tnum">[{index + 1}]</span>{article.feedTitle ? `${article.feedTitle} · ` : ""}{article.title || "（无标题）"}</li>)}
+      </ol>
+      {!all && stream.sent.length > 3 && <button type="button" className="nf-board-chip is-more" onClick={() => setAll(true)}>展开全部 {stream.sent.length} 篇</button>}
+    </section>
+    <section className="nf-board-card nf-board-live-card">
+      <div className="nf-board-live-head"><span className="nf-board-live-tag is-receive">接收</span><h3>{phase}</h3><Spinner /></div>
+      {stream.thinking && <LiveText className="is-thinking" text={stream.thinking} />}
+      {stream.text ? <LiveText text={stream.text} /> : null}
+    </section>
+  </div>;
+}
+
+// When the AI's answer could not be read: what it actually said.
+function RawOutput({ raw }) {
+  if (!raw || !(raw.text || raw.thinking)) return null;
+  return <section className="nf-board-card nf-board-live-card">
+    <div className="nf-board-live-head"><span className="nf-board-live-tag is-receive">AI 原文</span><h3>{raw.text ? `${raw.text.length} 字` : "只有思考，没有回答"}</h3></div>
+    {raw.thinking && <LiveText className="is-thinking" text={raw.thinking} />}
+    {raw.text && <LiveText text={raw.text} />}
+  </section>;
+}
+
+function caption(state, stream) {
+  if (state.status === "loading" || state.updating) {
+    const phase = !stream ? "正在读取未读文章" : stream.text ? `AI 正在输出 · ${stream.text.length} 字` : stream.thinking ? "AI 正在思考" : `已发送 ${stream.sent.length} 篇，等待 AI`;
+    return state.updating && state.at ? `${phase}，下面是 ${clock(state.at)} 的版本` : phase;
+  }
   if (state.status === "done") return `${state.total} 篇未读 · ${clock(state.at)} 更新`;
   return "";
 }
 
 export default function BoardPage() {
   const state = useStore(board);
+  const stream = useStore(boardStream);
   const { articleListStyle } = useStore(settingsState);
   const { articleId } = useParams();
   const navigate = useNavigate();
@@ -157,7 +212,7 @@ export default function BoardPage() {
             <SidebarTrigger className="nextflux-toolbar-button" />
             <div className="ds-topbar-title article-list-title grid text-left">
               <h1 className="truncate">今日看板</h1>
-              {caption(state) && <span className={cn("article-list-caption ds-tnum truncate", working && "is-working")} role="status" aria-live="polite">{caption(state)}</span>}
+              {caption(state, stream) && <span className={cn("article-list-caption ds-tnum truncate", working && "is-working")} role="status">{caption(state, stream)}</span>}
             </div>
             <div className="article-list-actions ml-auto flex shrink-0">
               <Button
@@ -189,12 +244,13 @@ export default function BoardPage() {
           )}
         </div>
         <div className="nf-board-scroll">
-          {state.status === "idle" || state.status === "loading" ? <p className="nf-board-status" role="status"><Spinner />正在读取今天的未读文章并归类…</p> : null}
+          {state.status === "idle" || state.status === "loading" ? <LiveRun stream={stream} /> : null}
           {state.status === "empty" && <p className="nf-board-status" role="status">今天还没有未读文章。</p>}
           {state.status === "error" && <div className="nf-board-error" role="alert">
             <p>{state.error}</p>
             <Button size="sm" variant="secondary" onPress={() => refreshBoard()}>重试</Button>
           </div>}
+          {state.status === "error" && <RawOutput raw={state.raw} />}
           {done && <>
             <p className="nf-board-summary">
               {tab === "topics" ? `AI 把今天的 ${read} 篇未读归成 ${state.topics.length} 个主题，按重要程度排列` : `把 ${state.topics.length} 个主题写成一篇文章`}
@@ -202,6 +258,8 @@ export default function BoardPage() {
               {state.newCount > 0 && !state.updating ? `，比上一版多 ${state.newCount} 篇新文章` : ""}
             </p>
             {state.error && <p className="nf-board-inline-error" role="alert">更新失败：{state.error}</p>}
+            {state.error && <RawOutput raw={state.raw} />}
+            {state.updating && <LiveRun stream={stream} />}
             <div className={state.updating ? "nf-board-cards is-stale" : "nf-board-cards"}>
               {tab === "topics" ? <Topics state={state} onOpen={openArticle} /> : <Digest state={state} onOpen={openArticle} />}
             </div>

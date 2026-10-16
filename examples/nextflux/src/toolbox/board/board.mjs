@@ -81,6 +81,7 @@ const TOPICS_PROMPT = [
   "只输出一个 JSON 对象，不要输出其他文字，格式：",
   "{\"topics\":[{\"title\":\"主题名，不超过 12 个字\",\"gist\":\"一句话重点，不超过 24 个字\",\"summary\":\"两三句话的摘要\",\"articles\":[1,3]}]}",
   "articles 填这个主题包含的文章编号。全部用简体中文，只根据给出的内容写，不要编造。",
+  "文字里需要引号时用「」，不要用英文双引号。",
 ].join("\n");
 
 // The instructions and the user message's opening line, outside the articles.
@@ -95,6 +96,34 @@ export function topicsMessages(articles) {
 
 const clean = (value, max) => String(value ?? "").replace(/\*\*/g, "").replace(/\s+/g, " ").trim().slice(0, max);
 
+// JSON as models write it: also accepts a trailing comma before } or ].
+function looseJson(text) {
+  try { return JSON.parse(text); } catch { /* try the repaired text */ }
+  try { return JSON.parse(text.replace(/,\s*([}\]])/g, "$1")); } catch { return null; }
+}
+
+// When the reply is not valid JSON at all (an unescaped " inside a summary,
+// a reply cut off mid-way), read each topic's fields on their own. A string
+// value ends at a quote followed by the next key or the object's end, so a
+// stray quote inside it stays part of the text; a topic whose article list
+// never closed is left out.
+const unescape = (value) => value.replace(/\\n/g, " ").replace(/\\(["\\/])/g, "$1");
+export function salvageTopics(raw) {
+  const starts = [...String(raw || "").matchAll(/"title"\s*:/g)].map((match) => match.index);
+  return starts.map((start, index) => {
+    const part = raw.slice(start, starts[index + 1] ?? raw.length);
+    const field = (key) => {
+      const open = part.match(new RegExp(`"${key}"\\s*:\\s*"`));
+      if (!open) return "";
+      const rest = part.slice(open.index + open[0].length);
+      const end = rest.search(/"\s*(?:,\s*"[A-Za-z_]+"\s*:|\})/);
+      return end >= 0 ? unescape(rest.slice(0, end)) : "";
+    };
+    const numbers = part.match(/"articles"\s*:\s*\[([^\]]*)\]/);
+    return { title: field("title"), gist: field("gist"), summary: field("summary"), articles: numbers ? (numbers[1].match(/\d+/g) || []).map(Number) : [] };
+  }).filter((topic) => topic.title && topic.articles.length);
+}
+
 // Reads the AI's topics. Article numbers must name a real article; each
 // article belongs to at most one topic (the higher ranked); a topic left
 // without articles is dropped. Throws when nothing usable came back.
@@ -108,12 +137,12 @@ export function parseTopics(text, count) {
   search: for (const { index: start } of raw.matchAll(/[[{]/g)) {
     const close = raw[start] === "{" ? "}" : "]";
     for (let end = raw.lastIndexOf(close); end > start; end = raw.lastIndexOf(close, end - 1)) {
-      let value;
-      try { value = JSON.parse(raw.slice(start, end + 1)); } catch { continue; }
+      const value = looseJson(raw.slice(start, end + 1));
       if (usable(value)) { data = value; break search; }
     }
   }
-  const list = Array.isArray(data?.topics) ? data.topics : Array.isArray(data) ? data : null;
+  const salvaged = data ? null : salvageTopics(raw);
+  const list = Array.isArray(data?.topics) ? data.topics : Array.isArray(data) ? data : salvaged?.length ? salvaged : null;
   if (!list) throw new Error("AI 返回的内容无法识别，请重新生成。");
   const taken = new Set();
   const topics = [];
@@ -121,7 +150,7 @@ export function parseTopics(text, count) {
     if (topics.length >= MAX_TOPICS) break;
     const title = clean(item?.title, 40);
     const numbers = (Array.isArray(item?.articles) ? item.articles : [])
-      .map(Number)
+      .map((n) => (typeof n === "number" ? n : Number(String(n).replace(/[^\d]/g, "") || NaN)))
       .filter((n) => Number.isInteger(n) && n >= 1 && n <= count && !taken.has(n));
     if (!title || !numbers.length) continue;
     const unique = [...new Set(numbers)];

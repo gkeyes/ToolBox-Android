@@ -17,6 +17,10 @@ export const board = atom({ ...EMPTY });
 // The written digest of the current board. status: idle | streaming | done | error.
 export const digest = atom({ status: "idle", text: "", error: "", boardAt: null });
 export const boardOpen = atom(false);
+// What the board run sent and what the AI is sending back, live, for the
+// page to show while it waits: { sent: [{ title, feedTitle }], skipped,
+// thinking, text }. Cleared when a board is made.
+export const boardStream = atom(null);
 
 let run = null;
 let digestRun = null;
@@ -74,9 +78,32 @@ export async function refreshBoard({ onlyIfNew = false } = {}) {
     board.set(keep ? { ...previous, updating: true, error: "" } : { ...EMPTY, status: "loading", day: today });
     const { articles, skipped } = fitArticles(all);
     let text = "";
-    await streamChat(topicsMessages(articles), { signal: controller.signal, onChunk: (chunk) => { text += chunk; } });
+    let thinking = "";
+    let frame = null;
+    const publish = () => {
+      frame = null;
+      if (live()) boardStream.set({ ...boardStream.get(), thinking, text });
+    };
+    const later = () => { frame ??= setTimeout(publish, 80); };
+    boardStream.set({ sent: articles.map(({ title, feedTitle }) => ({ title, feedTitle })), skipped, thinking: "", text: "" });
+    try {
+      await streamChat(topicsMessages(articles), {
+        signal: controller.signal,
+        onChunk: (chunk) => { text += chunk; later(); },
+        onThink: (chunk) => { thinking += chunk; later(); },
+      });
+    } finally {
+      clearTimeout(frame);
+      publish();
+    }
     if (!live()) return;
-    const topics = parseTopics(text, articles.length);
+    let topics;
+    try { topics = parseTopics(text, articles.length); } catch (error) {
+      // Keep what the AI said on screen so the reader can see why.
+      error.raw = { thinking, text };
+      throw error;
+    }
+    boardStream.set(null);
     stopDigest();
     board.set({
       ...EMPTY,
@@ -96,8 +123,9 @@ export async function refreshBoard({ onlyIfNew = false } = {}) {
     if (!live()) return;
     const message = error?.message || "生成今日看板失败。";
     board.set(keep
-      ? { ...board.get(), updating: false, error: message }
-      : { ...EMPTY, status: "error", error: message, day: today, ids: all.map((article) => article.id) });
+      ? { ...board.get(), updating: false, error: message, raw: error?.raw ?? null }
+      : { ...EMPTY, status: "error", error: message, raw: error?.raw ?? null, day: today, ids: all.map((article) => article.id) });
+    boardStream.set(null);
   } finally {
     if (run === controller) run = null;
   }
@@ -156,6 +184,7 @@ function reset() {
   run = null;
   stopDigest();
   board.set({ ...EMPTY });
+  boardStream.set(null);
   digest.set({ status: "idle", text: "", error: "", boardAt: null });
   boardOpen.set(false);
 }

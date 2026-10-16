@@ -31,8 +31,8 @@ globalThis.localStorage = { getItem: () => "1", setItem() {} };
 globalThis.__board = {
   rows: () => rows,
   // Each AI call waits for the test to answer it.
-  stream: (messages, { onChunk, signal }) => new Promise((resolve, reject) => {
-    const call = { kind: messages[0].content.includes("文章") && messages[1].content.startsWith("主题") ? "digest" : "topics", onChunk, resolve, reject, signal };
+  stream: (messages, { onChunk, onThink, signal }) => new Promise((resolve, reject) => {
+    const call = { kind: messages[0].content.includes("文章") && messages[1].content.startsWith("主题") ? "digest" : "topics", onChunk, onThink, resolve, reject, signal };
     signal?.addEventListener("abort", () => reject(Object.assign(new Error("aborted"), { name: "AbortError" })));
     calls.push(call);
     next?.(call);
@@ -40,7 +40,7 @@ globalThis.__board = {
 };
 const waitCall = () => new Promise((resolve) => { next = (call) => { next = null; resolve(call); }; });
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
-const { board, digest, refreshBoard, writeDigest } = await import("../src/toolbox/board/boardStore.js");
+const { board, boardStream, digest, refreshBoard, writeDigest } = await import("../src/toolbox/board/boardStore.js");
 const sync = async () => { globalThis.__board.isSyncing.set(true); globalThis.__board.isSyncing.set(false); await tick(); await tick(); };
 const TOPICS = JSON.stringify({ topics: [{ title: "主题", gist: "重点", summary: "摘要", articles: [1, 2] }] });
 
@@ -83,4 +83,27 @@ test("a sync while the digest is written leaves it running and it finishes", asy
   await tick(); await tick();
   assert.equal(digest.get().status, "done");
   assert.match(digest.get().text, /第二句/);
+});
+
+// While the board is made the page can show what was sent and what streams
+// back; when the answer can't be read, the AI's own words stay on the board.
+test("the live stream is published and an unreadable answer is kept", async () => {
+  rows = [article(5), article(6)];
+  const call = waitCall();
+  refreshBoard();
+  const live = await call;
+  assert.deepEqual(boardStream.get().sent.map((item) => item.title).sort(), ["文章 5", "文章 6"]);
+  live.onThink("先看看");
+  live.onChunk("今天没有");
+  await new Promise((resolve) => setTimeout(resolve, 120));
+  assert.equal(boardStream.get().thinking, "先看看");
+  assert.equal(boardStream.get().text, "今天没有");
+  live.onChunk("主题。");
+  live.resolve();
+  await tick(); await tick();
+  // (Today's earlier board stays on screen with the failure under it.)
+  assert.equal(board.get().updating, false);
+  assert.match(board.get().error, /无法识别/);
+  assert.deepEqual(board.get().raw, { thinking: "先看看", text: "今天没有主题。" });
+  assert.equal(boardStream.get(), null);
 });
