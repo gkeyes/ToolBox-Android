@@ -147,10 +147,33 @@ test('1.7.3 · in a narrow room only the wall a drag heads for can turn a look; 
   const down = { dx: 0, dz: .06 }, up = { dx: 0, dz: -.06 };
   assert.equal(HM.clampPlacement(bed, bb, cx, 1.8, 0, down).rot, 0, 'crossing the middle keeps the bed facing the room');
   assert.equal(HM.clampPlacement(bed, bb, cx, 1.8, 1, up).rot, 1, 'no wall ahead yet: keeps its turn');
-  assert.equal(HM.clampPlacement(bed, bb, cx, 1.3, 1, up).rot, 0, 'dragged back to the head wall it backs onto it again');
+  assert.equal(HM.clampPlacement(bed, bb, cx, 1.3, 1, up).rot, 1, '1.8.1: the side wall it backs onto keeps it');
   assert.equal(HM.clampPlacement(bed, bb, x0 + .93, 1.8, 0, { dx: -.06, dz: .01 }).rot, 1, 'pushed into a side wall it turns to it');
   const f = HM.KINDS.fridgeA, mb = HM.bbox(rects, '主卧');
   assert.equal(HM.clampPlacement(f, mb, 3.6 - HM.GAP - f.d / 2 - .35, 1.8, 0, true).rot, 3, 'exactly 35 cm away snaps');
+});
+
+test('1.8.1 · the wall a look backs onto keeps it until it leaves that wall; no clear heading falls back to the nearest wall', () => {
+  const { rects } = HM.makeRects(HM.planOf({ template: 't3l2' }));
+  const bed = HM.KINDS.bedA, along = { dx: .05, dz: 0 }, back = { dx: -.05, dz: .003 };
+  for (const room of ['次卧', '次卧2']) { // 3.0 m and 2.7 m: both side walls in range from the middle
+    const bb = HM.bbox(rects, room), [x0, z0, x1] = bb.rs[0].r, zHead = z0 + HM.GAP + bed.d / 2;
+    for (const x of [x0 + 1.2, (x0 + x1) / 2, x1 - 1.2]) for (const h of [along, back]) {
+      const p = HM.clampPlacement(bed, bb, x, zHead, 0, h);
+      assert.equal(p.rot, 0, `${room}: sliding along the head wall keeps the bed on it (x ${x.toFixed(2)})`);
+      assert.ok(Math.abs(p.z - zHead) < 1e-9, 'still flush with the head wall');
+    }
+  }
+  const mb = HM.bbox(rects, '主卧'), f = HM.KINDS.fridgeA, zb = HM.GAP + f.d / 2; // 主卧 [0,0]-[3.6,3.6]
+  for (const k of ['fridgeA', 'sofaA', 'cabA', 'bedA']) { const d = HM.KINDS[k];
+    assert.equal(HM.clampPlacement(d, mb, 3.6 - HM.GAP - d.w / 2, HM.GAP + d.d / 2, 0, { dx: .05, dz: 0 }).rot, 0, `${k}: slid along the back wall into the corner it stays on the back wall`); }
+  const bal = HM.bbox(rects, '阳台'), [bx0, bz0, bx1] = bal.rs[0].r, c = HM.KINDS.cabA;
+  assert.equal(HM.clampPlacement(c, bal, (bx0 + bx1) / 2 + .3, bz0 + HM.GAP + c.d / 2, 0, { dx: .05, dz: .01 }).rot, 0, 'on the balcony the far wall does not take over');
+  for (const deg of [55, 65, 72, 80]) { // approaching the right wall at an angle, 10 cm off it, from a look facing the back wall but off it
+    const a = deg * Math.PI / 180, h = { dx: .05 * Math.cos(a), dz: .05 * Math.sin(a) };
+    assert.equal(HM.clampPlacement(f, mb, 3.6 - HM.GAP - f.d / 2 - .1, 1.8, 0, h).rot, 3, `${deg}° off square still backs onto the wall`);
+  }
+  assert.equal(HM.clampPlacement(f, mb, 3.6 - HM.GAP - f.d / 2 - .1, 1.8, 0, { dx: 0, dz: 0 }).rot, 3, 'no heading: nearest wall');
 });
 
 test('a saved position survives a room resize as a fraction of the room', () => {
@@ -167,11 +190,15 @@ test('a saved position survives a room resize as a fraction of the room', () => 
   assert.equal(t2.back.reduce((s, [, w]) => s + w, 0).toFixed(2), t.back.reduce((s, [, w]) => s + w, 0).toFixed(2), 'outer walls stay put');
 });
 
-test('a full room shows at most six looks and counts the rest for +N', () => {
+test('1.8.1 · no six-look cap: chairs all show until the floor is 90% used', () => {
   const { rects } = HM.makeRects(HM.planOf({ template: 't3l2' }));
   const list = Array.from({ length: 9 }, (_, i) => ({ id: i, kind: 'microA' }));
   const { shown, hidden } = HM.fitRoom(list, rects, '客餐厅');
-  assert.equal(shown.length, 6); assert.equal(hidden.length, 3);
+  assert.equal(shown.length, 9); assert.equal(hidden.length, 0);
+  const lr = [{ kind: 'sofaA' }, { kind: 'coffeeA' }, { kind: 'tvA' }, { kind: 'diningA' }, { kind: 'fridgeA' }, { kind: 'cabA' }, ...Array.from({ length: 6 }, () => ({ kind: 'chairA' }))];
+  assert.equal(HM.fitRoom(lr, rects, '客餐厅').hidden.length, 0, 'six chairs beside six other looks all show');
+  const huge = HM.fitRoom(Array.from({ length: 400 }, () => ({ kind: 'chairA' })), rects, '客餐厅');
+  assert.ok(huge.hidden.length > 0 && huge.shown.length * .45 * .45 <= HM.area(rects, '客餐厅') * .9 + 1e-9, 'the floor-area check still caps an overfull room');
   const tooBig = HM.fitRoom([{ kind: 'bedB' }], rects, '阳台');
   assert.equal(tooBig.shown.length, 0, 'a bed does not fit on the 1.4 m balcony');
   assert.equal(tooBig.hidden.length, 1);
