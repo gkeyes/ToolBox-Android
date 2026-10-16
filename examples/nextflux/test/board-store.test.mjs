@@ -234,7 +234,7 @@ test("changing 查重方式 makes today's board out of date", async () => {
   assert.equal(boardOpen.get(), false);
 });
 
-test("the open board follows 查重方式 at once; a closed one waits to be opened, and a change undone costs nothing", async () => {
+test("the open board follows 查重方式 once it settles; a closed one waits to be opened, and a change undone costs nothing", async () => {
   rows = [article(1), article(2)];
   settingsState.set({ ...settingsState.get(), duplicateMatch: "either" });
   let call = waitCall();
@@ -264,4 +264,40 @@ test("the open board follows 查重方式 at once; a closed one waits to be open
   settingsState.set({ ...settingsState.get(), aiApiKey: "k2" });
   await tick();
   assert.equal(calls.length, before);
+});
+
+test("flipping 查重方式 on the open board asks the AI once, and flipping back asks nothing", async () => {
+  const settled = () => new Promise((resolve) => setTimeout(resolve, 700));
+  rows = [article(1), article(2)];
+  settingsState.set({ ...settingsState.get(), duplicateMatch: "either" });
+  await settled();
+  let call = waitCall();
+  refreshBoard();
+  (await call).onChunk(TOPICS); calls.at(-1).resolve();
+  await tick(); await tick();
+  openBoard(true);
+  // Through all three options quickly: one call, for the last.
+  let before = calls.length;
+  for (const match of ["title", "url", "title"]) settingsState.set({ ...settingsState.get(), duplicateMatch: match });
+  call = waitCall();
+  await settled();
+  const one = await call;
+  assert.equal(calls.length, before + 1, "one AI call for a quick run of changes");
+  // Changed back while that board is still being made: no second call.
+  settingsState.set({ ...settingsState.get(), duplicateMatch: "url" });
+  settingsState.set({ ...settingsState.get(), duplicateMatch: "title" });
+  await settled();
+  assert.equal(calls.length, before + 1, "changed and changed back: nothing more");
+  assert.equal(one.signal.aborted, false);
+  assert.equal(board.get().filter, "false|true|title");
+  one.onChunk(TOPICS); one.resolve();
+  await tick(); await tick();
+  assert.equal(board.get().status, "done");
+  // Changed and changed back once the board is made: nothing.
+  before = calls.length;
+  settingsState.set({ ...settingsState.get(), duplicateMatch: "either" });
+  settingsState.set({ ...settingsState.get(), duplicateMatch: "title" });
+  await settled();
+  assert.equal(calls.length, before);
+  openBoard(false);
 });

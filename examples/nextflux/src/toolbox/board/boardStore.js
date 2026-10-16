@@ -23,6 +23,8 @@ export const boardOpen = atom(false);
 export const boardStream = atom(null);
 
 let run = null;
+// The article settings the running board is made under.
+let runFilter = null;
 let digestRun = null;
 
 const aiReady = () => Boolean(settingsState.get().aiApiKey);
@@ -64,6 +66,7 @@ export async function refreshBoard({ onlyIfNew = false } = {}) {
   const live = () => run === controller && !controller.signal.aborted && authState.get().userId === account;
   const today = startOfDay().getTime();
   const filter = articleFilter();
+  runFilter = filter;
   const keep = previous.status === "done" && previous.day === today && previous.filter === filter;
   // A failed board remembers the articles it tried, so a sync that brings
   // nothing new does not ask the AI again.
@@ -84,7 +87,7 @@ export async function refreshBoard({ onlyIfNew = false } = {}) {
     // The written digest belongs to the board on screen: it keeps streaming
     // while a newer board is made and stops only when that board replaces it.
     if (!keep) stopDigest();
-    board.set(keep ? { ...previous, updating: true, error: "" } : { ...EMPTY, status: "loading", day: today });
+    board.set(keep ? { ...previous, updating: true, error: "" } : { ...EMPTY, status: "loading", day: today, filter });
     const { articles, skipped } = fitArticles(all);
     const sent = articles.map(({ title, feedTitle }) => ({ title, feedTitle }));
     // One AI call. A reply that ran into the length limit before one topic
@@ -263,13 +266,22 @@ isSyncing.listen((syncing) => {
 });
 
 // Settings changed while the board is open (from the settings sheet over
-// it): the board on screen follows them at once.
+// it): the board on screen follows them once they settle, so flipping
+// through the options asks the AI once, and flipping back asks nothing.
+const SETTLE_MS = 600;
 let lastFilter = articleFilter();
+let settle = null;
 settingsState.listen(() => {
   const filter = articleFilter();
   if (filter === lastFilter) return;
   lastFilter = filter;
-  const state = board.get();
-  if (!boardOpen.get() || state.status === "idle" || state.filter === filter || !authState.get().userId) return;
-  refreshBoard();
+  clearTimeout(settle);
+  settle = setTimeout(() => {
+    settle = null;
+    const now = articleFilter();
+    const state = board.get();
+    const made = run ? runFilter : state.filter;
+    if (!boardOpen.get() || state.status === "idle" || made === now || !authState.get().userId) return;
+    refreshBoard();
+  }, SETTLE_MS);
 });
