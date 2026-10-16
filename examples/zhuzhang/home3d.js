@@ -454,8 +454,10 @@ export function createHome(api) {
       if (!drag.moved) return; // a tap that wobbles a few pixels never moves it unsaved
       const bb = HM.bbox(RECTS, drag.e.room); if (!bb) return;
       const tx = p.x + drag.off[0], tz = p.z + drag.off[1];
-      // Heading of the drag over the last ~5 cm: the wall it is pushed towards is the one it may back onto.
-      if (!drag.last) drag.last = [tx, tz]; const mv = { dx: tx - drag.last[0], dz: tz - drag.last[1] }; if (Math.hypot(mv.dx, mv.dz) > .05) drag.last = [tx, tz];
+      // Heading of the drag over the last ~5 cm: the wall it is pushed towards is the one it may back onto. Right after
+      // the heading point moves on, the new heading is too short to count, so the previous one stands in for it.
+      if (!drag.last) drag.last = [tx, tz]; let mv = { dx: tx - drag.last[0], dz: tz - drag.last[1] }; const len = Math.hypot(mv.dx, mv.dz);
+      if (len > .05) { drag.last = [tx, tz]; drag.hd = mv; } else if (len < .03 && drag.hd) mv = drag.hd;
       const r = HM.clampPlacement(HM.KINDS[drag.e.model.kind], bb, tx, tz, drag.e.rot, mv);
       Object.assign(drag.e, { x: r.x, z: r.z, rot: r.rot }); drag.e.model = { ...drag.e.model, x: +r.fx.toFixed(4), z: +r.fz.toFixed(4), rot: r.rot };
       drag.e.g.position.set(r.x, .08, r.z); drag.e.g.rotation.y = r.rot * PI / 2; updateRing(); invalidate(); return;

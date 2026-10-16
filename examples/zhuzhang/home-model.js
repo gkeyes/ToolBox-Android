@@ -102,7 +102,7 @@
   // Keep a look inside its own room: the nearest part of the room (an L-shaped 客餐厅 has two),
   // clear of the walls; a wall-mounted look snaps to the nearest wall and faces into the room.
   // auto (a drag, true or its heading {dx,dz}): a look that is not free and comes within SNAP of a wall turns its back to it and backs onto it.
-  const SNAP=.35,SLACK=.1;
+  const SNAP=.35,SLACK=.1,MINH=.03;
   function clampPlacement(dims,bb,x,z,rot,auto=false){
     const NR=nearestRect(bb.rs,x,z).r,[x0,z0,x1,z1]=NR,h=GAP;
     rot=((rot|0)%4+4)%4;
@@ -120,18 +120,25 @@
       const narrow=sd=>(sd&1?x1-x0:z1-z0)<=dims.d+2*h+2*SNAP+1e-6;
       const [fw,fd]=footprint(dims,rot),phys=sd=>dist[sd]-h-(sd&1?fw:fd)/2;
       const cand=[0,1,2,3].filter(sd=>sd!==rot&&inRange(sd)&&phys(sd)<=SNAP+(narrow(sd)?0:SLACK)+1e-6).sort((a,b)=>g(a)-g(b));
-      const m=typeof auto==='object'?Math.hypot(auto.dx,auto.dz):0,comp=sd=>m>1e-6?[-auto.dz,-auto.dx,auto.dz,auto.dx][sd]/m:1;
+      // The drag's heading counts only from MINH up (home3d hands over the previous full heading while a new one is
+      // shorter); a finger held still at the start (a few px of jitter, or back at the anchor) heads for no wall.
+      const m=typeof auto==='object'?Math.hypot(auto.dx,auto.dz):0,head=m>=MINH,comp=sd=>head?[-auto.dz,-auto.dx,auto.dz,auto.dx][sd]/m:0;
       // 1. The wall it backs onto keeps it while in range, however far the drag overshoots a corner. Only when that
       //    wall is one of a narrow pair (a bed turned onto a side wall of a small bedroom, a chair on a balcony) can a
-      //    wall the drag heads for take over, so it can always get back.
-      // 2. Off its wall, a wall the drag heads for wins; otherwise the nearest wall it isn't moving away from. A narrow
-      //    pair is never picked by nearness (both are always near), only by a clear push right up to it.
+      //    wall the drag heads for take over, so it can always get back: the other wall of the pair, or a wall across
+      //    it when the drag also moves away from the wall it backs onto, or the finger is already well clear of it (a
+      //    bed slid to the middle first, then up to the head wall). Sliding along that wall into a corner (a washer
+      //    along the balcony's back wall) keeps it. The other wall of the pair takes over only once the finger is
+      //    nearer to it, so jitter in the middle of a narrow room doesn't swap them back and forth.
+      // 2. Off its wall, a wall the drag heads for wins; otherwise the nearest wall it isn't moving away from. A drag
+      //    with no heading yet turns to no new wall; auto===true (no heading known) takes the nearest. A narrow pair
+      //    is never picked by nearness (both are always near), only by a clear push right up to it.
       let side=null;
       if(inRange(rot)){side=rot;
-        if(narrow(rot)){const to=cand.find(sd=>(sd&1)!==(rot&1)&&comp(sd)>.3)??cand.find(sd=>sd===(rot+2)%4&&comp(sd)>.3);if(to!==undefined)side=to;}}
+        if(narrow(rot)){const to=cand.find(sd=>(sd&1)!==(rot&1)&&comp(sd)>.3&&(comp((rot+2)%4)>.3||Math.max(g(sd),0)<g(rot)-.15))??cand.find(sd=>sd===(rot+2)%4&&comp(sd)>.3);if(to!==undefined&&((to&1)!==(rot&1)||g(to)<g(rot)))side=to;}}
       else if(cand.length){
         const to=cand.find(sd=>!narrow(sd)?comp(sd)>.6:(sd&1)===(rot&1)?comp(sd)>.3:comp(sd)>.8&&phys(sd)<=.1); // already lying across a narrow pair: as in 1.
-        if(to!==undefined)side=to;else{const n=cand.find(sd=>!narrow(sd)&&comp(sd)>.1);if(n!==undefined)side=n;}}
+        if(to!==undefined)side=to;else{const n=head?cand.find(sd=>!narrow(sd)&&comp(sd)>.1):auto===true?cand.find(sd=>!narrow(sd)):undefined;if(n!==undefined)side=n;}}
       if(side!==null){rot=side;if(side===0)z=z0;else if(side===2)z=z1;else if(side===1)x=x0;else x=x1;} // pushed flush below by the clamp
     }
     if(dims.wall){
