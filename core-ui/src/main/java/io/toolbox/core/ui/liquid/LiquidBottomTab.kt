@@ -18,7 +18,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.unit.dp
 import com.kyant.shapes.Capsule
 
 internal val LocalLiquidBottomTabScale =
@@ -47,7 +46,7 @@ fun RowScope.LiquidBottomTab(
                 scaleX = scale
                 scaleY = scale
             },
-        verticalArrangement = Arrangement.spacedBy(2f.dp, Alignment.CenterVertically),
+        verticalArrangement = Arrangement.spacedBy(LiquidBottomTabsMetrics.TabSpacing, Alignment.CenterVertically),
         horizontalAlignment = Alignment.CenterHorizontally,
         content = content
     )
