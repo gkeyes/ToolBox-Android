@@ -1,9 +1,13 @@
 import { memo, useState } from "react";
 import { Link } from "react-router";
 import {
+  Bell,
+  BellOff,
   FilePen,
   Trash2,
 } from "lucide-react";
+import { useStore } from "@nanostores/react";
+import { toast } from "sonner";
 import {
   SyncIcon as RefreshCw,
   MarkAllReadIcon as CircleCheck,
@@ -25,12 +29,38 @@ import {
   unsubscribeModalOpen,
   currentFeedId,
 } from "@/stores/modalStore.js";
+import { watchedFeeds, setFeedNotification, feedNotifyPrompt } from "@/toolbox/feed-notifications.js";
+import { continuousSync } from "@/toolbox/background.js";
+
+const isPermissionError = (error) =>
+  error?.code === "PERMISSION_DENIED" || error?.code === "SYSTEM_PERMISSION_DENIED";
+
+/** Turns a feed's update notifications on or off; the dialogs come from FeedNotifyPrompts. */
+async function toggleFeedNotification(feed, enabled, t) {
+  // Notifications are fetched only by background sync, so turning one on asks for it first.
+  if (enabled && !continuousSync.get()) {
+    feedNotifyPrompt.set({ kind: "needsSync", feed });
+    return;
+  }
+  let result;
+  try {
+    result = await setFeedNotification(feed.id, enabled);
+  } catch (error) {
+    if (isPermissionError(error)) feedNotifyPrompt.set({ kind: "permission" });
+    else toast.error(error?.message || t("feedNotify.failed"));
+    return;
+  }
+  if (!enabled) { toast.success(t("feedNotify.off", { title: feed.title })); return; }
+  if (result === "blocked") { feedNotifyPrompt.set({ kind: "permission" }); return; }
+  toast.success(t("feedNotify.on", { title: feed.title }));
+}
 
 // Rows get their active state and count from FeedsGroupContent; they do not
 // subscribe to the router or the count stores themselves.
 const FeedItem = ({ feed, active, count }) => {
   const { t } = useTranslation();
   const { isMobile, setOpenMobile } = useSidebar();
+  const notifying = useStore(watchedFeeds).includes(Number(feed.id));
   const [contextMenu, setContextMenu] = useState({
     isOpen: false,
     position: { x: 0, y: 0 },
@@ -79,6 +109,9 @@ const FeedItem = ({ feed, active, count }) => {
               </span>
             )}
             <span className="min-w-0 truncate">{feed.title}</span>
+            {notifying && (
+              <Bell className="size-3.5 shrink-0 text-accent" role="img" aria-label={t("feedNotify.marked")} />
+            )}
           </span>
           <span className="sidebar-badge ml-auto shrink-0 ds-tnum text-[length:var(--ds-text-subhead)]">
             {count !== 0 && count}
@@ -121,6 +154,17 @@ const FeedItem = ({ feed, active, count }) => {
           startContent={<FilePen className="size-4 text-muted" />}
         >
           {t("articleList.editFeed")}
+        </ContextMenuItem>
+        <ContextMenuItem
+          onClick={() => {
+            closeContextMenu();
+            void toggleFeedNotification(feed, !notifying, t);
+          }}
+          startContent={notifying
+            ? <BellOff className="size-4 text-muted" />
+            : <Bell className="size-4 text-muted" />}
+        >
+          {t(notifying ? "feedNotify.turnOff" : "feedNotify.turnOn")}
         </ContextMenuItem>
         <div className="h-1" aria-hidden="true" />
         <ContextMenuItem

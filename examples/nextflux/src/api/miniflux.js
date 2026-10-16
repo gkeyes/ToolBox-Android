@@ -148,6 +148,30 @@ export const getEntry = async (entryId, check) => {
   return response.data;
 };
 
+// Newest entry of one feed, any status: where its update notifications start.
+export const getLatestFeedEntryId = async (feedId, check) => {
+  const id = Number(feedId);
+  if (!Number.isSafeInteger(id) || id <= 0) throw new Error("订阅编号无效。");
+  const response = await runNetworkOperation(() => apiClient.get(`/v1/feeds/${id}/entries`, {
+    params: { order: "id", direction: "desc", limit: 1 },
+  }), check);
+  const entries = response.data?.entries;
+  if (!Array.isArray(entries)) throw new Error("服务器返回的文章列表无效。");
+  return entries[0]?.id ?? null;
+};
+
+// Unread entries of one feed newer than afterEntryId, newest first, for its update notification.
+export const getNewUnreadFeedEntries = async (feedId, afterEntryId, check) => {
+  const id = Number(feedId);
+  if (!Number.isSafeInteger(id) || id <= 0) throw new Error("订阅编号无效。");
+  const response = await runNetworkOperation(() => apiClient.get(`/v1/feeds/${id}/entries`, {
+    params: { status: "unread", order: "id", direction: "desc", limit: 20, after_entry_id: afterEntryId },
+  }), check);
+  const entries = response.data?.entries;
+  if (!Array.isArray(entries)) throw new Error("服务器返回的文章列表无效。");
+  return { total: Number(response.data.total) || entries.length, entries };
+};
+
 // Smallest ID among the server's read, unstarred entries, or Infinity when it
 // has none. Miniflux purges these oldest-first without a change record, so
 // local read, unstarred rows below this ID are gone from the server.
