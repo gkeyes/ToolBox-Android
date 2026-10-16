@@ -241,7 +241,7 @@ internal fun ToolBoxNavigation(
             )
         }
     }
-    val primaryGlassLive by remember(firstRetainedProgress) {
+    val primaryGlassLive by remember(runtimeRoute, firstRetainedProgress) {
         derivedStateOf {
             !sourceHiddenByRuntime && !pageFullyCovered(firstRetainedProgress?.value)
         }
