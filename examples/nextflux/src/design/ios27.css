@@ -677,11 +677,15 @@ fieldset, .fieldset { min-inline-size: 0; max-inline-size: 100%; }
 .card-time { overflow: hidden; text-overflow: ellipsis; }
 /* A narrow card at large text leaves the meta row only a sliver beside a side
    thumbnail; there the meta row spans the card, the time drops to its own
-   line and the thumbnail sits beside the title. A viewport query, not a
-   container: every card as a size container made each one restyle inside
-   layout as rows mounted while scrolling. On phones the list (and so each
-   card) is the screen width less ~2rem. */
-@media (max-width: 12rem) {
+   line and the thumbnail sits beside the title. The list is the one size
+   container, not each card: every card as a container made each one restyle
+   inside layout as rows mounted while scrolling. A card's content is the
+   list width less the row and card padding (about 16px each, a side), so
+   this matches the old card query, card content of 10rem or less. rem here follows the root font size, so it switches at large text;
+   a viewport media query (1.18.8) measured rem at 16px and never matched on
+   a phone (recheck-107 P2-1). */
+.article-list-content { container: nf-list / inline-size; }
+@container nf-list (max-width: calc(10rem + 64px)) {
   .card-content:has(> .card-image) {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
