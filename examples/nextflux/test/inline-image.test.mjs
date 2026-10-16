@@ -84,6 +84,14 @@ test("a line with nothing after the image yet stays open", () => {
   paragraph.childNodes.push(more);
   assert.equal(imageLineOpen(last), false);
   assert.equal(imageIsInline(last, {}), true);
+  const tail = image();
+  const article = element("DIV", [element("P", [text("text "), tail])]);
+  assert.equal(imageLineOpen(tail), true);
+  const next = element("P", [text("next paragraph")]);
+  next.parentElement = article;
+  article.childNodes.push(next);
+  assert.equal(imageLineOpen(tail), false);
+  assert.equal(imageIsInline(tail, {}), false);
   const ended = image();
   element("P", [ended, element("BR"), text("caption")]);
   assert.equal(imageLineOpen(ended), false);

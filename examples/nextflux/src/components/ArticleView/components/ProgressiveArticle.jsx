@@ -9,21 +9,23 @@ import { createHighlightQueue, startProgressiveReading } from "@/reading/client.
 import { sameReadingSource } from "@/lib/articleReadingState.js";
 import { imageIsInline, imageLineOpen } from "@/reading/inlineImage.mjs";
 
-// An image mounted at the end of a batch has nothing after it yet; watch its
-// line until something follows, then classify it again (text after it can
-// make it inline). Only the move to inline can happen this way.
+// An image mounted at the end of a batch has nothing after it yet; watch the
+// article until anything follows it, then classify it again (text after it
+// can make it inline). Only the move to inline can happen this way. Only the
+// image at the current end of the article is open, so at most one observer
+// runs at a time.
 function useInlineImage(item) {
   const isImage = item.type === "image";
   const [inline, setInline] = useState(() => isImage && imageIsInline(item.target, item.attrs));
   useEffect(() => {
     if (!isImage || inline || !imageLineOpen(item.target)) return undefined;
-    const block = item.target.parentElement?.closest("p, li, div, blockquote, figcaption, td, th, h1, h2, h3, h4, h5, h6, [data-font-reading-root]");
-    if (!block) return undefined;
+    const root = item.target.closest("[data-font-reading-root]");
+    if (!root) return undefined;
     const observer = new MutationObserver(() => {
       if (imageIsInline(item.target, item.attrs)) setInline(true);
       if (!imageLineOpen(item.target)) observer.disconnect();
     });
-    observer.observe(block, { childList: true, subtree: true, characterData: true });
+    observer.observe(root, { childList: true, subtree: true, characterData: true });
     return () => observer.disconnect();
   }, [isImage, inline, item]);
   return inline;

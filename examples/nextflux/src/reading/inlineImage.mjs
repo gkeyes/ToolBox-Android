@@ -25,8 +25,17 @@ const childrenOf = (node) => [...(node.childNodes ?? node.children ?? [])];
 const wraps = (node) => node && !breaks(node) && !node.hasAttribute?.("data-font-reading-root");
 const number = (value) => { const parsed = Number.parseFloat(value); return Number.isFinite(parsed) && parsed > 0 ? parsed : 0; };
 
-// "text", "end" (a <br> or block ends the line first) or "open" (the line
-// runs out of parsed nodes: more may still be mounted after it).
+const followed = (node) => {
+  for (let current = node; parentOf(current); current = parentOf(current)) {
+    const siblings = childrenOf(parentOf(current));
+    if (siblings.indexOf(current) < siblings.length - 1) return true;
+  }
+  return false;
+};
+
+// "text", "end" (a <br> or block ends the line first) or "open" (the image
+// is still the last parsed node: more may be mounted after it). Once anything
+// follows the enclosing block, the line is closed.
 function scan(node, step) {
   let current = node;
   for (;;) {
@@ -38,7 +47,7 @@ function scan(node, step) {
       if (breaks(sibling)) return "end";
       if (textOf(sibling).trim()) return "text";
     }
-    if (!wraps(parent)) return "open";
+    if (!wraps(parent)) return step > 0 && followed(parent) ? "end" : "open";
     current = parent;
   }
 }
