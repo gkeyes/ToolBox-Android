@@ -56,6 +56,7 @@
   }
   // The plan to draw: saved sizes on top of the template defaults, kept geometrically consistent.
   function planOf(home,layout){
+    if(home&&Array.isArray(home.blocks)){const b=sanitizeBlocks(home);if(b)return {key:'blocks',n:'自定义户型',...b};}
     const key=home&&TEMPLATES[home.template]?home.template:deriveTemplate(layout);
     const base=TEMPLATES[key],t={key,n:base.n,back:base.back.map(([n,w])=>[n,w]),D1:base.D1,D2:base.D2,L:base.L,K:base.K,BW:base.BW};
     const s=home&&home.template===key&&home.sizes;
@@ -67,9 +68,10 @@
     t.L=clamp(t.L,Math.min(3,W-1.2),W-1.2);t.K=clamp(t.K,1.2,t.D2);t.BW=clamp(t.BW,2,W);
     return t;
   }
-  function sizesOf(t){return {back:t.back.map(([,w])=>round2(w)),D1:round2(t.D1),D2:round2(t.D2),L:round2(t.L),K:round2(t.K),BW:round2(t.BW)};}
+  function sizesOf(t){if(t.key==='blocks')return {blocks:t.blocks,baths:t.baths};return {back:t.back.map(([,w])=>round2(w)),D1:round2(t.D1),D2:round2(t.D2),L:round2(t.L),K:round2(t.K),BW:round2(t.BW)};}
   // project.home as saved: unknown template → dropped (the plan is derived again); bad sizes → template defaults.
   function sanitizeHome(h){
+    if(h&&typeof h==='object'&&Array.isArray(h.blocks))return sanitizeBlocks(h);
     if(!h||typeof h!=='object'||!TEMPLATES[h.template])return null;
     const out={template:h.template};
     if(h.sizes&&typeof h.sizes==='object'){const t=planOf({template:h.template,sizes:h.sizes});out.sizes=sizesOf(t);}
@@ -83,14 +85,92 @@
     return {kind:m.kind,x:f(m.x),z:f(m.z),rot};
   }
   function makeRects(t){
+    if(t.key==='blocks')return blockRects(t);
     const out=[];let x=0;
-    t.back.forEach(([n,w])=>{out.push({name:n,r:[x,0,x+w,t.D1]});x+=w;});
+    t.back.forEach(([n,w])=>{out.push({name:n,type:typeOfName(n),r:[x,0,x+w,t.D1]});x+=w;});
     const W=x,z1=t.D1,z2=t.D1+t.D2;
-    out.push({name:'客餐厅',r:[0,z1,t.L,z2]});out.push({name:'厨房',r:[t.L,z1,W,z1+t.K]});
-    if(t.K<t.D2-.01)out.push({name:'客餐厅',r:[t.L,z1+t.K,W,z2]});
-    out.push({name:'阳台',r:[0,z2,t.BW,z2+BALCONY]});
+    out.push({name:'客餐厅',type:'客餐厅',r:[0,z1,t.L,z2]});out.push({name:'厨房',type:'厨房',r:[t.L,z1,W,z1+t.K]});
+    if(t.K<t.D2-.01)out.push({name:'客餐厅',type:'客餐厅',r:[t.L,z1+t.K,W,z2]});
+    out.push({name:'阳台',type:'阳台',r:[0,z2,t.BW,z2+BALCONY]});
     return {rects:out,W,D:z2+BALCONY};
   }
+
+  /* ---------- 1.9.0 · block floor plan: rooms are rectangles placed edge to edge; bathrooms sit inside a room ---------- */
+  // Types the ➕ 加空间 sheet offers, with the size a new one starts at (metres). 客餐厅 only comes from the old templates.
+  const SPACE_TYPES=[['主卧',3.6,3.6],['次卧',3.0,3.3],['书房',2.4,3.0],['客厅',4.5,4.5],['餐厅',3.0,3.3],['厨房',2.4,3.0],['阳台',3.6,1.4],['储物间',1.5,1.8],['衣帽间',1.8,2.1],['卫生间',1.6,2.0]];
+  const BLOCK_TYPES=new Set([...SPACE_TYPES.map(t=>t[0]),'客餐厅']);
+  const BLOCK_MIN=1.2,BATH_MIN=1.2,BLOCK_MAX=60,BATH_MAX=40,NOHOST=new Set(['阳台','卫生间']);
+  const typeOfName=n=>{const b=String(n).replace(/\d+$/,'');return b==='主卫'||b==='公卫'?'卫生间':BLOCK_TYPES.has(b)?b:'次卧';};
+  const isBathType=t=>t==='卫生间';
+  const boxOverlap=(a,b)=>Math.min(a.x+a.w,b.x+b.w)-Math.max(a.x,b.x)>.01&&Math.min(a.z+a.d,b.z+b.d)-Math.max(a.z,b.z)>.01;
+  // Where a bathroom sits in its host: ax/az 0, .5 or 1 = left/middle/right, top/middle/bottom.
+  const bathBox=(b,h)=>({x:h.x+b.ax*(h.w-b.w),z:h.z+b.az*(h.d-b.d),w:b.w,d:b.d});
+  const bathName=h=>h&&h.type==='主卧'?'主卫':'公卫';
+  // The first of a kind keeps the plain name (次卧), later ones count on (次卧2, 次卧3), like the old templates.
+  function nextName(base,used){if(!used.has(base))return base;for(let i=2;;i++)if(!used.has(base+i))return base+i;}
+  // project.home with blocks, as saved: bad blocks, overlaps and homeless or clashing bathrooms are dropped.
+  function sanitizeBlocks(h){
+    const r2=v=>Math.round(v*100)/100,ids=new Set(),names=new Set(),blocks=[],baths=[];
+    for(const b of h.blocks.slice(0,BLOCK_MAX)){
+      if(!b||typeof b!=='object'||!BLOCK_TYPES.has(b.type)||![b.x,b.z,b.w,b.d].every(num))continue;
+      const id=typeof b.id==='string'&&/^[\w-]{1,24}$/.test(b.id)&&!ids.has(b.id)?b.id:null;if(!id)continue;
+      const o={id,type:b.type,x:r2(clamp(b.x,-60,60)),z:r2(clamp(b.z,-60,60)),w:r2(clamp(b.w,BLOCK_MIN,30)),d:r2(clamp(b.d,BLOCK_MIN,30))};
+      if(blocks.some(q=>boxOverlap(q,o)))continue;
+      const name=typeof b.name==='string'&&b.name.trim()?b.name.trim().slice(0,12):null;
+      // Two blocks may share a name only when they touch (an old L-shaped 客餐厅); otherwise the name counts on.
+      const same=blocks.filter(q=>q.name===name);
+      o.name=name&&(!same.length||same.every(q=>q.type===o.type&&touch(q,o)))?name:nextName(o.type,names);
+      ids.add(id);names.add(o.name);blocks.push(o);
+    }
+    if(!blocks.length)return null;
+    for(const b of (Array.isArray(h.baths)?h.baths:[]).slice(0,BATH_MAX)){
+      if(!b||typeof b!=='object'||![b.w,b.d].every(num))continue;
+      const host=blocks.find(q=>q.id===b.host);if(!host||NOHOST.has(host.type))continue;
+      const id=typeof b.id==='string'&&/^[\w-]{1,24}$/.test(b.id)&&!ids.has(b.id)?b.id:null;if(!id)continue;
+      const snap=v=>v===0||v===.5||v===1?v:1;
+      const o={id,host:host.id,w:r2(clamp(b.w,BATH_MIN,host.w)),d:r2(clamp(b.d,BATH_MIN,host.d)),ax:snap(b.ax),az:snap(b.az)};
+      if(baths.some(q=>q.host===o.host&&boxOverlap(bathBox(q,host),bathBox(o,host))))continue;
+      const base=bathName(host),name=typeof b.name==='string'&&b.name.replace(/\d+$/,'')===base&&!names.has(b.name)?b.name:nextName(base,names);
+      o.name=name;ids.add(id);names.add(name);baths.push(o);
+    }
+    return {blocks,baths};
+  }
+  const touch=(a,b)=>{const ox=Math.min(a.x+a.w,b.x+b.w)-Math.max(a.x,b.x),oz=Math.min(a.z+a.d,b.z+b.d)-Math.max(a.z,b.z);return (Math.abs(ox)<.01&&oz>.01)||(Math.abs(oz)<.01&&ox>.01);};
+  // A box minus the boxes inside it, as a few rectangles: grid cells merged into rows, then equal rows stacked; or the
+  // same by columns, whichever leaves the biggest single rectangle (a look must fit inside one of them).
+  function cutRects(box,holes){
+    const T=b=>({x:b.z,z:b.x,w:b.d,d:b.w}),rows=cutRows(box,holes),cols=cutRows(T(box),holes.map(T)).map(r=>[r[1],r[0],r[3],r[2]]);
+    const big=rs=>Math.max(0,...rs.map(r=>(r[2]-r[0])*(r[3]-r[1])));
+    return big(cols)>big(rows)+1e-9||(Math.abs(big(cols)-big(rows))<1e-9&&cols.length<rows.length)?cols:rows;
+  }
+  function cutRows(box,holes){
+    const xs=[...new Set([box.x,box.x+box.w,...holes.flatMap(h=>[h.x,h.x+h.w])])].filter(v=>v>=box.x-1e-9&&v<=box.x+box.w+1e-9).sort((a,b)=>a-b);
+    const zs=[...new Set([box.z,box.z+box.d,...holes.flatMap(h=>[h.z,h.z+h.d])])].filter(v=>v>=box.z-1e-9&&v<=box.z+box.d+1e-9).sort((a,b)=>a-b);
+    const rows=[];
+    for(let j=0;j<zs.length-1;j++){const segs=[];let cur=null;
+      for(let i=0;i<xs.length-1;i++){const cx=(xs[i]+xs[i+1])/2,cz=(zs[j]+zs[j+1])/2,hole=holes.some(h=>cx>h.x&&cx<h.x+h.w&&cz>h.z&&cz<h.z+h.d);
+        if(hole){cur=null;continue;}if(cur)cur[2]=xs[i+1];else{cur=[xs[i],zs[j],xs[i+1],zs[j+1]];segs.push(cur);}}
+      rows.push(segs);}
+    const out=[];
+    for(const segs of rows)for(const s of segs){const up=out.find(o=>Math.abs(o[0]-s[0])<1e-9&&Math.abs(o[2]-s[2])<1e-9&&Math.abs(o[3]-s[1])<1e-9);if(up)up[3]=s[3];else out.push(s.slice());}
+    return out.filter(r=>r[2]-r[0]>.05&&r[3]-r[1]>.05);
+  }
+  // Rooms (blocks minus their bathrooms) and bathrooms as named rectangles, moved so the plan starts at 0,0.
+  function blockRects(t){
+    const x0=Math.min(...t.blocks.map(b=>b.x)),z0=Math.min(...t.blocks.map(b=>b.z)),out=[];
+    for(const b of t.blocks){const holes=t.baths.filter(w=>w.host===b.id).map(w=>bathBox(w,b));
+      for(const r of cutRects(b,holes))out.push({name:b.name,type:b.type,r:[r[0]-x0,r[1]-z0,r[2]-x0,r[3]-z0]});
+      for(const w of t.baths.filter(w=>w.host===b.id)){const q=bathBox(w,b);out.push({name:w.name,type:'卫生间',host:b.name,r:[q.x-x0,q.z-z0,q.x+q.w-x0,q.z+q.d-z0]});}}
+    const r2=v=>Math.round(v*1000)/1000;out.forEach(o=>{o.r=o.r.map(r2);});
+    return {rects:out,W:Math.max(...out.map(o=>o.r[2])),D:Math.max(...out.map(o=>o.r[3]))};
+  }
+  // An old template as blocks: each rectangle keeps its room name, so what the ledger recorded there stays there.
+  function toBlocks(t){
+    if(t.key==='blocks')return {blocks:t.blocks.map(b=>({...b})),baths:t.baths.map(b=>({...b}))};
+    const {rects}=makeRects(t);let n=0;
+    return {blocks:rects.map(({name,type,r})=>({id:'b'+(++n),type,name,x:r[0],z:r[1],w:round2(r[2]-r[0]),d:round2(r[3]-r[1])})),baths:[]};
+  }
+  const typeOf=(rects,name)=>(rects.find(r=>r.name===name)||{}).type||typeOfName(name);
   const roomNames=rects=>[...new Set(rects.map(r=>r.name))];
   const area=(rects,n)=>rects.filter(r=>r.name===n).reduce((s,{r})=>s+(r[2]-r[0])*(r[3]-r[1]),0);
   function bbox(rects,name){
@@ -182,10 +262,14 @@
     const dims=KINDS[kind],bb=bbox(rects,room);if(!dims||!bb)return null;
     const W=Math.max(...rects.map(r=>r.r[2])),D=Math.max(...rects.map(r=>r.r[3]));
     let best=null;
-    for(const R of bb.rs){const [x0,z0,x1,z1]=R.r;
+    const fitPart=([x0,z0,x1,z1])=>[0,1].some(r=>{const [w,d]=footprint(dims,r);return w<=x1-x0-2*GAP&&d<=z1-z0-2*GAP;});
+    const parts=bb.rs.some(R=>fitPart(R.r))?bb.rs.filter(R=>fitPart(R.r)):bb.rs;
+    for(const R of parts){const [x0,z0,x1,z1]=R.r;
       for(let i=0;i<=6;i++)for(let j=0;j<=6;j++){
         const px=x0+(x1-x0)*i/6,pz=z0+(z1-z0)*j/6;
-        const side=[[pz-z0,0],[px-x0,1],[z1-pz,2],[x1-px,3]].sort((a,b)=>a[0]-b[0])[0];
+        // The nearest wall the look fits against in this part (a part of a room beside a bathroom can be narrow).
+        const fitsAs=r=>{const [w,d]=footprint(dims,r);return w<=x1-x0-2*GAP&&d<=z1-z0-2*GAP;};
+        const sides=[[pz-z0,0],[px-x0,1],[z1-pz,2],[x1-px,3]].sort((a,b)=>a[0]-b[0]),side=dims.wall?sides[0]:sides.find(([,r])=>fitsAs(r))||sides[0];
         const p=clampPlacement(dims,bb,px,pz,dims.wall?0:side[1]);
         const [w,d]=footprint(dims,p.rot),me={x:p.x,z:p.z,w:w+.1,d:d+.1};
         const hit=others.reduce((s,o)=>s+overlap(me,o),0);
@@ -252,7 +336,7 @@
     }
     return out+'</svg>';
   }
-  const api={FURNITURE,KINDS,ORDER,LABELS,TEMPLATES,TEMPLATE_ORDER,MAX_PER_ROOM,WALL_T,GAP,deriveTemplate,planOf,sizesOf,sanitizeHome,sanitizeModel,makeRects,roomNames,area,bbox,nearestRect,footprint,clampPlacement,placeFromModel,fitsRoom,fitRoom,findSpot,lookState,applyLook,handles,moveHandle,planSvg};
+  const api={SPACE_TYPES,BLOCK_TYPES,BLOCK_MIN,BATH_MIN,BLOCK_MAX,BATH_MAX,NOHOST,bathBox,bathName,nextName,sanitizeBlocks,cutRects,toBlocks,typeOf,typeOfName,boxOverlap,FURNITURE,KINDS,ORDER,LABELS,TEMPLATES,TEMPLATE_ORDER,MAX_PER_ROOM,WALL_T,GAP,deriveTemplate,planOf,sizesOf,sanitizeHome,sanitizeModel,makeRects,roomNames,area,bbox,nearestRect,footprint,clampPlacement,placeFromModel,fitsRoom,fitRoom,findSpot,lookState,applyLook,handles,moveHandle,planSvg};
   root.ZZHomeModel=Object.freeze(api);
   if(typeof module==='object'&&module.exports)module.exports=api;
 })(typeof globalThis!=='undefined'?globalThis:this);

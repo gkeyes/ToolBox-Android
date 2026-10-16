@@ -4,7 +4,7 @@
   // Ledger money is integer cents. DOM content originating from users is escaped.
   const KEY = 'ledger.v1';
   const runtime = window.ZZRuntime;
-  const VERSION = '1.8.4';
+  const VERSION = '1.9.0';
   const MAX_CENTS = 100000000000;
   const $ = s => document.querySelector(s);
   const $$ = s => [...document.querySelectorAll(s)];
@@ -374,7 +374,8 @@
   const homeApi=Object.freeze({
     data:()=>data,paid:i=>paid(i),money,esc,toast,
     saveModel:(id,model)=>homeWrite(next=>{const i=next.items.find(x=>x.id===id);if(!i)return false;i.model=model;}),
-    saveHome:home=>homeWrite(next=>{next.project.home=home;}),
+    // renames: [[old,new]] room names from 拼户型 (a bathroom moved to another room), applied to the records in the same write.
+    saveHome:(home,renames=[])=>homeWrite(next=>{next.project.home=home;const to=new Map(renames);if(to.size)for(const i of next.items)if(to.has(i.room))i.room=to.get(i.room);}),
     saveUi:value=>{homeState.ui=value;if(storageOK)runtime.set('home.ui.v1',value).catch(()=>{});}
   });
   // Probe WebGL before importing three.js: without it the tab shows the static plan, with no error from the renderer.
@@ -399,6 +400,8 @@
   /* ---------- 1.5.0 · record-time look: 家具家电 picks a look in the ledger form and lands in 我的家 on save ---------- */
   const CUBE='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 4 7.5v9L12 21l8-4.5v-9z"/><path d="M4 7.5 12 12l8-4.5M12 12v9"/></svg>';
   const planRects=source=>HM.makeRects(HM.planOf(source.project.home,source.project.layout)).rects;
+  // 1.9.0 · the rooms of the 拼户型 plan (书房, 次卧3, 公卫…) join the fixed list and the rooms already recorded.
+  const roomOptions=()=>[...new Set([...ROOMS,...HM.roomNames(planRects(data)),...data.items.map(i=>i.room)])];
   // The look is a form field, so drafts, mode switches and the unsaved-changes guard carry it like any other.
   function lookRow(kind=''){
     const value=typeof kind==='string'&&Object.prototype.hasOwnProperty.call(HM.KINDS,kind)?kind:'';
@@ -662,7 +665,7 @@
     const field=$('#'+button.dataset.field),kind=button.dataset.kind,current=field.value;let options=[],title='选择';
     if(kind==='item'){title='关联费用项';options=data.items.map(i=>({value:i.id,label:i.name,sub:cat(i.category).name+' · '+i.room+' · '+(i.costMode==='actual'?'已记支出 '+money(paid(i)):i.price===null?'待估价':overpaid(i)?'支出超出预计 '+money(overpaid(i)):'未付 '+money(remaining(i)))}));}
     if(kind==='category'){title='费用类别';options=CATS.map(c=>({value:c.id,label:c.name}));}
-    if(kind==='room'){title='所在空间';options=[...new Set([...ROOMS,...data.items.map(i=>i.room)])].map(r=>({value:r,label:r}));}
+    if(kind==='room'){title='所在空间';options=roomOptions().map(r=>({value:r,label:r}));}
     if(kind==='apply'){title='应用到费用项';options=[{value:'new',label:'新增费用项',sub:'不修改现有项目'},...data.items.filter(i=>i.status==='estimate'&&!data.payments.some(t=>t.itemId===i.id)).map(i=>({value:i.id,label:i.name,sub:'当前预计 '+(i.price===null?'待估价':money(i.price))}))];}
     openPicker(title,options,current,o=>{field.value=o.value;$('#'+button.dataset.field+'-label').textContent=o.label;if(kind==='item'){if(o.value!==current){$('#refund-adjust').checked=false;$('#refund-price').value='';}$('#payment-item-info').innerHTML=paymentInfo(data.items.find(i=>i.id===o.value));updatePaymentHint();}if(kind==='apply')updateApplyDiff();if(['category','room'].includes(kind))refreshLook();markDraft();});
   }
@@ -709,7 +712,7 @@
       else if(a==='clear-merchant'){ui.merchant=null;render();}
       else if(a==='clear-filters'){ui.category='all';ui.room='all';ui.merchant=null;ui.query='';render();}
       else if(a==='category-filter')openPicker('筛选费用类别',[{value:'all',label:'全部类别'},...CATS.map(c=>({value:c.id,label:c.name}))],ui.category,o=>{ui.category=o.value;render();});
-      else if(a==='room-filter')openPicker('筛选所在空间',[{value:'all',label:'全部空间'},...[...new Set([...ROOMS,...data.items.map(i=>i.room)])].map(r=>({value:r,label:r}))],ui.room,o=>{ui.room=o.value;render();});
+      else if(a==='room-filter')openPicker('筛选所在空间',[{value:'all',label:'全部空间'},...roomOptions().map(r=>({value:r,label:r}))],ui.room,o=>{ui.room=o.value;render();});
       else if(a==='calc-mode'){ui.calcMode=b.dataset.mode;render();scheduleCalc();}
       else if(a==='reset-calc'){ui.calcMode='area';ui.calc={quantity:'',price:'',loss:'0',labor:'0',auxiliary:'0',freight:'0',install:'0',pack:'',packing:false,fixed:''};ui.baseline=null;render();scheduleCalc();toast('测算参数已重置');}
       else if(a==='save-baseline'){const r=computeCalc();ui.baseline={total:r.total,description:r.mode==='fixed'?'项目总价':'材料单价 '+money(r.price)};updateCalc();scheduleCalc();toast('方案 A 已保存，可修改输入对比');}
@@ -804,6 +807,8 @@
   window.addEventListener('pagehide',()=>{flushCalc();if(isFormDirty())saveDraftNow().catch(()=>{});});
   runtime.onFlush(async()=>{
     let failure=null;flushCalc();const calcWrite=calcSaving;
+    // A 我的家 save queued just before closing (拼户型 on Back) lands before the host lets go.
+    await homeQueue.catch(()=>{});
     // The form's own save may still finish within the host's window; if it doesn't, the draft is written anyway.
     for(let n=0;n<30&&busy&&!busyBackground&&isFormDirty();n++)await new Promise(r=>setTimeout(r,50));
     if(isFormDirty())await saveDraftNow({resume:true,force:true}).catch(error=>{failure=error;});

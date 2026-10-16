@@ -280,6 +280,46 @@ test('1.8.4 · sliding along a wall of a narrow pair into a corner keeps that wa
   assert.equal(HM.clampPlacement(f, mb, x, 1.8, 0, { dx: .04, dz: 0 }).rot, 3, 'a 4 cm push towards the wall still snaps');
 });
 
+test('1.9.0 · block plans: old templates turn into blocks with the same rooms; bathrooms sit inside a room and name themselves', () => {
+  for (const k of HM.TEMPLATE_ORDER) {
+    const t = HM.planOf({ template: k }), b = HM.planOf(HM.toBlocks(t));
+    assert.equal(b.key, 'blocks');
+    assert.deepEqual(HM.makeRects(b).rects.map(o => [o.name, o.type, o.r]), HM.makeRects(t).rects.map(o => [o.name, o.type, o.r]), `${k}: same rooms, names and walls`);
+  }
+  const home = { blocks: [
+    { id: 'a', type: '主卧', x: 0, z: 0, w: 3.6, d: 3.6 }, { id: 'c', type: '餐厅', x: 3.6, z: 0, w: 3, d: 3.3 }, { id: 'e', type: '次卧', x: 0, z: 3.6, w: 3, d: 3 },
+    { id: 'f', type: '次卧', x: 3, z: 3.6, w: 3, d: 3 }, { id: 'g', type: '次卧', x: 1, z: 1, w: 2, d: 2 }, { id: 'h', type: '车库', x: 20, z: 0, w: 3, d: 3 },
+    { id: 'p', type: '阳台', x: 0, z: 6.6, w: 3, d: 1.4 }], baths: [
+    { id: 'w1', host: 'a', w: 1.6, d: 2, ax: 1, az: 0 }, { id: 'w2', host: 'c', w: 1.2, d: 1.2, ax: 0, az: 0, name: '主卫' }, { id: 'w3', host: 'c', w: 1.2, d: 1.2, ax: 0, az: 0 },
+    { id: 'w4', host: 'p', w: 1.2, d: 1.2, ax: 0, az: 0 }, { id: 'w5', host: 'c', w: 1.2, d: 1.2, ax: 1, az: 1 }] };
+  const t = HM.planOf(home);
+  assert.deepEqual(t.blocks.map(b => b.name), ['主卧', '餐厅', '次卧', '次卧2', '阳台'], 'overlapping and unknown blocks dropped; the second 次卧 counts on');
+  assert.deepEqual(t.baths.map(b => [b.id, b.name]), [['w1', '主卫'], ['w2', '公卫'], ['w5', '公卫2']], 'a clashing bathroom and one on the balcony are dropped; 主卫 only inside 主卧');
+  const { rects } = HM.makeRects(t), area = n => HM.area(rects, n);
+  assert.ok(Math.abs(area('主卧') - (3.6 * 3.6 - 1.6 * 2)) < 1e-6 && Math.abs(area('主卫') - 3.2) < 1e-6, 'the bathroom takes its floor out of the room');
+  assert.ok(Math.abs(area('餐厅') - (3 * 3.3 - 1.44 - 1.44)) < 1e-6, 'two bathrooms in one room');
+  for (let i = 0; i < rects.length; i++) for (let j = i + 1; j < rects.length; j++) { const [a, b] = [rects[i].r, rects[j].r];
+    assert.ok(!(Math.min(a[2], b[2]) - Math.max(a[0], b[0]) > 1e-6 && Math.min(a[3], b[3]) - Math.max(a[1], b[1]) > 1e-6), `${rects[i].name} and ${rects[j].name} do not overlap`); }
+  assert.equal(rects.find(r => r.name === '主卫').type, '卫生间');
+  const spot = HM.findSpot('bedA', rects, '主卧', []), p = HM.placeFromModel(spot, rects, '主卧'), [w, d] = HM.footprint(HM.KINDS.bedA, p.rot);
+  assert.ok(!(p.x + w / 2 > 2 + 1e-6 && p.z - d / 2 < 2 - 1e-6), 'a bed placed in 主卧 stays out of its 主卫');
+  assert.equal(HM.sanitizeHome(home).blocks.length, 5, 'saved as blocks');
+  assert.equal(HM.sanitizeHome({ blocks: [] }), null, 'an empty plan falls back to the template');
+  const L = HM.planOf(HM.toBlocks(HM.planOf({ template: 't3l2' })));
+  assert.equal(L.blocks.filter(b => b.name === '客餐厅').length, 2, 'the two touching parts of 客餐厅 keep one name');
+  const apart = HM.sanitizeBlocks({ blocks: [{ id: 'a', type: '客厅', name: '客厅', x: 0, z: 0, w: 3, d: 3 }, { id: 'b', type: '客厅', name: '客厅', x: 5, z: 0, w: 3, d: 3 }] });
+  assert.deepEqual(apart.blocks.map(b => b.name), ['客厅', '客厅2'], 'two rooms apart never share a name');
+  assert.equal(HM.nextName('公卫', new Set(['公卫', '公卫2'])), '公卫3');
+});
+
+test('1.9.0 · 拼户型 is wired in: the editor ships in home3d.js, 户型 opens it, renamed bathrooms carry their records', () => {
+  assert.match(read('home3d.js'), /function createPlanEditor\(/);
+  assert.match(read('home3d.js'), /a === 'layout'\) \{ setMode\('normal'\); editor\.open\(T\); \}/);
+  assert.match(read('home3d.js').slice(read('home3d.js').indexOf('function createPlanEditor(')), /addEventListener\('touchstart'/, 'touch drives the drags');
+  assert.match(read('app.js'), /saveHome:\(home,renames=\[\]\)=>homeWrite\(next=>\{next\.project\.home=home;const to=new Map\(renames\);/);
+  assert.match(read('app.js'), /HM\.roomNames\(planRects\(data\)\)/, 'the plan\'s rooms are offered as 所在空间');
+});
+
 test('a saved position survives a room resize as a fraction of the room', () => {
   const t = HM.planOf({ template: 't3l2' });
   const model = { kind: 'cabB', x: .5, z: .5, rot: 0 };
