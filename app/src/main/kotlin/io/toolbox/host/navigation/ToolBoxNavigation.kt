@@ -21,6 +21,7 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -114,6 +115,8 @@ internal class RuntimeTransition(
     var entryCoverMeasured by mutableStateOf(false)
     /** The running return (or the animation cancelling it), so a reopen or Back can stop it. */
     var returnJob: Job? = null
+    /** Bumped when a return is cancelled, so the tool's runtime reopens what Back closed. */
+    var reopenRevision by mutableIntStateOf(0)
 
     /** Returning from a settled tool: the source fades in over the tool, not over the cover. */
     val returningFromSettled: Boolean
@@ -381,6 +384,7 @@ internal fun ToolBoxNavigation(
     val cancelReturn: () -> Unit = {
         if (runtimeRoute != null && runtimeLeaving) {
             runtimeLeaving = false
+            transition.reopenRevision += 1
             transition.returnJob?.cancel()
             transition.returnJob = coroutineScope.launch {
                 if (entryCoverVisible) {
@@ -397,7 +401,8 @@ internal fun ToolBoxNavigation(
     }
 
     fun navigate(route: ToolBoxRoute) {
-        if (reopensReturningTool(route, runtimeRoute, runtimeLeaving)) {
+        // The live stack top, not the composed route: the return may have just popped it.
+        if (reopensReturningTool(route, secondaryBackStack.lastOrNull() as? RuntimeRoute, runtimeLeaving)) {
             cancelReturn()
         } else {
             secondaryBackStack.pushSecondary(route)
@@ -578,6 +583,7 @@ internal fun ToolBoxNavigation(
                     onPresentationReady = { runtimePresentationReady = true },
                     onBack = leaveRuntime,
                     toolName = runtimeTitle,
+                    reopenRevision = transition.reopenRevision,
                     modifier = Modifier
                         .fillMaxSize()
                         .zIndex(1f)
