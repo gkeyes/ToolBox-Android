@@ -333,6 +333,37 @@ test("tab switches keep the list mounted and scrolling pauses the edge lens", as
   expect(pageErrors).toEqual([]);
 });
 
+// The filter capsule is a plain tablist (1.19.1): arrow keys move the
+// selection and focus, and the pill follows to the newly selected tab.
+test("arrow keys move the filter tab and its pill", async ({ page }) => {
+  await page.setViewportSize({ width: 400, height: 870 });
+  await installNativeBoundary(page, {
+    auth: {
+      serverUrl: "https://miniflux.xiaochen.win", username: "layout-test-user", password: "", userId: 7,
+      token: "fixed-synthetic-test-token", authType: "token",
+    },
+    settings: { ...STORED_SETTINGS, syncInterval: "0" },
+    cacheRoot: {
+      version: 3, revision: 1, account: { serverUrl: "https://miniflux.xiaochen.win", userId: "7" },
+      transaction: null, lastSyncTime: null,
+      tables: { articles: null, feeds: null, categories: null, feedIcons: null },
+    },
+  });
+  await page.goto(PRODUCTION_URL);
+  const tabs = page.locator(".article-list-inline-tabs .tabs__tab");
+  await expect(tabs).toHaveCount(3);
+  await tabs.nth(1).evaluate((el) => el.click());
+  await expect(tabs.nth(1)).toHaveAttribute("aria-selected", "true");
+  await tabs.nth(1).focus();
+  await page.keyboard.press("ArrowRight");
+  await expect(tabs.nth(2)).toHaveAttribute("aria-selected", "true");
+  await expect(tabs.nth(2)).toBeFocused();
+  await expect(tabs.nth(2).locator(".tabs__indicator")).toHaveCount(1);
+  await page.keyboard.press("ArrowRight");
+  await expect(tabs.nth(0)).toHaveAttribute("aria-selected", "true");
+  await expect(page.locator(".article-list-inline-tabs .tabs__indicator")).toHaveCount(1);
+});
+
 // A tap leaves no focus ring behind; a key press brings rings back.
 test("a tapped control shows no focus ring until a key is pressed", async ({ page }) => {
   await page.setViewportSize({ width: 400, height: 870 });

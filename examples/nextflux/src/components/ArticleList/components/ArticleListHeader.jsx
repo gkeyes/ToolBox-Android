@@ -199,8 +199,9 @@ export default function ArticleListHeader({ collapsed = false }) {
   const wrapRef = useRef(null);
   const tabsRef = useRef(null);
   const { i18n } = useTranslation();
-  const $filter = useStore(filter);
-  useTabsFit(tabsRef, [scoped, $filter, i18n.language]);
+  // Not keyed on the filter: the tabs show names only, so a switch changes no
+  // width, and the refit after each press keeps the selected tab in view.
+  useTabsFit(tabsRef, [scoped, i18n.language]);
   // The header floats over the list (so it can slide away without relayout);
   // publish its height so the list reserves exactly that much space on top.
   useEffect(() => {
