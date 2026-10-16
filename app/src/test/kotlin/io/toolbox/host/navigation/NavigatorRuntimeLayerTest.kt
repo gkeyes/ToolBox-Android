@@ -1,5 +1,6 @@
 package io.toolbox.host.navigation
 
+import androidx.activity.BackEventCompat
 import androidx.activity.ComponentActivity
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -46,7 +47,7 @@ class NavigatorRuntimeLayerTest {
     /** Opens A and lets its layer present it. */
     private fun openPresented() {
         compose.setContent {
-            ToolBoxTheme {
+            ToolBoxTheme(reduceTransparency = true) {
                 val current = rememberRuntimeNavigator(stack, stack.lastOrNull() as? RuntimeRoute)
                 navigator = current
                 NavigatorRuntimeLayer(current, current.transition, viewModelFactory = { factory }, toolName = null)
@@ -59,7 +60,13 @@ class NavigatorRuntimeLayerTest {
     }
 
     private fun pressBack() {
-        compose.runOnUiThread { compose.activity.onBackPressedDispatcher.onBackPressed() }
+        // A whole Back gesture, as the system sends it: the predictive handler starts on the
+        // first event and finishes on the press.
+        compose.runOnUiThread {
+            val dispatcher = compose.activity.onBackPressedDispatcher
+            dispatcher.dispatchOnBackStarted(BackEventCompat(0f, 0f, 0f, BackEventCompat.EDGE_LEFT))
+            dispatcher.onBackPressed()
+        }
         compose.waitForIdle()
     }
 
