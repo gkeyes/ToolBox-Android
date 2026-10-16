@@ -20,7 +20,36 @@ test("an image in running text is inline", () => {
   assert.equal(imageIsInline(icon), true);
   const badge = image();
   element("DIV", [element("STRONG", [text("Label")]), badge]);
-  assert.equal(imageIsInline(badge), true);
+  assert.equal(imageIsInline(badge, { "data-image-source": "https://example.com/img/badge-new.png" }), true);
+  const small = image();
+  element("DIV", [element("SPAN", [text("来源")]), small]);
+  assert.equal(imageIsInline(small, { width: "20", height: "20" }), true);
+});
+
+// recheck-107 P2-2: photos next to text on their own line keep the reserve.
+test("a photo on its own line next to text is not inline", () => {
+  const afterBreak = image();
+  element("P", [text("前面的文字"), element("BR"), afterBreak]);
+  assert.equal(imageIsInline(afterBreak, { "data-image-source": "https://example.com/photo.jpg" }), false);
+  const beforeCaption = image();
+  element("P", [beforeCaption, element("BR"), text("图片说明")]);
+  assert.equal(imageIsInline(beforeCaption, {}), false);
+  const source = image();
+  element("P", [element("SPAN", [text("来源：某某")]), source]);
+  assert.equal(imageIsInline(source, { "data-image-source": "https://example.com/2026/10/photo.jpg" }), false);
+  const wide = image();
+  element("P", [text("text "), wide, text(" more")]);
+  assert.equal(imageIsInline(wide, { width: "1200", height: "800" }), false);
+});
+
+test("htmlparser2 nodes are classified the same way", () => {
+  const img = { type: "tag", name: "img", attribs: {}, children: [] };
+  const parent = { type: "tag", name: "p", children: [{ type: "text", data: "前面的文字" }, { type: "tag", name: "br", attribs: {}, children: [] }, img] };
+  img.parent = parent;
+  assert.equal(imageIsInline(img, {}), false);
+  const icon = { type: "tag", name: "img", attribs: {}, children: [] };
+  icon.parent = { type: "tag", name: "p", children: [{ type: "text", data: "Label " }, icon, { type: "text", data: " more" }] };
+  assert.equal(imageIsInline(icon, {}), true);
 });
 
 test("a figure, a lone image or a following paragraph is not running text", () => {

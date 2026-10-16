@@ -227,14 +227,20 @@ export function installLens({ doc = document, win = window } = {}) {
   // not flip it on and off.
   let still = 0;
   let touches = 0;
+  let touchedAt = 0;
   const setPaused = (value) => {
     if (paused === value) return;
     paused = value;
     for (const { node, lens } of filters.values()) node.replaceChildren(...(value ? [passThrough()] : lens));
   };
+  // A touchend the document never sees (a host gesture took the touch) would
+  // leave the bending off until the next touch; after 2 s without a touch
+  // event and without scrolling, the count is treated as stale.
   const settle = () => {
     still = 0;
-    if (!touches) setPaused(false);
+    if (touches && Date.now() - touchedAt < 2000) { still = win.setTimeout(settle, 500); return; }
+    touches = 0;
+    setPaused(false);
   };
   const onScroll = () => {
     setPaused(true);
@@ -243,6 +249,7 @@ export function installLens({ doc = document, win = window } = {}) {
   };
   const onTouch = (event) => {
     touches = event.touches?.length ?? 0;
+    touchedAt = Date.now();
     if (!touches && paused && !still) still = win.setTimeout(settle, 180);
   };
   const touchTypes = ["touchstart", "touchend", "touchcancel"];

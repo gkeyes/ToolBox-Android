@@ -16,7 +16,7 @@ function ReadingPortal({ item, highlights }) {
   }, [item]);
   let content;
   if (item.type === "image") {
-    content = <ArticleImage imgNode={{ attribs: item.attrs }} inline={imageIsInline(item.target)} />;
+    content = <ArticleImage imgNode={{ attribs: item.attrs }} inline={imageIsInline(item.target, item.attrs)} />;
   }
   else if (item.type === "media") content = <Iframe sources={item.sources} domNode={{ name: item.kind, attribs: { "data-media-kind": item.kind, "data-media-url": item.url } }} />;
   else if (item.type === "code") content = <CodeBlock code={item.code} language={item.language} highlights={highlights} plainElement={item.plainElement} container={item.container} />;
