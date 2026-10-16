@@ -368,8 +368,31 @@
   outline: 2px solid var(--focus, var(--accent));
   outline-offset: 3px;
 }
+/* An alert whose text is taller than the dialog shows a shade at the bottom edge while more
+   text is below; the scroll timeline fades it out at the end and leaves it off when nothing
+   scrolls. Translucent, so the glass surface still shows through. */
+.nextflux-alert-body::after {
+  content: "";
+  display: block;
+  position: sticky;
+  inset-block-end: 0;
+  block-size: .75rem;
+  margin-block-start: -.75rem;
+  pointer-events: none;
+  background: linear-gradient(transparent, color-mix(in srgb, currentColor 18%, transparent));
+  opacity: 0;
+  animation: nextflux-alert-more linear both;
+  animation-timeline: scroll(nearest block);
+}
+@keyframes nextflux-alert-more {
+  0%, 92% { opacity: 1; }
+  100% { opacity: 0; }
+}
 .nextflux-modal-footer {
   flex-shrink: 0;
+  /* At large text sizes the buttons stack, one per row, instead of squeezing a label into a
+     column of single characters. */
+  flex-wrap: wrap;
   gap: var(--ds-space-xs, .5rem);
   background: transparent;
   padding-bottom: max(1rem, env(safe-area-inset-bottom));
@@ -377,7 +400,8 @@
 .nextflux-modal-footer button {
   min-block-size: 48px;
   min-inline-size: 0;
-  flex: 1 1 0;
+  flex: 1 1 7em;
+  padding-inline: .75em;
   /* A long label at large text sizes wraps inside the pill instead of running past it. */
   block-size: auto;
   white-space: normal;

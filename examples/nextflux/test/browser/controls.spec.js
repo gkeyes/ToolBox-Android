@@ -224,6 +224,33 @@ test("alert close preserves pending-operation guard", async ({ page }) => {
   await expect(alert).toHaveCount(0);
 });
 
+test("alert buttons stack at 2x text on a 320 px phone instead of breaking labels per character", async ({ page }, info) => {
+  await open(page, 320, "light", 2);
+  await page.getByRole("button", { name: "Open alert", exact: true }).click();
+  const alert = page.getByRole("alertdialog");
+  await expect(alert).toBeVisible();
+  // The longest real label (the feed-notification prompt's confirm) at the largest system text size.
+  await alert.getByRole("button", { name: "Confirm", exact: true }).evaluate((node) => { node.lastChild.textContent = "开启并通知"; });
+  const boxes = await alert.locator(".nextflux-modal-footer button").evaluateAll((nodes) => nodes.map((node) => {
+    const rect = node.getBoundingClientRect();
+    return { width: rect.width, height: rect.height, line: parseFloat(getComputedStyle(node).lineHeight), text: node.textContent };
+  }));
+  const dialog = await alert.boundingBox();
+  for (const box of boxes) {
+    expect(box.height, `${box.text} stays on one line`).toBeLessThan(box.line * 1.5 + 24);
+    expect(box.width, `${box.text} fits the dialog`).toBeLessThanOrEqual(dialog.width);
+  }
+  // A body taller than the dialog shows the "more below" shade until it is scrolled to the end.
+  const body = alert.locator(".nextflux-alert-body");
+  const shade = () => body.evaluate((node) => Number(getComputedStyle(node, "::after").opacity));
+  expect(await shade(), "short text has no shade").toBe(0);
+  await body.evaluate((node) => { node.querySelector("p").textContent = "说明文字。".repeat(60); });
+  await expect.poll(shade).toBeGreaterThan(0.5);
+  await body.evaluate((node) => { node.scrollTop = node.scrollHeight; });
+  await expect.poll(shade).toBe(0);
+  await info.attach("alert-320-z2.png", { body: await page.screenshot(), contentType: "image/png" });
+});
+
 test("keyboard focus remains visible and Escape still dismisses a modal", async ({ page }) => {
   await open(page);
   const close = page.locator(".action-buttons .nextflux-close-button");
