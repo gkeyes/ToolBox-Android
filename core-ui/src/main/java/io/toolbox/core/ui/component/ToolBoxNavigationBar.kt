@@ -84,16 +84,103 @@ fun ToolBoxNavigationBar(
         )
         return
     }
+    if (glassState != null && ToolBoxThemeTokens.materials.realBlurEnabled && items.isNotEmpty()) {
+        // Standing in for the refracting bar while a transition pauses live glass (opening or
+        // leaving a tool): same capsule, tab layout and selection, so only the material changes.
+        StandInTabNavigationBar(
+            items = items,
+            selectedId = selectedId,
+            onItemSelected = select,
+            modifier = modifier,
+            iconOnly = usesIconOnlyLayout,
+        )
+        return
+    }
     LiquidGlassNavigationBar(
         items = items,
         selectedId = selectedId,
         onItemSelected = select,
         modifier = modifier,
         navigationShape = navigationShape,
-        // Standing in for the 64dp refracting bar during a transition: keep its height, so the
-        // page's bottom padding doesn't jump.
-        barHeight = if (glassState != null && ToolBoxThemeTokens.materials.realBlurEnabled) 64.dp else 58.dp,
     )
+}
+
+/**
+ * The [LiquidTabNavigationBar] geometry without refraction: a 64dp capsule with 4dp inset, a
+ * 56dp selection capsule at rest (10% ink, as Kyant's lens draws it) and icon-over-label tabs.
+ */
+@Composable
+private fun StandInTabNavigationBar(
+    items: List<ToolBoxNavigationItem>,
+    selectedId: String,
+    onItemSelected: (ToolBoxNavigationItem) -> Unit,
+    modifier: Modifier,
+    iconOnly: Boolean,
+) {
+    val colors = ToolBoxThemeTokens.colors
+    val dark = colors.background.luminance() < 0.5f
+    val capsule = RoundedCornerShape(50)
+    val selectedIndex = items.indexOfFirst { it.id == selectedId }
+    BoxWithConstraints(
+        modifier = modifier
+            .windowInsetsPadding(WindowInsets.navigationBars)
+            .padding(horizontal = ToolBoxThemeTokens.spacing.oneHalf, vertical = ToolBoxThemeTokens.spacing.compact)
+            .fillMaxWidth()
+            .height(64.dp)
+            .toolBoxSolidGlass(capsule)
+            .padding(4.dp),
+    ) {
+        val itemWidth = maxWidth / items.size
+        if (selectedIndex >= 0) {
+            Box(
+                Modifier
+                    .offset { IntOffset((itemWidth * selectedIndex).roundToPx(), 0) }
+                    .width(itemWidth)
+                    .fillMaxHeight()
+                    .clip(capsule)
+                    .background(if (dark) androidx.compose.ui.graphics.Color.White.copy(0.1f) else androidx.compose.ui.graphics.Color.Black.copy(0.1f)),
+            )
+        }
+        Row(Modifier.fillMaxSize().selectableGroup()) {
+            items.forEachIndexed { index, item ->
+                key(item.id) {
+                    val selected = index == selectedIndex
+                    val tint = if (selected) colors.primary else colors.textPrimary
+                    androidx.compose.foundation.layout.Column(
+                        Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                            .clip(capsule)
+                            .selectable(
+                                selected = selected,
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null,
+                                role = Role.Tab,
+                                onClick = { onItemSelected(item) },
+                            )
+                            .then(item.testTag?.let(Modifier::testTag) ?: Modifier)
+                            .semantics { contentDescription = item.label },
+                        verticalArrangement = Arrangement.spacedBy(2.dp, Alignment.CenterVertically),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        ToolBoxIcon(icon = item.icon, contentDescription = null, tint = tint, modifier = Modifier.size(24.dp))
+                        if (!iconOnly) {
+                            ToolBoxText(
+                                text = item.label,
+                                style = ToolBoxThemeTokens.textStyles.label.copy(
+                                    color = tint,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                ),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 /**
