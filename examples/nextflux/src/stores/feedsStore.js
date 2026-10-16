@@ -136,6 +136,18 @@ export const totalStarredCount = computed([starredCounts], ($starredCounts) => {
   return Object.values($starredCounts).reduce((sum, count) => sum + count, 0);
 });
 
+// How counts treat duplicates: with 隐藏重复条目 on, a hidden copy is not
+// counted unread (toolbox/dedupe.mjs). Null when the filter is off.
+export function duplicateView() {
+  const settings = settingsState.get();
+  if (settings.hideDuplicateArticles === false) return null;
+  const list = feeds.get();
+  return {
+    hideDuplicates: true, field: settings.sortField, direction: settings.sortDirection,
+    feedIds: list.length ? list.filter((feed) => settings.showHiddenFeeds || !feed.hide_globally).map((feed) => feed.id) : undefined,
+  };
+}
+
 export async function loadFeeds() {
   try {
     const storedFeeds = await getFeeds();
@@ -146,7 +158,7 @@ export async function loadFeeds() {
       ? storedFeeds
       : storedFeeds.filter((feed) => !feed.hide_globally);
 
-    const counts = await getArticleCounts(filteredFeeds.map((feed) => feed.id));
+    const counts = await getArticleCounts(filteredFeeds.map((feed) => feed.id), duplicateView());
     unreadCounts.set(counts.unread);
     starredCounts.set(counts.starred);
   } catch (err) {
@@ -154,3 +166,13 @@ export async function loadFeeds() {
     console.error(err);
   }
 }
+
+// Turning 隐藏重复条目 on or off, or changing the order (which decides the
+// copy that is kept), changes the counts.
+let countSettings = null;
+settingsState.subscribe((settings) => {
+  const next = [settings.hideDuplicateArticles, settings.sortField, settings.sortDirection, settings.showHiddenFeeds].join("|");
+  const changed = countSettings !== null && countSettings !== next;
+  countSettings = next;
+  if (changed && feeds.get().length) void loadFeeds();
+});

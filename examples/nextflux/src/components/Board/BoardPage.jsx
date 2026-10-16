@@ -42,11 +42,13 @@ function ArticleChips({ ids, articles, onOpen }) {
 }
 
 function Topics({ state, onOpen }) {
+  const fresh = new Set(state.freshIds || []);
   return state.topics.map((topic, index) => (
     <section key={index} className="nf-board-card">
       <div className="nf-board-card-head">
         <span className="nf-board-rank" data-rank={index + 1}>{index + 1}</span>
         <h3>{topic.title}</h3>
+        {fresh.size > 0 && topic.articles.some((n) => fresh.has(state.articles[n - 1]?.id)) && <span className="nf-board-new" aria-label="有新文章">新</span>}
         <span className="nf-board-row-count">{topic.articles.length} 篇</span>
       </div>
       {(topic.summary || topic.gist) && <p>{topic.summary || topic.gist}</p>}
@@ -95,7 +97,9 @@ function Digest({ state, onOpen }) {
     {written.status === "error" && <p className="nf-board-inline-error" role="alert">{written.error}</p>}
     <div className="nf-board-actions">
       {speechAvailable() && written.status === "done" && <Button variant="secondary" fullWidth onPress={speak}>{speaking ? "停止朗读" : "朗读"}</Button>}
-      <Button variant="secondary" fullWidth isPending={writing} onPress={() => writeDigest({ again: true })}>重新写一篇</Button>
+      {/* While it writes, the same button starts it over: a stream that never
+          finishes is not a dead end. */}
+      <Button variant="secondary" fullWidth onPress={() => writeDigest({ again: true })}>{writing ? "重新开始写" : "重新写一篇"}</Button>
     </div>
   </>;
 }
@@ -161,13 +165,18 @@ function caption(state, stream) {
   return "";
 }
 
+let lastTab = "topics";
+
 export default function BoardPage() {
   const state = useStore(board);
   const stream = useStore(boardStream);
   const { articleListStyle } = useStore(settingsState);
   const { articleId } = useParams();
   const navigate = useNavigate();
-  const [tab, setTab] = useState("topics");
+  // The 主题/文章 choice is kept while the app runs, so coming back from the
+  // list opens the board on the same view.
+  const [tab, setTabState] = useState(() => lastTab);
+  const setTab = (value) => { lastTab = value; setTabState(value); };
   const pageRef = useRef(null);
   const headRef = useRef(null);
 

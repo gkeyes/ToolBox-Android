@@ -11,7 +11,7 @@ import { digestMessages, fitArticles, parseTopics, startOfDay, todaysUnread, top
 // made, the previous one stays on screen with updating = true.
 const EMPTY = {
   status: "idle", topics: [], articles: [], skipped: 0, total: 0, at: null, day: 0,
-  ids: [], newCount: 0, updating: false, unseen: false, error: "",
+  ids: [], newCount: 0, freshIds: [], updating: false, unseen: false, error: "",
 };
 export const board = atom({ ...EMPTY });
 // The written digest of the current board. status: idle | streaming | done | error.
@@ -116,6 +116,8 @@ export async function refreshBoard({ onlyIfNew = false } = {}) {
       day: today,
       ids: all.map((article) => article.id),
       newCount: keep ? fresh.length : 0,
+      // Articles new since the previous board, for the topic 新 marks.
+      freshIds: keep ? fresh.map((article) => article.id) : [],
       unseen: !boardOpen.get(),
     });
     digest.set({ status: "idle", text: "", error: "", boardAt: null });
@@ -139,7 +141,7 @@ function stopDigest() {
 export function openBoard(open = !boardOpen.get()) {
   boardOpen.set(open);
   // Leaving the board clears its "N new articles" note: it has been seen.
-  if (!open) { if (board.get().newCount) board.set({ ...board.get(), newCount: 0 }); return; }
+  if (!open) { if (board.get().newCount) board.set({ ...board.get(), newCount: 0, freshIds: [] }); return; }
   const state = board.get();
   board.set({ ...state, unseen: false });
   const stale = state.day !== startOfDay().getTime();

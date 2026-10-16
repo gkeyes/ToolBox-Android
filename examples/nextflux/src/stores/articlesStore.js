@@ -7,7 +7,7 @@ import {
   patchArticleState,
 } from "../db/storage.js";
 import minifluxAPI from "../api/miniflux.js";
-import { starredCounts, unreadCounts } from "./feedsStore.js";
+import { duplicateView, starredCounts, unreadCounts } from "./feedsStore.js";
 import { settingsState } from "./settingsStore.js";
 import { clearAllSummaries } from "./aiStore.js";
 import { toggleStarAcknowledged } from "../toolbox/star-toggle.mjs";
@@ -105,7 +105,10 @@ export async function loadArticles(sourceId = null, type = "feed", page = 1, app
         (options.showHiddenFeeds || !feed.hide_globally) &&
         (options.type === "all" || (options.type === "category" ? feed.categoryId === options.sourceId : feed.id === options.sourceId)))
         .map((feed) => feed.id);
-      const query = await openArticleQuery({ ...options, feedIds });
+      // Duplicates are found across every feed the reader can see, as the
+      // counts do, so a copy kept in another feed hides this one too.
+      const duplicateFeedIds = feeds.filter((feed) => options.showHiddenFeeds || !feed.hide_globally).map((feed) => feed.id);
+      const query = await openArticleQuery({ ...options, feedIds, duplicateFeedIds });
       if (!isCurrent(session, sourceId, type)) {
         await closeArticleQuery(query.queryId);
         return null;
@@ -175,14 +178,14 @@ function publishUpdates(result, check) {
 async function saveAcknowledged(patches, check) {
   check(false);
   let result;
-  try { result = await patchArticleState(patches); }
+  try { result = await patchArticleState(patches, duplicateView()); }
   catch (failure) {
     check(false);
     // The server result is known. Recovery only replays the local field patch;
     // retrying a bookmark toggle on the server could undo the user's action.
     registerAccountRecovery(async (recoveryCheck) => {
       recoveryCheck(false);
-      const recovered = await patchArticleState(patches);
+      const recovered = await patchArticleState(patches, duplicateView());
       // A lost commit reply can make replay a no-op after the worker confirms
       // its original root. Read the acknowledged rows even if articles is [].
       const articles = await getCachedArticleMetadata({ ids: patches.map((patch) => patch.id) });
@@ -257,7 +260,7 @@ const contentFields = ["bodyDigest", "title", "author", "url", "feedId", "publis
 export async function refreshArticleStateAfterSync(check) {
   const active = activeArticle.get();
   const ids = [...new Set([...filteredArticles.get().map((article) => article.id), ...(active ? [active.id] : [])])];
-  const [rows, counts, catalogs] = await Promise.all([getCachedArticleMetadata({ ids }), getArticleCounts(), getFeeds()]);
+  const [rows, counts, catalogs] = await Promise.all([getCachedArticleMetadata({ ids }), getArticleCounts(undefined, duplicateView()), getFeeds()]);
   check(false);
   const byId = new Map(rows.map((row) => [row.id, row]));
   const requested = new Set(ids);

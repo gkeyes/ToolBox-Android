@@ -10,7 +10,15 @@
 
 const text = (value) => (typeof value === "string" ? value.trim() : "");
 
-export const duplicateTitle = (article) => text(article?.titleText || article?.title);
+// Placeholder titles that many different posts share (a photo post titled
+// 图片, an Untitled entry, a line of hashtags) never count as the same title;
+// such posts are still matched by URL.
+const GENERIC_TITLES = new Set(["图片", "图片分享", "视频", "无标题", "（无标题）", "(无标题)", "untitled", "no title", "(no title)", "photo", "image", "video"]);
+const generic = (title) => GENERIC_TITLES.has(title.toLowerCase()) || /^(#[^\s#]+\s*)+$/u.test(title);
+export const duplicateTitle = (article) => {
+  const title = text(article?.titleText || article?.title);
+  return title && !generic(title) ? title : "";
+};
 export const duplicateUrl = (article) => text(article?.url);
 
 // Returns the input array itself when disabled or when nothing is hidden.
@@ -28,4 +36,13 @@ export function dedupeArticles(articles, { enabled = true } = {}) {
     kept.push(article);
   }
   return kept.length === articles.length ? articles : kept;
+}
+
+// The ids of the later copies in `rows` (already in list order), by the same
+// rule as dedupeArticles.
+export function duplicateIds(rows) {
+  const kept = dedupeArticles(rows, { enabled: true });
+  if (kept === rows) return new Set();
+  const shown = new Set(kept.map((row) => row.id));
+  return new Set(rows.filter((row) => !shown.has(row.id)).map((row) => row.id));
 }

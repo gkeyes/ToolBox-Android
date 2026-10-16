@@ -122,3 +122,53 @@ test("a list query hides later copies from its pages and total, and keeps them i
   assert.deepEqual(ids((await cache.readQueryPage(plain.queryId, 1)).items), [1, 2, 3, 4, 5]);
   assert.equal((await cache.readMetadata(2)).status, "unread");
 });
+
+// Counts follow the shown list: hidden copies are not unread in the badge,
+// reading the shown copy brings it down, and a copy of a story already read
+// stays hidden (nothing is marked read on the server).
+test("unread counts leave out hidden copies and reach zero by reading", async () => {
+  const account = { serverUrl: "https://miniflux.example", userId: "7" };
+  const syncedAt = "2026-10-16T03:30:00.000Z";
+  const at = (minute) => `2026-10-16T03:${String(minute).padStart(2, "0")}:00.000Z`;
+  const entry = (id, feedId, title, url, minute, status = "unread") => ({ id, feedId, title, url, content: "<p>正文</p>", enclosures: [],
+    status, starred: 0, published_at: at(minute), changed_at: syncedAt });
+  const cache = createArticleCache(memoryStorage(), { autoGc: false, tokenPrefix: "dedupe-count" });
+  const token = await cache.prepareSync({ account, syncedAt });
+  await cache.applySyncBatch(token, [
+    entry(1, 1, "同一件事", "https://a.example/1", 10),
+    entry(2, 2, "同一件事", "https://b.example/2", 9),
+    entry(3, 2, "另一件事", "https://a.example/3", 8),
+    entry(4, 3, "隐藏源里的", "https://a.example/4", 11),
+    entry(5, 1, "隐藏源里的", "https://a.example/5", 7),
+  ]);
+  await cache.commitSync(token, { feeds: [{ id: 1, title: "甲" }, { id: 2, title: "乙" }, { id: 3, title: "丙" }], categories: [] });
+  const view = { hideDuplicates: true, field: "published_at", direction: "desc", feedIds: [1, 2] };
+
+  assert.deepEqual((await cache.counts([1, 2])).unread, { 1: 2, 2: 2 });
+  // Copy 2 (feed 2) is hidden by 1; 4 sits in a hidden feed, so 5 stays.
+  assert.deepEqual((await cache.counts([1, 2], view)).unread, { 1: 2, 2: 1 });
+  const listed = await cache.openQuery({ pageSize: 30, filter: "unread", hideDuplicates: true, feedIds: [1, 2], duplicateFeedIds: [1, 2] });
+  assert.equal(listed.total, 3);
+
+  // Reading the shown copy: the badge drops and the copy stays hidden.
+  const patched = await cache.patchState([{ id: 1, status: "read" }], view);
+  assert.deepEqual([patched.counts.unread[1], patched.counts.unread[2]], [1, 1]);
+  const after = await cache.openQuery({ pageSize: 30, filter: "unread", hideDuplicates: true, feedIds: [1, 2], duplicateFeedIds: [1, 2] });
+  assert.deepEqual(ids((await cache.readQueryPage(after.queryId, 1)).items), [3, 5]);
+  assert.equal((await cache.readMetadata(2)).status, "unread");
+});
+
+test("placeholder titles and hashtag-only titles never match by title", () => {
+  const rows = [
+    { id: 1, title: "图片", url: "https://a.example/1" },
+    { id: 2, title: "图片", url: "https://a.example/2" },
+    { id: 3, title: "Untitled", url: "https://a.example/3" },
+    { id: 4, title: "untitled", url: "https://a.example/4" },
+    { id: 5, title: "#旅行 #日常", url: "https://a.example/5" },
+    { id: 6, title: "#旅行 #日常", url: "https://a.example/6" },
+    { id: 7, title: "图片", url: "https://a.example/1" },
+    { id: 8, title: "#旅行 真实标题", url: "https://a.example/8" },
+    { id: 9, title: "#旅行 真实标题", url: "https://a.example/9" },
+  ];
+  assert.deepEqual(ids(dedupeArticles(rows)), [1, 2, 3, 4, 5, 6, 8]);
+});

@@ -50,8 +50,10 @@ export const getArticleById = (id) => read((client) => client.readArticle(Number
 export const getArticleMetadata = (id) => read((client) => client.readMetadata(Number(id)));
 export const getCachedArticleMetadata = (criteria = {}) => read((client) => client.selectMetadata(criteria));
 export const getArticleIds = (criteria = {}) => read((client) => client.selectIds(criteria));
-export const getArticleCounts = (feedIds) => read((client) => client.counts(feedIds));
-export const patchArticleState = (patches) => getCache().patchState(patches);
+// `view` ({ hideDuplicates, field, direction, feedIds }) counts unread the
+// way the lists show it, without hidden duplicate copies.
+export const getArticleCounts = (feedIds, view) => read((client) => client.counts(feedIds, view));
+export const patchArticleState = (patches, view) => getCache().patchState(patches, view);
 
 export const openArticleQuery = (options) => read((client) => client.openQuery(options));
 export const readArticleQueryPage = (queryId, page = 1) => read((client) => client.readQueryPage(queryId, page));

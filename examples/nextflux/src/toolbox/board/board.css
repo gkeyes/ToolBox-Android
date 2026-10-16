@@ -170,3 +170,14 @@
   color: var(--ds-on-surface, var(--foreground));
 }
 .nf-board-live-text.is-thinking { max-block-size: 8rem; font-style: italic; color: var(--ds-text-tertiary, var(--muted)); }
+
+/* A topic with articles new since the previous board. */
+.nf-board-new {
+  flex: 0 0 auto;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  color: #fff;
+  background: var(--danger, #e8613d);
+}
