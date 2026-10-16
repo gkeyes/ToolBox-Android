@@ -397,3 +397,54 @@ test("a sync deferred by settling settings is kept when the board closes, and af
   await tick(); await tick();
   assert.ok(board.get().ids.includes(4));
 });
+
+test("a sync while a closed board is out of date is read once the settings return; a queued sync waits for settling settings", async () => {
+  const settled = () => new Promise((resolve) => setTimeout(resolve, 700));
+  rows = [article(1), article(2)];
+  settingsState.set({ ...settingsState.get(), duplicateMatch: "either" });
+  await settled();
+  let call = waitCall();
+  refreshBoard();
+  (await call).onChunk(TOPICS); calls.at(-1).resolve();
+  await tick(); await tick();
+  // Changed while open, closed, synced while out of date, then changed back.
+  openBoard(true);
+  let before = calls.length;
+  settingsState.set({ ...settingsState.get(), duplicateMatch: "url" });
+  openBoard(false);
+  await settled();
+  rows = [article(1), article(2), article(5)];
+  await sync();
+  assert.equal(calls.length, before, "closed and out of date: nothing yet");
+  call = waitCall();
+  settingsState.set({ ...settingsState.get(), duplicateMatch: "either" });
+  await settled();
+  const back = await call;
+  assert.equal(calls.length, before + 1, "the synced article is read");
+  back.onChunk(TOPICS); back.resolve();
+  await tick(); await tick();
+  assert.ok(board.get().ids.includes(5));
+
+  // A sync queued behind a board being made, then settings start changing
+  // before it is done: nothing until they settle.
+  openBoard(true);
+  call = waitCall();
+  refreshBoard();
+  const running = await call;
+  rows = [article(1), article(2), article(5), article(6)];
+  await sync();
+  settingsState.set({ ...settingsState.get(), duplicateMatch: "title" });
+  before = calls.length;
+  running.onChunk(TOPICS); running.resolve();
+  await tick(); await tick();
+  assert.equal(calls.length, before, "the queued sync waits for the settings");
+  settingsState.set({ ...settingsState.get(), duplicateMatch: "either" });
+  call = waitCall();
+  await settled();
+  const last = await call;
+  assert.equal(calls.length, before + 1, "one call once they settle");
+  last.onChunk(TOPICS); last.resolve();
+  await tick(); await tick();
+  assert.ok(board.get().ids.includes(6));
+  openBoard(false);
+});
