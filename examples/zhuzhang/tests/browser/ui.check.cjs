@@ -26,6 +26,24 @@ const check = (name, ok, got) => { results.push({ name, ok: !!ok, got }); consol
   const open = async (vw, data, hash = '#ledger') => {
     const ctx = await b.newContext({ viewport: { width: vw, height: 800 }, hasTouch: true, isMobile: true });
     await ctx.addInitScript((s) => { delete window.PointerEvent; const st = new Map([['ledger.v1', s]]); window.ToolBox = { ready: async () => ({}), storage: { get: async (k) => st.has(k) ? JSON.parse(JSON.stringify(st.get(k))) : null, set: async (k, v) => { st.set(k, v); }, remove: async (k) => st.delete(k) }, files: {} }; }, data);
+    await ctx.addInitScript(() => {
+      // What a person would see of an element: on screen, not faded or clipped by any ancestor, readable against what is behind it.
+      const rgba = (c) => { const m = c.match(/[\d.]+/g) || []; return { r: +m[0] || 0, g: +m[1] || 0, b: +m[2] || 0, a: m[3] === undefined ? 1 : +m[3] }; };
+      const lum = ({ r, g, b }) => { const f = (v) => { v /= 255; return v <= .03928 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4; }; return .2126 * f(r) + .7152 * f(g) + .0722 * f(b); };
+      window.__seen = (el) => {
+        const out = []; if (!el) return ['missing'];
+        const r = el.getBoundingClientRect(); if (r.width < 2 || r.height < 2) out.push('no size');
+        let op = 1, bg = null;
+        for (let e = el; e && e.nodeType === 1; e = e.parentElement) { const s = getComputedStyle(e); op *= +s.opacity;
+          if (s.display === 'none') out.push('display none'); if (s.visibility !== 'visible') out.push('visibility ' + s.visibility);
+          if (!bg && rgba(s.backgroundColor).a > .5) bg = rgba(s.backgroundColor);
+          if (e !== el && s.overflow !== 'visible') { const q = e.getBoundingClientRect(); if (r.left < q.left - 1 || r.right > q.right + 1 || r.top < q.top - 1 || r.bottom > q.bottom + 1) out.push('clipped by ' + (e.className || e.tagName)); } }
+        if (op < .99) out.push('faded ' + op.toFixed(2));
+        const s = getComputedStyle(el), c = rgba(s.color); if (c.a < .9) out.push('text alpha ' + c.a);
+        bg = bg || { r: 255, g: 255, b: 255 }; const L1 = lum(c), L2 = lum(bg), ratio = (Math.max(L1, L2) + .05) / (Math.min(L1, L2) + .05); if (ratio < 3) out.push('contrast ' + ratio.toFixed(2));
+        const hit = document.elementFromPoint(Math.min(innerWidth - 1, r.left + Math.min(6, r.width / 2)), r.top + r.height / 2); if (!hit || !(el.contains(hit) || hit.contains(el))) out.push('covered by ' + (hit && (hit.className || hit.tagName)));
+        return out; };
+    });
     const p = await ctx.newPage(); await p.goto(base + hash); await W(1200);
     const c = await ctx.newCDPSession(p);
     const tap = async (sel, text) => { for (const e of await p.$$(sel)) { if (!(await e.isVisible())) continue; if (text && !(await e.innerText()).includes(text)) continue;
@@ -37,12 +55,16 @@ const check = (name, ok, got) => { results.push({ name, ok: !!ok, got }); consol
     return { ctx, p, tap, zoom };
   };
   // 1. Top bar: the name keeps its end, nothing passes the edge, the name clears the top.
-  for (const [name, z, end] of [['滨江花园三期12栋1202', 2, '12栋1202'], ['阳光城·翡丽湾二期 B区 7栋2单元 1803室', 1.3, '7栋2单元 1803室'], ['阳光城·翡丽湾二期 B区 7栋2单元 1803室', 2, '7栋2单元 1803室'], ['我的新家', 2, '我的新家']]) {
+  for (const [name, z, end, start] of [['滨江花园三期12栋1202', 2, '12栋1202', '滨江'], ['阳光城·翡丽湾二期 B区 7栋2单元 1803室', 1, '7栋2单元 1803室', '阳光城·翡丽湾二期'],
+    ['阳光城·翡丽湾二期 B区 7栋2单元 1803室', 1.3, '7栋2单元 1803室', '阳光城'], ['阳光城·翡丽湾二期 B区 7栋2单元 1803室', 2, '7栋2单元 1803室', '阳光城'],
+    ['Riverside Garden Phase 3 Bldg 12-1202', 1, '12-1202', 'Riverside Garden'], ['Riverside Garden Phase 3 Bldg 12-1202', 2, '12-1202', 'Riverside…'],
+    ['北京市朝阳区望京街道花家地西里三区 2号楼 1单元 501', 1, '1单元 501', '北京市朝阳区'], ['我的新家', 2, '我的新家', '我的新家']]) {
     const { ctx, p, zoom } = await open(320, ledger(name)); await zoom(z);
-    const m = await p.evaluate(() => { const n = document.querySelector('.mobile-project .project-name'), bar = document.querySelector('.topbar'), badge = document.querySelector('#runtime-badge');
-      return { text: n.textContent, top: n.getBoundingClientRect().top - bar.getBoundingClientRect().top, sw: document.documentElement.scrollWidth, badgeLines: Math.round(badge.getBoundingClientRect().height / parseFloat(getComputedStyle(badge).lineHeight || 0) || 1), meta: [...document.querySelectorAll('.mobile-project .project-meta span')].map((s) => s.getBoundingClientRect().width > 0) }; });
-    check(`top bar ${name} ×${z}: keeps 「${end}」`, m.text.endsWith(end), m);
-    check(`top bar ${name} ×${z}: page stays 320 wide, name clears the top, every meta piece shown`, m.sw === 320 && m.top >= 6 && m.meta.every(Boolean), m);
+    const m = await p.evaluate(() => { const n = document.querySelector('.mobile-project .project-name'), bar = document.querySelector('.topbar'), small = document.querySelector('.mobile-project .project-meta');
+      return { text: n.textContent, fits: n.scrollHeight <= n.clientHeight + 1, name: __seen(n), top: n.getBoundingClientRect().top - bar.getBoundingClientRect().top, sw: document.documentElement.scrollWidth,
+        meta: [...small.querySelectorAll('span')].map((x) => ({ t: x.textContent, seen: __seen(x) })) }; });
+    check(`top bar ${name} ×${z}: keeps 「${start}」 and 「${end}」, and what shows fits its box`, m.text.startsWith(start) && m.text.endsWith(end) && m.fits && !m.name.length, m);
+    check(`top bar ${name} ×${z}: page stays 320 wide, name clears the top, every meta piece readable in full`, m.sw === 320 && m.top >= 6 && m.meta.length === 2 && m.meta.every((x) => !x.seen.length), m);
     await ctx.close();
   }
   // 2. Refund sheet: the over-cap note turns red while typing; at ×2 the date box holds its date under its label.
@@ -50,20 +72,20 @@ const check = (name, ok, got) => { results.push({ name, ok: !!ok, got }); consol
     await tap('#nav-plus'); await tap('[data-action="payment-kind"][data-kind="refund"]');
     await tap('[data-action="form-picker"][data-field="payment-item"]'); await tap('#picker-list .pick-option', '电器打包');
     await tap('.rp-opt', '空调'); await p.focus('#payment-amount'); await p.keyboard.type('4000'); await W(200);
-    const note = await p.evaluate(() => { const n = document.querySelector('.rp-note'); return n && { text: n.innerText, cls: n.className, color: getComputedStyle(n).color }; });
-    check('refund over the piece\'s cash: the note says so at once', note && note.cls.includes('rp-over') && note.text.includes('退款不能超过这个数'), note);
+    const note = await p.evaluate(() => { const n = document.querySelector('.rp-note'); if (!n) return null; n.scrollIntoView({ block: 'center', behavior: 'instant' }); const m = getComputedStyle(n).color.match(/\d+/g).map(Number);
+      return { text: n.innerText, cls: n.className, rgb: m, seen: __seen(n) }; });
+    check('refund over the piece\'s cash: the note says so at once, in red, readable', note && note.text.includes('退款不能超过这个数') && note.rgb[0] >= note.rgb[1] + 60 && note.rgb[0] >= note.rgb[2] + 60 && !note.seen.length, note);
     await zoom(2, '#sheet');
-    const d = await p.evaluate(() => { const r = (s) => document.querySelector(s).getBoundingClientRect(); const cap = r('#date-caption'), btn = r('.date-button'), lab = r('#date-label'); return { capBottom: cap.bottom, btnTop: btn.top, btnBottom: btn.bottom, labTop: lab.top, labBottom: lab.bottom }; });
-    check('date at ×2: the date stays inside its box, below its label', d.capBottom <= d.btnTop && d.labTop >= d.btnTop && d.labBottom <= d.btnBottom, d);
+    const d = await p.evaluate(() => { const r = (s) => document.querySelector(s).getBoundingClientRect(); document.querySelector('.date-button').scrollIntoView({ block: 'center', behavior: 'instant' }); const cap = r('#date-caption'), btn = r('.date-button'), lab = r('#date-label'); return { capBottom: cap.bottom, btnTop: btn.top, btnBottom: btn.bottom, labTop: lab.top, labBottom: lab.bottom, seen: __seen(document.querySelector('#date-label')) }; });
+    check('date at ×2: the date stays inside its box, below its label, readable', d.capBottom <= d.btnTop && d.labTop >= d.btnTop && d.labBottom <= d.btnBottom && !d.seen.length, d);
     await ctx.close(); }
   // 3. Restore dialog: the early-refund hint is really visible.
   { const { ctx, p } = await open(390, ledger('我的新家'));
     const B = ledger('我的新家'); B.payments.unshift({ id: 'r0', itemId: 'bd', amount: 1000, date: '2026-10-01', kind: 'refund', note: '' });
     await p.evaluate((t) => window.ZZApp.previewImport(t), JSON.stringify(B)); await W(500);
     const h = await p.evaluate(() => { const e = [...document.querySelectorAll('#sheet-body p')].find((x) => x.textContent.includes('退款日期早于付款')); if (!e) return null;
-      const s = getComputedStyle(e), r = e.getBoundingClientRect(), hit = document.elementFromPoint(r.left + 4, r.top + r.height / 2);
-      return { text: e.textContent, w: r.width, h: r.height, opacity: s.opacity, visibility: s.visibility, color: s.color, size: s.fontSize, onTop: e.contains(hit) }; });
-    check('restore dialog: the early-refund hint is visible', h && h.w > 100 && h.h > 8 && +h.opacity === 1 && h.visibility === 'visible' && parseFloat(h.size) >= 9 && h.onTop, h);
+      e.scrollIntoView({ block: 'center', behavior: 'instant' }); return { text: e.textContent, size: parseFloat(getComputedStyle(e).fontSize), seen: __seen(e) }; });
+    check('restore dialog: the early-refund hint is readable', h && h.size >= 9 && !h.seen.length, h);
     await ctx.close(); }
   await b.close(); server.close();
   const failed = results.filter((r) => !r.ok).length; console.log(`${results.length - failed}/${results.length} passed`); process.exit(failed ? 1 : 0);

@@ -701,7 +701,11 @@ test('1.12.4 · a long project name keeps as much of its end as fits; no style r
   assert.equal(app.fitText(box(6, 3), '我的新家'), '我的新家', 'a short name is left alone');
   assert.equal(app.fitText(box(6, 3), '滨江花园三期12栋1202'), '滨江花园三期12栋1202', 'it fits whole');
   const a = app.fitText(box(5, 3), '阳光城·翡丽湾二期 B区 7栋2单元 1803室');
-  assert.ok(a.startsWith('阳光…') && a.endsWith('7栋2单元 1803室') && [...a].length <= 15, a);
+  assert.equal(a, '阳光城…7栋2单元 1803室', 'the estate and the building, unit and room all stay');
+  for (const [per, lines] of [[8, 3], [12, 2], [10, 3]]) {
+    const e = app.fitText(box(per, lines), 'Riverside Garden Phase 3 Bldg 12-1202'), [head, tail] = e.split('…');
+    assert.ok(tail.endsWith('12-1202') && /(^|\s)\S+$/.test(head) && !/[A-Za-z0-9]$/.test(head) === false && 'Riverside Garden Phase 3 Bldg 12-1202'.startsWith(head + ' ') && ('Riverside Garden Phase 3 Bldg 12-1202').endsWith(' ' + tail), per + '×' + lines + ': whole words, ' + e);
+  }
   const b = app.fitText(box(5, 2), '滨江花园三期12栋1202');
   assert.ok(b.endsWith('12栋1202') && [...b].length <= 10, b);
   const c = app.fitText(box(4, 2), '滨江花园三期12栋0805');
@@ -714,6 +718,23 @@ test('1.12.4 · a long project name keeps as much of its end as fits; no style r
     if (/display:none|visibility:hidden|opacity:0(?![.\d])|font-size:0(?![.\d])|clip:rect|clip-path:inset\(50%|(^|;)height:0(?![.\d])|text-indent:-|left:-9999/.test(decl)) bad.push(sel + '{' + decl + '}');
   }
   assert.deepEqual(bad, [], 'no rule hides the hint');
+});
+
+test('1.12.5 · the ledger fuzz itself works: it makes every kind of entry and catches a broken split', () => {
+  const { run } = require('./ledger-fuzz.cjs');
+  const st = run(app, { n: 400, seed: 5, backdate: true });
+  assert.ok(st.made.payment > 300 && st.made.whole > 150 && st.made.aimed > 150, JSON.stringify(st.made));
+  // payShares with one fault each, on a copy so the real cache is untouched.
+  const broken = (fault) => ({ ...app, payShares: (i, L) => { const o = app.payShares(i, L), rows = new Map([...o.rows].map(([k, v]) => [k, [...v]])), cash = [...o.cash];
+    fault(L.payments.filter((p) => p.itemId === i.id), rows, cash); return { rows, cash }; } });
+  const leak = broken((ps, rows, cash) => { const p = ps.find((q) => q.part); if (!p) return; const r = rows.get(p.id), k = +p.part.slice(1), j = k ? 0 : 1; if (r[k] < 1) return; r[k]--; r[j]++; cash[k]++; cash[j]--; });
+  const below = broken((ps, rows, cash) => { const p = ps.find((q) => q.kind === 'payment'); if (!p) return; const r = rows.get(p.id), d = r[0] + 100; r[0] -= d; r[1] += d; cash[0] -= d; cash[1] += d; });
+  const drift = broken((ps, rows, cash) => { cash[0]++; cash[1]--; });
+  const sum = broken((ps, rows) => { if (ps[0]) rows.get(ps[0].id)[0]++; });
+  assert.ok(run(leak, { n: 200, seed: 5 }).leak > 0, 'an aimed refund that leaks one cent is caught');
+  assert.ok(run(below, { n: 200, seed: 5 }).rowSign > 0, 'a row below zero is caught');
+  assert.ok(run(drift, { n: 200, seed: 5 }).cashSum > 0, 'cash that drifts from its rows is caught');
+  assert.ok(run(sum, { n: 200, seed: 5 }).rowSum > 0, 'a row that no longer adds up to its amount is caught');
 });
 
 test('1.12.3 · fnSource reads past comments, strings, regex and nested templates', () => {
