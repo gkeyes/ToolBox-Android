@@ -22,14 +22,12 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.graphicsLayer
@@ -42,7 +40,6 @@ import androidx.lifecycle.ViewModelStoreOwner
 import io.toolbox.core.ui.component.ToolBoxGlassActivity
 import io.toolbox.core.ui.component.ToolBoxMotion
 import io.toolbox.host.HostDependencies
-import io.toolbox.host.HostTrace
 import io.toolbox.host.catalog.CatalogNavigationIntent
 import io.toolbox.host.catalog.CatalogViewModel
 import io.toolbox.host.importflow.ImportViewModel
@@ -53,7 +50,6 @@ import io.toolbox.host.ui.MainDestination
 import io.toolbox.host.ui.PrimaryScreen
 import io.toolbox.host.ui.RuntimeShellPreviewContent
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.nav.core.NavKey
 import top.yukonga.miuix.kmp.nav.core.rememberNavBackStack
 
@@ -381,18 +377,16 @@ internal fun ToolBoxNavigation(
     fun progressFor(route: ToolBoxRoute) = pageProgress.getOrPut(route) { Animatable(1f) }
     SideEffect { pageProgress.keys.retainAll(retainedRoutes.toSet()) }
     val firstRetainedProgress = retainedRoutes.firstOrNull()?.let(::progressFor)
-    var runtimeGeneration by remember { mutableIntStateOf(0) }
-    // Outside the per-route transition: a same-tool re-push keeps the retained runtime, which
-    // must still see the reopen and undo the exit the finished return sealed.
-    var runtimeReopenRevision by remember { mutableIntStateOf(0) }
-    val transition = rememberRuntimeTransition(runtimeRoute, runtimeGeneration)
+    val navigator = remember(secondaryBackStack, coroutineScope) {
+        RuntimeNavigator(secondaryBackStack, coroutineScope)
+    }
+    val transition = rememberRuntimeTransition(runtimeRoute, navigator.generation)
+    navigator.transition = transition
     val entryProgress = transition.entryProgress
-    val sourceReturnProgress = transition.sourceReturnProgress
     var runtimeLayerEnabled by transition::runtimeLayerEnabled
     var entryCoverVisible by transition::entryCoverVisible
     var sourceAboveRuntime by transition::sourceAboveRuntime
     var runtimePresentationReady by transition::runtimePresentationReady
-    var runtimeLeaving by transition::runtimeLeaving
     var entryCoverMeasured by transition::entryCoverMeasured
     val layoutDirection = LocalLayoutDirection.current
     val trailingDirection = if (layoutDirection == LayoutDirection.Rtl) -1f else 1f
@@ -402,92 +396,11 @@ internal fun ToolBoxNavigation(
         onBack = ::goBackPrimary,
     )
 
-    LaunchedEffect(transition) {
-        val route = transition.route
-        if (transition.returnInterrupted && secondaryBackStack.lastOrNull() == route) {
-            secondaryBackStack.removeLastOrNull()
-        }
-    }
+    LaunchedEffect(transition) { navigator.finishInterruptedReturn() }
 
-    LaunchedEffect(transition, entryCoverMeasured) {
-        if (runtimeRoute != null && entryCoverMeasured) {
-            HostTrace.bestEffortAsyncSection("tool.shell.enter") {
-                withFrameNanos { }
-                entryProgress.animateTo(0f, animationSpec = RetainedPageMotion)
-            }
-            runtimeLayerEnabled = true
-            // A source held opaque under this cover drops below once the cover is fully in.
-            if (!runtimeLeaving) sourceAboveRuntime = false
-        }
-    }
+    RuntimeTransitionEffects(transition)
 
-    LaunchedEffect(transition, runtimeLayerEnabled, runtimePresentationReady, runtimeLeaving, sourceAboveRuntime) {
-        if (
-            runtimeRoute != null && runtimeLayerEnabled && runtimePresentationReady &&
-            !runtimeLeaving && !sourceAboveRuntime
-        ) {
-            withFrameNanos { }
-            withFrameNanos { }
-            entryCoverVisible = false
-        }
-    }
-
-    val leaveRuntime: () -> Unit = {
-        val activeRoute = runtimeRoute
-        if (transition.reopenRequested) {
-            // Reopened while the exit was saving: stay; the runtime cancels the exit.
-        } else if (activeRoute != null && !runtimeLeaving) {
-            runtimeLeaving = true
-            // A cancelled return may still be animating back; continue from where it stands.
-            val resuming = sourceAboveRuntime
-            transition.returnJob?.cancel()
-            transition.returnJob = coroutineScope.launch {
-                if (runtimeLayerEnabled && !entryCoverVisible) {
-                    if (!resuming) sourceReturnProgress.snapTo(1f)
-                    sourceAboveRuntime = true
-                    withFrameNanos { }
-                    sourceReturnProgress.animateTo(0f, animationSpec = RetainedPageMotion)
-                } else {
-                    if (!resuming) sourceReturnProgress.snapTo(0f)
-                    sourceAboveRuntime = true
-                    withFrameNanos { }
-                    entryProgress.animateTo(1f, animationSpec = RetainedPageMotion)
-                }
-                if (secondaryBackStack.lastOrNull() == activeRoute) {
-                    secondaryBackStack.removeLastOrNull()
-                }
-            }
-        }
-    }
-
-    // Reopening the tool that is returning (a notification or shortcut mid-return) cancels the
-    // return and brings the tool back, instead of being dropped while the return completes.
-    val cancelReturn: () -> Unit = {
-        if (transition.beginReturnCancel()) {
-            transition.returnJob?.cancel()
-            transition.returnJob = coroutineScope.launch { transition.animateReturnCancel() }
-        }
-    }
-
-    fun navigate(route: ToolBoxRoute) {
-        // The live stack top, not the composed route: the return may have just popped it.
-        when (runtimeReopen(route, secondaryBackStack.lastOrNull() as? RuntimeRoute, runtimeLeaving)) {
-            RuntimeReopen.CancelReturn -> {
-                cancelReturn()
-                runtimeReopenRevision += 1
-            }
-            // The runtime cancels the close only when Back is still saving for an exit.
-            RuntimeReopen.CancelExit -> if (runtimeLayerEnabled) {
-                transition.reopenRequested = true
-                runtimeReopenRevision += 1
-            }
-            RuntimeReopen.None -> if (secondaryBackStack.pushSecondary(route) && route is RuntimeRoute) {
-                runtimeGeneration += 1
-                // Pushed again right after its return popped it: the retained runtime reopens.
-                runtimeReopenRevision += 1
-            }
-        }
-    }
+    fun navigate(route: ToolBoxRoute) = navigator.navigate(route)
 
     val currentNavigate by rememberUpdatedState<(ToolBoxRoute) -> Unit>(::navigate)
     LaunchedEffect(catalogViewModel) {
@@ -653,9 +566,9 @@ internal fun ToolBoxNavigation(
                     route = runtimeRoute,
                     dependencies = dependencies,
                     onPresentationReady = { runtimePresentationReady = true },
-                    onBack = leaveRuntime,
+                    onBack = navigator::leave,
                     toolName = runtimeTitle,
-                    reopenRevision = runtimeReopenRevision,
+                    reopenRevision = navigator.reopenRevision,
                     onReopenHandled = { transition.reopenRequested = false },
                     modifier = Modifier
                         .fillMaxSize()

@@ -19,7 +19,7 @@ internal data class RuntimeCloseUiState(
 
 internal class RuntimeViewModel(
     private val toolId: String,
-    private val sessions: RuntimeSessionManager,
+    private val sessions: ForegroundRuntimeSessions,
 ) : ViewModel() {
     val state: StateFlow<RuntimeUiState> = sessions.state(toolId)
     private val mutableCloseState = MutableStateFlow<RuntimeCloseUiState?>(null)
@@ -30,6 +30,8 @@ internal class RuntimeViewModel(
     private var exitAfterSave: (() -> Unit)? = null
     /** Back asked to leave: the save may still run, or have sealed the bridge for the exit. */
     private var exitRequested = false
+    /** 「放弃并关闭」 destroyed the runtime; a reopen has to build it again. */
+    private var discarded = false
 
     init { sessions.openForeground(toolId) }
 
@@ -88,10 +90,17 @@ internal class RuntimeViewModel(
 
     /**
      * The tool was opened again while Back was taking it away: stop a save still running for the
-     * exit, or reopen the bridge a finished save sealed. Nothing to undo when no exit was asked.
+     * exit, reopen the bridge a finished save sealed, or rebuild the runtime a discard destroyed.
+     * Nothing to undo when no exit was asked.
      */
     fun reopen() {
-        if (exitRequested) cancelClose()
+        if (discarded) {
+            discarded = false
+            sessions.openForeground(toolId)
+            mutableExitRevision.value += 1
+        } else if (exitRequested) {
+            cancelClose()
+        }
     }
 
     fun discardAndClose() {
@@ -100,6 +109,7 @@ internal class RuntimeViewModel(
         if (action.reloading) viewModelScope.launch { sessions.reloadSaved(toolId) }
         else {
             sessions.discardForegroundRuntime(toolId)
+            discarded = true
             exitAfterSave?.invoke()
         }
     }

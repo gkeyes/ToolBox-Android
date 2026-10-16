@@ -16,6 +16,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
@@ -151,12 +152,9 @@ internal fun RuntimeSessionLayer(
     // The tool was opened again while Back was taking it away: undo the exit Back started (a save
     // still running, or the sealed bridge and spent exit confirmation). Only revisions after this
     // view model was made count.
-    val seenRevision = remember(viewModel) { reopenRevision }
-    LaunchedEffect(viewModel, reopenRevision) {
-        if (reopenRevision != seenRevision) {
-            viewModel.reopen()
-            onReopenHandled()
-        }
+    RuntimeReopenEffect(viewModel, reopenRevision) {
+        viewModel.reopen()
+        onReopenHandled()
     }
     Box(modifier) {
         RuntimeShellScreen(
@@ -185,4 +183,14 @@ internal fun NavigationInputBlocker(modifier: Modifier = Modifier) {
 
 private class RuntimeEntryViewModelStoreOwner : ViewModelStoreOwner {
     override val viewModelStore = ViewModelStore()
+}
+
+/** Calls [onReopen] for each [revision] after the first one seen for [key]. */
+@Composable
+internal fun RuntimeReopenEffect(key: Any, revision: Int, onReopen: () -> Unit) {
+    val seenRevision = remember(key) { revision }
+    val currentOnReopen by rememberUpdatedState(onReopen)
+    LaunchedEffect(key, revision) {
+        if (revision != seenRevision) currentOnReopen()
+    }
 }
