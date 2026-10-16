@@ -26,29 +26,39 @@ internal const val PAGE_TOUCH_NEAR_BACK_MS = 150L
 internal const val PAGE_EDGE_TOUCH_NEAR_BACK_MS = 500L
 
 /**
- * Counts the Backs a running page took in a row, so a page that cancels every Back can't trap the
- * user: after [PAGE_BACK_STREAK] of them the next Back goes to the host, however slowly they came.
- * A touch on the page (opening another panel) or a Back the host took starts the count again.
- */
-/**
  * When a finger lifted, on the elapsedRealtime clock that Back presses use. MotionEvent.eventTime is
  * on the uptime clock and is earlier than the moment the event is handled, so it is shifted across.
  */
 internal fun liftedAtElapsed(nowElapsed: Long, nowUptime: Long, eventTime: Long): Long =
     nowElapsed - (nowUptime - eventTime).coerceAtLeast(0L)
 
+/**
+ * Counts the Backs a running page took in a row, so a page that cancels every Back can't trap the
+ * user: after [PAGE_BACK_STREAK] of them the next Back goes to the host, however slowly they came.
+ * A touch on the page (opening another panel) or a Back the host took starts the count again.
+ */
 internal class PageBackStreak {
     private var count = 0
     private var lastPageBackAt = 0L
 
     /**
-     * Whether the Back pressed at [now] goes to the host without asking the page. [pageTouchedAt] is
-     * when a finger last lifted on the page; [fromGestureEdge] says that touch started inside the
-     * side system gesture insets, so it needs a wider gap from a Back to count as a real tap.
+     * Whether the Back handled at [now] goes to the host without asking the page. [pageTouchedAt] is
+     * when a finger last lifted on the page (its event time); [fromGestureEdge] says that touch started
+     * inside the side system gesture insets, so it needs a wider gap from a Back to count as a real tap.
+     *
+     * Back presses carry no event time, so [now] is when the Back was handled. The gap to it is
+     * measured from when the lift was handled, [pageTouchHandledAt]: a stalled UI thread delays both
+     * alike (the gesture's own lift is queued just before its Back), so a stall never stretches the
+     * gap into a real tap.
      */
-    fun hostTakes(now: Long, pageTouchedAt: Long, fromGestureEdge: Boolean = false): Boolean {
+    fun hostTakes(
+        now: Long,
+        pageTouchedAt: Long,
+        fromGestureEdge: Boolean = false,
+        pageTouchHandledAt: Long = pageTouchedAt,
+    ): Boolean {
         val near = if (fromGestureEdge) PAGE_EDGE_TOUCH_NEAR_BACK_MS else PAGE_TOUCH_NEAR_BACK_MS
-        if (pageTouchedAt - lastPageBackAt > near && now - pageTouchedAt > near) {
+        if (pageTouchedAt - lastPageBackAt > near && now - pageTouchHandledAt > near) {
             count = 0
         }
         return count >= PAGE_BACK_STREAK

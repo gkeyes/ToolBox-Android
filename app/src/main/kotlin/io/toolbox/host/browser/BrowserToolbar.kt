@@ -21,6 +21,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
@@ -275,7 +276,7 @@ private fun BrowserGlassCircle(
         modifier.size(size)
             .toolBoxGlassPress(interaction, enabled = enabled)
             .toolBoxClearGlass(CircleShape, tint = ToolBoxThemeTokens.materials.overlayFallback.copy(alpha = 0.88f))
-            .then(if (lensRim) Modifier.browserLensRim() else Modifier)
+            .then(if (lensRim) Modifier.browserLensRim(light = ToolBoxThemeTokens.colors.surface.luminance() > 0.5f) else Modifier)
             .clickable(enabled = enabled, interactionSource = interaction, indication = null, role = Role.Button, onClick = onClick)
             .semantics { contentDescription = label },
         contentAlignment = Alignment.Center,
@@ -286,20 +287,30 @@ private fun BrowserGlassCircle(
 
 /**
  * Static lens edge for a glass circle over the live page, which it must never sample: a thin inner
- * ring lit at the top left and shaded at the bottom right.
+ * ring lit at the top left and shaded at the bottom right. On a light fill the highlight barely
+ * shows, so the shade is deeper and a fine white line just inside the ring carries the edge.
  */
-private fun Modifier.browserLensRim(): Modifier = drawWithContent {
+private fun Modifier.browserLensRim(light: Boolean): Modifier = drawWithContent {
     drawContent()
     val stroke = 1.75.dp.toPx()
+    val radius = size.minDimension / 2f - stroke / 2f
     drawCircle(
         brush = androidx.compose.ui.graphics.Brush.linearGradient(
             0f to androidx.compose.ui.graphics.Color.White.copy(alpha = 0.10f),
             0.5f to androidx.compose.ui.graphics.Color.Transparent,
-            1f to androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.08f),
+            1f to androidx.compose.ui.graphics.Color.Black.copy(alpha = if (light) 0.13f else 0.08f),
             start = androidx.compose.ui.geometry.Offset.Zero,
             end = androidx.compose.ui.geometry.Offset(size.width, size.height),
         ),
-        radius = size.minDimension / 2f - stroke / 2f,
+        radius = radius,
         style = androidx.compose.ui.graphics.drawscope.Stroke(stroke),
     )
+    if (light) {
+        val line = 0.75.dp.toPx()
+        drawCircle(
+            color = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.5f),
+            radius = radius - stroke / 2f - line / 2f,
+            style = androidx.compose.ui.graphics.drawscope.Stroke(line),
+        )
+    }
 }

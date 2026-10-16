@@ -511,7 +511,10 @@ class BrowserActivity : ComponentActivity() {
         nightUiMode = newConfig.uiMode
         theme.applyStyle(R.style.Theme_ToolBox, true)
         window.setBackgroundDrawableResource(R.color.toolbox_window_background)
-        state.webView?.dispatchConfigurationChanged(newConfig)
+        state.webView?.let { page ->
+            webViewFactory.onNightModeChanged(page)
+            page.dispatchConfigurationChanged(newConfig)
+        }
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
