@@ -127,6 +127,17 @@ export default {
     },
     importOPML: "Import OPML",
   },
+  feedNotify: {
+    turnOn: "Notify on updates",
+    turnOff: "Stop update notifications",
+    marked: "Update notifications on",
+    on: "Update notifications are on for “{{title}}”. ToolBox shows a notification when background sync finds new entries.",
+    off: "Update notifications are off for “{{title}}”.",
+    needsSync: "Update notifications come from background sync. Turn it on to receive them.",
+    enableSync: "Turn on background sync",
+    permission: "Allow “Notifications” for NextFlux in ToolBox tool permissions, then try again.",
+    failed: "Could not turn on update notifications. Please try again.",
+  },
   articleList: {
     emptyListTitle: "No articles here",
     emptyListText: "New articles will appear here after syncing.",

@@ -126,6 +126,17 @@ export default {
     },
     importOPML: "导入 OPML",
   },
+  feedNotify: {
+    turnOn: "开启更新通知",
+    turnOff: "关闭更新通知",
+    marked: "已开启更新通知",
+    on: "已开启「{{title}}」的更新通知。后台同步抓到新文章时，ToolBox 会弹出通知。",
+    off: "已关闭「{{title}}」的更新通知。",
+    needsSync: "更新通知靠后台同步定期抓取新文章，请开启后台同步。",
+    enableSync: "开启后台同步",
+    permission: "请在 ToolBox 的「工具权限 › NextFlux」里打开「通知」，再回来开启。",
+    failed: "未能开启更新通知，请重试。",
+  },
   articleList: {
     emptyListTitle: "这里还没有文章",
     emptyListText: "同步后，新文章会出现在这里。",

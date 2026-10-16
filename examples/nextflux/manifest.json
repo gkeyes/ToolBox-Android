@@ -4,8 +4,8 @@
   "name": "NextFlux",
   "shortName": "NextFlux",
   "description": "连接指定 Miniflux 服务的 RSS 阅读器，支持订阅管理、阅读缓存、AI 摘要、MiniMax 语音朗读及后台同步。",
-  "version": "1.17.0",
-  "versionCode": 116,
+  "version": "1.18.0",
+  "versionCode": 117,
   "entry": "index.html",
   "icon": "icon.svg",
   "apiVersion": "1.0",
@@ -48,6 +48,11 @@
     {
       "name": "files.open",
       "reason": "选择并导入 OPML 订阅文件。",
+      "required": false
+    },
+    {
+      "name": "notifications",
+      "reason": "你为某个订阅源开启更新通知后，后台同步抓到新文章时发出通知。",
       "required": false
     },
     {

@@ -12,6 +12,7 @@ import { isModalOpen } from "@/stores/modalStore.js";
 import { imageGalleryActive } from "@/stores/articlesStore.js";
 import { installOverlayJanitor } from "@/toolbox/overlayJanitor.js";
 import { installSystemBack } from "@/toolbox/systemBack.js";
+import { installNotificationOpen, restoreFeedNotifications } from "@/toolbox/feed-notifications.js";
 import { installGlassPress, installLens } from "@/design/lens.js";
 import {
   Info,
@@ -28,6 +29,9 @@ initTheme();
 installOverlayJanitor({ isOverlayExpected: () => isModalOpen.get() || imageGalleryActive.get() });
 // System back closes the top panel or the reader before the host exits.
 installSystemBack();
+// A tapped feed update notification opens its entry or feed.
+installNotificationOpen((route) => router.navigate(route));
+void restoreFeedNotifications().catch(() => {});
 // Edge refraction on the floating glass chrome and buttons, and the glass
 // buttons' press state (see design/lens.js, design/glass-buttons.css).
 installLens();
