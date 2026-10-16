@@ -178,7 +178,9 @@ internal fun RuntimeShellScreen(
                                     when (event.actionMasked) {
                                         android.view.MotionEvent.ACTION_DOWN -> downInGestureEdge = inGestureEdge(event)
                                         android.view.MotionEvent.ACTION_UP -> {
-                                            pageTouchedAt = SystemClock.elapsedRealtime()
+                                            pageTouchedAt = liftedAtElapsed(
+                                                SystemClock.elapsedRealtime(), SystemClock.uptimeMillis(), event.eventTime,
+                                            )
                                             pageTouchFromEdge = downInGestureEdge
                                         }
                                     }

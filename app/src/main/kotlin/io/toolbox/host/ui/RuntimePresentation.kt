@@ -30,6 +30,13 @@ internal const val PAGE_EDGE_TOUCH_NEAR_BACK_MS = 500L
  * user: after [PAGE_BACK_STREAK] of them the next Back goes to the host, however slowly they came.
  * A touch on the page (opening another panel) or a Back the host took starts the count again.
  */
+/**
+ * When a finger lifted, on the elapsedRealtime clock that Back presses use. MotionEvent.eventTime is
+ * on the uptime clock and is earlier than the moment the event is handled, so it is shifted across.
+ */
+internal fun liftedAtElapsed(nowElapsed: Long, nowUptime: Long, eventTime: Long): Long =
+    nowElapsed - (nowUptime - eventTime).coerceAtLeast(0L)
+
 internal class PageBackStreak {
     private var count = 0
     private var lastPageBackAt = 0L

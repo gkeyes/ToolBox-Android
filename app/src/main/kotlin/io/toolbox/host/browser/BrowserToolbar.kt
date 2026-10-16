@@ -16,6 +16,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
@@ -45,7 +46,7 @@ import androidx.compose.runtime.getValue
 /** Round glass close button floating over the page's top-left corner, as in the iOS 27 design. */
 @Composable
 internal fun BrowserCloseButton(actions: BrowserScreenActions, modifier: Modifier = Modifier) {
-    BrowserGlassCircle(ToolBoxIconKey.Close, "关闭浏览器", modifier.testTag("browser_close"), size = 44.dp, onClick = actions::close)
+    BrowserGlassCircle(ToolBoxIconKey.Close, "关闭浏览器", modifier.testTag("browser_close"), size = 44.dp, lensRim = true, onClick = actions::close)
 }
 
 @Composable
@@ -265,6 +266,7 @@ private fun BrowserGlassCircle(
     modifier: Modifier = Modifier,
     size: androidx.compose.ui.unit.Dp = 52.dp,
     enabled: Boolean = true,
+    lensRim: Boolean = false,
     onClick: () -> Unit,
 ) {
     val tint = if (enabled) ToolBoxThemeTokens.colors.textPrimary else ToolBoxThemeTokens.disabledContent
@@ -273,10 +275,31 @@ private fun BrowserGlassCircle(
         modifier.size(size)
             .toolBoxGlassPress(interaction, enabled = enabled)
             .toolBoxClearGlass(CircleShape, tint = ToolBoxThemeTokens.materials.overlayFallback.copy(alpha = 0.88f))
+            .then(if (lensRim) Modifier.browserLensRim() else Modifier)
             .clickable(enabled = enabled, interactionSource = interaction, indication = null, role = Role.Button, onClick = onClick)
             .semantics { contentDescription = label },
         contentAlignment = Alignment.Center,
     ) {
         ToolBoxIcon(icon, contentDescription = null, modifier = Modifier.size(22.dp), tint = tint)
     }
+}
+
+/**
+ * Static lens edge for a glass circle over the live page, which it must never sample: a thin inner
+ * ring lit at the top left and shaded at the bottom right.
+ */
+private fun Modifier.browserLensRim(): Modifier = drawWithContent {
+    drawContent()
+    val stroke = 1.75.dp.toPx()
+    drawCircle(
+        brush = androidx.compose.ui.graphics.Brush.linearGradient(
+            0f to androidx.compose.ui.graphics.Color.White.copy(alpha = 0.10f),
+            0.5f to androidx.compose.ui.graphics.Color.Transparent,
+            1f to androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.08f),
+            start = androidx.compose.ui.geometry.Offset.Zero,
+            end = androidx.compose.ui.geometry.Offset(size.width, size.height),
+        ),
+        radius = size.minDimension / 2f - stroke / 2f,
+        style = androidx.compose.ui.graphics.drawscope.Stroke(stroke),
+    )
 }
