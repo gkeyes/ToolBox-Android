@@ -438,7 +438,8 @@ test("sidebar icon style switches the tiles and the board shows new and writing"
     .slice(0, 2).map((el) => {
       const style = getComputedStyle(el);
       const box = el.getBoundingClientRect();
-      return { cls: el.className, kind: el.dataset.k || null, image: style.backgroundImage, color: style.color, radius: style.borderRadius, w: box.width, h: box.height };
+      const svg = el.querySelector(":scope > svg");
+      return { cls: el.className, kind: el.dataset.k || null, image: style.backgroundImage, color: style.color, glyph: svg ? getComputedStyle(svg).color : null, radius: style.borderRadius, w: box.width, h: box.height };
     }));
   const setStyle = (value) => page.evaluate(async (v) => {
     const { updateSettings } = await import("/src/stores/settingsStore.js");
@@ -462,6 +463,9 @@ test("sidebar icon style switches the tiles and the board shows new and writing"
       expect(second.image).toContain("gradient");
       if (style !== "c") expect(second.color).toBe("rgb(255, 255, 255)");
       else expect(second.color).not.toBe("rgb(255, 255, 255)");
+      // The symbol takes the tile's colour (set C used to draw them white).
+      expect(first.glyph).toBe(first.color);
+      expect(second.glyph).toBe(second.color);
       if (style === "b") expect(second.radius).toBe("50%");
     }
   }
@@ -481,5 +485,19 @@ test("sidebar icon style switches the tiles and the board shows new and writing"
   });
   await expect(boardTile).toHaveAttribute("data-state", "working");
   expect(await boardTile.evaluate((el) => getComputedStyle(el.querySelector(".nf-sb-fx"), "::before").animationName)).toContain("nf-sb-c-fill");
+  // Moves only by transform, and holds still while the phone sidebar is closed.
+  const wave = () => boardTile.evaluate((el) => {
+    const fx = getComputedStyle(el.querySelector(".nf-sb-fx"), "::before");
+    return { top: fx.top, state: fx.animationPlayState };
+  });
+  expect(await wave()).toEqual({ top: "0px", state: "running" });
+  const closedState = await boardTile.evaluate((el) => {
+    const panel = el.closest(".sidebar-mobile-panel");
+    panel.setAttribute("data-open", "false");
+    const state = getComputedStyle(el.querySelector(".nf-sb-fx"), "::before").animationPlayState;
+    panel.setAttribute("data-open", "true");
+    return state;
+  });
+  expect(closedState).toBe("paused");
   expect(pageErrors).toEqual([]);
 });
