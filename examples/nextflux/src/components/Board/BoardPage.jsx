@@ -163,6 +163,9 @@ export default function BoardPage() {
               <Button
                 isIconOnly
                 className="nextflux-toolbar-button"
+                size="sm"
+                radius="full"
+                variant="ghost"
                 aria-label="重新生成看板"
                 onPress={() => refreshBoard()}
               >

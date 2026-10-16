@@ -13,6 +13,7 @@ export const STORED_SETTINGS = {
   sortDirection: "desc",
   sortField: "published_at",
   showHiddenFeeds: false,
+  hideDuplicateArticles: true,
   markAsReadOnScroll: false,
   cardImageSize: "large",
   articleListStyle: "lines",
