@@ -1,6 +1,6 @@
 import { currentArticleMetadata, deriveArticleMetadata } from "./cache-metadata.js";
 import { decodeCacheValue, loadLegacyCache, LEGACY_PREFIX, LEGACY_MANIFEST_KEY } from "./cache-legacy.js";
-import { dedupeArticles } from "./dedupe.mjs";
+import { dedupeArticles, duplicateIds } from "./dedupe.mjs";
 
 // The production caller runs this engine in cache-worker.js. No DOM, body
 // archive, compression or query index crosses back to the window.
@@ -612,6 +612,44 @@ export function createArticleCache(storage, options = {}) {
       starred: Object.fromEntries(feedIds.map((id) => [id, counts.starred[id] || 0])) };
   }
 
+  // List order, as openQuery sorts it.
+  const sortRows = (rows, field = "published_at", direction = "desc") => {
+    rows.sort((a, b) => {
+      const left = a[field] ?? ""; const right = b[field] ?? "";
+      return left < right ? -1 : left > right ? 1 : a.id - b.id;
+    });
+    if (direction === "desc") rows.reverse();
+    return rows;
+  };
+  // With 隐藏重复条目 on, the later copies across every article (read or not)
+  // in list order. An unread copy of a story already kept stays hidden after
+  // that story is read, so reading the shown copy brings the badge down.
+  const hiddenIndexes = new WeakMap();
+  function hiddenCopies(current, view) {
+    // Only the feeds the reader can see take part: a copy in a hidden feed
+    // never hides the one in a visible feed.
+    const feeds = Array.isArray(view.feedIds) ? new Set(view.feedIds.map(Number)) : null;
+    const key = `${view.field}|${view.direction}|${feeds ? [...feeds].sort((a, b) => a - b).join(",") : "*"}`;
+    let byView = hiddenIndexes.get(current.maps.articles);
+    if (!byView) { byView = new Map(); hiddenIndexes.set(current.maps.articles, byView); }
+    if (!byView.has(key)) {
+      if (byView.size > 8) byView.clear();
+      const rows = [...current.maps.articles.values()].filter((row) => row.status !== "removed" && (!feeds || feeds.has(row.feedId)));
+      byView.set(key, duplicateIds(sortRows(rows, view.field, view.direction)));
+    }
+    return byView.get(key);
+  }
+  // Counts as the lists show them: hidden copies are not counted unread.
+  function shownCounts(current, feedIds, view) {
+    const counts = countValue(current, feedIds);
+    if (!view?.hideDuplicates) return counts;
+    for (const id of hiddenCopies(current, view)) {
+      const row = current.maps.articles.get(id);
+      if (row?.status === "unread" && row.feedId in counts.unread) counts.unread[row.feedId] -= 1;
+    }
+    return counts;
+  }
+
   function scheduleGc() {
     if (options.autoGc === false) return;
     if (gcPromise) { gcAgain = true; return; }
@@ -702,7 +740,7 @@ export function createArticleCache(storage, options = {}) {
     return gcPromise;
   }
 
-  async function patchState(patches) {
+  async function patchState(patches, view) {
     return enqueue(async () => {
       await initialize();
       await settleCommit();
@@ -733,7 +771,7 @@ export function createArticleCache(storage, options = {}) {
         if (changes.size) await commit(stage, snapshot.maps, { counts, articleChanges: changes });
         else rememberConfirmed(stage);
         return { articles: [...changes.keys()].map((id) => publicRow(snapshot.maps.articles.get(id))).filter(Boolean),
-          counts: countValue(snapshot), revision: snapshot.root.revision };
+          counts: shownCounts(snapshot, undefined, view), revision: snapshot.root.revision };
       } finally { releaseStage(stage); }
     });
   }
@@ -1001,7 +1039,7 @@ export function createArticleCache(storage, options = {}) {
       checkEpoch(expectedEpoch);
       return ids.map((id) => publicRow(snapshot.maps.articles.get(id))).filter(Boolean);
     },
-    counts: (feedIds) => selectSnapshot((current) => countValue(current, feedIds)),
+    counts: (feedIds, view) => selectSnapshot((current) => shownCounts(current, feedIds, view)),
     async readArticle(id) {
       const expectedEpoch = epoch;
       await initialize();
@@ -1030,16 +1068,16 @@ export function createArticleCache(storage, options = {}) {
       const wanted = criteria(query);
       const field = query.field ?? "published_at";
       if (!["published_at", "created_at"].includes(field)) throw fail("文章排序字段无效。", "INVALID_REQUEST");
-      const rows = [...selectedRows(current, wanted)].filter((row) => matches(row, wanted));
+      const direction = query.direction ?? "desc";
+      const rows = sortRows([...selectedRows(current, wanted)].filter((row) => matches(row, wanted)), field, direction);
       options.onIndexBuild?.({ kind: "query", rows: rows.length });
-      rows.sort((a, b) => {
-        const left = a[field] ?? ""; const right = b[field] ?? "";
-        return left < right ? -1 : left > right ? 1 : a.id - b.id;
-      });
-      if ((query.direction ?? "desc") === "desc") rows.reverse();
       // Hidden duplicates leave the ID sequence, so pages, the total and
       // prev/next all follow the shown list. Rows stay untouched in the cache.
-      const shown = dedupeArticles(rows, { enabled: query.hideDuplicates === true });
+      // Unread and 全部 hide the same copies as the counts (a copy of a story
+      // already read stays hidden); 收藏 compares starred entries only.
+      const hidden = query.hideDuplicates === true && query.filter !== "starred" ? hiddenCopies(current, { field, direction, feedIds: query.duplicateFeedIds }) : null;
+      const shown = hidden ? rows.filter((row) => !hidden.has(row.id))
+        : dedupeArticles(rows, { enabled: query.hideDuplicates === true });
       const pageSize = query.pageSize ?? 30;
       if (!Number.isSafeInteger(pageSize) || pageSize < 1) throw invalid();
       const queryId = `${epoch}.${++serial}`;

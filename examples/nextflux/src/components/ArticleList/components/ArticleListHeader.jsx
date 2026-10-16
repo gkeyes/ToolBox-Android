@@ -1,7 +1,7 @@
 import { useParams } from "react-router";
 import { useStore } from "@nanostores/react";
 import { SidebarTrigger } from "@/components/ui/sidebar.jsx";
-import { filter, queryTotal } from "@/stores/articlesStore.js";
+import { filter } from "@/stores/articlesStore.js";
 import { feeds, categories } from "@/stores/feedsStore.js";
 import MarkAllReadButton from "./MarkAllReadButton";
 import { isSyncing, syncProgress, error } from "@/stores/syncStore.js";
@@ -61,8 +61,15 @@ function useTabsFit(ref, deps) {
         if (fits(list)) return;
       }
       // Nothing fits (very large text or long translations): scroll the
-      // capsule sideways rather than hiding a tab.
+      // capsule sideways rather than hiding a tab, with the selected tab in view.
       box.dataset.scroll = "true";
+      const selected = list.querySelector('.tabs__tab[aria-selected="true"]');
+      if (selected) {
+        const left = selected.offsetLeft;
+        const right = left + selected.offsetWidth;
+        if (left < list.scrollLeft) list.scrollLeft = Math.max(0, left - 8);
+        else if (right > list.scrollLeft + list.clientWidth) list.scrollLeft = right - list.clientWidth + 8;
+      }
     };
     fit();
     // A tab switch changes the counts while a finger is still down; measure
@@ -152,26 +159,14 @@ export function useArticleListTitle() {
     }
   };
 
-  const $queryTotal = useStore(queryTotal);
-  // The number shown beside the active tab: live unread count for "unread",
-  // otherwise the total of the current query.
-  const activeCount = $filter === "unread" ? getCountNumber() : $queryTotal;
-
   return {
     feedId,
     categoryId,
     title: getTitleText(),
     status: $isSyncing ? $syncProgress || t("common.syncing") : $syncError?.message || getFilteredCount(),
-    // Only transient states need a line of their own; counts live on the tabs.
+    // Only transient states need a line of their own (the tabs show names only).
     transientStatus: $isSyncing ? $syncProgress || t("common.syncing") : $syncError?.message || "",
     hasError: !$isSyncing && Boolean($syncError?.message),
-    activeCount: Number.isFinite(activeCount) ? activeCount : null,
-    // Counts shown under the inactive tabs, where they are known.
-    tabCounts: {
-      starred: feedId || categoryId ? null : $totalStarredCount,
-      unread: !feedId && !categoryId ? $totalUnreadCount : feedId ? $getFeedCount(feedId) : $getCategoryCount(categoryId),
-      all: null,
-    },
   };
 }
 
@@ -199,13 +194,13 @@ export function ArticleListLargeTitle() {
 // category, its name gets a compact row and the tabs sit below it. The count
 // appears only beside the active tab. Sync progress/errors show as a caption.
 export default function ArticleListHeader({ collapsed = false }) {
-  const { feedId, categoryId, title, transientStatus, hasError, activeCount, tabCounts } = useArticleListTitle();
+  const { feedId, categoryId, title, transientStatus, hasError } = useArticleListTitle();
   const scoped = Boolean(feedId || categoryId);
   const wrapRef = useRef(null);
   const tabsRef = useRef(null);
   const { i18n } = useTranslation();
   const $filter = useStore(filter);
-  useTabsFit(tabsRef, [scoped, activeCount, tabCounts.starred, tabCounts.unread, $filter, i18n.language]);
+  useTabsFit(tabsRef, [scoped, $filter, i18n.language]);
   // The header floats over the list (so it can slide away without relayout);
   // publish its height so the list reserves exactly that much space on top.
   useEffect(() => {

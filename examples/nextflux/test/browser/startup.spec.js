@@ -353,3 +353,49 @@ test("a tapped control shows no focus ring until a key is pressed", async ({ pag
   await page.keyboard.press("Shift");
   expect(await page.evaluate(() => document.documentElement.dataset.nfInput)).toBe("keyboard");
 });
+
+// Large text on a narrow screen: the capsule scrolls, and the selected tab is
+// scrolled into view; at normal size the capsule keeps its place across tabs.
+test("the selected tab stays in view and the capsule keeps its place across tabs", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 800 });
+  await installNativeBoundary(page, {
+    auth: {
+      serverUrl: "https://miniflux.xiaochen.win", username: "layout-test-user", password: "", userId: 7,
+      token: "fixed-synthetic-test-token", authType: "token",
+    },
+    settings: { ...STORED_SETTINGS, syncInterval: "0" },
+    cacheRoot: {
+      version: 3, revision: 1, account: { serverUrl: "https://miniflux.xiaochen.win", userId: "7" },
+      transaction: null, lastSyncTime: null,
+      tables: { articles: null, feeds: null, categories: null, feedIcons: null },
+    },
+  });
+  await page.goto(PRODUCTION_URL);
+  const list = page.locator(".article-list-inline-tabs .tabs__list");
+  await expect(list).toBeVisible();
+  await page.evaluate(() => { document.documentElement.style.fontSize = "32px"; });
+  const tabs = page.locator(".article-list-inline-tabs .tabs__tab");
+  for (const index of [2, 0, 2]) {
+    await tabs.nth(index).evaluate((el) => el.click());
+    await expect(tabs.nth(index)).toHaveAttribute("aria-selected", "true");
+    await expect.poll(() => page.evaluate((index) => {
+      const list = document.querySelector(".article-list-inline-tabs .tabs__list");
+      const tab = list.querySelectorAll(".tabs__tab")[index];
+      const a = list.getBoundingClientRect();
+      const b = tab.getBoundingClientRect();
+      return b.left >= a.left - 1 && b.right <= a.right + 1;
+    }, index)).toBe(true);
+  }
+
+  await page.evaluate(() => { document.documentElement.style.fontSize = ""; });
+  await page.setViewportSize({ width: 400, height: 870 });
+  const place = () => list.evaluate((el) => { const rect = el.getBoundingClientRect(); return [Math.round(rect.left * 10) / 10, Math.round(rect.width * 10) / 10]; });
+  await tabs.nth(1).evaluate((el) => el.click());
+  await page.waitForTimeout(300);
+  const before = await place();
+  for (const index of [2, 0, 1]) {
+    await tabs.nth(index).evaluate((el) => el.click());
+    await page.waitForTimeout(300);
+    expect(await place()).toEqual(before);
+  }
+});
