@@ -102,7 +102,7 @@
   // Keep a look inside its own room: the nearest part of the room (an L-shaped 客餐厅 has two),
   // clear of the walls; a wall-mounted look snaps to the nearest wall and faces into the room.
   // auto (a drag, true or its heading {dx,dz}): a look that is not free and comes within SNAP of a wall turns its back to it and backs onto it.
-  const SNAP=.35,PUSH=.15;
+  const SNAP=.35,SLACK=.1;
   function clampPlacement(dims,bb,x,z,rot,auto=false){
     const NR=nearestRect(bb.rs,x,z).r,[x0,z0,x1,z1]=NR,h=GAP;
     rot=((rot|0)%4+4)%4;
@@ -111,30 +111,27 @@
       const me=NR,seam=sd=>bb.rs.some(({r})=>r!==me&&(sd===0?Math.abs(r[3]-z0)<.01&&x>r[0]&&x<r[2]:sd===2?Math.abs(r[1]-z1)<.01&&x>r[0]&&x<r[2]:sd===1?Math.abs(r[2]-x0)<.01&&z>r[1]&&z<r[3]:Math.abs(r[0]-x1)<.01&&z>r[1]&&z<r[3]));
       const fits=sd=>{const [along,across]=sd&1?[z1-z0,x1-x0]:[x1-x0,z1-z0];return dims.w<=along-2*h&&dims.d<=across-2*h;};
       const dist=[z-z0,x-x0,z1-z,x1-x],ok=sd=>!seam(sd)&&fits(sd);
-      // inRange: the wall the look already backs onto, measured with its depth towards that wall.
-      const inRange=sd=>dist[sd]-h-dims.d/2<=SNAP+1e-6&&ok(sd);
-      // Another wall can only take over once the look as it stands now (current turn) is within SNAP of it.
-      const [fw,fd]=footprint(dims,rot),phys=sd=>dist[sd]-h-(sd&1?fw:fd)/2;
-      const cand=[0,1,2,3].filter(sd=>sd!==rot&&phys(sd)<=SNAP+1e-6&&ok(sd)).sort((a,b)=>phys(a)-phys(b));
+      // One measure for every wall: the gap the look would leave if it backed onto that wall (its depth towards it).
+      const g=sd=>dist[sd]-h-dims.d/2,inRange=sd=>g(sd)<=SNAP+1e-6&&ok(sd);
+      // A wall it doesn't back onto yet must also be close to the look as it stands now (within SNAP+SLACK; SNAP in a
+      // narrow pair), so a bed pulled across a wide bedroom doesn't swing to a side wall its long side is still far
+      // from. Whatever it turns to is in range by the turned measure, so it stays turned: no flip-flop.
       // narrow: the turned look nearly spans the room, so both walls of that pair are in range at once.
       const narrow=sd=>(sd&1?x1-x0:z1-z0)<=dims.d+2*h+2*SNAP+1e-6;
-      // reach: the pair is close enough that the look, either way round, is never far from one of them (a bed in any
-      // bedroom), so being near one says nothing; only a clear push right up to it picks it, and nearest-wins never does.
-      const reach=sd=>(sd&1?x1-x0:z1-z0)<=2*(SNAP+h)+dims.w+dims.d+1e-6;
-      const m=typeof auto==='object'?Math.hypot(auto.dx,auto.dz):0,comp=sd=>m>1e-6?[-auto.dz,-auto.dx,auto.dz,auto.dx][sd]/m:0;
-      // The wall it backs onto keeps it until the look leaves that wall's range. In a narrow pair (a bed turned onto a
-      // side wall of a small bedroom, a chair on a balcony) a wall the drag clearly heads for takes over; elsewhere a
-      // perpendicular wall does only when the drag keeps pushing PUSH past it, so sliding into a corner never turns it.
-      // Off its wall: a wall the drag clearly heads for wins (more clearly when the pair is ambiguous); otherwise
-      // the nearest one, unless both walls of its pair could claim the look.
+      const [fw,fd]=footprint(dims,rot),phys=sd=>dist[sd]-h-(sd&1?fw:fd)/2;
+      const cand=[0,1,2,3].filter(sd=>sd!==rot&&inRange(sd)&&phys(sd)<=SNAP+(narrow(sd)?0:SLACK)+1e-6).sort((a,b)=>g(a)-g(b));
+      const m=typeof auto==='object'?Math.hypot(auto.dx,auto.dz):0,comp=sd=>m>1e-6?[-auto.dz,-auto.dx,auto.dz,auto.dx][sd]/m:1;
+      // 1. The wall it backs onto keeps it while in range, however far the drag overshoots a corner. Only when that
+      //    wall is one of a narrow pair (a bed turned onto a side wall of a small bedroom, a chair on a balcony) can a
+      //    wall the drag heads for take over, so it can always get back.
+      // 2. Off its wall, a wall the drag heads for wins; otherwise the nearest wall it isn't moving away from. A narrow
+      //    pair is never picked by nearness (both are always near), only by a clear push right up to it.
       let side=null;
       if(inRange(rot)){side=rot;
-        const to=narrow(rot)?cand.find(sd=>(sd&1)!==(rot&1)&&comp(sd)>.6)??cand.find(sd=>sd===(rot+2)%4&&comp(sd)>.6)
-          :cand.find(sd=>(sd&1)!==(rot&1)&&comp(sd)>.8&&phys(sd)<=-PUSH); // in a wider room: only by pushing on past the wall it reached
-        if(to!==undefined)side=to;}
+        if(narrow(rot)){const to=cand.find(sd=>(sd&1)!==(rot&1)&&comp(sd)>.3)??cand.find(sd=>sd===(rot+2)%4&&comp(sd)>.3);if(to!==undefined)side=to;}}
       else if(cand.length){
-        const to=cand.find(sd=>reach(sd)?comp(sd)>.8&&phys(sd)<=.1:comp(sd)>.6);
-        if(to!==undefined)side=to;else{const n=cand.find(sd=>!reach(sd));if(n!==undefined)side=n;}}
+        const to=cand.find(sd=>!narrow(sd)?comp(sd)>.6:(sd&1)===(rot&1)?comp(sd)>.3:comp(sd)>.8&&phys(sd)<=.1); // already lying across a narrow pair: as in 1.
+        if(to!==undefined)side=to;else{const n=cand.find(sd=>!narrow(sd)&&comp(sd)>.1);if(n!==undefined)side=n;}}
       if(side!==null){rot=side;if(side===0)z=z0;else if(side===2)z=z1;else if(side===1)x=x0;else x=x1;} // pushed flush below by the clamp
     }
     if(dims.wall){

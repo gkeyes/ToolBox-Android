@@ -339,7 +339,7 @@ export function createHome(api) {
       const extra = overflow[l.n] ? `<span class="hv-more">+${overflow[l.n]}</span>` : '';
       // With labels hidden, a room that holds more than it can draw still shows its +N on its own.
       const moreOnly = !labelsOn && !resize && !!extra;
-      l.el.innerHTML = resize ? `${l.n}<small>${HM.area(RECTS, l.n).toFixed(1)}㎡</small>` : moreOnly ? `<span class="hv-more" aria-label="${l.n}还有 ${overflow[l.n]} 件没画出来">+${overflow[l.n]}</span>` : `${l.n}${extra}`;
+      l.el.innerHTML = resize ? `${l.n}<small>${HM.area(RECTS, l.n).toFixed(1)}㎡</small>` : moreOnly ? `<span class="hv-more" role="img" aria-label="${l.n}还有 ${overflow[l.n]} 件没画出来">+${overflow[l.n]}</span>` : `${l.n}${extra}`;
       l.el.hidden = !labelsOn && !resize && !moreOnly; l.el.classList.toggle('dim', mode === 'place'); l.el.classList.toggle('more-only', moreOnly);
     }
   }
