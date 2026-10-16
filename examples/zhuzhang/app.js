@@ -102,7 +102,7 @@
 
   let page=['overview','budget','ledger','statistics','home'].includes(location.hash.slice(1))?location.hash.slice(1):'overview';
   const ui={page,ledgerTab:'payments',category:'all',room:'all',merchant:null,query:'',statsGroup:'category'};
-  let legacyCalc=false, legacyApply=false, idRenames=new Map(), pickerState=null, pendingImport=null, toastTimer;
+  let legacyCalc=false, legacyApply=false, idRenames=new Map(), renamedDrafts=false, pickerState=null, pendingImport=null, toastTimer;
   // The form's fields as they were when its save locked it: disabled controls drop out of FormData.
   let lockedForm=null, lockedFields=null;
   // background: a 我的家 change (moving furniture, the floor plan) that is not the open form's submission.
@@ -205,7 +205,11 @@
   const payRoom=(i,room,t,source=data)=>{const s=payShares(i,source).rows.get(t.id);return s?i.parts.reduce((a,p,k)=>a+(p.room===room?s[k]:0),0):0;};
   const roomPaid=(i,room,source=data)=>pieceCash(i,source).reduce((a,v,k)=>a+(i.parts[k].room===room?v:0),0);
   // Expected = what was paid when that is the larger figure (or the record is 按实际支出): then the room's paid, row by row.
-  const roomExpected=(i,room,source=data)=>i.costMode==='actual'||i.price===null||paid(i,source)>=i.price?roomPaid(i,room,source):roomShare(i,room,expected(i,source),source);
+  // A room's figures from its own price share and its own paid, so paid + due always reconcile per room.
+  const roomPrice=(i,room,source=data)=>i.costMode==='actual'||i.price===null?null:roomShare(i,room,i.price,source);
+  const roomExpected=(i,room,source=data)=>{const q=roomPrice(i,room,source),p=roomPaid(i,room,source);return q===null?p:Math.max(p,q);};
+  const roomRemaining=(i,room,source=data)=>{const q=roomPrice(i,room,source);return q===null?0:Math.max(q-roomPaid(i,room,source),0);};
+  const roomOverpaid=(i,room,source=data)=>{const q=roomPrice(i,room,source);return q===null?0:Math.max(roomPaid(i,room,source)-q,0);};
   // The pieces as records of their own, for 我的家 (one look per piece) and the room counts.
   const pieceCache=new WeakMap();
   function piecesOf(source=data){
@@ -235,9 +239,9 @@
   function totals(source=data,items=source.items,room=null){
     return items.reduce((a,i)=>{
       const s=v=>room&&partsOf(i)?roomShare(i,room,v,source):v;
-      const p=room&&partsOf(i)?roomPaid(i,room,source):paid(i,source),r=s(remaining(i,source));
+      const one=room&&partsOf(i),p=one?roomPaid(i,room,source):paid(i,source),r=one?roomRemaining(i,room,source):remaining(i,source);
       a.budget+=s(i.budget??0);a.expected+=room&&partsOf(i)?roomExpected(i,room,source):expected(i,source);a.paid+=p;a.remaining+=r;
-      a.overpaid+=s(overpaid(i,source));a.unknown+=missingPrice(i)?1:0;a.unbudgeted+=i.budget===null?1:0;
+      a.overpaid+=one?roomOverpaid(i,room,source):overpaid(i,source);a.unknown+=missingPrice(i)?1:0;a.unbudgeted+=i.budget===null?1:0;
       if(i.status==='estimate')a.unordered+=r;else a.confirmedUnpaid+=r;
       return a;
     },{budget:0,expected:0,paid:0,remaining:0,overpaid:0,unknown:0,unbudgeted:0,unordered:0,confirmedUnpaid:0});
@@ -372,7 +376,7 @@
     }
     if(ui.ledgerTab==='due'){
       const ds=items.filter(i=>i.status!=='estimate'&&remaining(i)>0).sort((a,b)=>(a.due||'9999').localeCompare(b.due||'9999'));count=ds.length;
-      content=ds.map(i=>{const ps=partsOf(i);return `<section class="due-list-item"><div class="between"><div class="flex gap12"><span class="row-icon">${icon(cat(i.category).icon)}</span><div><h3>${esc(i.name)}${ps?` <span class="bundle-tag">打包 ${ps.length} 件</span>`:''}</h3><div class="date">${i.due?dateText(i.due)+' · '+(i.due<nowDate()?'已过计划日期':'计划付清'):'未设置计划日期'}</div>${ps&&room?`<div class="bundle-rest">${esc(room)}的份：${esc(ps.filter(p=>p.room===room).map(pieceText).join('，'))} · 这笔还要付 ${money(remaining(i))}</div>`:''}</div></div><strong class="num">${money(room?roomShare(i,room,remaining(i)):remaining(i))}</strong></div><div class="between"><span class="caption muted">${esc(i.merchant||'未填写商家')}</span><button class="button secondary" data-action="payment" data-id="${esc(i.id)}" data-full="true">记录支出 ${icon('plus','small-icon')}</button></div></section>`;}).join('');
+      content=ds.map(i=>{const ps=partsOf(i);return `<section class="due-list-item"><div class="between"><div class="flex gap12"><span class="row-icon">${icon(cat(i.category).icon)}</span><div><h3>${esc(i.name)}${ps?` <span class="bundle-tag">打包 ${ps.length} 件</span>`:''}</h3><div class="date">${i.due?dateText(i.due)+' · '+(i.due<nowDate()?'已过计划日期':'计划付清'):'未设置计划日期'}</div>${ps&&room?`<div class="bundle-rest">${esc(room)}的份：${esc(ps.filter(p=>p.room===room).map(pieceText).join('，'))} · 这笔还要付 ${money(remaining(i))}</div>`:''}</div></div><strong class="num">${money(room?roomRemaining(i,room):remaining(i))}</strong></div><div class="between"><span class="caption muted">${esc(i.merchant||'未填写商家')}</span><button class="button secondary" data-action="payment" data-id="${esc(i.id)}" data-full="true">记录支出 ${icon('plus','small-icon')}</button></div></section>`;}).join('');
     }
     if(!content)content=`<section class="card empty">${icon('list')}<p>${filtering()?'没有符合筛选条件的记录':ui.ledgerTab==='due'?'暂无已确认的待付款项':'暂无支出记录'}</p><button class="button secondary" data-action="${filtering()?'clear-filters':'payment'}">${filtering()?'清除筛选':'记录支出'}</button></section>`;
     return heading('清单','真的付出去的钱和还要付的钱')+`
@@ -1027,7 +1031,7 @@
     const seen=new Set();storedDraftIds=new Set(list.filter(validDraft).map(d=>d.id).filter(id=>typeof id==='string'));
     if(list.some(d=>d?.type==='apply'))legacyCalc=legacyApply=true;
     // 1.11.2: a record renamed by validate() (an old id with ~) keeps its unfinished drafts.
-    if(idRenames.size)for(const d of list)if(d&&Array.isArray(d.fields))d.fields=d.fields.map(e=>Array.isArray(e)&&['id','payment-item'].includes(e[0])&&idRenames.has(e[1])?[e[0],idRenames.get(e[1])]:e);
+    if(idRenames.size)for(const d of list)if(d&&Array.isArray(d.fields))d.fields=d.fields.map(e=>{if(Array.isArray(e)&&['id','payment-item'].includes(e[0])&&idRenames.has(e[1])){renamedDrafts=true;return [e[0],idRenames.get(e[1])];}return e;});
     drafts=list.filter(validDraft).map(d=>({...d,id:typeof d.id==='string'&&d.id.length<=100?d.id:uid('d')})).filter(d=>{if(seen.has(d.id)||(data.completedDrafts||[]).includes(d.id))return false;seen.add(d.id);return true;});
   }
   function openDraftList(){
@@ -1116,7 +1120,7 @@
     resumeClosedForm();
     // The notice once: the old 测算 inputs are gone after this boot, and an old 应用 draft is written out of the store.
     if(legacyCalc){const say=()=>toast('测算已并入「预算」：旧的测算输入和测算草稿不再保留，账本不受影响',null,false,6000);if($('#sheet').open)setTimeout(say,3500);else say();}
-    if(legacyApply&&storageOK)mutateDrafts(list=>list).catch(()=>{});
+    if((legacyApply||renamedDrafts)&&storageOK)mutateDrafts(list=>list).catch(()=>{});
   }
   // The app was closed (e.g. system Back) with a form open and unsaved: reopen it as it was, once.
   function resumeClosedForm(){
