@@ -13,6 +13,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -31,8 +32,6 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.ViewModelStoreOwner
 import io.toolbox.core.ui.component.ToolBoxGlassActivity
-import io.toolbox.host.HostDependencies
-import io.toolbox.host.RuntimeViewModelFactory
 import io.toolbox.host.HostTrace
 import io.toolbox.host.runtime.RuntimeViewModel
 import io.toolbox.host.ui.RuntimeShellScreen
@@ -128,15 +127,42 @@ internal fun RetainedSecondaryPage(
     }
 }
 
+/**
+ * The runtime layer for [navigator]'s tool once its transition enables it: Back leaves through the
+ * navigator, presentation hides the entry cover, and reopens reach the runtime and come back.
+ */
 @Composable
-internal fun RuntimeSessionLayer(
+internal fun NavigatorRuntimeLayer(
+    navigator: RuntimeNavigator,
+    viewModelFactory: (RuntimeRoute) -> ViewModelProvider.Factory,
+    toolName: String?,
+    modifier: Modifier = Modifier,
+) {
+    val transition = navigator.transition
+    val route = transition.route ?: return
+    if (!transition.runtimeLayerEnabled) return
+    key(route) {
+        RuntimeSessionLayer(
+            route = route,
+            viewModelFactory = viewModelFactory,
+            onPresentationReady = { transition.runtimePresentationReady = true },
+            onBack = navigator::leave,
+            modifier = modifier,
+            toolName = toolName,
+            reopenRevision = navigator.reopenRevision,
+            onReopenHandled = navigator::reopenHandled,
+        )
+    }
+}
+
+@Composable
+private fun RuntimeSessionLayer(
     route: RuntimeRoute,
-    dependencies: HostDependencies,
+    viewModelFactory: (RuntimeRoute) -> ViewModelProvider.Factory,
     onPresentationReady: () -> Unit,
     onBack: () -> Unit,
-    modifier: Modifier = Modifier,
-    toolName: String? = null,
-    // No defaults: a caller that drops either one leaves Back stuck after any reopen.
+    modifier: Modifier,
+    toolName: String?,
     reopenRevision: Int,
     onReopenHandled: () -> Unit,
 ) {
@@ -144,11 +170,8 @@ internal fun RuntimeSessionLayer(
     DisposableEffect(owner) {
         onDispose { owner.viewModelStore.clear() }
     }
-    val viewModel = remember(route, dependencies, owner) {
-        ViewModelProvider(
-            owner,
-            RuntimeViewModelFactory(route.toolId, dependencies),
-        ).get("runtime:${route.toolId}", RuntimeViewModel::class.java)
+    val viewModel = remember(route, owner) {
+        ViewModelProvider(owner, viewModelFactory(route)).get("runtime:${route.toolId}", RuntimeViewModel::class.java)
     }
     // The tool was opened again while Back was taking it away: undo the exit Back started (a save
     // still running, or the sealed bridge and spent exit confirmation). Only revisions after this
