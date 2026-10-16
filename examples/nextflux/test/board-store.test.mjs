@@ -31,7 +31,16 @@ let next = null;
 globalThis.localStorage = { getItem: () => "1", setItem() {} };
 globalThis.__board = {
   // onRead, when set, runs right after the articles are read.
-  rows: () => { const read = rows; const after = globalThis.__board.onRead; globalThis.__board.onRead = null; after?.(); return read; },
+  // onRead, when set, runs right after the articles are read; readDelay
+  // (ms), when set, holds the read back that long. reads counts them.
+  reads: 0,
+  readDelay: 0,
+  rows: () => {
+    globalThis.__board.reads++;
+    const read = rows; const after = globalThis.__board.onRead; globalThis.__board.onRead = null; after?.();
+    const delay = globalThis.__board.readDelay;
+    return delay ? new Promise((resolve) => setTimeout(() => resolve(read), delay)) : read;
+  },
   // Each AI call waits for the test to answer it.
   stream: (messages, { onChunk, onThink, signal }) => new Promise((resolve, reject) => {
     const call = { messages, kind: messages[0].content.includes("文章") && messages[1].content.startsWith("主题") ? "digest" : "topics", onChunk, onThink, resolve, reject, signal };
@@ -495,5 +504,72 @@ test("a sync landing while a refresh finds nothing new is read after it", async 
   after.onChunk(TOPICS); after.resolve();
   await tick(); await tick();
   assert.ok(board.get().ids.includes(7));
+  openBoard(false);
+});
+
+test("settings changed back while a slow read builds the board under others: the board is made again under the ones in place", async () => {
+  const settled = () => new Promise((resolve) => setTimeout(resolve, 700));
+  rows = [article(1), article(2)];
+  settingsState.set({ ...settingsState.get(), duplicateMatch: "either" });
+  await settled();
+  let call = waitCall();
+  refreshBoard();
+  (await call).onChunk(TOPICS); calls.at(-1).resolve();
+  await tick(); await tick();
+  openBoard(true);
+  // Changed: the board is made again, but reading today's articles takes
+  // longer than the settle wait, so the board on screen still shows the
+  // old settings when they are changed back.
+  globalThis.__board.readDelay = 1500;
+  settingsState.set({ ...settingsState.get(), duplicateMatch: "url" });
+  await settled();
+  assert.equal(board.get().filter.endsWith("|either"), true, "still the old board while the read runs");
+  settingsState.set({ ...settingsState.get(), duplicateMatch: "either" });
+  globalThis.__board.readDelay = 0;
+  call = waitCall();
+  await settled();
+  const again = await call;
+  again.onChunk(TOPICS); again.resolve();
+  await new Promise((resolve) => setTimeout(resolve, 1000));
+  assert.ok(board.get().filter.endsWith("|either"), "the board follows the settings in place, not the run's");
+  assert.equal(board.get().status, "done");
+  openBoard(false);
+});
+
+test("a sync left over when the AI was switched off mid-build is read when the board is next opened", async () => {
+  rows = [article(1), article(2)];
+  let call = waitCall();
+  refreshBoard();
+  const running = await call;
+  // A sync lands while the board is made, then the AI key is cleared
+  // before it is done: nothing can read the sync yet.
+  rows = [article(1), article(2), article(8)];
+  await sync();
+  const key = settingsState.get().aiApiKey;
+  settingsState.set({ ...settingsState.get(), aiApiKey: "" });
+  const before = calls.length;
+  running.onChunk(TOPICS); running.resolve();
+  await tick(); await tick();
+  assert.equal(calls.length, before, "no AI, nothing asked");
+  // The key back and the board opened: the sync's article comes in.
+  settingsState.set({ ...settingsState.get(), aiApiKey: key });
+  call = waitCall();
+  openBoard(true);
+  const opened = await call;
+  opened.onChunk(TOPICS); opened.resolve();
+  await tick(); await tick();
+  assert.ok(board.get().ids.includes(8));
+  openBoard(false);
+});
+
+test("an empty board keeps the settings it was made under, so opening it again reads nothing", async () => {
+  rows = [];
+  refreshBoard();
+  await tick(); await tick();
+  assert.equal(board.get().status, "empty");
+  const reads = globalThis.__board.reads;
+  openBoard(true);
+  await tick(); await tick();
+  assert.equal(globalThis.__board.reads, reads, "not made again");
   openBoard(false);
 });
