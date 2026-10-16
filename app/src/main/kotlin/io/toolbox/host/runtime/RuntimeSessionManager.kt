@@ -314,6 +314,7 @@ internal class RuntimeSessionManager(
     }
 
     suspend fun releaseTool(toolId: String) = withContext(Dispatchers.Main.immediate) {
+        ToolNotificationOpens.discard(toolId)
         recovery.cancel(toolId)?.join()
         recoveryStatus.remove(toolId)
         // An IO preparation may not own a WebView yet. Drain it before a same-version
@@ -323,6 +324,8 @@ internal class RuntimeSessionManager(
         visibleTools -= toolId
         destroyHost(toolId)
         stateFlow(toolId).value = RuntimeUiState.Loading
+        // A tap recorded while the joins above suspended belongs to the released version too.
+        ToolNotificationOpens.discard(toolId)
     }
 
     suspend fun backupRuntimeIds(): Set<String> = withContext(Dispatchers.Main.immediate) {

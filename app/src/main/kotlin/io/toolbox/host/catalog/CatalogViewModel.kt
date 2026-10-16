@@ -17,6 +17,7 @@ import io.toolbox.host.HostPackageOperations
 import io.toolbox.host.HostTrace
 import io.toolbox.host.backup.ToolExportOperations
 import io.toolbox.host.backup.ToolExportResult
+import io.toolbox.host.runtime.ToolNotificationOpens
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -126,6 +127,7 @@ internal class CatalogViewModel(
                     pendingRuntimeLaunchToolId?.let { toolId ->
                         pendingRuntimeLaunchToolId = null
                         if (projection.tools.any { it.toolId == toolId }) openInstalled(toolId)
+                        else ToolNotificationOpens.discard(toolId)
                     }
                 }
         }
@@ -232,11 +234,15 @@ internal class CatalogViewModel(
     }
 
     private fun open(toolId: String) {
-        if (!state.value.isLoaded) {
+        // A failed read's list says nothing about the tool, so wait for the retry like the first load.
+        if (!state.value.isLoaded || state.value.loadFailed) {
             pendingRuntimeLaunchToolId = toolId
             return
         }
-        if (state.value.tools.none { it.toolId == toolId }) return
+        if (state.value.tools.none { it.toolId == toolId }) {
+            ToolNotificationOpens.discard(toolId)
+            return
+        }
         openInstalled(toolId)
     }
 
