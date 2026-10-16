@@ -5,8 +5,6 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runCurrent
@@ -24,7 +22,7 @@ import org.junit.Test
 @OptIn(ExperimentalCoroutinesApi::class)
 class RuntimeViewModelTest {
     private val dispatcher = StandardTestDispatcher()
-    private val sessions = FakeSessions()
+    private val sessions = FakeForegroundSessions()
     private val models = mutableListOf<RuntimeViewModel>()
 
     @Before fun setUp() { Dispatchers.setMain(dispatcher) }
@@ -102,24 +100,6 @@ class RuntimeViewModelTest {
         sessions.calls.clear()
         model.reopen()
         assertEquals(emptyList<String>(), sessions.calls)
-    }
-
-    private class FakeSessions : ForegroundRuntimeSessions {
-        val calls = mutableListOf<String>()
-        var save: CompletableDeferred<Boolean> = CompletableDeferred(true)
-        private val state = MutableStateFlow<RuntimeUiState>(RuntimeUiState.Loading)
-
-        override fun state(toolId: String): StateFlow<RuntimeUiState> = state
-        override fun openForeground(toolId: String) { calls += "open" }
-        override fun retry(toolId: String) { calls += "retry" }
-        override suspend fun prepareForegroundClose(toolId: String, reloading: Boolean): Boolean {
-            calls += "prepare"
-            return save.await()
-        }
-        override fun cancelForegroundClose(toolId: String) { calls += "cancelClose" }
-        override fun discardForegroundRuntime(toolId: String) { calls += "discard" }
-        override suspend fun reloadSaved(toolId: String) { calls += "reload" }
-        override fun detachForeground(toolId: String) { calls += "detach" }
     }
 
     private companion object {

@@ -20,6 +20,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import top.yukonga.miuix.kmp.nav.core.NavKey
+import top.yukonga.miuix.kmp.nav.core.rememberNavBackStack
 
 /**
  * Composes [rememberRuntimeNavigator], the wiring ToolBoxNavigation uses, so dropping a navigate
@@ -166,8 +167,17 @@ class RuntimeNavigatorTest {
     @Test
     fun aToolRestoredMidReturnHasItsRouteRemoved() {
         val restoration = StateRestorationTester(compose)
-        stack += A
-        restoration.setContent { navigator = rememberRuntimeNavigator(stack, stack.lastOrNull() as? RuntimeRoute) }
+        // The saveable back stack ToolBoxNavigation uses: it comes back with the tool on top.
+        var saved: MutableList<NavKey>? = null
+        var restoredMidReturn = false
+        restoration.setContent {
+            val secondary = rememberNavBackStack<ToolBoxRoute>()
+            saved = secondary
+            navigator = rememberRuntimeNavigator(secondary, secondary.lastOrNull() as? RuntimeRoute).also {
+                if (it.transition.returnInterrupted) restoredMidReturn = true
+            }
+        }
+        compose.runOnIdle { nav().navigate(A) }
         compose.waitForIdle()
         assertFalse(current().returnInterrupted)
         // Rotation cuts the return off before it pops the route.
@@ -175,7 +185,9 @@ class RuntimeNavigatorTest {
 
         restoration.emulateSavedInstanceStateRestore()
         compose.waitForIdle()
-        assertTrue(stack.isEmpty())
+        // The restored stack held the tool, and the interrupted return then removed it.
+        assertTrue(restoredMidReturn)
+        assertTrue(checkNotNull(saved).isEmpty())
     }
 
     @Test

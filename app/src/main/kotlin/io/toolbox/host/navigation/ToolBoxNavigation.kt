@@ -39,6 +39,7 @@ import androidx.lifecycle.ViewModelStoreOwner
 import io.toolbox.core.ui.component.ToolBoxGlassActivity
 import io.toolbox.core.ui.component.ToolBoxMotion
 import io.toolbox.host.HostDependencies
+import io.toolbox.host.RuntimeViewModelFactory
 import io.toolbox.host.catalog.CatalogNavigationIntent
 import io.toolbox.host.catalog.CatalogViewModel
 import io.toolbox.host.importflow.ImportViewModel
@@ -378,10 +379,8 @@ internal fun ToolBoxNavigation(
     val navigator = rememberRuntimeNavigator(secondaryBackStack, runtimeRoute)
     val transition = navigator.transition
     val entryProgress = transition.entryProgress
-    var runtimeLayerEnabled by transition::runtimeLayerEnabled
     var entryCoverVisible by transition::entryCoverVisible
     var sourceAboveRuntime by transition::sourceAboveRuntime
-    var runtimePresentationReady by transition::runtimePresentationReady
     var entryCoverMeasured by transition::entryCoverMeasured
     val layoutDirection = LocalLayoutDirection.current
     val trailingDirection = if (layoutDirection == LayoutDirection.Rtl) -1f else 1f
@@ -551,29 +550,22 @@ internal fun ToolBoxNavigation(
             }
         }
 
-        if (runtimeRoute != null && runtimeLayerEnabled) {
-            key(runtimeRoute) {
-                RuntimeSessionLayer(
-                    route = runtimeRoute,
-                    dependencies = dependencies,
-                    onPresentationReady = { runtimePresentationReady = true },
-                    onBack = navigator::leave,
-                    toolName = runtimeTitle,
-                    reopenRevision = navigator.reopenRevision,
-                    onReopenHandled = navigator::reopenHandled,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .zIndex(1f)
-                        .then(
-                            if (entryCoverVisible || sourceAboveRuntime) {
-                                Modifier.clearAndSetSemantics { }
-                            } else {
-                                Modifier
-                            },
-                        ),
-                )
-            }
-        }
+        NavigatorRuntimeLayer(
+            navigator = navigator,
+            transition = transition,
+            viewModelFactory = { route -> RuntimeViewModelFactory(route.toolId, dependencies) },
+            toolName = runtimeTitle,
+            modifier = Modifier
+                .fillMaxSize()
+                .zIndex(1f)
+                .then(
+                    if (entryCoverVisible || sourceAboveRuntime) {
+                        Modifier.clearAndSetSemantics { }
+                    } else {
+                        Modifier
+                    },
+                ),
+        )
 
         if (runtimeRoute != null && entryCoverVisible) {
             // Keyed per transition: a tool switch (or the same tool pushed again) gives the new
