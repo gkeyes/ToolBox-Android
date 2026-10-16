@@ -56,8 +56,23 @@ class ToolNotificationIconTest {
         assertFalse(isMiuiNotificationShade(property = { null }, incremental = "eng.build.20261016"))
     }
 
-    @Test fun unreadablePropertiesFallBackToTheBuildsOwnVersionName() {
-        assertEquals(true, isMiuiNotificationShade(property = { null }, incremental = "OS2.0.5.0.VNACNXM"))
-        assertEquals(true, isMiuiNotificationShade(property = { null }, incremental = "V14.0.3.0.TKHCNXM"))
+    @Test fun unreadablePropertiesFallBackToTheBuildsOwnVersionNameOnXiaomiOnly() {
+        fun shade(incremental: String, manufacturer: String = "Xiaomi") =
+            isMiuiNotificationShade(incremental = incremental, manufacturer = manufacturer, property = { null })
+        assertEquals(true, shade("OS2.0.5.0.VNACNXM"))
+        assertEquals(true, shade("V14.0.3.0.TKHCNXM"))
+        // The version needs a dot after its first number.
+        assertFalse(shade("V14"))
+        assertFalse(shade("OS2"))
+        // Another ROM with the same shape is not HyperOS.
+        assertFalse(shade("V1.2.3", manufacturer = "Google"))
+        assertFalse(shade("OS2.0.1", manufacturer = "samsung"))
+    }
+
+    @Test fun stockAndroidWithoutAToolIconShowsNoLargeIcon() {
+        val notification = build(null, xiaomi = false)
+
+        assertNull("No ToolBox launcher icon repeated at the right", notification.getLargeIcon())
+        assertFalse(notification.extras.containsKey(MIUI_APP_ICON_EXTRA))
     }
 }
