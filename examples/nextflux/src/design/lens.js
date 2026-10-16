@@ -275,6 +275,15 @@ export function installGlassPress({ doc = document } = {}) {
   // A mouse released outside the page sends no pointerup here.
   const leave = (event) => { if (!event.relatedTarget) release(); };
   listeners.push(["pointerout", leave]);
+  // How the reader last interacted: a tap can leave a control marked
+  // focus-visible, so compact-controls.css hides focus rings after touch and
+  // shows them again once a key is pressed.
+  const root = doc.documentElement;
+  const touched = (event) => {
+    if (event.type === "touchstart" || event.pointerType === "touch") root.dataset.nfInput = "touch";
+  };
+  const typed = () => { root.dataset.nfInput = "keyboard"; };
+  listeners.push(["touchstart", touched], ["pointerdown", touched], ["keydown", typed]);
   const win = doc.defaultView;
   for (const [type, handler] of listeners) doc.addEventListener(type, handler, options);
   win?.addEventListener("blur", release);
