@@ -129,6 +129,12 @@ test('1.7.0 · a dragged look turns its back to a wall it comes near; tables sta
   assert.equal(HM.clampPlacement(f, bb, 1.8, 1.8, 1, true).rot, 1, 'mid-room keeps its turn');
   assert.equal(HM.clampPlacement(f, bb, 3.2, 1.8, 0).rot, 0, 'no auto turn without a drag');
   assert.equal(HM.clampPlacement(HM.KINDS.diningB, bb, 3.0, 1.8, 0, true).rot, 0, 'tables never turn');
+  const bath = HM.bbox(rects, '卫生间'), sofa = HM.KINDS.sofaA; // 1.9 m wide: sofaA (2.1 m) only fits turned sideways
+  assert.equal(HM.clampPlacement(sofa, bath, (bath.x0 + bath.x1) / 2, .6, 1, true).rot, 1, 'never turns into a size that does not fit');
+  const lr = HM.bbox(rects, '客餐厅'), seamX = lr.rs[0].r[2]; // the open seam between the two parts of the L
+  const across = HM.clampPlacement(f, lr, seamX - .45, lr.rs[1].r[1] + 1.2, 0, true);
+  assert.equal(across.rot, 0, 'the open seam of an L-shaped room is not a wall');
+  assert.equal(HM.clampPlacement(f, lr, seamX - .45, lr.rs[0].r[1] + 1.2, 0, true).rot, 3, 'the kitchen wall on the same line still is');
   const corner = HM.clampPlacement(f, bb, .5, .5, 1, true);
   assert.equal(corner.rot, 1, 'in a corner the current wall wins');
 });

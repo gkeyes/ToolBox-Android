@@ -96,11 +96,14 @@
   // auto (a drag): a look that is not free and comes within SNAP of a wall turns its back to it and backs onto it.
   const SNAP=.35;
   function clampPlacement(dims,bb,x,z,rot,auto=false){
-    const [x0,z0,x1,z1]=nearestRect(bb.rs,x,z).r,h=GAP;
+    const NR=nearestRect(bb.rs,x,z).r,[x0,z0,x1,z1]=NR,h=GAP;
     rot=((rot|0)%4+4)%4;
     if(auto&&!dims.wall&&!dims.free){
       // Gap between the look's back and each wall if it backed onto it; the depth faces the wall whatever the side, so no flicker.
-      const near=[[z-z0,0],[x-x0,1],[z1-z,2],[x1-x,3]].map(([g,sd])=>[g-h-dims.d/2,sd]).filter(([g])=>g<SNAP).sort((a,b)=>a[0]-b[0]);
+      // A side counts only when it is a real wall (not the open seam to the other part of an L-shaped room) and the turned look fits.
+      const me=NR,seam=sd=>bb.rs.some(({r})=>r!==me&&(sd===0?Math.abs(r[3]-z0)<.01&&x>r[0]&&x<r[2]:sd===2?Math.abs(r[1]-z1)<.01&&x>r[0]&&x<r[2]:sd===1?Math.abs(r[2]-x0)<.01&&z>r[1]&&z<r[3]:Math.abs(r[0]-x1)<.01&&z>r[1]&&z<r[3]));
+      const fits=sd=>{const [along,across]=sd&1?[z1-z0,x1-x0]:[x1-x0,z1-z0];return dims.w<=along-2*h&&dims.d<=across-2*h;};
+      const near=[[z-z0,0],[x-x0,1],[z1-z,2],[x1-x,3]].map(([g,sd])=>[g-h-dims.d/2,sd]).filter(([g,sd])=>g<SNAP&&!seam(sd)&&fits(sd)).sort((a,b)=>a[0]-b[0]);
       if(near.length){const side=near.some(([,sd])=>sd===rot)?rot:near[0][1];rot=side;
         if(side===0)z=z0;else if(side===2)z=z1;else if(side===1)x=x0;else x=x1;} // pushed flush below by the clamp
     }

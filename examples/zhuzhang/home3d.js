@@ -429,7 +429,7 @@ export function createHome(api) {
       const p = floorHit(x, y); if (!p) return;
       if (Math.hypot(x - gesture.x, y - gesture.y) > 4) drag.moved = true;
       const bb = HM.bbox(RECTS, drag.e.room); if (!bb) return;
-      const r = HM.clampPlacement(HM.KINDS[drag.e.model.kind], bb, p.x + drag.off[0], p.z + drag.off[1], drag.e.rot, true);
+      const r = HM.clampPlacement(HM.KINDS[drag.e.model.kind], bb, p.x + drag.off[0], p.z + drag.off[1], drag.e.rot, drag.moved); // snap only once it is a real drag, so a tap never turns it unsaved
       Object.assign(drag.e, { x: r.x, z: r.z, rot: r.rot }); drag.e.model = { ...drag.e.model, x: +r.fx.toFixed(4), z: +r.fz.toFixed(4), rot: r.rot };
       drag.e.g.position.set(r.x, .08, r.z); drag.e.g.rotation.y = r.rot * PI / 2; updateRing(); invalidate(); return;
     }
