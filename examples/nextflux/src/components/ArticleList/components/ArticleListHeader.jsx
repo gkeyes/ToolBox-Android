@@ -19,38 +19,59 @@ import { BoardButton, BoardPanel } from "./TodayBoard.jsx";
 import { useEffect, useLayoutEffect, useRef } from "react";
 
 const TAB_DENSITIES = ["full", "compact", "tight", "small"];
+// Beside the buttons there are two more steps: only the selected tab keeps its
+// count, then no tab does.
+const INLINE_DENSITIES = [...TAB_DENSITIES, "minimal", "bare"];
+
+// Layout sizes only: offsetWidth/offsetHeight ignore the grow of a pressed tab
+// or pill (scrollWidth would count it and make a full capsule look too wide).
+function fits(list) {
+  const tabs = [...list.querySelectorAll(".tabs__tab")];
+  const style = getComputedStyle(list);
+  const gap = parseFloat(style.columnGap) || 0;
+  const padding = (parseFloat(style.paddingLeft) || 0) + (parseFloat(style.paddingRight) || 0);
+  const width = tabs.reduce((sum, tab) => sum + tab.offsetWidth, 0) + gap * Math.max(0, tabs.length - 1) + padding;
+  const tall = tabs.some((tab) => {
+    const label = tab.querySelector(".article-tab-label") || tab.firstElementChild;
+    return label && label.offsetHeight > tab.clientHeight + 1;
+  });
+  return width <= list.clientWidth + 1 && !tall;
+}
 
 /**
  * Fits the filter capsule to the width it is given: drops the tab icons, then
- * tightens the padding, then the text. If even that is too wide beside the
- * buttons, the capsule takes a row of its own and steps down again there, so
- * it never runs under the buttons on narrow screens, large display sizes or
- * large system fonts. Past the smallest density it scrolls sideways.
+ * tightens the padding, then the text; in the top bar it then keeps only the
+ * selected tab's count, then no count. The top bar stays one row whichever
+ * tab is selected, so past the smallest density the capsule scrolls sideways
+ * instead of running under the buttons on narrow screens, large display
+ * sizes or large system fonts.
  */
 function useTabsFit(ref, deps) {
   useLayoutEffect(() => {
     const box = ref.current;
     if (!box) return undefined;
-    // A capsule already on its own row (inside a feed) has nowhere to move.
-    const canStack = box.classList.contains("article-list-inline-tabs");
+    const densities = box.classList.contains("article-list-inline-tabs") ? INLINE_DENSITIES : TAB_DENSITIES;
     const fit = () => {
       const list = box.querySelector(".tabs__list");
       if (!list) return;
       // The list is capped at the width it can use (padding excluded), so it
       // overflows itself when its content does not fit.
       box.dataset.scroll = "false";
-      for (const stacked of canStack ? [false, true] : [false]) {
-        box.dataset.stacked = String(stacked);
-        for (const density of TAB_DENSITIES) {
-          box.dataset.fit = density;
-          if (list.scrollWidth <= list.clientWidth + 1) return;
-        }
+      for (const density of densities) {
+        box.dataset.fit = density;
+        if (fits(list)) return;
       }
       // Nothing fits (very large text or long translations): scroll the
       // capsule sideways rather than hiding a tab.
       box.dataset.scroll = "true";
     };
     fit();
+    // A tab switch changes the counts while a finger is still down; measure
+    // again once the press has ended.
+    let frame = 0;
+    const refit = () => { cancelAnimationFrame(frame); frame = requestAnimationFrame(fit); };
+    const ends = ["touchend", "touchcancel", "pointerup", "pointercancel", "click"];
+    for (const type of ends) box.addEventListener(type, refit, true);
     // Watch the list and its tabs too: late fonts, a text-size change or a
     // longer count resize them without changing the space it is given (once
     // the list is capped, only the tabs themselves change size).
@@ -59,7 +80,11 @@ function useTabsFit(ref, deps) {
     const list = box.querySelector(".tabs__list");
     if (list) observer?.observe(list);
     for (const tab of list?.querySelectorAll(".tabs__tab") || []) observer?.observe(tab);
-    return () => observer?.disconnect();
+    return () => {
+      observer?.disconnect();
+      cancelAnimationFrame(frame);
+      for (const type of ends) box.removeEventListener(type, refit, true);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps);
 }
@@ -180,7 +205,8 @@ export default function ArticleListHeader({ collapsed = false }) {
   const wrapRef = useRef(null);
   const tabsRef = useRef(null);
   const { i18n } = useTranslation();
-  useTabsFit(tabsRef, [scoped, activeCount, tabCounts.starred, tabCounts.unread, i18n.language]);
+  const $filter = useStore(filter);
+  useTabsFit(tabsRef, [scoped, activeCount, tabCounts.starred, tabCounts.unread, $filter, i18n.language]);
   // The header floats over the list (so it can slide away without relayout);
   // publish its height so the list reserves exactly that much space on top.
   useEffect(() => {

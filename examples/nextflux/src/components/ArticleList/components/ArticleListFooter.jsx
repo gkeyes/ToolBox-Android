@@ -10,8 +10,10 @@ import { useTranslation } from "react-i18next";
 export default function ArticleListFooter({ activeCount = null, counts = {} }) {
   const { t } = useTranslation();
   const $filter = useStore(filter);
+  // A known count wins over activeCount, which still holds the previous
+  // filter's total for one render after a switch.
   const countOf = (key) => {
-    const value = $filter === key ? activeCount : counts[key];
+    const value = Number.isFinite(counts[key]) ? counts[key] : $filter === key ? activeCount : null;
     return Number.isFinite(value) ? value.toLocaleString("en-US") : null;
   };
   const label = (key, text) => {
