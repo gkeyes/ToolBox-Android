@@ -520,7 +520,7 @@ export function createHome(api) {
   // 1.9.0 · 拼户型 saves the blocks (and renames 主卫/公卫 records that moved rooms) in one write.
   function saveHome(home, renames) {
     T = HM.planOf(home); planKey = JSON.stringify(HM.sizesOf(T)) + T.key; rebuildAll();
-    api.saveHome(home, renames).then(ok => { if (!ok) api.toast('户型没保存上，下次打开会回到上次保存的样子，请再调整一次', null, true); else { if (renames.length) { syncItems(true); if (view === 'home') renderTray(); invalidate(); } api.toast('户型已保存'); } });
+    api.saveHome(home, renames).then(ok => { if (!ok) api.toast('户型没保存上，下次打开会回到上次保存的样子，请再调整一次', null, true); else { if (T) { const ch = setPlan(); syncItems(ch || renames.length > 0); if (view === 'home') renderTray(); invalidate(); } api.toast('户型已保存'); } });
   }
 
   /* ---------- modes, tray, sheets ---------- */
@@ -729,10 +729,12 @@ function createPlanEditor({ root, layer, svg, icons, esc, toast, openSheet, clos
   layer.appendChild(sheet);
   const $ = s => el.querySelector(s), plan = $('.pe-plan');
 
-  let rooms = [], baths = [], sel = null, startNames = new Map(), startIds = new Set(), uid = 0, S = 30, OX = 0, OZ = 0, drag = null;
+  let rooms = [], baths = [], sel = null, startNames = new Map(), startIds = new Set(), startAll = new Map(), uid = 0, S = 30, OX = 0, OZ = 0, drag = null;
   const byId = id => rooms.find(r => r.id === id) || baths.find(b => b.id === id);
   const host = b => rooms.find(r => r.id === b.host);
-  const used = skip => new Set([...rooms, ...baths].filter(o => o !== skip).map(o => o.name));
+  // Names of rooms and bathrooms deleted this session stay taken, so their records wait in the tray instead of
+  // landing in a new room that happens to get the same name.
+  const used = skip => new Set([...[...rooms, ...baths].filter(o => o !== skip).map(o => o.name), ...[...startAll].filter(([id]) => !byId(id)).map(([, n]) => n)]);
   const areaOf = r => r.w * r.d - baths.filter(b => b.host === r.id).reduce((s, b) => s + b.w * b.d, 0);
   const bathPos = (b, h = host(b), ax = b.ax, az = b.az) => HM.bathBox({ ...b, ax, az }, h);
   const clash = (b, h, ax, az) => { const p = bathPos(b, h, ax, az); return baths.some(o => o !== b && o.host === h.id && HM.boxOverlap(p, bathPos(o))); };
@@ -742,11 +744,11 @@ function createPlanEditor({ root, layer, svg, icons, esc, toast, openSheet, clos
 
   function open(t) {
     const b = HM.toBlocks(t); rooms = b.blocks; baths = b.baths; sel = null;
-    startNames = new Map(baths.map(x => [x.id, x.name])); startIds = new Set([...rooms, ...baths].map(x => x.id));
+    startNames = new Map(baths.map(x => [x.id, x.name])); startIds = new Set([...rooms, ...baths].map(x => x.id)); startAll = new Map([...rooms, ...baths].map(x => [x.id, x.name]));
     el.hidden = false; root.dataset.blocks = '1'; requestAnimationFrame(() => { fit(); render(); });
   }
   function close() { el.hidden = true; delete root.dataset.blocks; sel = null; drag = null; }
-  function useTemplate(t, name) { const b = HM.toBlocks(t); rooms = b.blocks; baths = b.baths; sel = null; fit(); render(); toast(`已换成${name}，再拖方块调整`); }
+  function useTemplate(t, name) { const b = HM.toBlocks(t); rooms = b.blocks; baths = b.baths; sel = null; startAll = new Map(); fit(); render(); toast(`已换成${name}，再拖方块调整`); }
   // 主卫 / 公卫 renames from moving a bathroom between rooms: the ledger's records follow the new name.
   function done() {
     const home = HM.sanitizeBlocks({ blocks: rooms, baths }); if (!home) { toast('至少要留一个房间'); return; }
@@ -795,7 +797,8 @@ function createPlanEditor({ root, layer, svg, icons, esc, toast, openSheet, clos
     const it = byId(sel);
     if (it && !drag) {
       const p = it.host ? bathPos(it) : it;
-      const ks = it.host ? [['r', p.x + p.w, p.z + p.d / 2], ['b', p.x + p.w / 2, p.z + p.d]] : [['l', p.x, p.z + p.d / 2], ['r', p.x + p.w, p.z + p.d / 2], ['t', p.x + p.w / 2, p.z], ['b', p.x + p.w / 2, p.z + p.d]];
+      // A bathroom's handles sit on the edges that move: the side away from the wall it is anchored to.
+      const ks = it.host ? [it.ax === 1 ? ['l', p.x, p.z + p.d / 2] : ['r', p.x + p.w, p.z + p.d / 2], it.az === 1 ? ['t', p.x + p.w / 2, p.z] : ['b', p.x + p.w / 2, p.z + p.d]] : [['l', p.x, p.z + p.d / 2], ['r', p.x + p.w, p.z + p.d / 2], ['t', p.x + p.w / 2, p.z], ['b', p.x + p.w / 2, p.z + p.d]];
       for (const [k, x, z] of ks) { const h = document.createElement('div'); h.className = 'pe-hdl'; h.dataset.k = k; h.style.left = px(x) + 'px'; h.style.top = pz(z) + 'px'; h.setAttribute('aria-label', '拖动改大小'); plan.appendChild(h); bindHandle(h, it); }
     }
     const tot = rooms.filter(r => r.type !== '阳台').reduce((s, r) => s + r.w * r.d, 0);
@@ -855,7 +858,7 @@ function createPlanEditor({ root, layer, svg, icons, esc, toast, openSheet, clos
       return {
         move(x, y) {
           const dx = (x - sx) / S, dz = (y - sy) / S; if (Math.hypot(dx, dz) * S > 4) drag.moved = true; if (!drag.moved) return;
-          if (!it.host) { it.x = r1(o.x + dx); it.z = r1(o.z + dz); showLines(snapMove(it)); it.bad = isBad(it); }
+          if (!it.host) { it.x = r1(Math.min(60 - it.w, Math.max(-60, o.x + dx))); it.z = r1(Math.min(60 - it.d, Math.max(-60, o.z + dz))); showLines(snapMove(it)); it.bad = isBad(it); }
           else { it.drag = { x: o.x + dx, z: o.z + dz }; const d = dropHost(it); it.bad = !d || !!d.clash; showAnchors(d && d.h, it); }
           render();
         },
@@ -877,7 +880,7 @@ function createPlanEditor({ root, layer, svg, icons, esc, toast, openSheet, clos
       return {
         move(x, y) {
           const dx = r1((x - sx) / S), dz = r1((y - sy) / S);
-          if (it.host) { const hr = host(it); if (k === 'r') it.w = r2(Math.min(hr.w, Math.max(HM.BATH_MIN, o.w + dx))); else it.d = r2(Math.min(hr.d, Math.max(HM.BATH_MIN, o.d + dz))); it.bad = clash(it, hr, it.ax, it.az); render(); return; }
+          if (it.host) { const hr = host(it), g = (v, a, s) => v * s * (a === .5 ? 2 : 1); if (k === 'l' || k === 'r') it.w = r2(Math.min(hr.w, Math.max(HM.BATH_MIN, o.w + g(dx, it.ax, k === 'l' ? -1 : 1)))); else it.d = r2(Math.min(hr.d, Math.max(HM.BATH_MIN, o.d + g(dz, it.az, k === 't' ? -1 : 1)))); it.bad = clash(it, hr, it.ax, it.az); render(); return; }
           Object.assign(it, o);
           if (k === 'l') { const v = Math.min(dx, o.w - MIN); it.x = o.x + v; it.w = o.w - v; } else if (k === 'r') it.w = Math.max(MIN, o.w + dx);
           else if (k === 't') { const v = Math.min(dz, o.d - MIN); it.z = o.z + v; it.d = o.d - v; } else it.d = Math.max(MIN, o.d + dz);

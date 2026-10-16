@@ -807,6 +807,8 @@
   window.addEventListener('pagehide',()=>{flushCalc();if(isFormDirty())saveDraftNow().catch(()=>{});});
   runtime.onFlush(async()=>{
     let failure=null;flushCalc();const calcWrite=calcSaving;
+    // A 我的家 save queued just before closing (拼户型 on Back) lands before the host lets go.
+    await homeQueue.catch(()=>{});
     // The form's own save may still finish within the host's window; if it doesn't, the draft is written anyway.
     for(let n=0;n<30&&busy&&!busyBackground&&isFormDirty();n++)await new Promise(r=>setTimeout(r,50));
     if(isFormDirty())await saveDraftNow({resume:true,force:true}).catch(error=>{failure=error;});
