@@ -158,7 +158,7 @@ export function createFeedNotifier({ api, notifications, storage, feedTitle = ()
             if (cachedAs === "read") continue;
             if (cachedAs) { pendingFresh.push({ id: item.id, title: item.title, feed: item.feed }); continue; }
             const tries = (Number(item.tries) || 0) + (newSync ? 1 : 0);
-            if (tries < 3) pendingNow.push({ ...item, tries });
+            if (tries < 2) pendingNow.push({ ...item, tries });
           }
           const pending = [
             ...pendingNow,
@@ -168,12 +168,27 @@ export function createFeedNotifier({ api, notifications, storage, feedTitle = ()
           // New entries beyond the 20 the server returned are only counted; a sync that announces
           // nothing carries that count forward so the next notice still includes them.
           const unlisted = Math.max(0, (Number(reported) || 0) - newer.length);
-          const backlog = Number(watch.backlog) || 0;
+          // The carried part is kept as id ranges and recounted against the server's unread
+          // entries, so ones read elsewhere meanwhile drop out of the count.
+          const ranges = Array.isArray(watch.backlog)
+            ? watch.backlog.filter((range) => Number.isSafeInteger(range?.after) && Number.isSafeInteger(range?.below)) : [];
+          let backlog = 0;
+          for (const range of ranges) {
+            const [from, to] = await Promise.all([
+              api.newUnreadEntries(feedId, range.after), api.newUnreadEntries(feedId, range.below - 1),
+            ]);
+            backlog += Math.max(0, (Number(from?.total) || 0) - (Number(to?.total) || 0));
+          }
           const total = Math.max(fresh.length, fresh.length + unlisted + backlog);
           const next = {
             lastEntryId: newer.reduce((max, entry) => Math.max(max, entry.id), watch.lastEntryId),
             ...(pending.length ? { pending } : {}),
-            ...(!fresh.length && unlisted + backlog ? { backlog: unlisted + backlog } : {}),
+            ...(!fresh.length && unlisted + backlog ? {
+              backlog: [
+                ...ranges,
+                ...(unlisted ? [{ after: watch.lastEntryId, below: newer.reduce((min, entry) => Math.min(min, entry.id), Infinity) }] : []),
+              ],
+            } : {}),
             ...(syncId != null ? { syncId } : {}),
           };
           if (!fresh.length) {

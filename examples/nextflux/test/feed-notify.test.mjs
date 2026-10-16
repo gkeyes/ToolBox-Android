@@ -371,6 +371,18 @@ test("entries beyond the first page still count when that page was all uncached"
   assert.match(posted.at(-1).body, /^25 /);
 });
 
+test("entries beyond the first page read elsewhere meanwhile drop out of the carried count", async () => {
+  const uncached = new Set();
+  const { server, notifier } = world({ uncached });
+  await notifier.setWatched(12, true);
+  for (let id = 801; id <= 825; id += 1) { server.add(12, id, `第${id}`); if (id > 805) uncached.add(id); }
+  await notifier.check({ syncId: "a" });
+  server.read(801);
+  server.read(802);
+  uncached.clear();
+  assert.deepEqual(await notifier.check({ syncId: "b" }), [{ feedId: 12, outcome: "notified", count: 23 }]);
+});
+
 test("a foreground sync suppresses cached entries above an uncached gap", async () => {
   const uncached = new Set([500]);
   const { server, notifier, posted } = world({ uncached });
