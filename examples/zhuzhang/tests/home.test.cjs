@@ -147,7 +147,8 @@ test('1.7.3 · in a narrow room only the wall a drag heads for can turn a look; 
   const down = { dx: 0, dz: .06 }, up = { dx: 0, dz: -.06 };
   assert.equal(HM.clampPlacement(bed, bb, cx, 1.8, 0, down).rot, 0, 'crossing the middle keeps the bed facing the room');
   assert.equal(HM.clampPlacement(bed, bb, cx, 1.8, 1, up).rot, 1, 'no wall ahead yet: keeps its turn');
-  assert.equal(HM.clampPlacement(bed, bb, cx, 1.3, 1, up).rot, 1, '1.8.1: the side wall it backs onto keeps it');
+  assert.equal(HM.clampPlacement(bed, bb, cx, 1.3, 1, up).rot, 1, 'not yet within 35 cm of the head wall: keeps the side wall');
+  assert.equal(HM.clampPlacement(bed, bb, cx, 1.2, 1, up).rot, 0, '1.8.2: dragged back to the head wall it backs onto it again');
   assert.equal(HM.clampPlacement(bed, bb, x0 + .93, 1.8, 0, { dx: -.06, dz: .01 }).rot, 1, 'pushed into a side wall it turns to it');
   const f = HM.KINDS.fridgeA, mb = HM.bbox(rects, '主卧');
   assert.equal(HM.clampPlacement(f, mb, 3.6 - HM.GAP - f.d / 2 - .35, 1.8, 0, true).rot, 3, 'exactly 35 cm away snaps');
@@ -174,6 +175,54 @@ test('1.8.1 · the wall a look backs onto keeps it until it leaves that wall; no
     assert.equal(HM.clampPlacement(f, mb, 3.6 - HM.GAP - f.d / 2 - .1, 1.8, 0, h).rot, 3, `${deg}° off square still backs onto the wall`);
   }
   assert.equal(HM.clampPlacement(f, mb, 3.6 - HM.GAP - f.d / 2 - .1, 1.8, 0, { dx: 0, dz: 0 }).rot, 3, 'no heading: nearest wall');
+});
+
+// Feeds a drag step by step like home3d does: the raw target moves, the look's turn carries over.
+function dragPath(dims, bb, x, z, rot, dx, dz, steps) {
+  const out = [];
+  for (let i = 1; i <= steps; i++) { const p = HM.clampPlacement(dims, bb, x + dx * i, z + dz * i, rot, { dx, dz }); rot = p.rot; out.push(p); }
+  return out;
+}
+
+test('1.8.2 · pulling a bed off its head wall never swings it to a side wall; it can always get back', () => {
+  const { rects } = HM.makeRects(HM.planOf({ template: 't3l2' }));
+  const bed = HM.KINDS.bedA;
+  for (const room of ['次卧', '次卧2', '主卧']) {
+    const bb = HM.bbox(rects, room), [x0, z0, x1] = bb.rs[0].r, zHead = z0 + HM.GAP + bed.d / 2;
+    const xs = []; for (let x = x0 + HM.GAP + bed.w / 2; x <= x1 - HM.GAP - bed.w / 2 + 1e-9; x += .05) xs.push(x);
+    for (const x of xs) for (const deg of [0, 20, 30, 45, -20, -30, -45]) {
+      const a = deg * Math.PI / 180, path = dragPath(bed, bb, x, zHead, 0, .05 * Math.sin(a), .05 * Math.cos(a), 12); // 60 cm
+      assert.ok(path.every(p => p.rot === 0), `${room} x ${x.toFixed(2)} pulled ${deg}°: turned to ${path.find(p => p.rot)?.rot}`);
+    }
+  }
+  const bb = HM.bbox(rects, '次卧'), [x0, z0] = bb.rs[0].r;
+  const seeded = dragPath(bed, bb, 6.7, z0 + HM.GAP + bed.d / 2, 0, 0, .05, 12); // the seeded 次卧 bed, 60 cm down
+  const nudge = dragPath(bed, bb, 6.7, seeded.at(-1).z, 0, -.05, 0, 2); // then 10 cm towards the near side wall
+  assert.ok([...seeded, ...nudge].every(p => p.rot === 0), 'a small sideways nudge after the pull does not turn it');
+  const side = HM.clampPlacement(bed, bb, x0 + .5, 2.0, 0, { dx: -.06, dz: 0 });
+  assert.equal(side.rot, 1, 'pushed hard into a side wall it turns to it');
+  const back = dragPath(bed, bb, side.x, side.z, 1, 0, -.05, 20);
+  assert.equal(back.at(-1).rot, 0, 'dragged straight back to the head wall it backs onto it again');
+  assert.ok(Math.abs(back.at(-1).z - (z0 + HM.GAP + bed.d / 2)) < 1e-9, 'flush with the head wall');
+  const mb = HM.bbox(rects, '主卧'), onLeft = HM.clampPlacement(bed, mb, .3, 2.2, 1, { dx: -.06, dz: 0 });
+  assert.equal(onLeft.rot, 1);
+  const upMb = dragPath(bed, mb, onLeft.x, onLeft.z, 1, 0, -.05, 40);
+  assert.equal(upMb.at(-1).rot, 0, '主卧 (3.6 m): dragged up and on past the head wall, a side-wall bed backs onto it again');
+  const toCorner = dragPath(bed, mb, onLeft.x, onLeft.z, 1, 0, -.05, 40).find(p => Math.abs(p.z - (HM.GAP + bed.w / 2)) < 1e-9);
+  assert.ok(toCorner, 'reaches the corner first');
+  const across = dragPath(bed, bb, (bb.rs[0].r[0] + bb.rs[0].r[2]) / 2, 2.0, 0, .05, 0, 4);
+  assert.ok(across.every(p => p.rot !== 3) || across.at(-1).rot === 3, 'no flip-flop crossing the room');
+});
+
+test('1.8.2 · a chair goes from one long balcony wall to the other and back', () => {
+  const { rects } = HM.makeRects(HM.planOf({ template: 't3l2' }));
+  const bal = HM.bbox(rects, '阳台'), [bx0, bz0, bx1, bz1] = bal.rs[0].r, ch = HM.KINDS.armA, cx = (bx0 + bx1) / 2;
+  const there = dragPath(ch, bal, cx, bz0 + HM.GAP + ch.d / 2, 0, 0, .05, 10);
+  assert.equal(there.at(-1).rot, 2, 'turned to the far wall'); assert.ok(Math.abs(there.at(-1).z - (bz1 - HM.GAP - ch.d / 2)) < 1e-9);
+  const home = dragPath(ch, bal, cx, there.at(-1).z, 2, 0, -.05, 10);
+  assert.equal(home.at(-1).rot, 0, 'and back again');
+  const c = HM.KINDS.cabA;
+  assert.ok(dragPath(c, bal, cx - .5, bz0 + HM.GAP + c.d / 2, 0, .05, .005, 10).every(p => p.rot === 0), 'a cabinet sliding along the wall stays on it');
 });
 
 test('a saved position survives a room resize as a fraction of the room', () => {
