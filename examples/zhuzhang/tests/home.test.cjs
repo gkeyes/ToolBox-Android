@@ -685,6 +685,37 @@ test('1.12.3 · an aimed refund stays on its piece when a big or backdated whole
     { id: 'e4', itemId: 'b', amount: 477400, date: '2026-09-10', kind: 'refund', note: '' }] }, ['e3']);
 });
 
+test('1.12.4 · random ledgers keep every row honest: rows add up to cash, nothing negative, aimed refunds stay put', () => {
+  const { run } = require('./ledger-fuzz.cjs');
+  for (const [seed, backdate] of [[7, true], [11, false], [23, true]]) {
+    const st = run(app, { n: 2500, seed, backdate });
+    assert.ok(st.entries > 10000, 'enough entries');
+    assert.deepEqual({ rowSign: st.rowSign, rowSum: st.rowSum, cashSum: st.cashSum, negCash: st.negCash, leak: st.leak },
+      { rowSign: 0, rowSum: 0, cashSum: 0, negCash: 0, leak: 0 }, 'seed ' + seed + (st.first ? ': ' + JSON.stringify(st.first.ledger) : ''));
+  }
+});
+
+test('1.12.4 · a long project name keeps as much of its end as fits; no style rule hides the restore hint', () => {
+  // A box of `lines` lines that holds `per` characters each.
+  const box = (per, lines) => { const el = { textContent: '' }; Object.defineProperty(el, 'scrollHeight', { get: () => Math.ceil([...el.textContent].length / per) * 20 }); el.clientHeight = lines * 20; return el; };
+  assert.equal(app.fitText(box(6, 3), '我的新家'), '我的新家', 'a short name is left alone');
+  assert.equal(app.fitText(box(6, 3), '滨江花园三期12栋1202'), '滨江花园三期12栋1202', 'it fits whole');
+  const a = app.fitText(box(5, 3), '阳光城·翡丽湾二期 B区 7栋2单元 1803室');
+  assert.ok(a.startsWith('阳光…') && a.endsWith('7栋2单元 1803室') && [...a].length <= 15, a);
+  const b = app.fitText(box(5, 2), '滨江花园三期12栋1202');
+  assert.ok(b.endsWith('12栋1202') && [...b].length <= 10, b);
+  const c = app.fitText(box(4, 2), '滨江花园三期12栋0805');
+  assert.ok(c.endsWith('0805') && c.includes('…'), c);
+  // Every rule that can reach the hint (.form-hint, a <p> in the sheet) keeps it visible.
+  const css = read('style.css').replace(/\/\*[\s\S]*?\*\//g, ''), bad = [];
+  for (const m of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+    const sel = m[1].trim(), decl = m[2].replace(/\s+/g, '');
+    if (!/\.form-hint|#sheet-body|\.dialog-body\s*p|(^|[\s,>])p(?![-\w])/.test(sel)) continue;
+    if (/display:none|visibility:hidden|opacity:0(?![.\d])|font-size:0(?![.\d])|clip:rect|clip-path:inset\(50%|(^|;)height:0(?![.\d])|text-indent:-|left:-9999/.test(decl)) bad.push(sel + '{' + decl + '}');
+  }
+  assert.deepEqual(bad, [], 'no rule hides the hint');
+});
+
 test('1.12.3 · fnSource reads past comments, strings, regex and nested templates', () => {
   const tricky = [
     "// function saveHome(old) { return 'commented out'; }",

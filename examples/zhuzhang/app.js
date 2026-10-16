@@ -4,7 +4,7 @@
   // Ledger money is integer cents. DOM content originating from users is escaped.
   const KEY = 'ledger.v1';
   const runtime = window.ZZRuntime;
-  const VERSION = '1.12.3';
+  const VERSION = '1.12.4';
   const MAX_CENTS = 100000000000;
   const $ = s => document.querySelector(s);
   const $$ = s => [...document.querySelectorAll(s)];
@@ -211,10 +211,16 @@
     }
     // 1.12.3: a whole refund dated before later payments can still leave a piece short of what its aimed refunds take
     // (the split follows the running total). The payments then hand that piece the difference from pieces with money to
-    // spare, latest payment first, so an aimed refund stays on its piece whenever the money is there.
+    // spare, so an aimed refund stays on its piece whenever the money is there. 1.12.4: every payment gives the same
+    // fraction of its share (largest remainder, whole yuan when it can), so no single payment changes much.
+    const pays=ts.filter(p=>p.kind==='payment').map(p=>rows.get(p.id));
     hold.forEach((h,k)=>{let need=h-prev[k];
-      for(let j=0;need>0&&j<prev.length;j++){if(j===k)continue;let x=Math.min(need,prev[j]-hold[j]);if(x<=0)continue;
-        for(let n=ts.length-1;x>0&&n>=0;n--){const p=ts[n];if(p.kind!=='payment')continue;const r=rows.get(p.id),m=Math.min(x,r[j]);if(m<=0)continue;r[j]-=m;r[k]+=m;prev[j]-=m;prev[k]+=m;x-=m;need-=m;}}});
+      for(let j=0;need>0&&j<prev.length;j++){if(j===k)continue;const x=Math.min(need,prev[j]-hold[j]);if(x<=0)continue;
+        const T=pays.reduce((a,r)=>a+r[j],0),u=x%100===0&&pays.every(r=>r[j]%100===0)?100:1,n=x/u;
+        const raw=pays.map(r=>T>0?n*r[j]/T:0),m=raw.map((v,q)=>Math.min(Math.floor(v),pays[q][j]/u));let left=n-m.reduce((a,b)=>a+b,0);
+        for(const [,q]of raw.map((v,q)=>[v-m[q],q]).sort((a,b)=>b[0]-a[0])){if(left<=0)break;if((m[q]+1)*u<=pays[q][j]){m[q]++;left--;}}
+        for(let q=0;left>0&&q<pays.length;q++)while(left>0&&(m[q]+1)*u<=pays[q][j]){m[q]++;left--;}
+        const moved=(n-left)*u;m.forEach((c,q)=>{pays[q][j]-=c*u;pays[q][k]+=c*u;});prev[j]-=moved;prev[k]+=moved;need-=moved;}});
     // 1.12.0: a refund that names its piece comes off that piece only (what it can't cover comes off the rest by share).
     for(const p of aimed){const k=i.parts.findIndex(q=>q.id===p.part),d=Math.min(p.amount,prev[k]),row=prev.map(()=>0);row[k]=d;prev[k]-=d;net-=d;
       const left=Math.min(p.amount-d,net);if(left>0){const step=stepSplit(prev,net-left,left,true,w);step.forEach((v,j)=>{row[j]+=v;prev[j]-=v;});net-=left;}rows.set(p.id,row);}
@@ -465,16 +471,17 @@
     const {t,rects,list}=placedItems(),counts={};for(const i of list)counts[i.room]=(counts[i.room]||0)+1;
     return heading('我的家','这台设备暂不支持 3D 显示，下面是户型平面')+`<section class="card card-pad home-fallback">${HM.planSvg(t,counts,{text:true,label:t.n+'平面图'})}<p class="form-hint">${esc(t.n)} · ${HM.roomNames(rects).length} 个空间 · 已放进 ${list.length} 件家具家电。账本的记录与统计不受影响。</p></section>`;
   }
-  // 1.12.3: a name too long for the phone's top bar keeps its end (the unit number, 「…12栋1202」) and loses the middle.
-  function fitNames(){
-    for(const el of $$('.mobile-project .project-name')){
-      const full=data.project.name,ch=[...full];el.textContent=full;el.title=full;
-      const fits=()=>el.scrollHeight<=el.clientHeight+1;if(fits())continue;
-      const tl=Math.min(7,Math.ceil(ch.length/2)),tail=ch.slice(-tl).join('');let lo=0,hi=ch.length-tl;
-      while(lo<hi){const m=(lo+hi+1)>>1;el.textContent=ch.slice(0,m).join('')+'…'+tail;if(fits())lo=m;else hi=m-1;}
-      el.textContent=ch.slice(0,lo).join('')+'…'+tail;
-    }
+  // 1.12.3: a name too long for the phone's top bar keeps its end and loses the middle. 1.12.4: the end is as long as
+  // fits (a building, unit and room number all stay: 「阳光…7栋2单元 1803室」), then the start takes what is left.
+  function fitText(el,full){
+    const ch=[...full],fits=()=>el.scrollHeight<=el.clientHeight+1,put=(h,t)=>{el.textContent=ch.slice(0,h).join('')+'…'+ch.slice(ch.length-t).join('');};
+    el.textContent=full;if(fits()||ch.length<4)return full;
+    const H=Math.min(2,ch.length-2);let lo=1,hi=ch.length-H-1;
+    while(lo<hi){const m=(lo+hi+1)>>1;put(H,m);if(fits())lo=m;else hi=m-1;}
+    const t=lo;let h=H;while(h+t<ch.length-1){put(h+1,t);if(!fits())break;h++;}
+    put(h,t);return el.textContent;
   }
+  function fitNames(){for(const el of $$('.mobile-project .project-name')){el.title=data.project.name;fitText(el,data.project.name);}}
   function homeTop(){const bar=$('.topbar');if(bar)document.documentElement.style.setProperty('--home-top',Math.max(0,bar.getBoundingClientRect().bottom)+'px');}
   function homeWrite(mutate){
     const run=async()=>{
@@ -1193,6 +1200,6 @@
   }
 
   // validate() is exposed for the unit tests; the 3D module talks to the ledger only through homeApi.
-  window.ZZApp=Object.freeze({validate,payShares,assertCashTimeline,applyHome,importBody,previewImport,homeApi,lookOnSave,lookRow,version:VERSION});
+  window.ZZApp=Object.freeze({fitText,validate,payShares,assertCashTimeline,applyHome,importBody,previewImport,homeApi,lookOnSave,lookRow,version:VERSION});
   boot();
 })();
