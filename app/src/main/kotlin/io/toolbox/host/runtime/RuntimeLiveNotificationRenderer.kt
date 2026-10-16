@@ -12,6 +12,7 @@ import android.os.Build
 import com.xzakota.hyper.notification.focus.FocusNotification
 import io.toolbox.host.R
 import io.toolbox.host.background.LiveNotificationSupportState
+import io.toolbox.host.background.setToolIcon
 import io.toolbox.tool.runtime.RuntimeLiveNotificationTone
 
 internal class RuntimeLiveNotificationRenderer(context: Context) {
@@ -55,7 +56,7 @@ internal class RuntimeLiveNotificationRenderer(context: Context) {
 
         val builder = Notification.Builder(appContext, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_toolbox_notification)
-            .setLargeIcon(toolIcon?.let(Icon::createWithBitmap) ?: Icon.createWithResource(appContext, R.mipmap.ic_launcher))
+            .setToolIcon(appContext, toolIcon)
             .setContentTitle(title)
             .setContentText(content)
             .setContentIntent(open)

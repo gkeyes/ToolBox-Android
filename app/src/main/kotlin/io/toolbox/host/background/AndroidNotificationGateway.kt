@@ -5,7 +5,6 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
-import android.graphics.drawable.Icon
 import android.net.Uri
 import android.os.Bundle
 import android.os.Build
@@ -59,7 +58,7 @@ class AndroidNotificationGateway(
         val toolIcon = withContext(Dispatchers.IO) { dependencies?.toolIcons?.load(toolId) }
         val notification = Notification.Builder(appContext, channelId)
             .setSmallIcon(R.drawable.ic_toolbox_notification)
-            .setLargeIcon(toolIcon?.let(Icon::createWithBitmap) ?: Icon.createWithResource(appContext, R.mipmap.ic_launcher))
+            .setToolIcon(appContext, toolIcon)
             .setContentTitle(title)
             .setContentText(body)
             .setStyle(Notification.BigTextStyle().bigText(body))
