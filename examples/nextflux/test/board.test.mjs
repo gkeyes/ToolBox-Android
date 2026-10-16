@@ -70,3 +70,16 @@ test("digest prompt carries the topic outline and the numbered articles", () => 
   assert.match(user.content, /1\. 主题：重点（文章 \[1\]）/);
   assert.match(user.content, /\[1\] A · 一/);
 });
+
+test("topics: a bare JSON array and a reply with bracketed remarks are read", () => {
+  const item = { title: "主题", gist: "重点", summary: "摘要", articles: [1] };
+  assert.equal(parseTopics(JSON.stringify([item]), 3)[0].title, "主题");
+  assert.equal(parseTopics(`好的 [1]：\n${JSON.stringify({ topics: [item] })}\n以上 {完}`, 3)[0].title, "主题");
+});
+
+test("the whole topics prompt stays within the budget", () => {
+  const many = Array.from({ length: 220 }, (_, i) => ({ id: i, feedTitle: "很长的订阅源名字".repeat(4), title: "标题".repeat(60), text: "正文".repeat(400) }));
+  const { articles } = fitArticles(many);
+  const size = topicsMessages(articles).reduce((sum, message) => sum + message.content.length, 0);
+  assert.ok(size <= PROMPT_BUDGET, `${size} > ${PROMPT_BUDGET}`);
+});

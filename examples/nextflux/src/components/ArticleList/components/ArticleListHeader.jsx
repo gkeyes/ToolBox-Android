@@ -15,7 +15,6 @@ import {
 import MenuButton from "./MenuButton";
 import FeedTitleFilterButton from "./FeedTitleFilterButton.jsx";
 import ArticleListTabs from "./ArticleListFooter.jsx";
-import { BoardButton, BoardPanel } from "./TodayBoard.jsx";
 import { useEffect, useLayoutEffect, useRef } from "react";
 
 const TAB_DENSITIES = ["full", "compact", "tight", "small"];
@@ -255,7 +254,6 @@ export default function ArticleListHeader({ collapsed = false }) {
             <div ref={tabsRef} className="article-list-inline-tabs min-w-0 flex-1" data-fit="full">
               <ArticleListTabs activeCount={activeCount} counts={tabCounts} />
             </div>
-            <BoardButton />
           </>
         )}
         {actions}
@@ -266,7 +264,6 @@ export default function ArticleListHeader({ collapsed = false }) {
         </div>
       )}
       {!scoped && caption && <div className="article-list-caption-row">{caption}</div>}
-      {!scoped && <BoardPanel />}
     </div>
   );
 }

@@ -3,9 +3,12 @@
 // can open them. "读成文章" asks the AI for a short written digest of those
 // topics that cites its articles as [n].
 
-// One request carries every chosen article. Titles and excerpts share this
-// many characters, so a busy day still fits a common context window.
+// One request carries every chosen article. The whole prompt (instructions,
+// titles, excerpts and numbering) stays within this many characters, so a
+// busy day still fits a common context window.
 export const PROMPT_BUDGET = 24000;
+// Per article: "[n] ", the line break before the excerpt and the blank line after.
+const ARTICLE_OVERHEAD = 10;
 export const MAX_ARTICLES = 150;
 const EXCERPT_MAX = 280;
 const TITLE_MAX = 120;
@@ -45,14 +48,14 @@ const tidy = (value, max) => String(value || "").replace(/\s+/g, " ").trim().sli
 // Picks the newest articles that fit the prompt budget. Every chosen article
 // keeps its title; the excerpts share what is left. Returns the articles that
 // go into the prompt (oldest are dropped first) and how many were left out.
-export function fitArticles(articles, budget = PROMPT_BUDGET) {
+export function fitArticles(articles, budget = PROMPT_BUDGET - PROMPT_OVERHEAD) {
   const chosen = [];
   let used = 0;
   for (const article of articles.slice(0, MAX_ARTICLES)) {
     const head = `${tidy(article.feedTitle, 40)} · ${tidy(article.title, TITLE_MAX) || "（无标题）"}`;
     // Keep room for at least a short excerpt per article.
-    if (used + head.length + 40 > budget) break;
-    used += head.length + 8;
+    if (used + head.length + ARTICLE_OVERHEAD + 40 > budget) break;
+    used += head.length + ARTICLE_OVERHEAD;
     chosen.push({ ...article, head });
   }
   const room = Math.max(0, budget - used);
@@ -76,6 +79,9 @@ const TOPICS_PROMPT = [
   "articles 填这个主题包含的文章编号。全部用简体中文，只根据给出的内容写，不要编造。",
 ].join("\n");
 
+// The instructions and the user message's opening line, outside the articles.
+const PROMPT_OVERHEAD = Math.max(TOPICS_PROMPT.length, 200) + 40;
+
 export function topicsMessages(articles) {
   return [
     { role: "system", content: TOPICS_PROMPT },
@@ -90,11 +96,18 @@ const clean = (value, max) => String(value ?? "").replace(/\*\*/g, "").replace(/
 // without articles is dropped. Throws when nothing usable came back.
 export function parseTopics(text, count) {
   const raw = String(text || "");
-  const start = raw.indexOf("{");
-  const end = raw.lastIndexOf("}");
+  // The first JSON object with topics, or array of topic objects, in the
+  // reply; text around it (a fence, a note, a remark with its own brackets)
+  // is ignored.
+  const usable = (value) => Array.isArray(value?.topics) || (Array.isArray(value) && value.some((item) => item && typeof item === "object"));
   let data = null;
-  if (start >= 0 && end > start) {
-    try { data = JSON.parse(raw.slice(start, end + 1)); } catch { data = null; }
+  search: for (const { index: start } of raw.matchAll(/[[{]/g)) {
+    const close = raw[start] === "{" ? "}" : "]";
+    for (let end = raw.lastIndexOf(close); end > start; end = raw.lastIndexOf(close, end - 1)) {
+      let value;
+      try { value = JSON.parse(raw.slice(start, end + 1)); } catch { continue; }
+      if (usable(value)) { data = value; break search; }
+    }
   }
   const list = Array.isArray(data?.topics) ? data.topics : Array.isArray(data) ? data : null;
   if (!list) throw new Error("AI 返回的内容无法识别，请重新生成。");

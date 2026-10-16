@@ -15,7 +15,8 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from "@/components/ui/sidebar.jsx";
-import { Link, useParams } from "react-router";
+import { Link, useLocation, useParams } from "react-router";
+import { BoardSidebarIcon } from "@/components/Board/BoardPage.jsx";
 import { useTranslation } from "react-i18next";
 
 const ArticlesGroup = () => {
@@ -25,6 +26,7 @@ const ArticlesGroup = () => {
   const $totalStarredCount = useStore(totalStarredCount);
   const { isMobile, setOpenMobile } = useSidebar();
   const { feedId, categoryId } = useParams();
+  const onBoard = useLocation().pathname.startsWith("/board");
   // 根据筛选条件获取显示文本和计数
   const getDisplayInfo = () => {
     switch ($filter) {
@@ -55,7 +57,7 @@ const ArticlesGroup = () => {
       <SidebarGroupLabel>{t("common.article")}</SidebarGroupLabel>
       <SidebarMenu>
         <SidebarMenuItem>
-          <SidebarMenuButton asChild size="lg" isActive={!feedId && !categoryId}>
+          <SidebarMenuButton asChild size="lg" isActive={!feedId && !categoryId && !onBoard}>
             <Link to="/" onClick={() => isMobile && setOpenMobile(false)}>
               <span className="ds-icon-badge sidebar-row-icon">{icon}</span>
               <span className="font-semibold">{text}</span>
@@ -64,6 +66,14 @@ const ArticlesGroup = () => {
           <SidebarMenuBadge className="h-12">
             {count !== 0 && count}
           </SidebarMenuBadge>
+        </SidebarMenuItem>
+        <SidebarMenuItem>
+          <SidebarMenuButton asChild size="lg" isActive={onBoard}>
+            <Link to="/board" onClick={() => isMobile && setOpenMobile(false)}>
+              <span className="ds-icon-badge sidebar-row-icon"><BoardSidebarIcon /></span>
+              <span className="font-semibold">今日看板</span>
+            </Link>
+          </SidebarMenuButton>
         </SidebarMenuItem>
       </SidebarMenu>
     </SidebarGroup>
