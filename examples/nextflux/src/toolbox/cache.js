@@ -1,6 +1,6 @@
 import { currentArticleMetadata, deriveArticleMetadata } from "./cache-metadata.js";
 import { decodeCacheValue, loadLegacyCache, LEGACY_PREFIX, LEGACY_MANIFEST_KEY } from "./cache-legacy.js";
-import { dedupeArticles, duplicateIds } from "./dedupe.mjs";
+import { duplicateIds } from "./dedupe.mjs";
 
 // The production caller runs this engine in cache-worker.js. No DOM, body
 // archive, compression or query index crosses back to the window.
@@ -395,6 +395,8 @@ export function createArticleCache(storage, options = {}) {
       for (const [id, row] of articleChanges) {
         if (row) maps.articles.set(id, row); else maps.articles.delete(id);
       }
+      // The map changed in place: duplicate indexes built on it are stale.
+      hiddenIndexes.delete(maps.articles);
     }
     for (const ref of stage.refs) if (!refs.has(ref)) retired.add(ref);
     snapshot = { root, maps, nodes, refs };
@@ -625,27 +627,32 @@ export function createArticleCache(storage, options = {}) {
   // in list order. An unread copy of a story already kept stays hidden after
   // that story is read, so reading the shown copy brings the badge down.
   const hiddenIndexes = new WeakMap();
-  function hiddenCopies(current, view) {
+  function hiddenCopies(current, view, starredOnly = false) {
     // Only the feeds the reader can see take part: a copy in a hidden feed
-    // never hides the one in a visible feed.
+    // never hides the one in a visible feed. 收藏 compares starred rows only.
     const feeds = Array.isArray(view.feedIds) ? new Set(view.feedIds.map(Number)) : null;
-    const key = `${view.field}|${view.direction}|${feeds ? [...feeds].sort((a, b) => a - b).join(",") : "*"}`;
+    const key = `${starredOnly ? "starred|" : ""}${view.field}|${view.direction}|${feeds ? [...feeds].sort((a, b) => a - b).join(",") : "*"}`;
     let byView = hiddenIndexes.get(current.maps.articles);
     if (!byView) { byView = new Map(); hiddenIndexes.set(current.maps.articles, byView); }
     if (!byView.has(key)) {
       if (byView.size > 8) byView.clear();
-      const rows = [...current.maps.articles.values()].filter((row) => row.status !== "removed" && (!feeds || feeds.has(row.feedId)));
+      const rows = [...current.maps.articles.values()].filter((row) => row.status !== "removed" && (!starredOnly || row.starred === 1) && (!feeds || feeds.has(row.feedId)));
       byView.set(key, duplicateIds(sortRows(rows, view.field, view.direction)));
     }
     return byView.get(key);
   }
-  // Counts as the lists show them: hidden copies are not counted unread.
+  // Counts as the lists show them: hidden copies are not counted unread, and
+  // starred copies the 收藏 list hides are not counted starred.
   function shownCounts(current, feedIds, view) {
     const counts = countValue(current, feedIds);
     if (!view?.hideDuplicates) return counts;
     for (const id of hiddenCopies(current, view)) {
       const row = current.maps.articles.get(id);
       if (row?.status === "unread" && row.feedId in counts.unread) counts.unread[row.feedId] -= 1;
+    }
+    for (const id of hiddenCopies(current, view, true)) {
+      const row = current.maps.articles.get(id);
+      if (row && row.feedId in counts.starred) counts.starred[row.feedId] -= 1;
     }
     return counts;
   }
@@ -877,6 +884,7 @@ export function createArticleCache(storage, options = {}) {
     if (articleChanges) for (const [id, row] of articleChanges) {
       if (row) maps.articles.set(id, row); else maps.articles.delete(id);
     }
+    if (articleChanges) hiddenIndexes.delete(maps.articles);
     return { root: { ...base.root, tables }, maps, nodes: base.nodes, refs: base.refs };
   }
 
@@ -1074,10 +1082,11 @@ export function createArticleCache(storage, options = {}) {
       // Hidden duplicates leave the ID sequence, so pages, the total and
       // prev/next all follow the shown list. Rows stay untouched in the cache.
       // Unread and 全部 hide the same copies as the counts (a copy of a story
-      // already read stays hidden); 收藏 compares starred entries only.
-      const hidden = query.hideDuplicates === true && query.filter !== "starred" ? hiddenCopies(current, { field, direction, feedIds: query.duplicateFeedIds }) : null;
-      const shown = hidden ? rows.filter((row) => !hidden.has(row.id))
-        : dedupeArticles(rows, { enabled: query.hideDuplicates === true });
+      // already read stays hidden); 收藏 compares starred entries only, across
+      // the same visible feeds as the 收藏 count.
+      const hidden = query.hideDuplicates === true
+        ? hiddenCopies(current, { field, direction, feedIds: query.duplicateFeedIds }, query.filter === "starred") : null;
+      const shown = hidden ? rows.filter((row) => !hidden.has(row.id)) : rows;
       const pageSize = query.pageSize ?? 30;
       if (!Number.isSafeInteger(pageSize) || pageSize < 1) throw invalid();
       const queryId = `${epoch}.${++serial}`;

@@ -172,3 +172,62 @@ test("placeholder titles and hashtag-only titles never match by title", () => {
   ];
   assert.deepEqual(ids(dedupeArticles(rows)), [1, 2, 3, 4, 5, 6, 8]);
 });
+
+test("hashtag-only titles after an emoji, with a full-width ＃ or with a space never match by title", () => {
+  const rows = [
+    { id: 1, title: "🖼 #系统资讯", url: "https://t.example/1" },
+    { id: 2, title: "🖼 #系统资讯", url: "https://t.example/2" },
+    { id: 3, title: "＃系统资讯", url: "https://t.example/3" },
+    { id: 4, title: "＃系统资讯", url: "https://t.example/4" },
+    { id: 5, title: "# 系统", url: "https://t.example/5" },
+    { id: 6, title: "# 系统", url: "https://t.example/6" },
+    { id: 7, title: "🖼 #系统资讯", url: "https://t.example/1" },
+    { id: 8, title: "🖼 系统更新说明", url: "https://t.example/8" },
+    { id: 9, title: "🖼 系统更新说明", url: "https://t.example/9" },
+  ];
+  assert.deepEqual(ids(dedupeArticles(rows)), [1, 2, 3, 4, 5, 6, 8]);
+});
+
+test("the 收藏 count leaves out starred copies the 收藏 list hides", async () => {
+  const account = { serverUrl: "https://miniflux.example", userId: "7" };
+  const syncedAt = "2026-10-16T03:30:00.000Z";
+  const at = (minute) => `2026-10-16T03:${String(minute).padStart(2, "0")}:00.000Z`;
+  const entry = (id, feedId, title, url, minute, starred) => ({ id, feedId, title, url, content: "<p>正文</p>", enclosures: [],
+    status: "read", starred, published_at: at(minute), changed_at: syncedAt });
+  const cache = createArticleCache(memoryStorage(), { autoGc: false, tokenPrefix: "dedupe-starred" });
+  const token = await cache.prepareSync({ account, syncedAt });
+  await cache.applySyncBatch(token, [
+    entry(1, 1, "同一件事", "https://a.example/1", 10, 1),
+    entry(2, 2, "同一件事", "https://b.example/2", 9, 1),
+    entry(3, 2, "另一件事", "https://a.example/3", 8, 1),
+    entry(4, 1, "另一件事", "https://a.example/4", 7, 0),
+  ]);
+  await cache.commitSync(token, { feeds: [{ id: 1, title: "甲" }, { id: 2, title: "乙" }], categories: [] });
+  const view = { hideDuplicates: true, field: "published_at", direction: "desc", feedIds: [1, 2] };
+  assert.deepEqual((await cache.counts([1, 2])).starred, { 1: 1, 2: 2 });
+  // 2 copies 1 among starred rows; 3's twin 4 is not starred, so 3 still counts.
+  assert.deepEqual((await cache.counts([1, 2], view)).starred, { 1: 1, 2: 1 });
+  const listed = await cache.openQuery({ pageSize: 30, filter: "starred", hideDuplicates: true, feedIds: [1, 2], duplicateFeedIds: [1, 2] });
+  assert.equal(listed.total, 2);
+});
+
+test("un-starring the kept copy brings its starred twin back into the count and the list", async () => {
+  const account = { serverUrl: "https://miniflux.example", userId: "7" };
+  const syncedAt = "2026-10-16T03:30:00.000Z";
+  const at = (minute) => `2026-10-16T03:${String(minute).padStart(2, "0")}:00.000Z`;
+  const entry = (id, feedId, minute) => ({ id, feedId, title: "同一件事", url: `https://a.example/${id}`, content: "<p>正文</p>", enclosures: [],
+    status: "read", starred: 1, published_at: at(minute), changed_at: syncedAt });
+  const cache = createArticleCache(memoryStorage(), { autoGc: false, tokenPrefix: "dedupe-unstar" });
+  const token = await cache.prepareSync({ account, syncedAt });
+  await cache.applySyncBatch(token, [entry(1, 1, 10), entry(2, 2, 9)]);
+  await cache.commitSync(token, { feeds: [{ id: 1, title: "甲" }, { id: 2, title: "乙" }], categories: [] });
+  const view = { hideDuplicates: true, field: "published_at", direction: "desc", feedIds: [1, 2] };
+  assert.deepEqual((await cache.counts([1, 2], view)).starred, { 1: 1, 2: 0 });
+  // Feed 乙 on its own shows no copy either: 收藏 hides across the visible feeds, like the count.
+  const scoped = await cache.openQuery({ pageSize: 30, filter: "starred", hideDuplicates: true, feedIds: [2], duplicateFeedIds: [1, 2] });
+  assert.equal(scoped.total, 0);
+  const patched = await cache.patchState([{ id: 1, starred: 0 }], view);
+  assert.deepEqual([patched.counts.starred[1], patched.counts.starred[2]], [0, 1]);
+  const after = await cache.openQuery({ pageSize: 30, filter: "starred", hideDuplicates: true, feedIds: [1, 2], duplicateFeedIds: [1, 2] });
+  assert.deepEqual(ids((await cache.readQueryPage(after.queryId, 1)).items), [2]);
+});
