@@ -60,6 +60,32 @@ internal const val IosParallax = 0.3f
 internal const val IosDim = 0.12f
 internal val PushShadowElevation = 18.dp
 
+// Glass thresholds shared by the primary screen and the retained pages: glass stays live while
+// any part of its layer can be seen and pauses only once the layer is fully hidden.
+internal const val GlassHiddenEdge = 0.001f
+
+/** True once the page above (whose push progress is [coveringProgress]) has fully slid in. */
+internal fun pageFullyCovered(coveringProgress: Float?): Boolean =
+    coveringProgress != null && coveringProgress <= GlassHiddenEdge
+
+/** True once a retained page's own push progress has carried it fully off screen. */
+internal fun pageOffScreen(progress: Float): Boolean = progress >= 1f - GlassHiddenEdge
+
+/** True once the runtime transition has fully hidden the source layer (primary + retained pages). */
+internal fun sourceLayerHiddenByRuntime(
+    runtimeOpen: Boolean,
+    sourceAboveRuntime: Boolean,
+    sourceReturnProgress: Float,
+    entryCoverVisible: Boolean,
+    entryProgress: Float,
+): Boolean = when {
+    !runtimeOpen -> false
+    sourceAboveRuntime -> sourceReturnProgress >= 1f - GlassHiddenEdge
+    entryCoverVisible ->
+        ToolBoxMotion.fadeThroughOutgoingAlpha(1f - entryProgress.coerceIn(0f, 1f)) <= GlassHiddenEdge
+    else -> true
+}
+
 /**
  * Pushes [route] onto the secondary stack. Only the top page can be a running tool, so opening a
  * tool (for example from a notification or shortcut while another tool is open) replaces the
@@ -204,17 +230,20 @@ internal fun ToolBoxNavigation(
     // seen, through the runtime fade-through and under a sliding secondary page, and pauses only
     // once the screen is fully hidden: a stand-in swapped in mid-transition reads as the bar
     // changing material. Derived, so only the hidden edge recomposes the glass readers.
-    val primaryGlassLive by remember(runtimeRoute, firstRetainedProgress) {
+    val sourceHiddenByRuntime by remember(runtimeRoute) {
         derivedStateOf {
-            val coveredBySecondary = firstRetainedProgress != null && firstRetainedProgress.value <= 0.001f
-            val hiddenByRuntime = when {
-                runtimeRoute == null -> false
-                sourceAboveRuntime -> sourceReturnProgress.value >= 0.999f
-                entryCoverVisible ->
-                    ToolBoxMotion.fadeThroughOutgoingAlpha(1f - entryProgress.value.coerceIn(0f, 1f)) <= 0.001f
-                else -> true
-            }
-            !coveredBySecondary && !hiddenByRuntime
+            sourceLayerHiddenByRuntime(
+                runtimeOpen = runtimeRoute != null,
+                sourceAboveRuntime = sourceAboveRuntime,
+                sourceReturnProgress = sourceReturnProgress.value,
+                entryCoverVisible = entryCoverVisible,
+                entryProgress = entryProgress.value,
+            )
+        }
+    }
+    val primaryGlassLive by remember(firstRetainedProgress) {
+        derivedStateOf {
+            !sourceHiddenByRuntime && !pageFullyCovered(firstRetainedProgress?.value)
         }
     }
 
@@ -344,6 +373,7 @@ internal fun ToolBoxNavigation(
                         progress = progressFor(route),
                         coveredBy = retainedRoutes.getOrNull(index + 1)?.let(::progressFor),
                         isTop = runtimeRoute == null && index == retainedRoutes.lastIndex,
+                        hiddenByRuntime = sourceHiddenByRuntime,
                         modifier = Modifier.zIndex(index + 1f),
                         onRemove = {
                             if (secondaryBackStack.lastOrNull() == route) {
