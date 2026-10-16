@@ -233,15 +233,22 @@ export function readTopics(text, count) {
   if (!list) throw new Error("AI 返回的内容无法识别，请重新生成。");
   const taken = new Set();
   const topics = [];
-  const others = list.filter((item) => clean(item?.title, 40)).length > 1;
-  for (const item of list) {
-    if (topics.length >= MAX_TOPICS) break;
-    const title = clean(item?.title, 40);
+  // Each topic's numbers, and the numbers its ranges named.
+  const read = list.map((item) => {
     const listed = Array.isArray(item?.articles) ? item.articles : [];
     // Salvaged topics come with their numbers already read.
     const ranged = salvaged ? item.ranged : [];
-    let numbers = listed.flatMap((n) => articleNumbers(n, count, salvaged ? null : ranged));
-    if (others && catchAll(ranged, count)) {
+    const numbers = listed.flatMap((n) => articleNumbers(n, count, salvaged ? null : ranged));
+    return { item, numbers, ranged, lumps: catchAll(ranged, count) };
+  });
+  const real = (n) => Number.isInteger(n) && n >= 1 && n <= count;
+  // A catch-all range gives way only to a topic that groups real articles itself.
+  const others = read.some(({ item, numbers, lumps }) => !lumps && clean(item?.title, 40) && numbers.some(real));
+  for (const { item, ranged, lumps, numbers: all } of read) {
+    if (topics.length >= MAX_TOPICS) break;
+    const title = clean(item?.title, 40);
+    let numbers = all;
+    if (others && lumps) {
       // Only what the ranges named goes; a number also written on its own stays.
       const lumped = new Map();
       ranged.forEach((n) => lumped.set(n, (lumped.get(n) || 0) + 1));
@@ -251,8 +258,7 @@ export function readTopics(text, count) {
         return !left;
       });
     }
-    numbers = numbers
-      .filter((n) => Number.isInteger(n) && n >= 1 && n <= count && !taken.has(n));
+    numbers = numbers.filter((n) => real(n) && !taken.has(n));
     if (!title || !numbers.length) continue;
     const unique = [...new Set(numbers)];
     unique.forEach((n) => taken.add(n));

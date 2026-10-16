@@ -143,6 +143,9 @@ test("article references keep their numbers: lists, ranges and 2.0 are not glued
   // A board whose only topic is all of it keeps it, as does one listing the articles one by one.
   assert.deepEqual(parseTopics('{"topics":[{"title":"全部","articles":["1-12"]}]}', 12)[0].articles.length, 12);
   assert.deepEqual(parseTopics('{"topics":[{"title":"全部","articles":[1,2,3,4,5,6,7,8,9,10,11,12]},{"title":"乙","articles":[1]}]}', 12)[0].articles.length, 12);
+  // A second topic with no real article does not count as another grouping; nor does a second catch-all.
+  assert.deepEqual(parseTopics('{"topics":[{"title":"全部","articles":["1-12"]},{"title":"坏","articles":[99]}]}', 12).map((topic) => [topic.title, topic.articles.length]), [["全部", 12]]);
+  assert.deepEqual(parseTopics('{"topics":[{"title":"全部","articles":["1-12"]},{"title":"又全部","articles":["1-11"]}]}', 12).map((topic) => [topic.title, topic.articles.length]), [["全部", 12]]);
   // A small board may be one topic.
   assert.deepEqual(parseTopics('{"topics":[{"title":"全部","articles":["1-3"]},{"title":"乙","articles":[1]}]}', 3)[0].articles, [1, 2, 3]);
   assert.deepEqual(articleNumbers("1-14", 12), []);
