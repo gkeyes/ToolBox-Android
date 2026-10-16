@@ -301,3 +301,57 @@ test("flipping 查重方式 on the open board asks the AI once, and flipping bac
   assert.equal(calls.length, before);
   openBoard(false);
 });
+
+test("a sync while settings settle waits for them; changed back, it still brings in new articles", async () => {
+  const settled = () => new Promise((resolve) => setTimeout(resolve, 700));
+  rows = [article(1), article(2)];
+  settingsState.set({ ...settingsState.get(), duplicateMatch: "either" });
+  await settled();
+  let call = waitCall();
+  refreshBoard();
+  (await call).onChunk(TOPICS); calls.at(-1).resolve();
+  await tick(); await tick();
+  openBoard(true);
+  // A sync inside the window makes no call of its own.
+  const before = calls.length;
+  settingsState.set({ ...settingsState.get(), duplicateMatch: "url" });
+  rows = [article(1), article(2), article(3)];
+  await sync();
+  assert.equal(calls.length, before, "the sync waits for the settings");
+  settingsState.set({ ...settingsState.get(), duplicateMatch: "either" });
+  call = waitCall();
+  await settled();
+  // Back to the board's settings: one call, for the new article.
+  const fresh = await call;
+  assert.equal(calls.length, before + 1);
+  fresh.onChunk(TOPICS); fresh.resolve();
+  await tick(); await tick();
+  assert.equal(board.get().newCount, 1);
+  openBoard(false);
+});
+
+test("a board from yesterday is made again even when the settings end where they began", async () => {
+  const settled = () => new Promise((resolve) => setTimeout(resolve, 700));
+  rows = [article(1), article(2)];
+  let call = waitCall();
+  refreshBoard();
+  (await call).onChunk(TOPICS); calls.at(-1).resolve();
+  await tick(); await tick();
+  board.set({ ...board.get(), day: board.get().day - 86400000 });
+  openBoard(true);
+  // (Opening a stale board makes it again; answer that first.)
+  const reopened = calls.at(-1);
+  reopened.onChunk(TOPICS); reopened.resolve();
+  await tick(); await tick();
+  board.set({ ...board.get(), day: board.get().day - 86400000 });
+  const before = calls.length;
+  settingsState.set({ ...settingsState.get(), duplicateMatch: "title" });
+  settingsState.set({ ...settingsState.get(), duplicateMatch: "either" });
+  call = waitCall();
+  await settled();
+  const again = await call;
+  assert.equal(calls.length, before + 1);
+  again.onChunk(TOPICS); again.resolve();
+  await tick(); await tick();
+  openBoard(false);
+});

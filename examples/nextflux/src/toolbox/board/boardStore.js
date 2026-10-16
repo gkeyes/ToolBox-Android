@@ -25,6 +25,9 @@ export const boardStream = atom(null);
 let run = null;
 // The article settings the running board is made under.
 let runFilter = null;
+// A pending settings change, and whether a sync finished while it waited.
+let settle = null;
+let syncedWhileSettling = false;
 let digestRun = null;
 
 const aiReady = () => Boolean(settingsState.get().aiApiKey);
@@ -262,6 +265,8 @@ isSyncing.listen((syncing) => {
   // A board made under other article settings is made again when it is
   // next opened; settings changed and changed back cost nothing.
   if (board.get().filter !== articleFilter() && !boardOpen.get()) return;
+  // Settings still settling: their timer brings the board up to date.
+  if (settle) { syncedWhileSettling = true; return; }
   refreshBoard({ onlyIfNew: true });
 });
 
@@ -270,7 +275,6 @@ isSyncing.listen((syncing) => {
 // through the options asks the AI once, and flipping back asks nothing.
 const SETTLE_MS = 600;
 let lastFilter = articleFilter();
-let settle = null;
 settingsState.listen(() => {
   const filter = articleFilter();
   if (filter === lastFilter) return;
@@ -278,10 +282,18 @@ settingsState.listen(() => {
   clearTimeout(settle);
   settle = setTimeout(() => {
     settle = null;
+    const synced = syncedWhileSettling;
+    syncedWhileSettling = false;
     const now = articleFilter();
     const state = board.get();
     const made = run ? runFilter : state.filter;
-    if (!boardOpen.get() || state.status === "idle" || made === now || !authState.get().userId) return;
+    if (!boardOpen.get() || state.status === "idle" || !authState.get().userId) return;
+    // Back to the settings the board was made under, today: only what a
+    // sync meanwhile brought in.
+    if (made === now && state.day === startOfDay().getTime()) {
+      if (synced && !run) refreshBoard({ onlyIfNew: true });
+      return;
+    }
     refreshBoard();
   }, SETTLE_MS);
 });
