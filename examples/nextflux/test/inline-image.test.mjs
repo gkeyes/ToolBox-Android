@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { imageIsInline } from "../src/reading/inlineImage.mjs";
+import { imageIsInline, imageLineOpen } from "../src/reading/inlineImage.mjs";
 
 const text = (data) => ({ nodeType: 3, textContent: data });
 const element = (tagName, children = [], attrs = {}) => {
@@ -63,4 +63,28 @@ test("a figure, a lone image or a following paragraph is not running text", () =
   element("DIV", [text("  "), blank]);
   assert.equal(imageIsInline(blank), false);
   assert.equal(imageIsInline(image()), false);
+});
+
+test("text beyond an inline wrapper still counts, an SVG alone is no icon", () => {
+  const wrapped = image();
+  element("P", [element("STRONG", [text("before "), wrapped]), text(" after")]);
+  assert.equal(imageIsInline(wrapped, { "data-image-source": "https://example.com/123.png" }), true);
+  const diagram = image();
+  element("P", [element("SPAN", [text("来源")]), diagram]);
+  assert.equal(imageIsInline(diagram, { "data-image-source": "https://example.com/diagram.svg" }), false);
+});
+
+test("a line with nothing after the image yet stays open", () => {
+  const last = image();
+  const paragraph = element("P", [text("text "), last]);
+  assert.equal(imageLineOpen(last), true);
+  assert.equal(imageIsInline(last, {}), false);
+  const more = text(" more");
+  more.parentElement = paragraph;
+  paragraph.childNodes.push(more);
+  assert.equal(imageLineOpen(last), false);
+  assert.equal(imageIsInline(last, {}), true);
+  const ended = image();
+  element("P", [ended, element("BR"), text("caption")]);
+  assert.equal(imageLineOpen(ended), false);
 });

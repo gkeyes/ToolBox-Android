@@ -252,7 +252,9 @@ export function installLens({ doc = document, win = window } = {}) {
     touchedAt = Date.now();
     if (!touches && paused && !still) still = win.setTimeout(settle, 180);
   };
-  const touchTypes = ["touchstart", "touchend", "touchcancel"];
+  // touchmove only refreshes the activity time, so a long drag is not taken
+  // for a lost touchend.
+  const touchTypes = ["touchstart", "touchmove", "touchend", "touchcancel"];
   doc.addEventListener("scroll", onScroll, { capture: true, passive: true });
   for (const type of touchTypes) doc.addEventListener(type, onTouch, { capture: true, passive: true });
   return {
