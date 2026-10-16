@@ -322,6 +322,19 @@
     item.model=spot;return true;
   }
   // Resize handles: interior walls that can move, and the move itself (pure: returns a new plan).
+  // 1.11.1 · 客餐厅 → 客厅/餐厅: a record's look keeps its spot. parts: the 客餐厅 blocks as the editor opened them
+  // ({id,x,z,w,d}); blocks: the plan being saved. The look goes to the part it stands in (nearest), at the same point
+  // of that part as it is now; without a look, to the first part (客厅). null when no part is left.
+  function relocate(parts,blocks,model){
+    const now=parts.map(p=>blocks.find(b=>b.id===p.id)),first=now.find(Boolean);if(!first)return null;
+    if(!model)return {room:first.name};
+    const box=rs=>({x0:Math.min(...rs.map(r=>r.x)),z0:Math.min(...rs.map(r=>r.z)),x1:Math.max(...rs.map(r=>r.x+r.w)),z1:Math.max(...rs.map(r=>r.z+r.d))}),c01=v=>Math.min(1,Math.max(0,v)),r4=v=>+c01(v).toFixed(4);
+    const ob=box(parts),ax=ob.x0+model.x*(ob.x1-ob.x0),az=ob.z0+model.z*(ob.z1-ob.z0);
+    const dist=p=>Math.hypot(Math.max(p.x-ax,0,ax-p.x-p.w),Math.max(p.z-az,0,az-p.z-p.d));
+    const k=parts.map((p,i)=>i).filter(i=>now[i]).sort((i,j)=>dist(parts[i])-dist(parts[j]))[0],p=parts[k],b=now[k];
+    const x=b.x+c01((ax-p.x)/p.w)*b.w,z=b.z+c01((az-p.z)/p.d)*b.d,nb=box(blocks.filter(r=>r.name===b.name));
+    return {room:b.name,model:{...model,x:r4(nb.x1>nb.x0?(x-nb.x0)/(nb.x1-nb.x0):.5),z:r4(nb.z1>nb.z0?(z-nb.z0)/(nb.z1-nb.z0):.5)}};
+  }
   function handles(t){
     const {W}=makeRects(t),z1=t.D1,z2=t.D1+t.D2,hs=[];let x=0;
     t.back.forEach(([,w],i)=>{x+=w;if(i<t.back.length-1)hs.push({key:'b'+i,ax:'x',p:[x,t.D1*.25]});});
@@ -352,7 +365,7 @@
     }
     return out+'</svg>';
   }
-  const api={touch,SPACE_TYPES,BLOCK_TYPES,BLOCK_MIN,BATH_MIN,BLOCK_MAX,BATH_MAX,NOHOST,bathBox,bathName,nextName,sanitizeBlocks,cutRects,toBlocks,typeOf,typeOfName,boxOverlap,FURNITURE,KINDS,ORDER,LABELS,TEMPLATES,TEMPLATE_ORDER,MAX_PER_ROOM,WALL_T,GAP,deriveTemplate,planOf,sizesOf,sanitizeHome,sanitizeModel,makeRects,roomNames,area,bbox,nearestRect,footprint,clampPlacement,placeFromModel,fitsRoom,fitRoom,findSpot,lookState,applyLook,handles,moveHandle,planSvg};
+  const api={touch,SPACE_TYPES,BLOCK_TYPES,BLOCK_MIN,BATH_MIN,BLOCK_MAX,BATH_MAX,NOHOST,bathBox,bathName,nextName,sanitizeBlocks,cutRects,toBlocks,typeOf,typeOfName,boxOverlap,FURNITURE,KINDS,ORDER,LABELS,TEMPLATES,TEMPLATE_ORDER,MAX_PER_ROOM,WALL_T,GAP,deriveTemplate,planOf,sizesOf,sanitizeHome,sanitizeModel,makeRects,roomNames,area,bbox,nearestRect,footprint,clampPlacement,placeFromModel,fitsRoom,fitRoom,findSpot,lookState,applyLook,relocate,handles,moveHandle,planSvg};
   root.ZZHomeModel=Object.freeze(api);
   if(typeof module==='object'&&module.exports)module.exports=api;
 })(typeof globalThis!=='undefined'?globalThis:this);

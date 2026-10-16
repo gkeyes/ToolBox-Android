@@ -4,7 +4,7 @@
   // Ledger money is integer cents. DOM content originating from users is escaped.
   const KEY = 'ledger.v1';
   const runtime = window.ZZRuntime;
-  const VERSION = '1.11.2';
+  const VERSION = '1.11.3';
   const MAX_CENTS = 100000000000;
   const $ = s => document.querySelector(s);
   const $$ = s => [...document.querySelectorAll(s)];
@@ -1031,7 +1031,7 @@
     const seen=new Set();storedDraftIds=new Set(list.filter(validDraft).map(d=>d.id).filter(id=>typeof id==='string'));
     if(list.some(d=>d?.type==='apply'))legacyCalc=legacyApply=true;
     // 1.11.2: a record renamed by validate() (an old id with ~) keeps its unfinished drafts.
-    if(idRenames.size)for(const d of list)if(d&&Array.isArray(d.fields))d.fields=d.fields.map(e=>{if(Array.isArray(e)&&['id','payment-item'].includes(e[0])&&idRenames.has(e[1])){renamedDrafts=true;return [e[0],idRenames.get(e[1])];}return e;});
+    if(idRenames.size)for(const d of list)if(d&&Array.isArray(d.fields)){const be=d.baseEntity;if(be&&typeof be==='object'&&idRenames.has(be.id)){const to=idRenames.get(be.id);d.baseEntity={...be,id:to,...(be.value&&typeof be.value==='object'?{value:{...be.value,id:to}}:{})};renamedDrafts=true;}d.fields=d.fields.map(e=>{if(Array.isArray(e)&&['id','payment-item'].includes(e[0])&&idRenames.has(e[1])){renamedDrafts=true;return [e[0],idRenames.get(e[1])];}return e;});}
     drafts=list.filter(validDraft).map(d=>({...d,id:typeof d.id==='string'&&d.id.length<=100?d.id:uid('d')})).filter(d=>{if(seen.has(d.id)||(data.completedDrafts||[]).includes(d.id))return false;seen.add(d.id);return true;});
   }
   function openDraftList(){

@@ -524,3 +524,26 @@ test('1.11.2 · a record id with ~ is renamed and its payments follow (3D piece 
   assert.equal(out.payments[0].itemId, 'a_x_2');
   assert.ok(out.items.every((i) => !i.id.includes('~')));
 });
+
+test('1.11.3 · 客餐厅 → 客厅/餐厅 keeps each look on its spot and files it under the part it stands in', () => {
+  const t = HM.planOf({}, '三室两厅'), start = HM.toBlocks(t).blocks, parts = start.filter((b) => b.type === '客餐厅').sort((a, b) => b.w * b.d - a.w * a.d).map(({ id, x, z, w, d }) => ({ id, x, z, w, d }));
+  const blocks = start.map((b) => b.type !== '客餐厅' ? b : { ...b, type: b.id === parts[0].id ? '客厅' : '餐厅', name: b.id === parts[0].id ? '客厅' : '餐厅' });
+  const rects = HM.makeRects(t).rects, after = HM.planOf({ blocks, baths: [] }), newRects = HM.makeRects(after).rects;
+  for (const m of [{ kind: 'sofaA', x: .3, z: .8, rot: 2 }, { kind: 'tvA', x: .3, z: .08, rot: 0 }, { kind: 'diningA', x: .62, z: .62, rot: 0 }, { kind: 'diningA', x: .85, z: .85, rot: 0 }]) {
+    const was = HM.placeFromModel(m, rects, '客餐厅'), r = HM.relocate(parts, blocks, m), now = HM.placeFromModel(r.model, newRects, r.room);
+    assert.ok(Math.hypot(was.x - now.x, was.z - now.z) < .02, `${m.kind} ${m.x}: moved ${was.x},${was.z} → ${now.x},${now.z}`);
+    assert.equal(r.room, m.x === .85 ? '餐厅' : '客厅');
+  }
+  assert.deepEqual(HM.relocate(parts, blocks, undefined), { room: '客厅' }, 'no look: 客厅');
+  assert.equal(HM.relocate(parts, blocks.filter((b) => !parts.some((p) => p.id === b.id)), null), null, 'both parts deleted: untouched');
+});
+
+test('1.11.3 · the plan editor refuses drags past 60 rooms / 40 bathrooms and keeps a refused session as a draft', () => {
+  const src = read('home3d.js');
+  assert.match(src, /freeBath\(it\) && rooms\.length >= HM\.BLOCK_MAX\) toast\(`最多\$\{HM\.BLOCK_MAX\}个房间/);
+  assert.match(src, /full = into && baths\.length >= HM\.BATH_MAX/);
+  assert.match(src, /function leave\(\) \{ if \(el\.hidden\) return; if \(!done\(true\)\) \{ cancelDrag\(\); draft = \{ key: base/);
+  assert.match(src, /startNames = names; base = keyOf\(HM\.planOf\(home\)\);/, 'a background save moves the draft key');
+  assert.match(src, /label: '放弃'/, 'a restored draft can be dropped');
+  assert.match(src, /keep\.add\(k \+ '\|' \+ kit\(best\)\[1\]\.name\)/, 'a kitchen boxed in by bedrooms keeps one door');
+});
