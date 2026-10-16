@@ -58,7 +58,7 @@ export default function CustomAlertDialog({
               <AlertDialog.Icon status={status} />
               <AlertDialog.Heading>{title}</AlertDialog.Heading>
             </AlertDialog.Header>
-            <AlertDialog.Body className="nextflux-modal-body px-4">
+            <AlertDialog.Body className="nextflux-modal-body nextflux-alert-body px-4">
               <p>{content}</p>
               {error && <p className="nextflux-dialog-error" role="alert">{error}</p>}
             </AlertDialog.Body>

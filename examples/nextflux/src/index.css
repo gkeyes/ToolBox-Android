@@ -343,12 +343,6 @@
   min-block-size: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
-  /* When the text is taller than the dialog, a shade at the bottom edge shows there is more
-     below; the covering layer scrolls with the text and hides the shade at the end. */
-  background:
-    linear-gradient(transparent, var(--ds-raised, var(--overlay, var(--background))) 60%) center bottom / 100% 1.5rem no-repeat local,
-    linear-gradient(transparent, color-mix(in srgb, currentColor 18%, transparent)) center bottom / 100% .75rem no-repeat scroll;
-  background-origin: border-box;
 }
 .nextflux-modal-loading {
   margin: auto;
@@ -373,6 +367,26 @@
 .nextflux-modal-loading button:focus-visible {
   outline: 2px solid var(--focus, var(--accent));
   outline-offset: 3px;
+}
+/* An alert whose text is taller than the dialog shows a shade at the bottom edge while more
+   text is below; the scroll timeline fades it out at the end and leaves it off when nothing
+   scrolls. Translucent, so the glass surface still shows through. */
+.nextflux-alert-body::after {
+  content: "";
+  display: block;
+  position: sticky;
+  inset-block-end: 0;
+  block-size: .75rem;
+  margin-block-start: -.75rem;
+  pointer-events: none;
+  background: linear-gradient(transparent, color-mix(in srgb, currentColor 18%, transparent));
+  opacity: 0;
+  animation: nextflux-alert-more linear both;
+  animation-timeline: scroll(nearest block);
+}
+@keyframes nextflux-alert-more {
+  0%, 92% { opacity: 1; }
+  100% { opacity: 0; }
 }
 .nextflux-modal-footer {
   flex-shrink: 0;
