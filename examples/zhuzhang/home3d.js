@@ -41,6 +41,10 @@ function C(r, h, c, x = 0, y = 0, z = 0, o = {}) {
   const m = new THREE.Mesh(new THREE.CylinderGeometry(o.r2 ?? r, r, h, o.seg ?? 24), M(c, o));
   m.position.set(x, y + h / 2, z); if (o.rx) m.rotation.x = o.rx; m.castShadow = m.receiveShadow = true; return m;
 }
+function S(r, c, x = 0, y = 0, z = 0, o = {}) {
+  const m = new THREE.Mesh(new THREE.SphereGeometry(r, o.seg ?? 16, 12), M(c, o));
+  m.position.set(x, y, z); if (o.sy) m.scale.y = o.sy; m.castShadow = m.receiveShadow = true; return m;
+}
 function G(...ch) { const g = new THREE.Group(); ch.flat().forEach(c => g.add(c)); return g; }
 const legs = (w, d, h, c, inset = .06, s = .04) => [[-1, -1], [1, -1], [-1, 1], [1, 1]].map(([a, b]) => B(s, h, s, c, a * (w / 2 - inset), 0, b * (d / 2 - inset), { rad: 0 }));
 function chair(c, seatY = .44) { return G(B(.42, .05, .42, c, 0, seatY, 0, { rad: .02 }), B(.42, .42, .05, c, 0, seatY, -.19, { rad: .02 }), legs(.42, .42, seatY, '#5a4632', .04, .035)); }
@@ -71,7 +75,24 @@ const BUILD = {
   deskB: () => { const ch = chair('#e9e5dd'); ch.position.z = .3; ch.rotation.y = PI; const books = [...Array(6)].map((_, i) => B(.05, .18 + (i % 3) * .03, .16, ['#d0624d', '#3d6aa3', '#e2b84a', '#5c8a5a', '#8a5c8a', '#e8e2d6'][i], -.5 + i * .07, 1.33, -.2, { rad: 0 })); return G(B(1.3, .04, .6, '#f1efea', 0, .72, -.2, { rad: .01 }), legs(1.3, .6, .72, '#f1efea', .04, .04).map(l => (l.position.z -= .2, l)), B(1.3, .03, .24, '#f1efea', 0, 1.3, -.2, { rad: 0 }), B(.03, .58, .24, '#f1efea', -.635, .74, -.2, { rad: 0 }), B(.03, .58, .24, '#f1efea', .635, .74, -.2, { rad: 0 }), books, ch); },
   cabA: () => G(B(1.4, 2.1, .6, '#cfae86'), B(.01, 2.0, .01, '#8f7252', -.233, .05, .301, { rad: 0 }), B(.01, 2.0, .01, '#8f7252', .233, .05, .301, { rad: 0 }), ...[-.29, -.18, .18, .29].map(x => B(.02, .16, .02, '#6b5238', x, 1.0, .31, { rad: 0 }))),
   cabB: () => G(legs(1.3, .45, .14, '#2b2b2b', .06, .03), B(1.3, .72, .45, '#e2b84a', 0, .14, 0, { rad: .03 }), ...[0, 1, 2, 3, 4, 5].map(i => B(.5, .035, .01, '#2b2f33', .3, .22 + i * .09, .226, { rad: 0 })), B(.5, .55, .01, '#d6aa3c', -.3, .22, .226, { rad: 0 })),
-  cabC: () => { const c = '#efe8dc', parts = [B(.03, 1.8, .34, c, -.485), B(.03, 1.8, .34, c, .485), ...[0, 1, 2, 3, 4].map(i => B(1.0, .03, .34, c, 0, i * .44, 0, { rad: 0 })), B(1, 1.8, .01, '#e3dbcd', 0, 0, -.165, { rad: 0 })]; const cols = ['#d0624d', '#3d6aa3', '#e2b84a', '#5c8a5a', '#2f2f33', '#e8a2a0', '#7aa7c7']; let s = 7; const rnd = () => (s = (s * 9301 + 49297) % 233280) / 233280; for (let r = 0; r < 4; r++) { let x = -.44; while (x < .4) { const w = .04 + rnd() * .05, h = .26 + rnd() * .12; parts.push(B(w, h, .24, cols[Math.floor(rnd() * cols.length)], x + w / 2, r * .44 + .03, 0, { rad: 0 })); x += w + .008; if (rnd() < .12) x += .12; } } return G(parts); }
+  cabC: () => { const c = '#efe8dc', parts = [B(.03, 1.8, .34, c, -.485), B(.03, 1.8, .34, c, .485), ...[0, 1, 2, 3, 4].map(i => B(1.0, .03, .34, c, 0, i * .44, 0, { rad: 0 })), B(1, 1.8, .01, '#e3dbcd', 0, 0, -.165, { rad: 0 })]; const cols = ['#d0624d', '#3d6aa3', '#e2b84a', '#5c8a5a', '#2f2f33', '#e8a2a0', '#7aa7c7']; let s = 7; const rnd = () => (s = (s * 9301 + 49297) % 233280) / 233280; for (let r = 0; r < 4; r++) { let x = -.44; while (x < .4) { const w = .04 + rnd() * .05, h = .26 + rnd() * .12; parts.push(B(w, h, .24, cols[Math.floor(rnd() * cols.length)], x + w / 2, r * .44 + .03, 0, { rad: 0 })); x += w + .008; if (rnd() < .12) x += .12; } } return G(parts); },
+  // 1.8.0 · tables, chairs and cabinets (front faces +z, backs -z)
+  coffeeA: () => G(B(1.1, .05, .6, '#c69c6d', 0, .38, 0, { rad: .02 }), legs(1.1, .6, .38, '#8a6a48'), B(1.0, .03, .5, '#b88d60', 0, .12, 0, { rad: .01 }), B(.22, .06, .16, '#3d6aa3', -.25, .43, .05, { rad: .01 })),
+  coffeeB: () => G(C(.4, .04, '#efe9df', 0, .42, 0, { seg: 36 }), C(.04, .42, '#2b2b2b'), C(.2, .02, '#2b2b2b', 0, 0, 0, { seg: 30 }), C(.08, .1, '#7aa7c7', .12, .46, .05, { r2: .05 })),
+  sideA: () => G(C(.22, .03, '#c69c6d', 0, .55, 0, { seg: 30 }), C(.02, .55, '#2b2b2b'), C(.15, .02, '#2b2b2b', 0, 0, 0, { seg: 24 })),
+  tableA: () => G(B(1.2, .04, .7, '#d9c3a0', 0, .72, 0, { rad: .01 }), legs(1.2, .7, .72, '#8a6a48', .05, .045)),
+  chairA: () => chair('#c69c6d'),
+  stoolA: () => G(C(.17, .04, '#c69c6d', 0, .45, 0, { seg: 24 }), legs(.28, .28, .45, '#8a6a48', .03, .03)),
+  armA: () => { const c = '#c98b5e'; return G(B(.8, .4, .8, c, 0, 0, 0, { rad: .1 }), B(.8, .45, .18, c, 0, .32, -.31, { rad: .08 }), B(.13, .22, .8, c, -.335, .36, 0, { rad: .06 }), B(.13, .22, .8, c, .335, .36, 0, { rad: .06 }), B(.52, .1, .56, '#d9a074', 0, .4, .07, { rad: .05 })); },
+  shoeA: () => G(B(1.0, 1.0, .35, '#efe8dc', 0, .06, 0, { rad: .02 }), legs(1.0, .35, .06, '#2b2b2b', .05, .03), B(.01, .9, .01, '#cfc6b6', 0, .11, .176, { rad: 0 }), B(.02, .14, .02, '#8f7252', -.05, .5, .18, { rad: 0 }), B(.02, .14, .02, '#8f7252', .05, .5, .18, { rad: 0 })),
+  dresserA: () => G(B(1.0, .04, .45, '#f1efea', 0, .74, 0, { rad: .01 }), legs(1.0, .45, .74, '#f1efea', .04, .035), B(.42, .14, .4, '#e6e1d8', .25, .58, 0, { rad: .01 }), B(.56, .7, .03, '#e6e1d8', 0, .78, -.2, { rad: .02 }), B(.48, .62, .01, '#cfe3ec', 0, .82, -.18, { m: .6, r: .08, rad: 0 })),
+  // 生活: lamps, the cat's things, plants
+  lampA: () => G(C(.16, .03, '#2b2b2b', -.05, 0, 0, { seg: 28 }), C(.014, 1.55, '#2b2b2b', -.12), B(.26, .02, .02, '#2b2b2b', 0, 1.53, 0, { rad: 0 }), C(.13, .16, '#f3ead8', .1, 1.36, 0, { r2: .06, e: '#ffd9a0', ei: .35 })),
+  lampB: () => G(C(.13, .03, '#d6d0c6', 0, 0, 0, { seg: 28 }), C(.013, 1.32, '#d6d0c6'), C(.19, .3, '#efe2c8', 0, 1.3, 0, { r2: .15, e: '#ffcf8f', ei: .3 })),
+  catTree: () => { const p = '#c9ad7a', w = '#e6dcc8'; return G(B(.6, .06, .6, '#cdbb9e', 0, 0, 0, { rad: .02 }), C(.05, .9, p, -.2, .06, -.2), C(.05, .9, p, .2, .06, -.2), B(.34, .3, .34, '#bfa985', .1, .06, .1, { rad: .04 }), C(.08, .005, '#3a2f25', .1, .19, .272, { rx: PI / 2, seg: 20 }), B(.56, .04, .36, w, 0, .96, -.1, { rad: .02 }), C(.05, .45, p, -.15, 1.0, -.15), C(.19, .06, w, -.15, 1.45, -.12, { seg: 24 }), C(.15, .05, '#f4ece0', -.15, 1.49, -.12, { seg: 24 })); },
+  catBed: () => G(C(.26, .14, '#d9a46b', 0, 0, 0, { seg: 30 }), C(.21, .06, '#f2e6d3', 0, .1, 0, { seg: 28 }), S(.09, '#8f8a84', .04, .2, .02, { sy: .55 })),
+  plantA: () => G(C(.14, .32, '#c96f4a', 0, 0, 0, { r2: .18, seg: 24 }), C(.16, .02, '#5a4632', 0, .3, 0, { seg: 24 }), S(.22, '#4f8a4b', 0, .66, 0), S(.16, '#5e9c57', .1, .88, .05), S(.14, '#447a41', -.09, .98, -.04)),
+  plantB: () => G(C(.12, .5, '#efe9df', 0, 0, 0, { r2: .14, seg: 24 }), ...[0, 1, 2, 3, 4].map(i => { const a = i * 1.25, l = B(.05, .7, .02, i % 2 ? '#3f7a3c' : '#5a9a50', Math.sin(a) * .04, .48, Math.cos(a) * .04, { rad: 0 }); l.rotation.z = Math.sin(a) * .25; l.rotation.x = Math.cos(a) * .25; return l; }))
 };
 
 // Merge every model into one mesh per material (shared by all its instances), so a full home stays near 150 draw calls.
@@ -160,7 +181,7 @@ export function createHome(api) {
   const layer = document.createElement('div'); layer.className = 'hv-layer';
   layer.innerHTML = `<div class="hv-scrim"></div>
   <div class="hv-sheet hg" data-sheet="tpl" role="dialog" aria-modal="true" aria-label="选户型"><div class="hv-grab"></div><div class="hv-sheet-head"><h2>选户型</h2><button type="button" class="hg gbtn gcirc" data-hv="close" aria-label="关闭">${svg(ICON.close)}</button></div><div class="hv-sheet-body"><p class="hv-hint">选一个最接近的，再拖墙调整每个房间的大小。</p><div class="hv-tpl"></div><button type="button" class="hv-primary gbtn" data-hv="tpl-ok">调整房间大小</button></div></div>
-  <div class="hv-sheet hg" data-sheet="pick" role="dialog" aria-modal="true" aria-label="选外观"><div class="hv-grab"></div><div class="hv-sheet-head"><h2>选外观</h2><button type="button" class="hg gbtn gcirc" data-hv="close" aria-label="关闭">${svg(ICON.close)}</button></div><div class="hv-sheet-body"><p class="hv-hint hv-pick-hint">挑一个和你买的东西样子相近的就行。</p><div class="hv-pal-sec"><h3>家电</h3><div class="hv-pal" data-pal="app"></div></div><div class="hv-pal-sec"><h3>家具</h3><div class="hv-pal" data-pal="fur"></div></div><button type="button" class="hv-primary gbtn" data-hv="pick-ok" disabled>用这个外观</button></div></div>`;
+  <div class="hv-sheet hg" data-sheet="pick" role="dialog" aria-modal="true" aria-label="选外观"><div class="hv-grab"></div><div class="hv-sheet-head"><h2>选外观</h2><button type="button" class="hg gbtn gcirc" data-hv="close" aria-label="关闭">${svg(ICON.close)}</button></div><div class="hv-sheet-body"><p class="hv-hint hv-pick-hint">挑一个和你买的东西样子相近的就行。</p><div class="hv-pal-sec"><h3>家电</h3><div class="hv-pal" data-pal="app"></div></div><div class="hv-pal-sec"><h3>家具</h3><div class="hv-pal" data-pal="fur"></div></div><div class="hv-pal-sec"><h3>生活</h3><div class="hv-pal" data-pal="liv"></div></div><button type="button" class="hv-primary gbtn" data-hv="pick-ok" disabled>用这个外观</button></div></div>`;
   const q = s => root.querySelector(s) || layer.querySelector(s), qa = s => [...root.querySelectorAll(s), ...layer.querySelectorAll(s)];
   const slotHome = q('.hv-slot'), labelsEl = q('.hv-labels');
 
@@ -572,7 +593,7 @@ export function createHome(api) {
   }
   function fillPalette() {
     const th = thumbs();
-    for (const k of ['app', 'fur']) q(`[data-pal="${k}"]`).innerHTML = HM.ORDER[k].map((m, n) => `<button type="button" class="hv-tile${pick.sel === m ? ' sel' : ''}" data-look="${m}" aria-label="${k === 'app' ? '家电' : '家具'}外观 ${n + 1}" aria-pressed="${pick.sel === m}"><img alt="" src="${th[m]}"></button>`).join('');
+    for (const k of ['app', 'fur', 'liv']) q(`[data-pal="${k}"]`).innerHTML = HM.ORDER[k].map((m, n) => `<button type="button" class="hv-tile${pick.sel === m ? ' sel' : ''}" data-look="${m}" aria-label="${{ app: '家电', fur: '家具', liv: '生活' }[k]}外观 ${n + 1}" aria-pressed="${pick.sel === m}"><img alt="" src="${th[m]}"></button>`).join('');
   }
   function renderTpl() {
     q('.hv-tpl').innerHTML = HM.TEMPLATE_ORDER.map(k => {
