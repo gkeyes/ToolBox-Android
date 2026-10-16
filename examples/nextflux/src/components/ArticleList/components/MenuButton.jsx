@@ -9,6 +9,7 @@ import {
   SyncIcon as RefreshCw,
 } from "@/components/ui/icons.jsx";
 import { useParams } from "react-router";
+import { memo } from "react";
 import {
   editFeedModalOpen,
   renameModalOpen,
@@ -18,7 +19,10 @@ import {
 import { useTranslation } from "react-i18next";
 import { handleRefresh } from "@/handlers/feedHandlers";
 
-export default function MenuButton() {
+// Memoised: the header re-renders on every filter switch, and this menu's
+// React Aria trigger is costly to redraw for nothing.
+export default memo(MenuButton);
+function MenuButton() {
   const { feedId, categoryId } = useParams();
   const { t } = useTranslation();
 

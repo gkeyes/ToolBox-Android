@@ -2,13 +2,20 @@ import { filter } from "@/stores/articlesStore";
 import { CircleDot, Star, Text } from "lucide-react";
 import { useStore } from "@nanostores/react";
 import { useTranslation } from "react-i18next";
-import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { memo, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 
 const TABS = [
   { id: "starred", key: "articleList.starred", icon: <Star className="size-3 fill-current" /> },
   { id: "unread", key: "articleList.unread", icon: <CircleDot className="size-3 p-px fill-current" /> },
   { id: "all", key: "articleList.all", icon: <Text strokeWidth={4} className="size-3" /> },
 ];
+
+// A CSS time ("460ms", ".46s") in milliseconds.
+const milliseconds = (value) => {
+  const number = Number.parseFloat(value);
+  if (!Number.isFinite(number)) return 0;
+  return /ms\s*$/.test(value) ? number : number * 1000;
+};
 
 // The filter capsule. It draws the same markup and classes as HeroUI's Tabs
 // (so tabs.css, glass-buttons.css and ios27.css style it unchanged) without
@@ -21,7 +28,10 @@ const TABS = [
 // rebuild of the list no longer holds the pill still.
 // Each tab shows only its name: the counts under the names were dropped at
 // the reader's request (1.17.0).
-export default function ArticleListFooter() {
+// Memoised: it reads the filter itself, so the header's re-render on each
+// switch does not need to redraw it.
+export default memo(ArticleListFooter);
+function ArticleListFooter() {
   const { t } = useTranslation();
   const $filter = useStore(filter);
   const [selected, setSelected] = useState($filter);
@@ -39,7 +49,18 @@ export default function ArticleListFooter() {
     const to = list?.querySelector(`[data-key="${value}"]`);
     if (from && to && from.parentElement !== to) {
       const tab = from.parentElement;
-      slide.current = { dx: tab.offsetLeft - to.offsetLeft, dy: tab.offsetTop - to.offsetTop, width: tab.offsetWidth, height: tab.offsetHeight };
+      const style = getComputedStyle(list);
+      slide.current = {
+        // Centre to centre: the pill scales about its centre.
+        dx: tab.offsetLeft + tab.offsetWidth / 2 - (to.offsetLeft + to.offsetWidth / 2),
+        dy: tab.offsetTop + tab.offsetHeight / 2 - (to.offsetTop + to.offsetHeight / 2),
+        sx: tab.offsetWidth / to.offsetWidth,
+        sy: tab.offsetHeight / to.offsetHeight,
+        width: tab.offsetWidth,
+        height: tab.offsetHeight,
+        duration: milliseconds(style.getPropertyValue("--ds-dur-spatial")),
+        easing: style.getPropertyValue("--ds-ease-spatial").trim() || "ease",
+      };
     }
     setSelected(value);
     latest.current = value;
@@ -58,20 +79,20 @@ export default function ArticleListFooter() {
     const move = slide.current;
     slide.current = null;
     const pill = listRef.current?.querySelector(".tabs__indicator");
-    if (!move || !pill) return undefined;
-    // Start where the old pill was, then let tabs.css transition translate,
-    // width and height to the new tab.
-    pill.style.translate = `${move.dx}px ${move.dy}px`;
-    pill.style.width = `${move.width}px`;
-    pill.style.height = `${move.height}px`;
-    for (const animation of pill.getAnimations()) animation.cancel();
-    getComputedStyle(pill).translate;
-    const frame = requestAnimationFrame(() => {
-      pill.style.translate = "";
-      pill.style.width = "";
-      pill.style.height = "";
-    });
-    return () => cancelAnimationFrame(frame);
+    if (!move || !pill || !move.duration || typeof pill.animate !== "function") return undefined;
+    // Start where the old pill was and glide to the new tab. Move and scale
+    // only, so the compositor runs the slide even while the list below is
+    // rebuilt on the main thread. Labels of very different widths (English)
+    // would squash the rounded ends, so those animate the width instead.
+    const scaled = Math.abs(move.sx - 1) <= 0.15 && Math.abs(move.sy - 1) <= 0.15;
+    const start = scaled
+      ? { translate: `${move.dx}px ${move.dy}px`, scale: `${move.sx} ${move.sy}` }
+      : { translate: `${move.dx + (pill.offsetWidth - move.width) / 2}px ${move.dy + (pill.offsetHeight - move.height) / 2}px`, width: `${move.width}px`, height: `${move.height}px` };
+    const end = scaled
+      ? { translate: "0px 0px", scale: "1 1" }
+      : { translate: "0px 0px", width: `${pill.offsetWidth}px`, height: `${pill.offsetHeight}px` };
+    const animation = pill.animate([start, end], { duration: move.duration, easing: move.easing });
+    return () => animation.cancel();
   }, [selected]);
 
   const keyDown = (event) => {
@@ -81,7 +102,10 @@ export default function ArticleListFooter() {
     event.preventDefault();
     const tab = TABS[(next + TABS.length) % TABS.length];
     select(tab.id);
-    listRef.current?.querySelector(`[data-key="${tab.id}"]`)?.focus();
+    const element = listRef.current?.querySelector(`[data-key="${tab.id}"]`);
+    element?.focus();
+    // Keep the chosen tab visible when the row scrolls (320 px at large text).
+    element?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
   };
   // HeroUI draws its focus ring from data-focus-visible; a tap leaves none
   // (compact-controls.css hides rings after touch anyway).

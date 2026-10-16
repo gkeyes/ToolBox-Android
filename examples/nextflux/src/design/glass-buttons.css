@@ -146,8 +146,10 @@
 [data-theme="dark"] .tabs__tab:not([aria-selected="true"]):is(:active, [data-pressed="true"], [data-nf-pressed="true"]) {
   background: radial-gradient(circle at var(--nf-gx, 50%) var(--nf-gy, 50%), rgb(255 255 255 / 0.22), rgb(255 255 255 / 0.06) 70%);
 }
-/* Selection commits on press, so the pill under a held segment is its own. */
-.tabs__list:has(.tabs__tab[aria-selected="true"]:is(:active, [data-pressed="true"], [data-nf-pressed="true"])) .tabs__indicator {
+/* Selection commits on press, so the pill under a held segment is its own.
+   The article filter selects on release, so its new pill would swell while
+   the press is still clearing (recheck-118): it keeps its size. */
+.tabs__list:not(.article-list-tabs .tabs__list):has(.tabs__tab[aria-selected="true"]:is(:active, [data-pressed="true"], [data-nf-pressed="true"])) .tabs__indicator {
   scale: 1.1;
 }
 /* The switch knob turns into a clear glass lens while it is held. */
