@@ -5,9 +5,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -23,8 +22,8 @@ import org.robolectric.annotation.Config
 import top.yukonga.miuix.kmp.nav.core.NavKey
 
 /**
- * Composes the navigator, transition and effects the way ToolBoxNavigation wires them, so
- * dropping a navigate branch, the leave guard or an entry effect fails here.
+ * Composes [rememberRuntimeNavigator], the wiring ToolBoxNavigation uses, so dropping a navigate
+ * branch, the leave guard, an entry effect or the interrupted-return pop fails here.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [36])
@@ -35,14 +34,7 @@ class RuntimeNavigatorTest {
     private var navigator: RuntimeNavigator? = null
 
     private fun composeNavigator() {
-        compose.setContent {
-            val scope = rememberCoroutineScope()
-            val current = remember { RuntimeNavigator(stack, scope) }
-            val transition = rememberRuntimeTransition(stack.lastOrNull() as? RuntimeRoute, current.generation)
-            current.transition = transition
-            RuntimeTransitionEffects(transition)
-            navigator = current
-        }
+        compose.setContent { navigator = rememberRuntimeNavigator(stack, stack.lastOrNull() as? RuntimeRoute) }
         compose.waitForIdle()
     }
 
@@ -157,6 +149,36 @@ class RuntimeNavigatorTest {
     }
 
     @Test
+    fun onceTheRuntimeHandledTheReopenBackLeavesAgain() {
+        composeNavigator()
+        openSettled(A)
+        val a = current()
+        compose.runOnIdle { nav().navigate(A) }
+        assertTrue(a.reopenRequested)
+
+        compose.runOnIdle { nav().reopenHandled() }
+        assertFalse(a.reopenRequested)
+        compose.runOnIdle { nav().leave() }
+        compose.waitForIdle()
+        assertTrue(stack.isEmpty())
+    }
+
+    @Test
+    fun aToolRestoredMidReturnHasItsRouteRemoved() {
+        val restoration = StateRestorationTester(compose)
+        stack += A
+        restoration.setContent { navigator = rememberRuntimeNavigator(stack, stack.lastOrNull() as? RuntimeRoute) }
+        compose.waitForIdle()
+        assertFalse(current().returnInterrupted)
+        // Rotation cuts the return off before it pops the route.
+        compose.runOnIdle { current().runtimeLeaving = true }
+
+        restoration.emulateSavedInstanceStateRestore()
+        compose.waitForIdle()
+        assertTrue(stack.isEmpty())
+    }
+
+    @Test
     fun reopeningBeforeTheRuntimeExistsHasNoExitToCancel() {
         composeNavigator()
         compose.runOnIdle { nav().navigate(A) }
@@ -187,26 +209,28 @@ class RuntimeNavigatorTest {
     }
 
     @Test
-    fun theReopenEffectRunsOnlyForRevisionsAfterItsKeyAppeared() {
+    fun theReopenEffectReopensThenHandsBackOnlyForRevisionsAfterItsKeyAppeared() {
         var key by mutableStateOf<Any>("first")
         var revision by mutableIntStateOf(3)
-        var reopened = 0
-        compose.setContent { RuntimeReopenEffect(key, revision) { reopened += 1 } }
+        val calls = mutableListOf<String>()
+        compose.setContent {
+            RuntimeReopenEffect(key, revision, reopen = { calls += "reopen" }, onHandled = { calls += "handled" })
+        }
         compose.waitForIdle()
-        assertEquals(0, reopened)
+        assertEquals(emptyList<String>(), calls)
 
         revision = 4
         compose.waitForIdle()
-        assertEquals(1, reopened)
+        assertEquals(listOf("reopen", "handled"), calls)
 
         // A new runtime (a new view model) ignores the revision it was created with.
         key = "second"
         compose.waitForIdle()
-        assertEquals(1, reopened)
+        assertEquals(2, calls.size)
 
         revision = 5
         compose.waitForIdle()
-        assertEquals(2, reopened)
+        assertEquals(listOf("reopen", "handled", "reopen", "handled"), calls)
     }
 
     private companion object {

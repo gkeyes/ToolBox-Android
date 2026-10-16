@@ -136,8 +136,9 @@ internal fun RuntimeSessionLayer(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
     toolName: String? = null,
-    reopenRevision: Int = 0,
-    onReopenHandled: () -> Unit = {},
+    // No defaults: a caller that drops either one leaves Back stuck after any reopen.
+    reopenRevision: Int,
+    onReopenHandled: () -> Unit,
 ) {
     val owner = remember(route) { RuntimeEntryViewModelStoreOwner() }
     DisposableEffect(owner) {
@@ -152,10 +153,7 @@ internal fun RuntimeSessionLayer(
     // The tool was opened again while Back was taking it away: undo the exit Back started (a save
     // still running, or the sealed bridge and spent exit confirmation). Only revisions after this
     // view model was made count.
-    RuntimeReopenEffect(viewModel, reopenRevision) {
-        viewModel.reopen()
-        onReopenHandled()
-    }
+    RuntimeReopenEffect(viewModel, reopenRevision, reopen = viewModel::reopen, onHandled = onReopenHandled)
     Box(modifier) {
         RuntimeShellScreen(
             viewModel = viewModel,
@@ -185,12 +183,19 @@ private class RuntimeEntryViewModelStoreOwner : ViewModelStoreOwner {
     override val viewModelStore = ViewModelStore()
 }
 
-/** Calls [onReopen] for each [revision] after the first one seen for [key]. */
+/**
+ * For each [revision] after the first one seen for [key], calls [reopen] and then [onHandled]
+ * (which lets Back leave again).
+ */
 @Composable
-internal fun RuntimeReopenEffect(key: Any, revision: Int, onReopen: () -> Unit) {
+internal fun RuntimeReopenEffect(key: Any, revision: Int, reopen: () -> Unit, onHandled: () -> Unit) {
     val seenRevision = remember(key) { revision }
-    val currentOnReopen by rememberUpdatedState(onReopen)
+    val currentReopen by rememberUpdatedState(reopen)
+    val currentOnHandled by rememberUpdatedState(onHandled)
     LaunchedEffect(key, revision) {
-        if (revision != seenRevision) currentOnReopen()
+        if (revision != seenRevision) {
+            currentReopen()
+            currentOnHandled()
+        }
     }
 }
