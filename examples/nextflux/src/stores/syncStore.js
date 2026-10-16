@@ -12,6 +12,7 @@ import { runPrioritizedArticleSync } from "../toolbox/sync-priority.mjs";
 import { runtimeForeground } from "../toolbox/foreground.js";
 import { nativeTimerEffective } from "../toolbox/background-state.js";
 import { createAutoSyncDeadline } from "../toolbox/auto-sync-deadline.mjs";
+import { backgroundIntervalMs } from "../toolbox/background-policy.mjs";
 
 export const isOnline = atom(navigator.onLine);
 export const isSyncing = atom(false);
@@ -451,11 +452,13 @@ function resetSyncInterval() {
   syncInterval = setTimeout(performSync, Math.max(0, due - Date.now()));
 }
 
-export function claimAutoSync() {
+// The background session syncs on its own timer, which runs every 15 min even when 「同步间隔」
+// is 关 (as its card says), so background claims use that interval instead of skipping.
+export function claimAutoSync({ background = false } = {}) {
   if (!isOnline.get() || !authState.get().userId || isSyncing.get()) return null;
   const minutes = parseInt(settingsState.get().syncInterval, 10);
-  if (!(minutes > 0)) return null;
-  const interval = minutes * 60 * 1000;
+  if (!(minutes > 0) && !background) return null;
+  const interval = background ? backgroundIntervalMs(settingsState.get().syncInterval) : minutes * 60 * 1000;
   const lastSuccess = getLastSyncTime()?.getTime() || 0;
   if (!autoDeadline.claim({ now: Date.now(), intervalMs: interval, lastSuccessAt: lastSuccess, epoch: accountEpoch })) return null;
   return sync("background");

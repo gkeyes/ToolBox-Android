@@ -116,10 +116,21 @@ export function createFeedNotifier({ api, notifications, storage, feedTitle = ()
    * Runs after a committed sync. One failing feed does not stop the others. `foreground` marks a
    * sync the reader ran on screen: it only moves the cursors, even if NextFlux leaves meanwhile.
    */
-  function check({ foreground = false } = {}) {
+  function check({ foreground = false, knownFeedIds = null } = {}) {
     return serial(async () => {
       const state = await load();
       const results = [];
+      // Feeds gone from the committed catalog (deleted on the server) stop being watched.
+      // null means the catalog could not be read; an empty set means no feeds are left.
+      if (knownFeedIds) {
+        for (const key of Object.keys(state.feeds)) {
+          if (knownFeedIds.has(Number(key))) continue;
+          delete state.feeds[key];
+          delete state.opens[feedNotificationId(Number(key))];
+          await notifications?.cancel?.(feedNotificationId(Number(key))).catch(() => {});
+          results.push({ feedId: Number(key), outcome: "removed" });
+        }
+      }
       for (const key of Object.keys(state.feeds)) {
         const feedId = Number(key);
         const watch = state.feeds[key];

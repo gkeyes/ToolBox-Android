@@ -3,7 +3,7 @@ import { feeds } from "../stores/feedsStore.js";
 import { runtimeForeground } from "./foreground.js";
 import { getLatestFeedEntryId, getNewUnreadFeedEntries } from "../api/miniflux.js";
 import { createFeedNotifier } from "./feed-notify.mjs";
-import { getArticleMetadata } from "../db/storage.js";
+import { getArticleMetadata, getFeeds } from "../db/storage.js";
 import i18n from "../i18n/index.js";
 
 // Feed ids with update notifications on, for the sidebar's bell marks and menu labels.
@@ -64,9 +64,14 @@ export async function forgetFeedNotification(feedId) {
 }
 
 /** After a committed background sync. Reads the watch list from storage, so it also works before the sidebar restored it. */
-export function checkWatchedFeeds(options) {
-  if (!toolbox()?.notifications || !toolbox()?.storage) return Promise.resolve([]);
-  return current().check(options);
+export async function checkWatchedFeeds(options = {}) {
+  if (!toolbox()?.notifications || !toolbox()?.storage) return [];
+  // The committed catalog in the cache, not the sidebar store, which a background-only page may not load.
+  const catalog = await getFeeds().catch(() => null);
+  const knownFeedIds = Array.isArray(catalog) ? new Set(catalog.map((feed) => Number(feed.id))) : null;
+  const results = await current().check({ ...options, knownFeedIds });
+  if (results.some((result) => result.outcome === "removed")) watchedFeeds.set(await current().watchedFeedIds());
+  return results;
 }
 
 /** Opens the entry or feed behind a tapped notification. Hosts without onOpen just open NextFlux. */
