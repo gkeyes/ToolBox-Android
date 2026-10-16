@@ -121,7 +121,8 @@ export function createFeedNotifier({ api, notifications, storage, feedTitle = ()
       const state = await load();
       const results = [];
       // Feeds gone from the committed catalog (deleted on the server) stop being watched.
-      if (knownFeedIds?.size) {
+      // null means the catalog could not be read; an empty set means no feeds are left.
+      if (knownFeedIds) {
         for (const key of Object.keys(state.feeds)) {
           if (knownFeedIds.has(Number(key))) continue;
           delete state.feeds[key];

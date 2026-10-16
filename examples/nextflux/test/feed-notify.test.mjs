@@ -294,7 +294,9 @@ test("a feed missing from the committed catalog stops being watched", async () =
   assert.deepEqual(results.find((result) => result.feedId === 13), { feedId: 13, outcome: "removed" });
   assert.deepEqual(await notifier.watchedFeedIds(), [12]);
   assert.deepEqual(cancelled, [feedNotificationId(13)]);
-  // An empty catalog (not loaded yet) prunes nothing.
-  await notifier.check({ knownFeedIds: new Set() });
+  // An unreadable catalog prunes nothing; an empty one means every feed is gone.
+  await notifier.check({ knownFeedIds: null });
   assert.deepEqual(await notifier.watchedFeedIds(), [12]);
+  await notifier.check({ knownFeedIds: new Set() });
+  assert.deepEqual(await notifier.watchedFeedIds(), []);
 });
