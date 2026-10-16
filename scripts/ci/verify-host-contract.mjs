@@ -222,6 +222,17 @@ await timeSliceHarness.runNextTimer();
 assert(timeSliceReplay.length > 0 && timeSliceReplay.length < 20,
   'Replay must yield when its 2 ms inspection budget is reached');
 
+// A notification tap delivered before the page subscribed is replayed to notifications.onOpen.
+const openHarness = runtimeHarness();
+await openHarness.settle();
+openHarness.emit({ type: 'event', event: 'notifications.open', generation: 'generation', sequence: 1,
+  data: { id: 'feed-12', openedAt: 5 } });
+const openedTaps = [];
+openHarness.page.ToolBox.notifications.onOpen(value => openedTaps.push(value));
+await openHarness.settle();
+await openHarness.runNextTimer();
+assert.deepEqual(JSON.parse(JSON.stringify(openedTaps)), [{ id: 'feed-12', openedAt: 5 }], 'notifications.onOpen must receive taps made before it subscribed');
+
 const overflowHarness = runtimeHarness();
 await overflowHarness.settle();
 for (let sequence = 1; sequence <= 2000 && !overflowHarness.errors.length; sequence++) {

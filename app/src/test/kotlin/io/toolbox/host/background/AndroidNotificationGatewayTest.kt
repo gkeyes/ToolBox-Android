@@ -3,6 +3,7 @@ package io.toolbox.host.background
 import android.app.Application
 import io.toolbox.host.ToolLaunchActivity
 import io.toolbox.host.resolveLaunchToolId
+import io.toolbox.host.runtime.ToolNotificationOpens
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Test
@@ -21,6 +22,31 @@ class AndroidNotificationGatewayTest {
 
         assertEquals(ToolLaunchActivity::class.java.name, intent.component?.className)
         assertEquals("demo.tool", resolveLaunchToolId(app, ToolLaunchActivity.forwardIntent(app, intent)))
+    }
+
+    @Test
+    fun tappingTheNotificationQueuesItsIdForTheTool() {
+        ToolNotificationOpens.resetForTest()
+        val intent = shadowOf(toolNotificationContentIntent(app, "demo.tool", "feed-12")).savedIntent
+
+        ToolLaunchActivity.forwardIntent(app, intent)
+
+        val delivered = mutableListOf<String>()
+        ToolNotificationOpens.deliver("demo.tool") { delivered += it.notificationId; true }
+        assertEquals(listOf("feed-12"), delivered)
+    }
+
+    @Test
+    fun recentsRelaunchDoesNotReplayTheTap() {
+        ToolNotificationOpens.resetForTest()
+        val intent = shadowOf(toolNotificationContentIntent(app, "demo.tool", "feed-12")).savedIntent
+            .addFlags(android.content.Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY)
+
+        ToolLaunchActivity.forwardIntent(app, intent)
+
+        val delivered = mutableListOf<String>()
+        ToolNotificationOpens.deliver("demo.tool") { delivered += it.notificationId; true }
+        assertEquals(emptyList<String>(), delivered)
     }
 
     @Test

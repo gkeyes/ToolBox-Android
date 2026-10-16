@@ -368,6 +368,7 @@
       post: (id, title, body) => call('notifications.post', { id, title, body }),
       update: (id, title, body) => call('notifications.update', { id, title, body }),
       cancel: id => call('notifications.cancel', { id }),
+      onOpen: listener => subscribe('notifications.open', listener),
       live: {
         start: request => call('notifications.live.start', request),
         update: request => call('notifications.live.update', request),
