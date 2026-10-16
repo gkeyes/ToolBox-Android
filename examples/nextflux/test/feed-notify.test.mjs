@@ -6,7 +6,7 @@ import {
 
 // A stand-in for the Miniflux server and the ToolBox host. The server holds entries; the host
 // stores tool data, records posted notifications and turns a tap into a notifications.open event.
-function world({ notificationsGranted: granted = true, uncached = new Set() } = {}) {
+function world({ notificationsGranted: granted = true, uncached = new Set(), cachedRead = new Set(), knownTitles = true } = {}) {
   let notificationsGranted = granted;
   const entries = [];
   const failingFeeds = new Set();
@@ -18,7 +18,7 @@ function world({ notificationsGranted: granted = true, uncached = new Set() } = 
   let systemAllowed = true;
   const denied = () => Object.assign(new Error("denied"), { code: "PERMISSION_DENIED" });
   const server = {
-    add(feedId, id, title, status = "unread") { entries.push({ id, feed_id: feedId, title, status }); },
+    add(feedId, id, title, status = "unread") { entries.push({ id, feed_id: feedId, feed: { title: `源 ${feedId}` }, title, status }); },
     read(id) { entries.find((entry) => entry.id === id).status = "read"; },
     fail(feedId) { failingFeeds.add(feedId); },
   };
@@ -61,8 +61,8 @@ function world({ notificationsGranted: granted = true, uncached = new Set() } = 
   const titles = { 12: "少数派", 13: "Hacker News" };
   const notifier = createFeedNotifier({
     api, notifications: toolbox.notifications, storage: toolbox.storage,
-    feedTitle: (feedId) => titles[feedId], isForeground: () => foreground,
-    isCached: async (id) => !uncached.has(id),
+    feedTitle: (feedId) => (knownTitles ? titles[feedId] : ""), isForeground: () => foreground,
+    isCached: async (id) => (cachedRead.has(id) ? "read" : !uncached.has(id)),
   });
   return { server, toolbox, host, notifier, posted, data, cancelled };
 }
@@ -332,6 +332,43 @@ test("entries that never reach the cache are dropped after a few syncs and never
   assert.match(posted.at(-1).body, /^更新$/);
   uncached.clear();
   assert.deepEqual(await notifier.check({ syncId: "e" }), [{ feedId: 12, outcome: "none" }]);
+});
+
+test("a pending entry read in another client before it is cached does not notify", async () => {
+  const uncached = new Set([600]);
+  const cachedRead = new Set();
+  const { server, notifier, posted } = world({ uncached, cachedRead });
+  await notifier.setWatched(12, true);
+  server.add(12, 600, "别处已读");
+  server.add(12, 601, "新");
+  await notifier.check({ syncId: "a" });
+  const before = posted.length;
+  uncached.clear();
+  cachedRead.add(600);
+  assert.deepEqual(await notifier.check({ syncId: "b" }), [{ feedId: 12, outcome: "none" }]);
+  assert.equal(posted.length, before);
+});
+
+test("a notice made only of pending entries keeps the feed name from the server", async () => {
+  const uncached = new Set([700]);
+  const { server, notifier, posted } = world({ uncached, knownTitles: false });
+  await notifier.setWatched(12, true);
+  server.add(12, 700, "后到");
+  assert.deepEqual(await notifier.check({ syncId: "a" }), [{ feedId: 12, outcome: "none" }]);
+  uncached.clear();
+  await notifier.check({ syncId: "b" });
+  assert.equal(posted.at(-1).title, "源 12");
+});
+
+test("entries beyond the first page still count when that page was all uncached", async () => {
+  const uncached = new Set();
+  const { server, notifier, posted } = world({ uncached });
+  await notifier.setWatched(12, true);
+  for (let id = 801; id <= 825; id += 1) { server.add(12, id, `第${id}`); if (id > 805) uncached.add(id); }
+  assert.deepEqual(await notifier.check({ syncId: "a" }), [{ feedId: 12, outcome: "none" }]);
+  uncached.clear();
+  assert.deepEqual(await notifier.check({ syncId: "b" }), [{ feedId: 12, outcome: "notified", count: 25 }]);
+  assert.match(posted.at(-1).body, /^25 /);
 });
 
 test("a foreground sync suppresses cached entries above an uncached gap", async () => {

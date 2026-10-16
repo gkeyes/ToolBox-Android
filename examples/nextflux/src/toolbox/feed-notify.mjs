@@ -146,26 +146,34 @@ export function createFeedNotifier({ api, notifications, storage, feedTitle = ()
           // The cursor still moves past every new entry; uncached ones wait in `pending` and
           // announce once a later sync caches them. A pending entry still uncached after two more
           // distinct syncs is dropped, so one that never reaches the cache can't hold the feed.
-          const cached = await Promise.all(newer.map((entry) => isCached(entry.id).catch(() => false)));
+          const cached = await Promise.all(newer.map((entry) => isCached(entry.id).then((as) => as === true, () => false)));
           const missingNew = newer.filter((_, index) => !cached[index]).map((entry) => entry.id);
           const newSync = syncId == null || syncId !== watch.syncId;
           const pendingNow = [];
           const pendingFresh = [];
           for (const item of Array.isArray(watch.pending) ? watch.pending : []) {
             if (!Number.isSafeInteger(item?.id)) continue;
-            if (await isCached(item.id).catch(() => false)) { pendingFresh.push({ id: item.id, title: item.title }); continue; }
+            const cachedAs = await isCached(item.id).catch(() => false);
+            // Read elsewhere before a sync cached it: nothing new to announce.
+            if (cachedAs === "read") continue;
+            if (cachedAs) { pendingFresh.push({ id: item.id, title: item.title, feed: item.feed }); continue; }
             const tries = (Number(item.tries) || 0) + (newSync ? 1 : 0);
             if (tries < 3) pendingNow.push({ ...item, tries });
           }
           const pending = [
             ...pendingNow,
-            ...newer.filter((entry) => missingNew.includes(entry.id)).map((entry) => ({ id: entry.id, title: entry.title, tries: 0 })),
+            ...newer.filter((entry) => missingNew.includes(entry.id)).map((entry) => ({ id: entry.id, title: entry.title, ...(entry.feed?.title ? { feed: { title: entry.feed.title } } : {}), tries: 0 })),
           ];
           const fresh = [...newer.filter((_, index) => cached[index]), ...pendingFresh].sort((a, b) => b.id - a.id);
-          const total = Math.max(fresh.length, (Number(reported) || 0) - missingNew.length + pendingFresh.length);
+          // New entries beyond the 20 the server returned are only counted; a sync that announces
+          // nothing carries that count forward so the next notice still includes them.
+          const unlisted = Math.max(0, (Number(reported) || 0) - newer.length);
+          const backlog = Number(watch.backlog) || 0;
+          const total = Math.max(fresh.length, fresh.length + unlisted + backlog);
           const next = {
             lastEntryId: newer.reduce((max, entry) => Math.max(max, entry.id), watch.lastEntryId),
             ...(pending.length ? { pending } : {}),
+            ...(!fresh.length && unlisted + backlog ? { backlog: unlisted + backlog } : {}),
             ...(syncId != null ? { syncId } : {}),
           };
           if (!fresh.length) {
