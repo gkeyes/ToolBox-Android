@@ -4,7 +4,7 @@
   // Ledger money is integer cents. DOM content originating from users is escaped.
   const KEY = 'ledger.v1';
   const runtime = window.ZZRuntime;
-  const VERSION = '1.12.1';
+  const VERSION = '1.12.2';
   const MAX_CENTS = 100000000000;
   const $ = s => document.querySelector(s);
   const $$ = s => [...document.querySelectorAll(s)];
@@ -162,6 +162,10 @@
   const partsOf=i=>Array.isArray(i?.parts)&&i.parts.length>1?i.parts:null;
   const bundleRoom=parts=>{const r=[...new Set(parts.map(p=>p.room))];return r.length===1?r[0]:MULTI;};
   const pieceText=p=>`${p.name} · ${p.room}`;
+  // A new floor plan: renamed bathrooms carry their records, and 完成's move puts each record and piece in its new room.
+  function applyHome(next,home,renames=[],move=null){next.project.home=home;const to=new Map(renames);
+    const fix=o=>{const m=move&&move(o.room,o.model);if(m){o.room=m.room;if(m.model)o.model=m.model;}else if(to.has(o.room))o.room=to.get(o.room);};
+    if(to.size||move)for(const i of next.items){if(partsOf(i)){i.parts.forEach(fix);i.room=bundleRoom(i.parts);}else fix(i);}}
   // A piece with its own amount keeps it; what is left of ref splits evenly over the pieces without one.
   function weightsOf(parts,ref){
     const known=parts.reduce((s,p)=>s+(p.amount??0),0),open=parts.filter(p=>p.amount==null).length,rest=Math.max(0,ref-known);
@@ -193,7 +197,13 @@
     const ts=all.filter(([p])=>!aimed.includes(p)).sort(([a,x],[b,y])=>a.date.localeCompare(b.date)||(a.kind==='refund')-(b.kind==='refund')||x-y).map(([p])=>p);
     // 1.11.4: a stored refund dated before the money it returns (restore refuses that; an older ledger may have it)
     // comes off as the later payments arrive, as if dated on their day, so the pieces still add up to the net paid.
-    const owed=[],take=(id,d)=>{net-=d;const step=stepSplit(prev,net,d,true,w),was=rows.get(id);rows.set(id,was?was.map((v,k)=>v+step[k]):step);prev=prev.map((v,k)=>v-step[k]);};
+    // 1.12.2: what the aimed refunds will take off their piece is held back, so a whole refund comes off the rest first
+    // and never leaves an aimed refund short (which spilled small amounts into other rooms).
+    const hold=i.parts.map(q=>aimed.reduce((s,p)=>s+(p.part===q.id?p.amount:0),0));
+    const owed=[],take=(id,d)=>{const av=prev.map((v,k)=>Math.max(0,v-hold[k])),A=av.reduce((a,b)=>a+b,0),a=Math.min(d,A);
+      const step=a>0?stepSplit(av,A-a,a,true,w):prev.map(()=>0);
+      if(d>a){const more=stepSplit(prev.map((v,k)=>v-step[k]),net-d,d-a,true,w);more.forEach((v,k)=>{step[k]+=v;});}
+      net-=d;const was=rows.get(id);rows.set(id,was?was.map((v,k)=>v+step[k]):step);prev=prev.map((v,k)=>v-step[k]);};
     for(const p of ts){
       if(p.kind==='refund'){const d=Math.min(p.amount,net);take(p.id,d);if(p.amount>d)owed.push([p.id,p.amount-d]);continue;}
       net+=p.amount;const step=stepSplit(prev,net,p.amount,false,w);rows.set(p.id,step);prev=prev.map((v,k)=>v+step[k]);
@@ -377,14 +387,16 @@
   // A bundle's payment: under a room filter, that room's share and the other pieces; otherwise every piece.
   function payRow(t,room){
     const i=data.items.find(x=>x.id===t.itemId);if(!i)return '';const ps=partsOf(i);if(!ps)return rowActivity(t);
-    const refund=t.kind==='refund',sign=refund?'+':'−',aim=refund&&t.part?ps.find(p=>p.id===t.part):null,here=aim?[aim]:room?ps.filter(p=>p.room===room):[],rest=aim?[]:room?ps.filter(p=>p.room!==room):ps;
-    return `<button class="activity-row pay-bundle" data-action="transaction" data-id="${esc(t.id)}"><span class="row-icon">${icon(cat(i.category).icon)}</span><span class="activity-info"><span class="activity-title">${esc(i.name)} <span class="bundle-tag">打包 ${ps.length} 件</span></span><span class="activity-meta">${dateText(t.date)} · ${esc(cat(i.category).name)} · ${esc(i.room)}</span>${room?`<span class="bundle-share"><span>${aim?'退的是：':esc(room)+'的份：'}${esc(here.map(pieceText).join('，'))}</span><b class="num ${refund?'positive':''}">${sign}${money(payRoom(i,room,t))}</b></span><span class="bundle-rest">这笔共 ${money(t.amount)}${rest.length?' · 其余：'+esc(rest.map(pieceText).join('，')):''}</span>`:`<span class="bundle-rest">${aim?'退的是：'+esc(pieceText(aim)):esc(ps.map(pieceText).join('，'))}</span>`}</span>${room?'':`<span class="activity-amount num ${refund?'positive':''}">${sign}${money(t.amount)}<small>${refund?'已退款':'已付款'}</small></span>`}</button>`;
+    const refund=t.kind==='refund',sign=refund?'+':'−',aim=refund&&t.part?ps.find(p=>p.id===t.part):null,hit=aim?(r=>ps.filter((p,k)=>p===aim||r[k]>0))(payShares(i).rows.get(t.id)||[]):null,here=aim?(room?hit.filter(p=>p.room===room):hit):room?ps.filter(p=>p.room===room):[],rest=aim?[]:room?ps.filter(p=>p.room!==room):ps;
+    return `<button class="activity-row pay-bundle" data-action="transaction" data-id="${esc(t.id)}"><span class="row-icon">${icon(cat(i.category).icon)}</span><span class="activity-info"><span class="activity-title">${esc(i.name)} <span class="bundle-tag">打包 ${ps.length} 件</span></span><span class="activity-meta">${dateText(t.date)} · ${esc(cat(i.category).name)} · ${esc(i.room)}</span>${room?`<span class="bundle-share"><span>${aim?'退的是：':esc(room)+'的份：'}${esc(here.map(pieceText).join('，'))}</span><b class="num ${refund?'positive':''}">${sign}${money(payRoom(i,room,t))}</b></span><span class="bundle-rest">这笔共 ${money(t.amount)}${rest.length?' · 其余：'+esc(rest.map(pieceText).join('，')):''}</span>`:`<span class="bundle-rest">${aim?'退的是：'+esc(hit.map(pieceText).join('，')):esc(ps.map(pieceText).join('，'))}</span>`}</span>${room?'':`<span class="activity-amount num ${refund?'positive':''}">${sign}${money(t.amount)}<small>${refund?'已退款':'已付款'}</small></span>`}</button>`;
   }
   function renderLedger(){
     if(!['payments','due'].includes(ui.ledgerTab))ui.ledgerTab='payments';
     const items=filteredItems(),room=ui.room==='all'?null:ui.room,t=totals(data,items,room);let content='',count=0;
     if(ui.ledgerTab==='payments'){
-      const ids=new Set(items.map(i=>i.id)),aimedAway=p=>{if(!room||!p.part)return false;const it=data.items.find(x=>x.id===p.itemId),q=partsOf(it)?.find(x=>x.id===p.part);return !!q&&q.room!==room;},ts=data.payments.filter(p=>ids.has(p.itemId)&&!aimedAway(p)).sort((a,b)=>b.date.localeCompare(a.date)),months=[...new Set(ts.map(p=>p.date.slice(0,7)))];count=ts.length;
+      // 1.12.2: under a room filter a bundle's row shows only where it moved money in that room (an aimed refund, or a
+      // whole refund that came off the other pieces), so the strip and the rows always agree.
+      const ids=new Set(items.map(i=>i.id)),aimedAway=p=>{if(!room)return false;const it=data.items.find(x=>x.id===p.itemId);if(!partsOf(it))return false;const r=payShares(it).rows.get(p.id);return !!r&&!it.parts.some((q,k)=>q.room===room&&r[k]!==0);},ts=data.payments.filter(p=>ids.has(p.itemId)&&!aimedAway(p)).sort((a,b)=>b.date.localeCompare(a.date)),months=[...new Set(ts.map(p=>p.date.slice(0,7)))];count=ts.length;
       const amt=p=>{const it=data.items.find(x=>x.id===p.itemId),v=room&&partsOf(it)?payRoom(it,room,p):p.amount;return p.kind==='refund'?-v:v;};
       content=months.map(m=>`<section class="card list-card" style="margin-bottom:17px"><div class="month-heading">${m.replace('-','年')}月 <span class="muted caption">净支出 ${(n=>(n<0?'−':'')+money(Math.abs(n)))(ts.filter(p=>p.date.startsWith(m)).reduce((v,p)=>v+amt(p),0))}</span></div>${ts.filter(p=>p.date.startsWith(m)).map(p=>payRow(p,room)).join('')}</section>`).join('');
     }
@@ -413,7 +425,7 @@
   function render(){
     document.title='筑账 · '+NAV.find(n=>n[0]===ui.page)[3];
     paintNav();$('#crumb-page').textContent=NAV.find(n=>n[0]===ui.page)[3];
-    $$('.project-name').forEach(el=>el.textContent=data.project.name);$$('.project-meta').forEach(el=>el.textContent=[data.project.area?data.project.area+'㎡':'',data.project.layout].filter(Boolean).join(' · ')||'项目与预算');
+    $$('.project-name').forEach(el=>el.textContent=data.project.name);$$('.project-meta').forEach(el=>{const bits=[data.project.area?data.project.area+'㎡':'',data.project.layout].filter(Boolean);el.replaceChildren(...(bits.length?bits:['项目与预算']).map(t=>Object.assign(document.createElement('span'),{textContent:t})));});
     $('#main').innerHTML=`<div class="page-content">${({overview:renderOverview,budget:renderBudget,ledger:renderLedger,statistics:renderStatistics,home:renderHome}[ui.page])()}</div>`;
     $('#fab').classList.add('hidden');document.body.dataset.page=ui.page;updateChrome();updateDraftBanner();
     const warning=restoreError||bootError;$('#storage-warning').textContent=warning;$('#storage-warning').classList.toggle('hidden',!warning);
@@ -469,9 +481,7 @@
     setRoom:(id,room,model)=>homeWrite(next=>{const at=pieceIn(next,id);if(!at)return false;const o=at.p||at.i;o.room=room;o.model=model;if(at.p)at.i.room=bundleRoom(at.i.parts);}),
     // renames: [[old,new]] room names from 拼户型 (a bathroom moved to another room), applied to the records in the same write.
     // move(room,model): 1.11.1, a record of an old 客餐厅 goes to the part its look stands in, at the same spot ({room,model}, or null).
-    saveHome:(home,renames=[],move=null)=>homeWrite(next=>{next.project.home=home;const to=new Map(renames);
-      const fix=o=>{const m=move&&move(o.room,o.model);if(m){o.room=m.room;if(m.model)o.model=m.model;}else if(to.has(o.room))o.room=to.get(o.room);};
-      if(to.size||move)for(const i of next.items){if(partsOf(i)){i.parts.forEach(fix);i.room=bundleRoom(i.parts);}else fix(i);}}),
+    saveHome:(home,renames=[],move=null)=>homeWrite(next=>applyHome(next,home,renames,move)),
     saveUi:value=>{homeState.ui=value;if(storageOK)runtime.set('home.ui.v1',value).catch(()=>{});}
   });
   // Probe WebGL before importing three.js: without it the tab shows the static plan, with no error from the renderer.
@@ -706,7 +716,7 @@
     const cash=pieceCash(i),pick=ps.find(p=>p.id===field.value),amt=parseFloat(String($('#payment-amount').value).replace(/,/g,''));
     const opt=(v,name,sub,right,on)=>`<button type="button" class="rp-opt${on?' active':''}" data-action="refund-part" data-part="${esc(v)}" role="radio" aria-checked="${on}"><span class="rp-dot" aria-hidden="true"></span><span class="rp-text"><b>${name}</b><small>${sub}</small></span><span class="rp-paid num">${right}</span></button>`;
     const others=pick?[...new Set(ps.filter(p=>p.room!==pick.room).map(p=>p.room))]:[];
-    box.innerHTML=`<div class="rp-head"><span>退的是哪一件</span><small>只在打包的帐出现</small></div><div class="rp-list" role="radiogroup" aria-label="退的是哪一件">${ps.map((p,k)=>opt(p.id,esc(p.name),esc(p.room),`付了 ${money(cash[k])}`,p===pick)).join('')}${opt('','整笔一起退','不指定，按各件的份分','',!pick)}</div>${pick?`<p class="rp-note">这笔退款只算到「${esc(pieceText(pick))}」：清单按${esc(pick.room)}看是 <b class="num">+${amt>0?money(Math.round(amt*100)):'¥0'}</b>${others.length?`，${esc(others.join('和'))}不变`:''}。</p>`:''}`;
+    box.innerHTML=`<div class="rp-head"><span>退的是哪一件</span><small>只在打包的帐出现</small></div><div class="rp-list" role="radiogroup" aria-label="退的是哪一件">${ps.map((p,k)=>opt(p.id,esc(p.name),esc(p.room),`付了 ${money(cash[k])}`,p===pick)).join('')}${opt('','整笔一起退','不指定，按各件的份分','',!pick)}</div>${pick&&amt*100>cash[ps.indexOf(pick)]?`<p class="rp-note rp-over">「${esc(pieceText(pick))}」付了 ${money(cash[ps.indexOf(pick)])}，退款不能超过这个数。</p>`:pick?`<p class="rp-note">这笔退款只算到「${esc(pieceText(pick))}」：清单按${esc(pick.room)}看是 <b class="num">+${amt>0?money(Math.round(amt*100)):'¥0'}</b>${others.length?`，${esc(others.join('和'))}不变`:''}。</p>`:''}`;
   }
   function paymentInfo(i){
     if(!i)return '<p class="form-hint">选择项目后，支出将自动关联该项目。</p>';
@@ -1124,11 +1134,13 @@
     catch(error){if(error instanceof SyntaxError||error instanceof TypeError)throw new Error('文件不是有效的筑账备份，未更改当前数据。');throw error;}
     // 1.11.5: a backup with a refund dated before its payment comes in like the stored ledger it was saved from (the refund
     // comes off as the later payments arrive); the dialog only says so. The forms still refuse to make one.
-    const early=parsed.items.filter(i=>{try{assertCashTimeline(parsed,i.id);return false;}catch(_){return true;}}).length;
     if(parsed.payments.some(p=>p.date>nowDate()))throw new Error('备份中存在晚于今天的收支记录，未更改当前数据。');
     pendingImport=parsed;
-    const t=totals(pendingImport);
-    dialog('确认恢复备份',`<p class="dialog-sub">结构校验已通过。恢复会替换当前账本，而不是叠加导入；请确认现有数据已备份。</p>${early?`<p class="form-hint">有 ${early} 个项目的退款日期早于付款，会从之后的付款里扣，合计不受影响。</p>`:''}<div class="detail-hero"><h3>${esc(pendingImport.project.name)}</h3><div class="value num">${money(t.expected)}</div><div class="caption muted">${pendingImport.items.length} 个费用项 · ${pendingImport.payments.length} 条流水${t.unknown?' · '+t.unknown+' 项待估价':''}</div></div><div class="dialog-actions"><button class="button outline" data-action="close-dialog">取消</button><button class="button primary" data-action="import-confirm">恢复并替换</button></div>`);
+    dialog('确认恢复备份',importBody(parsed));
+  }
+  function importBody(parsed){
+    const early=parsed.items.filter(i=>{try{assertCashTimeline(parsed,i.id);return false;}catch(_){return true;}}).length,t=totals(parsed);
+    return `<p class="dialog-sub">结构校验已通过。恢复会替换当前账本，而不是叠加导入；请确认现有数据已备份。</p>${early?`<p class="form-hint">有 ${early} 个项目的退款日期早于付款，会从之后的付款里扣，合计不受影响。</p>`:''}<div class="detail-hero"><h3>${esc(parsed.project.name)}</h3><div class="value num">${money(t.expected)}</div><div class="caption muted">${parsed.items.length} 个费用项 · ${parsed.payments.length} 条流水${t.unknown?' · '+t.unknown+' 项待估价':''}</div></div><div class="dialog-actions"><button class="button outline" data-action="close-dialog">取消</button><button class="button primary" data-action="import-confirm">恢复并替换</button></div>`;
   }
   async function exportPayments(){if(restoreError)throw new Error('账本未能读取，请使用「导出原始数据」。');
     const cell=v=>{let s=String(v??'');if(/^[=+\-@\t\r]/.test(s))s="'"+s;return '"'+s.replaceAll('"','""')+'"';};
@@ -1165,6 +1177,6 @@
   }
 
   // validate() is exposed for the unit tests; the 3D module talks to the ledger only through homeApi.
-  window.ZZApp=Object.freeze({validate,payShares,assertCashTimeline,lookOnSave,lookRow,version:VERSION});
+  window.ZZApp=Object.freeze({validate,payShares,assertCashTimeline,applyHome,importBody,lookOnSave,lookRow,version:VERSION});
   boot();
 })();
