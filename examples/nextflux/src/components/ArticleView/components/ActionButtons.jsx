@@ -34,7 +34,7 @@ import {
   loadingOriginContent,
 } from "@/stores/articlesStore";
 import Confetti from "@/components/ui/Confetti";
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import minifluxAPI from "@/api/miniflux";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
@@ -50,7 +50,11 @@ import {
 } from "@/stores/aiStore.js";
 import { summarizeArticleStream } from "@/api/openai.js";
 
-export default function ActionButtons() {
+// Memoised: the bar takes no props, and ArticleView re-renders several times
+// while an article opens (load state, reading readiness), which re-rendered
+// all fourteen toolbar buttons and their tooltips each time.
+export default memo(ActionButtons);
+function ActionButtons() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const $articles = useStore(filteredArticles);

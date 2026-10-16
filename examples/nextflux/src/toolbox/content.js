@@ -1,5 +1,6 @@
 import { imageDimension } from "./imageDimensions.js";
 import { dwImageSources } from "../reading/adapters/dw-images.mjs";
+import { namesIcon } from "../reading/inlineImage.mjs";
 
 import { ALLOWED_TAGS, DROP_CONTENT } from "../reading/schema.mjs";
 import { SERVER_BASE } from "./server.mjs";
@@ -115,6 +116,7 @@ export function cleanAttributes(tag, attributes, baseUrl, pictureSources) {
     if ((name === "id" && tag !== "img") || (name === "name" && tag === "a")) {
       if (value) clean["data-article-anchor"] = value;
     }
+    if (name === "class" && tag === "img" && namesIcon(value)) clean["data-image-icon"] = "true";
     if (name === "class" && tag === "code") {
       const language = String(value).match(/(?:^|\s)(?:language-|lang-)[a-zA-Z0-9_+-]+(?=\s|$)/)?.[0]?.trim();
       if (language) clean.class = language;

@@ -8,6 +8,7 @@ import { approvedImageSource, useSafeImage } from "@/toolbox/media.js";
 import { useStore } from "@nanostores/react";
 import { imageGalleryActive } from "@/stores/articlesStore.js";
 import { imageDimensions, imageSize } from "@/toolbox/imageDimensions.js";
+import { imageIsInline } from "@/reading/inlineImage.mjs";
 
 function ArticleImage({ imgNode, type = "article", inline: inlineHint = false }) {
   const attributes = imgNode?.attribs && typeof imgNode.attribs === "object" ? imgNode.attribs : {};
@@ -28,8 +29,9 @@ function ArticleImage({ imgNode, type = "article", inline: inlineHint = false })
   // An image of unknown size holds a 16:9 box until it loads, instead of a
   // 48px strip that pushed the paragraphs below it down by hundreds of px.
   // Not for an image inside running text (icons, emoji, badges): its box
-  // collapsed to the icon and pulled the text below up by ~180px.
-  const inline = inlineHint || imgNode?.parent?.children?.some?.((node) => node.type === "text" && node.data?.trim());
+  // collapsed to the icon and pulled the text below up by ~180px. See
+  // reading/inlineImage.mjs for what counts as running text.
+  const inline = inlineHint || imageIsInline(imgNode, attributes);
   const reserve = !measured && type === "article" && !inline;
   const imageStyle = measured ? { width: measured.width, aspectRatio: `${measured.width} / ${measured.height}` } : reserve ? { aspectRatio: "16 / 9" } : undefined;
   return (
