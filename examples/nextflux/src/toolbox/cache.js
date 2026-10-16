@@ -1,6 +1,6 @@
 import { currentArticleMetadata, deriveArticleMetadata } from "./cache-metadata.js";
 import { decodeCacheValue, loadLegacyCache, LEGACY_PREFIX, LEGACY_MANIFEST_KEY } from "./cache-legacy.js";
-import { dedupeArticles, duplicateIds } from "./dedupe.mjs";
+import { duplicateIds } from "./dedupe.mjs";
 
 // The production caller runs this engine in cache-worker.js. No DOM, body
 // archive, compression or query index crosses back to the window.
@@ -395,6 +395,8 @@ export function createArticleCache(storage, options = {}) {
       for (const [id, row] of articleChanges) {
         if (row) maps.articles.set(id, row); else maps.articles.delete(id);
       }
+      // The map changed in place: duplicate indexes built on it are stale.
+      hiddenIndexes.delete(maps.articles);
     }
     for (const ref of stage.refs) if (!refs.has(ref)) retired.add(ref);
     snapshot = { root, maps, nodes, refs };
@@ -882,6 +884,7 @@ export function createArticleCache(storage, options = {}) {
     if (articleChanges) for (const [id, row] of articleChanges) {
       if (row) maps.articles.set(id, row); else maps.articles.delete(id);
     }
+    if (articleChanges) hiddenIndexes.delete(maps.articles);
     return { root: { ...base.root, tables }, maps, nodes: base.nodes, refs: base.refs };
   }
 
@@ -1079,10 +1082,11 @@ export function createArticleCache(storage, options = {}) {
       // Hidden duplicates leave the ID sequence, so pages, the total and
       // prev/next all follow the shown list. Rows stay untouched in the cache.
       // Unread and 全部 hide the same copies as the counts (a copy of a story
-      // already read stays hidden); 收藏 compares starred entries only.
-      const hidden = query.hideDuplicates === true && query.filter !== "starred" ? hiddenCopies(current, { field, direction, feedIds: query.duplicateFeedIds }) : null;
-      const shown = hidden ? rows.filter((row) => !hidden.has(row.id))
-        : dedupeArticles(rows, { enabled: query.hideDuplicates === true });
+      // already read stays hidden); 收藏 compares starred entries only, across
+      // the same visible feeds as the 收藏 count.
+      const hidden = query.hideDuplicates === true
+        ? hiddenCopies(current, { field, direction, feedIds: query.duplicateFeedIds }, query.filter === "starred") : null;
+      const shown = hidden ? rows.filter((row) => !hidden.has(row.id)) : rows;
       const pageSize = query.pageSize ?? 30;
       if (!Number.isSafeInteger(pageSize) || pageSize < 1) throw invalid();
       const queryId = `${epoch}.${++serial}`;
