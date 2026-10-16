@@ -27,7 +27,10 @@ export function createRollbackJournal({ storage, account }) {
       await queue;
       return Object.entries(await read())
         .filter(([key, entry]) => key.startsWith(prefix) && entry && typeof entry.candidate === "string")
-        .map(([, entry]) => ({ feedId: Number(entry.feedId), candidate: entry.candidate, baselineRule: String(entry.baselineRule || "") }));
+        .map(([, entry]) => ({
+          feedId: Number(entry.feedId), candidate: entry.candidate, baselineRule: String(entry.baselineRule || ""),
+          ...(entry.failure === "server" || entry.failure === "network" ? { failure: entry.failure } : {}),
+        }));
     },
   };
 }

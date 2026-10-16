@@ -27,7 +27,7 @@ export default function FullTextAdaptButton() {
   const article = useStore(activeArticle);
   const allFeeds = useStore(feeds);
   const settings = useStore(settingsState);
-  const [open,setOpen]=useState(false), [phase,setPhase]=useState("idle"), [error,setError]=useState("");
+  const [open,setOpen]=useState(false), [phase,setPhase]=useState("idle"), [error,setError]=useState(""), [refused,setRefused]=useState(false);
   const [baseline,setBaseline]=useState(null), [candidate,setCandidate]=useState(null), [tested,setTested]=useState(null);
   const [aiReasoning,setAiReasoning]=useState(""), [aiOutput,setAiOutput]=useState("");
   const controller=useRef(null);
@@ -67,7 +67,7 @@ export default function FullTextAdaptButton() {
   };
 
   async function start(previousTest=null){
-    setOpen(true); setError(""); setTested(null); setCandidate(null); resetStream(); setPhase("loading");
+    setOpen(true); setError(""); setRefused(false); setTested(null); setCandidate(null); resetStream(); setPhase("loading");
     controller.current?.abort();
     const run=new AbortController(); controller.current=run;
     // A cancelled (closed) run must never touch a later run's state.
@@ -93,8 +93,19 @@ export default function FullTextAdaptButton() {
     }catch(e){
       if(run.signal.aborted) return;
       flushStream();
-      if(e?.code!=="CANCELLED"){setError(e.message||"全文适配未完成。");setPhase("error");}
+      if(e?.code!=="CANCELLED"){
+        setRefused(e?.code==="ROLLBACK_PENDING"&&e.failure==="server");
+        setError(e.message||"全文适配未完成。");setPhase("error");
+      }
     }
+  }
+
+  // Miniflux keeps refusing the rollback: keep the rule it has now and drop
+  // the owed rollback, so this feed can be adapted again.
+  async function keepCurrentRule(){
+    try{ await rollbackJournal(authState.get())?.clear(feedId); }
+    catch{ setError("没能放弃这次恢复，请重试。"); return; }
+    start();
   }
 
   async function test(){
@@ -119,7 +130,8 @@ export default function FullTextAdaptButton() {
   const footer=phase==="done"
     ? <Button fullWidth onPress={close}>完成</Button>
     : <><Button variant="tertiary" fullWidth onPress={close} isDisabled={locked}>取消</Button>
-      {phase==="error"&&<Button fullWidth onPress={()=>start()}>重新生成</Button>}
+      {phase==="error"&&refused&&<Button fullWidth onPress={keepCurrentRule}>保留现有规则</Button>}
+      {phase==="error"&&!refused&&<Button fullWidth onPress={()=>start()}>重新生成</Button>}
       {phase==="candidate"&&<Button fullWidth onPress={test}>测试全文抓取</Button>}
       {phase==="tested"&&<Button fullWidth onPress={apply}>应用此规则</Button>}</>;
 
