@@ -192,6 +192,8 @@ test("text and route helpers", () => {
   assert.deepEqual(feedNotificationText("A", [{ title: "x" }, { title: "y" }]), { title: "A", body: "2 篇新文章：x；y" });
   assert.equal(routeForOpen({ feedId: 3, entryIds: [9] }), "/feed/3/article/9");
   assert.equal(routeForOpen({ feedId: 3, entryIds: [9, 8] }), "/feed/3");
+  // One entry listed but several announced (the rest were past the page): open the feed.
+  assert.equal(routeForOpen({ feedId: 3, entryIds: [9], total: 4 }), "/feed/3");
   assert.equal(routeForOpen(null), null);
 });
 
@@ -230,4 +232,37 @@ test("notification text follows the strings NextFlux passes for its language", (
   assert.deepEqual(feedNotificationText("", [{ title: "A" }, { title: "" }], 2, strings),
     { title: "Feed update", body: "2 new entries: A; Untitled" });
   assert.deepEqual(feedNotificationText("HN", [], 1, strings), { title: "HN", body: "1 new entry" });
+});
+
+test("turning a feed off and on again after allowing notifications clears the blocked mark", async () => {
+  const { server, host, notifier } = world();
+  await notifier.setWatched(12, true);
+  host.setSystemNotifications(false);
+  server.add(12, 1, "一篇");
+  await notifier.check();
+  assert.equal(await notifier.setWatched(12, true), "blocked");
+  host.setSystemNotifications(true);
+  await notifier.setWatched(12, false);
+  assert.equal(await notifier.setWatched(12, true), true);
+});
+
+test("a foreground check only moves the cursor", async () => {
+  const { server, notifier, posted } = world();
+  await notifier.setWatched(12, true);
+  server.add(12, 1, "一篇");
+  assert.deepEqual(await notifier.check({ foreground: true }), [{ feedId: 12, outcome: "foreground", count: 1 }]);
+  assert.deepEqual(await notifier.check(), [{ feedId: 12, outcome: "none" }]);
+  assert.equal(posted.length, 0);
+});
+
+test("a failed storage read aborts the check and keeps the watches", async () => {
+  const { toolbox, notifier, data } = world();
+  await notifier.setWatched(12, true);
+  const saved = structuredClone(data.get(FEED_NOTIFY_KEY));
+  const get = toolbox.storage.get;
+  toolbox.storage.get = async () => { throw Object.assign(new Error("io"), { code: "IO" }); };
+  await assert.rejects(notifier.check(), (error) => error.code === "IO");
+  toolbox.storage.get = get;
+  assert.deepEqual(data.get(FEED_NOTIFY_KEY), saved);
+  assert.deepEqual(await notifier.watchedFeedIds(), [12]);
 });
