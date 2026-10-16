@@ -102,7 +102,7 @@
   // Keep a look inside its own room: the nearest part of the room (an L-shaped 客餐厅 has two),
   // clear of the walls; a wall-mounted look snaps to the nearest wall and faces into the room.
   // auto (a drag, true or its heading {dx,dz}): a look that is not free and comes within SNAP of a wall turns its back to it and backs onto it.
-  const SNAP=.35;
+  const SNAP=.35,PUSH=.15;
   function clampPlacement(dims,bb,x,z,rot,auto=false){
     const NR=nearestRect(bb.rs,x,z).r,[x0,z0,x1,z1]=NR,h=GAP;
     rot=((rot|0)%4+4)%4;
@@ -122,12 +122,16 @@
       // bedroom), so being near one says nothing; only a clear push right up to it picks it, and nearest-wins never does.
       const reach=sd=>(sd&1?x1-x0:z1-z0)<=2*(SNAP+h)+dims.w+dims.d+1e-6;
       const m=typeof auto==='object'?Math.hypot(auto.dx,auto.dz):0,comp=sd=>m>1e-6?[-auto.dz,-auto.dx,auto.dz,auto.dx][sd]/m:0;
-      // The wall it backs onto keeps it until the look leaves that wall's range. Only in a narrow pair (a bed turned
-      // onto a side wall of a small bedroom, a chair on a balcony) may a wall the drag clearly heads for take over.
+      // The wall it backs onto keeps it until the look leaves that wall's range. In a narrow pair (a bed turned onto a
+      // side wall of a small bedroom, a chair on a balcony) a wall the drag clearly heads for takes over; elsewhere a
+      // perpendicular wall does only when the drag keeps pushing PUSH past it, so sliding into a corner never turns it.
       // Off its wall: a wall the drag clearly heads for wins (more clearly when the pair is ambiguous); otherwise
       // the nearest one, unless both walls of its pair could claim the look.
       let side=null;
-      if(inRange(rot)){side=rot;if(narrow(rot)){const to=cand.find(sd=>(sd&1)!==(rot&1)&&comp(sd)>.6)??cand.find(sd=>sd===(rot+2)%4&&comp(sd)>.6);if(to!==undefined)side=to;}}
+      if(inRange(rot)){side=rot;
+        const to=narrow(rot)?cand.find(sd=>(sd&1)!==(rot&1)&&comp(sd)>.6)??cand.find(sd=>sd===(rot+2)%4&&comp(sd)>.6)
+          :cand.find(sd=>(sd&1)!==(rot&1)&&comp(sd)>.8&&phys(sd)<=-PUSH); // in a wider room: only by pushing on past the wall it reached
+        if(to!==undefined)side=to;}
       else if(cand.length){
         const to=cand.find(sd=>reach(sd)?comp(sd)>.8&&phys(sd)<=.1:comp(sd)>.6);
         if(to!==undefined)side=to;else{const n=cand.find(sd=>!reach(sd));if(n!==undefined)side=n;}}

@@ -204,6 +204,12 @@ test('1.8.2 · pulling a bed off its head wall never swings it to a side wall; i
   const back = dragPath(bed, bb, side.x, side.z, 1, 0, -.05, 20);
   assert.equal(back.at(-1).rot, 0, 'dragged straight back to the head wall it backs onto it again');
   assert.ok(Math.abs(back.at(-1).z - (z0 + HM.GAP + bed.d / 2)) < 1e-9, 'flush with the head wall');
+  const mb = HM.bbox(rects, '主卧'), onLeft = HM.clampPlacement(bed, mb, .3, 2.2, 1, { dx: -.06, dz: 0 });
+  assert.equal(onLeft.rot, 1);
+  const upMb = dragPath(bed, mb, onLeft.x, onLeft.z, 1, 0, -.05, 40);
+  assert.equal(upMb.at(-1).rot, 0, '主卧 (3.6 m): dragged up and on past the head wall, a side-wall bed backs onto it again');
+  const toCorner = dragPath(bed, mb, onLeft.x, onLeft.z, 1, 0, -.05, 40).find(p => Math.abs(p.z - (HM.GAP + bed.w / 2)) < 1e-9);
+  assert.ok(toCorner, 'reaches the corner first');
   const across = dragPath(bed, bb, (bb.rs[0].r[0] + bb.rs[0].r[2]) / 2, 2.0, 0, .05, 0, 4);
   assert.ok(across.every(p => p.rot !== 3) || across.at(-1).rot === 3, 'no flip-flop crossing the room');
 });
