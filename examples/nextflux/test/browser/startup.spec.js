@@ -479,8 +479,9 @@ test("sidebar icon style switches the tiles and the board shows new and writing"
   }
   // The three sets use the draft's 36px tile; 经典 keeps its 30px one. The
   // rows stay the same height either way.
-  for (const style of ["a", "b", "c"]) expect(sizes[style]).toEqual([36, 36, 36, 36]);
-  expect(sizes.classic).toEqual([30, 30, 30, 30]);
+  // Sizes come back fractional (29.999998 under load), so compare to 0.01px.
+  for (const style of ["a", "b", "c"]) for (const size of sizes[style]) expect(size).toBeCloseTo(36, 2);
+  for (const size of sizes.classic) expect(size).toBeCloseTo(30, 2);
   expect(new Set(Object.values(rows).map(String)).size).toBe(1);
 
   await setStyle("c");
@@ -506,7 +507,13 @@ test("sidebar icon style switches the tiles and the board shows new and writing"
     await expect(boardTile).toHaveAttribute("data-state", "working");
     await page.waitForTimeout(300);
     const before = await layouts();
-    await page.waitForTimeout(1000);
+    // Headless Chrome draws no frames while the test only waits, so an
+    // animation inside the <svg> would lay nothing out; drive a second of frames.
+    await page.evaluate(() => new Promise((done) => {
+      const end = performance.now() + 1000;
+      const frame = () => (performance.now() < end ? requestAnimationFrame(frame) : done());
+      requestAnimationFrame(frame);
+    }));
     expect(await layouts() - before, `set ${style}`).toBeLessThan(6);
   }
   // Holds still while the phone sidebar is closed, and moves again once it opens.
@@ -517,16 +524,69 @@ test("sidebar icon style switches the tiles and the board shows new and writing"
   expect(await wave()).toBe("paused");
   await panel.evaluate((el) => el.setAttribute("data-open", "true"));
   expect(await wave()).toBe("running");
-  // Same for the folded sidebar on wider screens.
+  // Another element marked collapsed (an accordion, a menu) leaves the tiles moving.
   await boardTile.evaluate((el) => {
     const host = document.createElement("div");
     host.setAttribute("data-state", "collapsed");
-    host.className = "nf-test-collapsed sidebar-row";
-    const copy = el.cloneNode(true);
-    host.append(copy);
+    host.className = "nf-test-collapsed";
+    host.append(el.cloneNode(true));
     document.body.append(host);
   });
-  expect(await page.locator(".nf-test-collapsed .nf-sb-wave").evaluate((el) => getComputedStyle(el, "::before").animationPlayState)).toBe("paused");
+  expect(await page.locator(".nf-test-collapsed .nf-sb-wave").evaluate((el) => getComputedStyle(el, "::before").animationPlayState)).toBe("running");
   await page.evaluate(() => document.querySelector(".nf-test-collapsed").remove());
+  // The real sidebar on a wider screen: folding it with Ctrl+B stops the tiles.
+  await page.setViewportSize({ width: 1100, height: 800 });
+  const desktop = page.locator(".sidebar-desktop");
+  const desktopWave = () => desktop.locator('a[href="#/board"] .nf-sb-wave').evaluate((el) => getComputedStyle(el, "::before").animationPlayState);
+  await expect(desktop).toHaveAttribute("data-state", "expanded");
+  expect(await desktopWave()).toBe("running");
+  await page.keyboard.press("Control+b");
+  await expect(desktop).toHaveAttribute("data-state", "collapsed");
+  expect(await desktopWave()).toBe("paused");
+  await page.keyboard.press("Control+b");
+  await expect(desktop).toHaveAttribute("data-state", "expanded");
+  expect(await desktopWave()).toBe("running");
   expect(pageErrors).toEqual([]);
+});
+
+// A four- or five-digit unread count sits at the row's end; the row's label
+// stops before it, even at 320px with text twice as large.
+for (const [width, scale] of [[320, 2], [320, 1], [390, 1.3]]) test(`sidebar unread count stays clear of its label at ${width}px, text x${scale}`, async ({ page }) => {
+  await page.setViewportSize({ width, height: 800 });
+  await installNativeBoundary(page, {
+    auth: {
+      serverUrl: "https://miniflux.xiaochen.win", username: "layout-test-user", password: "", userId: 7,
+      token: "fixed-synthetic-test-token", authType: "token",
+    },
+    settings: { ...STORED_SETTINGS, syncInterval: "0" },
+    cacheRoot: {
+      version: 3, revision: 1, account: { serverUrl: "https://miniflux.xiaochen.win", userId: "7" },
+      transaction: null, lastSyncTime: null,
+      tables: { articles: null, feeds: null, categories: null, feedIcons: null },
+    },
+  });
+  await page.goto(PRODUCTION_URL);
+  await expect(page.locator(".article-list-inline-tabs .tabs__list")).toBeVisible();
+  await page.locator('.article-list-header > [data-sidebar="trigger"]').evaluate((el) => el.click());
+  for (const count of [1234, 12345]) {
+    await page.evaluate(async ([scale, count]) => {
+      document.documentElement.style.fontSize = `${16 * scale}px`;
+      const { unreadCounts } = await import("/src/stores/feedsStore.js");
+      unreadCounts.set({ 1: count });
+    }, [scale, count]);
+    const item = page.locator(".sidebar-mobile-panel .nf-count-item");
+    await expect(item.locator('[data-sidebar="menu-badge"]')).toHaveText(String(count));
+    const gap = await item.evaluate((el) => {
+      const label = el.querySelector(".sidebar-row > span:last-child");
+      const range = document.createRange();
+      range.selectNodeContents(label);
+      const text = range.getBoundingClientRect();
+      const box = label.getBoundingClientRect();
+      const badge = el.querySelector('[data-sidebar="menu-badge"]');
+      const digits = document.createRange();
+      digits.selectNodeContents(badge);
+      return { label: Math.min(text.right, box.right), badge: digits.getBoundingClientRect().left };
+    });
+    expect(gap.label, `${count}`).toBeLessThanOrEqual(gap.badge - 4);
+  }
 });
