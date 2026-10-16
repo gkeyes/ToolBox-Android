@@ -83,9 +83,7 @@
     for(const i of out.items){
       const net=out.payments.filter(t=>t.itemId===i.id).reduce((s,t)=>s+(t.kind==='refund'?-t.amount:t.amount),0);
       if(!['estimated','actual'].includes(i.costMode)||(i.costMode==='actual'&&i.price!==null))fail('费用计价方式无效。');
-      if(net<0)fail('备份中退款超过了关联项目已付金额。');
-      // 1.11.4: also day by day, as an edit is checked: a refund dated before the money it returns is refused here too.
-      try{assertCashTimeline(out,i.id);}catch(_){fail('备份中有退款早于对应的付款，请核对日期。');}if(i.status==='estimate'&&net>0)fail('有净付款的费用项不能标记为未确认。');
+      if(net<0)fail('备份中退款超过了关联项目已付金额。');if(i.status==='estimate'&&net>0)fail('有净付款的费用项不能标记为未确认。');
       if(i.status==='settled'&&i.costMode!=='actual'&&(i.price===null||net!==i.price))fail('已结算项目的金额与净付款不一致。');
     }
     idRenames=renamed;
@@ -189,7 +187,14 @@
     const w=weightsOf(i.parts,refOf(i,source)),rows=new Map();let net=0,prev=i.parts.map(()=>0);
     // In date order (a payment before a refund on the same day), the order the cash timeline is checked in.
     const ts=source.payments.map((p,n)=>[p,n]).filter(([p])=>p.itemId===i.id).sort(([a,x],[b,y])=>a.date.localeCompare(b.date)||(a.kind==='refund')-(b.kind==='refund')||x-y).map(([p])=>p);
-    for(const p of ts){const r=p.kind==='refund',d=Math.min(p.amount,r?net:Infinity);net+=r?-d:d;const step=stepSplit(prev,net,d,r,w);rows.set(p.id,step);prev=prev.map((v,k)=>r?v-step[k]:v+step[k]);}
+    // 1.11.4: a stored refund dated before the money it returns (restore refuses that; an older ledger may have it)
+    // comes off as the later payments arrive, as if dated on their day, so the pieces still add up to the net paid.
+    const owed=[],take=(id,d)=>{net-=d;const step=stepSplit(prev,net,d,true,w),was=rows.get(id);rows.set(id,was?was.map((v,k)=>v+step[k]):step);prev=prev.map((v,k)=>v-step[k]);};
+    for(const p of ts){
+      if(p.kind==='refund'){const d=Math.min(p.amount,net);take(p.id,d);if(p.amount>d)owed.push([p.id,p.amount-d]);continue;}
+      net+=p.amount;const step=stepSplit(prev,net,p.amount,false,w);rows.set(p.id,step);prev=prev.map((v,k)=>v+step[k]);
+      while(owed.length&&net>0){const o=owed[0],d=Math.min(o[1],net);take(o[0],d);o[1]-=d;if(!o[1])owed.shift();}
+    }
     const out={rows,cash:prev};c.set(i.id,out);return out;
   }
   const pieceCash=(i,source=data)=>payShares(i,source).cash;
@@ -1136,6 +1141,6 @@
   }
 
   // validate() is exposed for the unit tests; the 3D module talks to the ledger only through homeApi.
-  window.ZZApp=Object.freeze({validate,lookOnSave,lookRow,version:VERSION});
+  window.ZZApp=Object.freeze({validate,payShares,lookOnSave,lookRow,version:VERSION});
   boot();
 })();
