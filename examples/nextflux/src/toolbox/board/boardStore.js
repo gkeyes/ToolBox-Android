@@ -289,7 +289,9 @@ isSyncing.listen((syncing) => {
   const finished = wasSyncing && !syncing;
   wasSyncing = syncing;
   if (!finished || !authState.get().userId || !aiReady()) return;
-  if (board.get().status === "idle") return;
+  // A board not made yet takes the sync when it is made; one being made
+  // for the first time reads it after.
+  if (board.get().status === "idle" && !run) return;
   // Read now, or after the board being made, the settings settling, or
   // (closed and out of date) the next opening; settings changed and
   // changed back cost nothing.
