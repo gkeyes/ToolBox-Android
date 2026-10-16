@@ -52,7 +52,12 @@ class ToolNotificationIconTest {
         assertEquals(true, isMiuiNotificationShade { if (it == "ro.mi.os.version.name") "OS2.0" else "" })
         assertEquals(true, isMiuiNotificationShade { if (it == "ro.miui.ui.version.name") "V14" else null })
         // An AOSP ROM on Xiaomi hardware, or any other phone, keeps the tool icon as the large icon.
-        assertFalse(isMiuiNotificationShade { "" })
-        assertFalse(isMiuiNotificationShade { null })
+        assertFalse(isMiuiNotificationShade(property = { "" }, incremental = "OS2.0.5.0.VNACNXM"))
+        assertFalse(isMiuiNotificationShade(property = { null }, incremental = "eng.build.20261016"))
+    }
+
+    @Test fun unreadablePropertiesFallBackToTheBuildsOwnVersionName() {
+        assertEquals(true, isMiuiNotificationShade(property = { null }, incremental = "OS2.0.5.0.VNACNXM"))
+        assertEquals(true, isMiuiNotificationShade(property = { null }, incremental = "V14.0.3.0.TKHCNXM"))
     }
 }

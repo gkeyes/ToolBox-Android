@@ -18,16 +18,19 @@ import io.toolbox.tool.runtime.RuntimeHandlerException
 import io.toolbox.tool.runtime.RuntimeHyperOsIslandStatus
 import io.toolbox.tool.runtime.RuntimeLiveNotificationResult
 import io.toolbox.tool.runtime.RuntimeRpcErrorCode
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /** Long-running reminders, undelivered alarm notices and the live-notification support check. */
 internal class RuntimeSessionNotifications(
     private val appContext: Context,
-    /** The tool's icon if already loaded; these notices are posted at once and never wait for a load. */
-    private val cachedToolIcon: (toolId: String) -> Bitmap? = { null },
+    /** Loads the tool's icon, from disk if it isn't cached; an alarm often fires in a fresh process. */
+    private val loadToolIcon: suspend (toolId: String) -> Bitmap? = { null },
 ) {
     private val notificationManager = appContext.getSystemService(NotificationManager::class.java)
 
-    fun postRuntimeReminder(toolId: String, sessionId: String) {
+    suspend fun postRuntimeReminder(toolId: String, sessionId: String) {
         createRuntimeNotificationChannel()
         val open = PendingIntent.getActivity(
             appContext,
@@ -39,7 +42,7 @@ internal class RuntimeSessionNotifications(
         val stop = RuntimeForegroundService.stopSessionPendingIntent(appContext, toolId, sessionId)
         val notification = Notification.Builder(appContext, RUNTIME_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_toolbox_notification)
-            .setToolIcon(appContext, cachedToolIcon(toolId))
+            .withToolIcon(toolId)
             .setContentTitle("ToolBox 后台运行提醒")
             .setContentText("此工具已连续运行 12 小时")
             .setContentIntent(open)
@@ -49,7 +52,7 @@ internal class RuntimeSessionNotifications(
         notificationManager.notify("runtime-reminder", sessionId.hashCode(), notification)
     }
 
-    fun postAlarmNotification(toolId: String, alarm: StoredAlarm) {
+    suspend fun postAlarmNotification(toolId: String, alarm: StoredAlarm) {
         createRuntimeNotificationChannel()
         val open = PendingIntent.getActivity(
             appContext,
@@ -61,13 +64,21 @@ internal class RuntimeSessionNotifications(
         )
         val notification = Notification.Builder(appContext, RUNTIME_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_toolbox_notification)
-            .setToolIcon(appContext, cachedToolIcon(toolId))
+            .withToolIcon(toolId)
             .setContentTitle("ToolBox 提醒")
             .setContentText("点击打开对应工具")
             .setContentIntent(open)
             .setAutoCancel(true)
             .build()
         notificationManager.notify("alarm:$toolId", alarm.alarmId.hashCode(), notification)
+    }
+
+    /** Without a tool icon these stay plain ToolBox notices, with no launcher icon repeated at the right. */
+    private suspend fun Notification.Builder.withToolIcon(toolId: String): Notification.Builder {
+        val icon = runCatching { withContext(Dispatchers.IO) { loadToolIcon(toolId) } }
+            .onFailure { if (it is CancellationException) throw it }
+            .getOrNull() ?: return this
+        return setToolIcon(appContext, icon)
     }
 
     fun cancelRuntimeNotifications(sessionIds: Collection<String>) {

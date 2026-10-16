@@ -4,6 +4,7 @@ import android.app.Notification
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.drawable.Icon
+import android.os.Build
 import android.os.Bundle
 import io.toolbox.host.R
 
@@ -12,8 +13,18 @@ import io.toolbox.host.R
  * [MIUI_APP_ICON_EXTRA]. The brand alone is not enough: an AOSP ROM on Xiaomi hardware has no such shade,
  * and there the tool icon must stay the large icon.
  */
-internal fun isMiuiNotificationShade(property: (String) -> String? = ::systemProperty): Boolean =
-    MIUI_VERSION_PROPERTIES.any { !property(it).isNullOrBlank() }
+internal fun isMiuiNotificationShade(
+    property: (String) -> String? = ::systemProperty,
+    incremental: String = Build.VERSION.INCREMENTAL.orEmpty(),
+): Boolean {
+    val values = MIUI_VERSION_PROPERTIES.map(property)
+    if (values.any { !it.isNullOrBlank() }) return true
+    // All null means the properties couldn't be read at all; HyperOS and MIUI builds still name themselves
+    // in the incremental version (OS2.0.5.0.VNACNXM, V14.0.3.0.TKHCNXM).
+    return values.all { it == null } && MIUI_INCREMENTAL.matches(incremental)
+}
+
+private val MIUI_INCREMENTAL = Regex("""^(OS|V)\d+\.\d+.*""")
 
 private val MIUI_VERSION_PROPERTIES = listOf("ro.mi.os.version.name", "ro.mi.os.version.code", "ro.miui.ui.version.name")
 

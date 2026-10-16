@@ -76,7 +76,7 @@ internal class RuntimeSessionManager(
     private val liveNotifications = LiveNotificationCoordinator(scope, nowMillis) {
         refreshForegroundService()
     }
-    private val notifications = RuntimeSessionNotifications(appContext) { toolId -> toolIcons?.cached(toolId) }
+    private val notifications = RuntimeSessionNotifications(appContext) { toolId -> toolIcons?.load(toolId) }
     private val store = RuntimeSessionStore(repositories, nowMillis)
     private val reminders = RuntimeSessionReminders(
         scope = scope,

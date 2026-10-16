@@ -234,8 +234,10 @@ internal class CatalogViewModel(
     }
 
     private fun open(toolId: String) {
-        // A failed read's list says nothing about the tool, so wait for the retry like the first load.
-        if (!state.value.isLoaded || state.value.loadFailed) {
+        // A failed read keeps the last list on screen: open a tool it still shows, and wait for the
+        // retry only for one it doesn't, since that list says nothing about the tool.
+        val failedWithout = state.value.loadFailed && state.value.tools.none { it.toolId == toolId }
+        if (!state.value.isLoaded || failedWithout) {
             pendingRuntimeLaunchToolId = toolId
             return
         }
