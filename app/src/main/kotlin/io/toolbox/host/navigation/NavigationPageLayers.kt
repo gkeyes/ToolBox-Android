@@ -147,11 +147,12 @@ internal fun RuntimeSessionLayer(
             RuntimeViewModelFactory(route.toolId, dependencies),
         ).get("runtime:${route.toolId}", RuntimeViewModel::class.java)
     }
-    // A cancelled return reopens the tool: undo the close Back prepared (sealed bridge, spent
-    // exit confirmation). Only revisions after this view model was made count.
+    // The tool was opened again while Back was taking it away: undo the exit Back started (a save
+    // still running, or the sealed bridge and spent exit confirmation). Only revisions after this
+    // view model was made count.
     val seenRevision = remember(viewModel) { reopenRevision }
     LaunchedEffect(viewModel, reopenRevision) {
-        if (reopenRevision != seenRevision) viewModel.cancelClose()
+        if (reopenRevision != seenRevision) viewModel.reopen()
     }
     Box(modifier) {
         RuntimeShellScreen(

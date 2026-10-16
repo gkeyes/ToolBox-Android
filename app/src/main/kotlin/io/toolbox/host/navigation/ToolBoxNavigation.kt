@@ -6,6 +6,7 @@ import androidx.compose.ui.draw.drawWithContent
 import android.content.ContentResolver
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.AnimationSpec
 import androidx.compose.animation.core.AnimationVector1D
 import androidx.compose.foundation.background
 import androidx.compose.runtime.SideEffect
@@ -93,6 +94,12 @@ internal class RuntimeTransition(
      * caller finishes the return by removing the route, instead of the tool landing settled.
      */
     val returnInterrupted: Boolean = false,
+    /**
+     * The replaced tool was returning while its cover still showed (Back while loading), with the
+     * source opaque beneath it: the source stays opaque under this tool's cover until the entry
+     * finishes, instead of jumping to the fade-through alpha.
+     */
+    val sourceHeldUnderCover: Boolean = false,
     /** Survives recreation: true while this tool is returning to its source. */
     private val savedLeaving: MutableState<Boolean> = mutableStateOf(false),
 ) {
@@ -103,7 +110,7 @@ internal class RuntimeTransition(
     val sourceReturnProgress = Animatable(0f)
     var runtimeLayerEnabled by mutableStateOf(false)
     var entryCoverVisible by mutableStateOf(route != null && !returnInterrupted)
-    var sourceAboveRuntime by mutableStateOf(returnInterrupted)
+    var sourceAboveRuntime by mutableStateOf(returnInterrupted || sourceHeldUnderCover)
     var runtimePresentationReady by mutableStateOf(false)
     private var leaving by mutableStateOf(returnInterrupted)
     var runtimeLeaving: Boolean
@@ -121,6 +128,45 @@ internal class RuntimeTransition(
     /** Returning from a settled tool: the source fades in over the tool, not over the cover. */
     val returningFromSettled: Boolean
         get() = sourceAboveRuntime && !entryCoverVisible
+
+    /** The source sits opaque beneath a cover that is still showing (returning while loading). */
+    val sourceUnderCover: Boolean
+        get() = sourceAboveRuntime && entryCoverVisible
+
+    /**
+     * How far the source layer has gone (0 = fully shown, 1 = gone); its alpha is 1 minus this.
+     * During the fade-through entry the source fades out first; while it sits above the tool it
+     * follows [sourceReturnProgress].
+     */
+    fun sourceDepth(): Float {
+        val enteringDepth = if (route != null && entryCoverVisible && !sourceAboveRuntime) {
+            1f - ToolBoxMotion.fadeThroughOutgoingAlpha(1f - entryProgress.value.coerceIn(0f, 1f))
+        } else {
+            0f
+        }
+        return maxOf(enteringDepth, sourceReturnProgress.value).coerceIn(0f, 1f)
+    }
+
+    /** Starts cancelling the return; false when this tool is not returning. */
+    fun beginReturnCancel(): Boolean {
+        if (route == null || !runtimeLeaving) return false
+        runtimeLeaving = false
+        reopenRevision += 1
+        return true
+    }
+
+    /** Brings the tool back the way the return took it away, then drops the source below it. */
+    suspend fun animateReturnCancel(spec: AnimationSpec<Float> = RetainedPageMotion) {
+        if (entryCoverVisible) {
+            entryProgress.animateTo(0f, animationSpec = spec)
+            // Back may have cut the entry short before it enabled the tool.
+            runtimeLayerEnabled = true
+        } else {
+            sourceReturnProgress.animateTo(1f, animationSpec = spec)
+        }
+        sourceAboveRuntime = false
+        sourceReturnProgress.snapTo(0f)
+    }
 
     /** True once the transition fully hides the source layer (primary screen and retained pages). */
     val sourceHidden: Boolean
@@ -146,12 +192,14 @@ internal class RuntimeTransition(
  * was recreated (rotation) starts settled instead of replaying its entry over the source.
  */
 @Composable
-internal fun rememberRuntimeTransition(runtimeRoute: RuntimeRoute?): RuntimeTransition {
+internal fun rememberRuntimeTransition(runtimeRoute: RuntimeRoute?, generation: Int = 0): RuntimeTransition {
     val previous = remember { arrayOfNulls<RuntimeTransition>(1) }
     // Saved per tool, so it survives recreation; reset whenever a different tool opens.
     var shownBefore by rememberSaveable(runtimeRoute?.toolId) { mutableStateOf(false) }
     val savedLeaving = rememberSaveable(runtimeRoute?.toolId) { mutableStateOf(false) }
-    val transition = remember(runtimeRoute) {
+    // Keyed on the push generation too: the same tool pushed again right after its return popped
+    // it (before a recomposition saw the pop) needs a fresh holder, not the leaving one.
+    val transition = remember(runtimeRoute, generation) {
         val replaced = previous[0]?.takeIf { runtimeRoute != null }
         RuntimeTransition(
             route = runtimeRoute,
@@ -162,6 +210,7 @@ internal fun rememberRuntimeTransition(runtimeRoute: RuntimeRoute?): RuntimeTran
             // Only a settled tool sits beneath the returning source; a cover still fading in
             // (Back while loading) hands its own entry progress on and stays on top.
             coverBeneathSource = replaced?.returningFromSettled == true,
+            sourceHeldUnderCover = replaced?.sourceUnderCover == true,
             // A switch opens normally; only a restored tool resumes its saved return.
             returnInterrupted = runtimeRoute != null && replaced == null && savedLeaving.value,
             savedLeaving = savedLeaving,
@@ -170,6 +219,7 @@ internal fun rememberRuntimeTransition(runtimeRoute: RuntimeRoute?): RuntimeTran
     SideEffect {
         previous[0] = transition.takeIf { runtimeRoute != null }
         if (runtimeRoute != null) shownBefore = true
+        savedLeaving.value = transition.runtimeLeaving
     }
     return transition
 }
@@ -209,9 +259,21 @@ internal fun runtimeEntryEquivalent(
         entryProgress.coerceIn(0f, 1f)
     }
 
-/** Opening [route] while that same tool is returning cancels the return rather than pushing. */
-internal fun reopensReturningTool(route: ToolBoxRoute, runtimeRoute: RuntimeRoute?, leaving: Boolean): Boolean =
-    leaving && runtimeRoute != null && route == runtimeRoute
+/** What opening a route does when that tool is already on top of the stack. */
+internal enum class RuntimeReopen {
+    /** Not the tool on top: push the route. */
+    None,
+    /** The tool is returning: cancel the return and keep it. */
+    CancelReturn,
+    /** The tool is on top: cancel an exit Back may still be saving for (no-op otherwise). */
+    CancelExit,
+}
+
+internal fun runtimeReopen(route: ToolBoxRoute, top: RuntimeRoute?, leaving: Boolean): RuntimeReopen = when {
+    top == null || route != top -> RuntimeReopen.None
+    leaving -> RuntimeReopen.CancelReturn
+    else -> RuntimeReopen.CancelExit
+}
 
 /** Entry progress a tool starts at: 1 for a fresh open, or where the replaced tool stood. */
 internal fun runtimeEntryStart(opening: Boolean, carriedEntry: Float?): Float = when {
@@ -240,10 +302,12 @@ internal fun sourceLayerHiddenByRuntime(
  * tool (for example from a notification or shortcut while another tool is open) replaces the
  * tool page already on the stack instead of stacking a second one beneath it.
  */
-internal fun MutableList<NavKey>.pushSecondary(route: ToolBoxRoute) {
-    if (lastOrNull() == route) return
+/** Pushes [route] unless it is already on top; true when it was pushed. */
+internal fun MutableList<NavKey>.pushSecondary(route: ToolBoxRoute): Boolean {
+    if (lastOrNull() == route) return false
     if (route is RuntimeRoute) removeAll { it is RuntimeRoute }
     add(route)
+    return true
 }
 
 /** Pages drawn beneath the top: never a tool page, which only renders as the top layer. */
@@ -308,7 +372,8 @@ internal fun ToolBoxNavigation(
     fun progressFor(route: ToolBoxRoute) = pageProgress.getOrPut(route) { Animatable(1f) }
     SideEffect { pageProgress.keys.retainAll(retainedRoutes.toSet()) }
     val firstRetainedProgress = retainedRoutes.firstOrNull()?.let(::progressFor)
-    val transition = rememberRuntimeTransition(runtimeRoute)
+    var runtimeGeneration by remember { mutableIntStateOf(0) }
+    val transition = rememberRuntimeTransition(runtimeRoute, runtimeGeneration)
     val entryProgress = transition.entryProgress
     val sourceReturnProgress = transition.sourceReturnProgress
     var runtimeLayerEnabled by transition::runtimeLayerEnabled
@@ -339,6 +404,8 @@ internal fun ToolBoxNavigation(
                 entryProgress.animateTo(0f, animationSpec = RetainedPageMotion)
             }
             runtimeLayerEnabled = true
+            // A source held opaque under this cover drops below once the cover is fully in.
+            if (!runtimeLeaving) sourceAboveRuntime = false
         }
     }
 
@@ -382,30 +449,21 @@ internal fun ToolBoxNavigation(
     // Reopening the tool that is returning (a notification or shortcut mid-return) cancels the
     // return and brings the tool back, instead of being dropped while the return completes.
     val cancelReturn: () -> Unit = {
-        if (runtimeRoute != null && runtimeLeaving) {
-            runtimeLeaving = false
-            transition.reopenRevision += 1
+        if (transition.beginReturnCancel()) {
             transition.returnJob?.cancel()
-            transition.returnJob = coroutineScope.launch {
-                if (entryCoverVisible) {
-                    entryProgress.animateTo(0f, animationSpec = RetainedPageMotion)
-                    // Back may have cut the entry short before it enabled the tool.
-                    runtimeLayerEnabled = true
-                } else {
-                    sourceReturnProgress.animateTo(1f, animationSpec = RetainedPageMotion)
-                }
-                sourceAboveRuntime = false
-                sourceReturnProgress.snapTo(0f)
-            }
+            transition.returnJob = coroutineScope.launch { transition.animateReturnCancel() }
         }
     }
 
     fun navigate(route: ToolBoxRoute) {
         // The live stack top, not the composed route: the return may have just popped it.
-        if (reopensReturningTool(route, secondaryBackStack.lastOrNull() as? RuntimeRoute, runtimeLeaving)) {
-            cancelReturn()
-        } else {
-            secondaryBackStack.pushSecondary(route)
+        when (runtimeReopen(route, secondaryBackStack.lastOrNull() as? RuntimeRoute, runtimeLeaving)) {
+            RuntimeReopen.CancelReturn -> cancelReturn()
+            // The runtime cancels the close only when Back is still saving for an exit.
+            RuntimeReopen.CancelExit -> transition.reopenRevision += 1
+            RuntimeReopen.None -> if (secondaryBackStack.pushSecondary(route) && route is RuntimeRoute) {
+                runtimeGeneration += 1
+            }
         }
     }
 
@@ -437,18 +495,10 @@ internal fun ToolBoxNavigation(
                 .fillMaxSize()
                 .zIndex(if (runtimeRoute == null || sourceAboveRuntime) 2f else 0f)
                 .graphicsLayer {
-                    val enteringDepth = if (
-                        runtimeRoute != null && entryCoverVisible && !sourceAboveRuntime
-                    ) {
-                        // Fade through: the source is gone before the runtime cover appears.
-                        1f - ToolBoxMotion.fadeThroughOutgoingAlpha(1f - entryProgress.value.coerceIn(0f, 1f))
-                    } else {
-                        0f
-                    }
                     // This layer also hosts the retained secondary pages, so only the runtime
                     // transition may fade it. Covering by a secondary page fades the primary
                     // screen alone (inner box below), never the pages stacked above it.
-                    val runtimeDepth = maxOf(enteringDepth, sourceReturnProgress.value).coerceIn(0f, 1f)
+                    val runtimeDepth = transition.sourceDepth()
                     translationX = -trailingDirection * runtimeDepth * PageShiftPx
                     alpha = 1f - runtimeDepth
                 }

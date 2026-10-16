@@ -2,12 +2,17 @@ package io.toolbox.host.navigation
 
 import androidx.activity.ComponentActivity
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.snap
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import io.toolbox.core.ui.component.ToolBoxMotion
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -29,6 +34,8 @@ class RuntimeTransitionTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
 
     private var route by mutableStateOf<RuntimeRoute?>(null)
+    private var generation by mutableIntStateOf(0)
+    private var scope: CoroutineScope? = null
     private var transition: RuntimeTransition? = null
     private var glassLive: Boolean? = null
     private var sourceHidden: Boolean? = null
@@ -36,7 +43,8 @@ class RuntimeTransitionTest {
     private fun composeTransition(initial: RuntimeRoute?) {
         route = initial
         compose.setContent {
-            val current = rememberRuntimeTransition(route)
+            val current = rememberRuntimeTransition(route, generation)
+            scope = rememberCoroutineScope()
             val live by rememberPrimaryGlassLive(current, firstRetainedProgress = null)
             val hidden by rememberSourceHidden(current)
             transition = current
@@ -120,15 +128,88 @@ class RuntimeTransitionTest {
         val b = current()
         assertFalse(b.coverBeneathSource)
         assertEquals(0.3f, b.entryProgress.value, 0.0001f)
+        // The source stays opaque under the new cover, exactly as it was under the old one.
+        assertEquals(0f, a.sourceDepth())
+        assertTrue(b.sourceHeldUnderCover)
+        assertTrue(b.sourceAboveRuntime)
+        assertEquals(0f, b.sourceDepth())
+        assertFalse(b.sourceHidden)
     }
 
     @Test
-    fun reopeningTheReturningToolCancelsTheReturnInsteadOfPushing() {
-        assertTrue(reopensReturningTool(RuntimeRoute("a"), RuntimeRoute("a"), leaving = true))
-        assertFalse(reopensReturningTool(RuntimeRoute("a"), RuntimeRoute("a"), leaving = false))
-        assertFalse(reopensReturningTool(RuntimeRoute("b"), RuntimeRoute("a"), leaving = true))
-        assertFalse(reopensReturningTool(RuntimeRoute("a"), null, leaving = true))
-        assertFalse(reopensReturningTool(SettingsRoute, RuntimeRoute("a"), leaving = true))
+    fun theSameToolPushedAgainAfterItsReturnGetsAFreshHolder() {
+        composeTransition(RuntimeRoute("a"))
+        val a = current()
+        compose.runOnIdle {
+            a.entryCoverVisible = false
+            a.runtimeLeaving = true
+        }
+
+        // Popped and pushed again before a recomposition: same route, next generation.
+        generation += 1
+        compose.waitForIdle()
+        val again = current()
+        assertNotSame(a, again)
+        assertFalse(again.runtimeLeaving)
+        assertFalse(again.returnInterrupted)
+    }
+
+    @Test
+    fun cancellingAReturnFromASettledToolBringsTheToolBack() {
+        composeTransition(RuntimeRoute("a"))
+        val a = current()
+        compose.runOnIdle {
+            a.runtimeLayerEnabled = true
+            a.entryCoverVisible = false
+            a.sourceAboveRuntime = true
+            a.runtimeLeaving = true
+        }
+        snap(a.sourceReturnProgress, 0.4f)
+
+        compose.runOnIdle {
+            assertTrue(a.beginReturnCancel())
+            checkNotNull(scope).launch { a.animateReturnCancel(snap()) }
+        }
+        compose.waitForIdle()
+        assertFalse(a.runtimeLeaving)
+        assertEquals(1, a.reopenRevision)
+        assertFalse(a.sourceAboveRuntime)
+        assertEquals(0f, a.sourceReturnProgress.value)
+        assertTrue(a.sourceHidden)
+        assertFalse(a.beginReturnCancel())
+    }
+
+    @Test
+    fun cancellingAReturnWhileLoadingFadesTheCoverBackInAndEnablesTheTool() {
+        composeTransition(RuntimeRoute("a"))
+        val a = current()
+        snap(a.entryProgress, 0.6f)
+        compose.runOnIdle {
+            a.sourceAboveRuntime = true
+            a.runtimeLeaving = true
+        }
+
+        compose.runOnIdle {
+            assertTrue(a.beginReturnCancel())
+            checkNotNull(scope).launch { a.animateReturnCancel(snap()) }
+        }
+        compose.waitForIdle()
+        assertEquals(0f, a.entryProgress.value)
+        assertTrue(a.runtimeLayerEnabled)
+        assertFalse(a.sourceAboveRuntime)
+        assertTrue(a.entryCoverVisible)
+        assertTrue(a.sourceHidden)
+    }
+
+    @Test
+    fun reopeningTheToolOnTopCancelsItsReturnOrPendingExit() {
+        val a = RuntimeRoute("a")
+        assertEquals(RuntimeReopen.CancelReturn, runtimeReopen(a, RuntimeRoute("a"), leaving = true))
+        assertEquals(RuntimeReopen.CancelExit, runtimeReopen(a, RuntimeRoute("a"), leaving = false))
+        assertEquals(RuntimeReopen.None, runtimeReopen(RuntimeRoute("b"), a, leaving = true))
+        // Already popped by the return: push it again.
+        assertEquals(RuntimeReopen.None, runtimeReopen(a, null, leaving = true))
+        assertEquals(RuntimeReopen.None, runtimeReopen(SettingsRoute, a, leaving = true))
     }
 
     @Test
