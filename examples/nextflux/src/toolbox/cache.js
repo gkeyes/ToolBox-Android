@@ -625,27 +625,32 @@ export function createArticleCache(storage, options = {}) {
   // in list order. An unread copy of a story already kept stays hidden after
   // that story is read, so reading the shown copy brings the badge down.
   const hiddenIndexes = new WeakMap();
-  function hiddenCopies(current, view) {
+  function hiddenCopies(current, view, starredOnly = false) {
     // Only the feeds the reader can see take part: a copy in a hidden feed
-    // never hides the one in a visible feed.
+    // never hides the one in a visible feed. 收藏 compares starred rows only.
     const feeds = Array.isArray(view.feedIds) ? new Set(view.feedIds.map(Number)) : null;
-    const key = `${view.field}|${view.direction}|${feeds ? [...feeds].sort((a, b) => a - b).join(",") : "*"}`;
+    const key = `${starredOnly ? "starred|" : ""}${view.field}|${view.direction}|${feeds ? [...feeds].sort((a, b) => a - b).join(",") : "*"}`;
     let byView = hiddenIndexes.get(current.maps.articles);
     if (!byView) { byView = new Map(); hiddenIndexes.set(current.maps.articles, byView); }
     if (!byView.has(key)) {
       if (byView.size > 8) byView.clear();
-      const rows = [...current.maps.articles.values()].filter((row) => row.status !== "removed" && (!feeds || feeds.has(row.feedId)));
+      const rows = [...current.maps.articles.values()].filter((row) => row.status !== "removed" && (!starredOnly || row.starred === 1) && (!feeds || feeds.has(row.feedId)));
       byView.set(key, duplicateIds(sortRows(rows, view.field, view.direction)));
     }
     return byView.get(key);
   }
-  // Counts as the lists show them: hidden copies are not counted unread.
+  // Counts as the lists show them: hidden copies are not counted unread, and
+  // starred copies the 收藏 list hides are not counted starred.
   function shownCounts(current, feedIds, view) {
     const counts = countValue(current, feedIds);
     if (!view?.hideDuplicates) return counts;
     for (const id of hiddenCopies(current, view)) {
       const row = current.maps.articles.get(id);
       if (row?.status === "unread" && row.feedId in counts.unread) counts.unread[row.feedId] -= 1;
+    }
+    for (const id of hiddenCopies(current, view, true)) {
+      const row = current.maps.articles.get(id);
+      if (row && row.feedId in counts.starred) counts.starred[row.feedId] -= 1;
     }
     return counts;
   }

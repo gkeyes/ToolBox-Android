@@ -14,7 +14,10 @@ const text = (value) => (typeof value === "string" ? value.trim() : "");
 // 图片, an Untitled entry, a line of hashtags) never count as the same title;
 // such posts are still matched by URL.
 const GENERIC_TITLES = new Set(["图片", "图片分享", "视频", "无标题", "（无标题）", "(无标题)", "untitled", "no title", "(no title)", "photo", "image", "video"]);
-const generic = (title) => GENERIC_TITLES.has(title.toLowerCase()) || /^(#[^\s#]+\s*)+$/u.test(title);
+// Only hashtags, optionally after an emoji or symbol: "#系统资讯", "🖼 #系统资讯",
+// full-width "＃系统资讯", "# 系统".
+const HASHTAGS_ONLY = /^[\p{Extended_Pictographic}\p{S}\uFE0F\u200D\s]*(?:[#＃]\s?[^\s#＃]+\s*)+$/u;
+const generic = (title) => GENERIC_TITLES.has(title.toLowerCase()) || HASHTAGS_ONLY.test(title);
 export const duplicateTitle = (article) => {
   const title = text(article?.titleText || article?.title);
   return title && !generic(title) ? title : "";
