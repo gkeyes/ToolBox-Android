@@ -87,17 +87,20 @@ export async function refreshBoard({ onlyIfNew = false } = {}) {
     const later = () => { frame ??= setTimeout(publish, 80); };
     boardStream.set({ sent: articles.map(({ title, feedTitle }) => ({ title, feedTitle })), skipped, thinking: "", text: "" });
     let topics;
+    let cut = false;
     try {
-      await streamChat(topicsMessages(articles), {
+      const result = await streamChat(topicsMessages(articles), {
         signal: controller.signal,
         onChunk: (chunk) => { text += chunk; later(); },
         onThink: (chunk) => { thinking += chunk; later(); },
       });
+      // A reply stopped at the token limit can still parse, minus its last topics.
+      cut = result?.finishReason === "length";
     } catch (error) {
       // A reply cut off mid-way still makes a board from the topics that
       // arrived whole; when none did, what had arrived stays on screen.
       if (error?.code === "INCOMPLETE_STREAM" && text) {
-        try { topics = parseTopics(text, articles.length); } catch { /* nothing whole arrived */ }
+        try { topics = parseTopics(text, articles.length); cut = true; } catch { /* nothing whole arrived */ }
       }
       if (!topics) {
         if ((text || thinking) && error && typeof error === "object") error.raw ??= { thinking, text };
@@ -121,6 +124,8 @@ export async function refreshBoard({ onlyIfNew = false } = {}) {
       ...EMPTY,
       status: "done",
       topics,
+      // The reply broke off, so later topics may be missing.
+      cut,
       articles: articles.map(({ id, title, feedTitle }) => ({ id, title, feedTitle })),
       skipped,
       total: all.length,

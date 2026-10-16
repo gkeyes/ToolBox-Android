@@ -94,9 +94,10 @@ export const summarizeArticleStream = async (article, { onChunk, onDone, onError
 // Streams a chat completion for prepared messages (used by today's board).
 // The answer goes to onChunk; the model's thinking, from <think> tags or a
 // reasoning field, goes to onThink when given, and is dropped otherwise.
+// Resolves to { finishReason }.
 export const streamChat = async (messages, { onChunk, onThink, signal }) => {
   const { aiApiKey, aiBaseUrl, aiModel } = settingsState.get();
-  await streamChatCompletion({
+  return streamChatCompletion({
     baseUrl: aiBaseUrl,
     apiKey: aiApiKey,
     signal,

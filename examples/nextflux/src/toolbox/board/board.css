@@ -153,6 +153,7 @@
   background: color-mix(in srgb, var(--accent) 12%, transparent);
 }
 .nf-board-live-tag.is-receive { color: #08704f; background: color-mix(in srgb, #0f9d76 13%, transparent); }
+.dark .nf-board-live-tag:not(.is-receive) { color: color-mix(in srgb, var(--accent) 70%, white); }
 .dark .nf-board-live-tag.is-receive { color: #3fd1a5; }
 .nf-board-live-sent { margin: 8px 0 4px; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; }
 .nf-board-live-sent li { font-size: 0.8125rem; line-height: 1.4; color: var(--ds-text-secondary, var(--muted)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

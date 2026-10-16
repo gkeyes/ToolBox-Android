@@ -115,6 +115,7 @@ export async function streamChatCompletion({ baseUrl, apiKey, body, signal, onDe
 
     let complete = false;
     let finishedChoice = false;
+    let finishReason = null;
 
     const dispatch = () => {
       if (!eventLines.length) return;
@@ -130,7 +131,7 @@ export async function streamChatCompletion({ baseUrl, apiKey, body, signal, onDe
       if (reasoning && typeof onReasoning === "function") onReasoning(reasoning);
       const content = extractContentText(choice);
       if (content && typeof onDelta === "function") onDelta(content);
-      if (choice?.finish_reason) finishedChoice = true;
+      if (choice?.finish_reason) { finishedChoice = true; finishReason = choice.finish_reason; }
     };
     const processLine = (line) => {
       if (!line) { dispatch(); return; }
@@ -163,6 +164,8 @@ export async function streamChatCompletion({ baseUrl, apiKey, body, signal, onDe
         break;
       }
     }
+    // "length" means the provider cut the answer at its token limit.
+    return { finishReason };
   } finally {
     signal?.removeEventListener("abort", cancel);
     await cancel();
