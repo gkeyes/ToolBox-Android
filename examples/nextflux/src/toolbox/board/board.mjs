@@ -87,9 +87,12 @@ const TOPICS_PROMPT = [
 // The instructions and the user message's opening line, outside the articles.
 const PROMPT_OVERHEAD = Math.max(TOPICS_PROMPT.length, 200) + 40;
 
-export function topicsMessages(articles) {
+// Asked again after a reply ran into the AI's length limit before one topic
+// was whole: a shorter answer fits.
+const BRIEF = "上一次的回答太长被截断了。这次回答要短：最多 5 个主题，summary 只写一句话，不超过 40 个字，直接输出 JSON。";
+export function topicsMessages(articles, { brief = false } = {}) {
   return [
-    { role: "system", content: TOPICS_PROMPT },
+    { role: "system", content: brief ? `${TOPICS_PROMPT}\n${BRIEF}` : TOPICS_PROMPT },
     { role: "user", content: `今天的未读文章共 ${articles.length} 篇：\n\n${articleList(articles)}` },
   ];
 }
@@ -124,8 +127,9 @@ function looseJson(text) {
 // An article reference as the AI wrote it: 3, "3", "[3]", "2.0", "第3篇",
 // full-width "３", a list "1,2" / "1、2" / "1 2" / "1,2-3", or a range "1-3"
 // (also reversed "3-1", "1〜3", "1−3"). A range running a little past the
-// last article is trimmed to it; one longer than MAX_RANGE ("1-99999") is
-// junk and names no article, nor does anything else.
+// last article is trimmed to it; one longer than the board has articles, by
+// more than one ("1-50" of 12), or than MAX_RANGE ("1-99999") is junk and
+// names no article, nor does anything else.
 const MAX_RANGE = 100;
 const ITEM = /^\[?第?(\d+)(?:\.0+)?篇?\]?$/;
 const RANGE = /^\[?第?(\d+)篇?\s*[-–—~〜−‐‑‒―至到]\s*第?(\d+)篇?\]?$/;
@@ -139,7 +143,7 @@ export function articleNumbers(value, count) {
     const range = part.match(RANGE);
     if (range) {
       const [a, b] = [Number(range[1]), Number(range[2])];
-      if (Math.abs(a - b) + 1 > MAX_RANGE) return [];
+      if (Math.abs(a - b) + 1 > (Number.isFinite(count) ? Math.min(MAX_RANGE, count + 1) : MAX_RANGE)) return [];
       const from = Math.max(1, Math.min(a, b));
       const to = Math.min(Math.max(a, b), Number.isFinite(count) ? count : Infinity);
       return to < from ? [] : Array.from({ length: to - from + 1 }, (_, index) => from + index);
@@ -170,7 +174,7 @@ export function salvageTopics(raw, count = Infinity) {
     if (parts.length && !/"title"\s*:/.test(part)) parts[parts.length - 1] += part;
     else parts.push(part);
   });
-  return parts.map((part) => {
+  return parts.map((part, index) => {
     const field = (key) => {
       const open = part.match(new RegExp(`"${key}"\\s*:\\s*"`));
       if (!open) return "";
@@ -179,15 +183,26 @@ export function salvageTopics(raw, count = Infinity) {
       return end >= 0 ? unescape(rest.slice(0, end)) : "";
     };
     // The list may hold bracketed items ("[3]" or [3]), so an inner ] does not end it.
-    const numbers = part.match(/"articles"\s*:\s*\[((?:"[^"]*"|\[[^\]"]*\]|[^\]"[])*)\]/);
-    return { title: field("title"), gist: field("gist"), summary: field("summary"), articles: numbers ? (numbers[1].match(/"[^"]*"|[^,\s"]+/g) || []).flatMap((item) => articleNumbers(item.replace(/^"|"$/g, ""), count)) : [] };
-  }).filter((topic) => topic.title && topic.articles.length);
+    const numbers = part.match(/"articles"\s*:\s*\[((?:"[^"]*"|\[(?:"[^"]*"|[^\]"])*\]|[^\]"[])*)\]/);
+    const topic = { title: field("title"), gist: field("gist"), summary: field("summary"), articles: numbers ? (numbers[1].match(/"[^"]*"|[^,\s"\[\]]+/g) || []).flatMap((item) => articleNumbers(item.replace(/^"|"$/g, ""), count)) : [] };
+    // The last topic of a reply cut off mid-way, before its summary arrived
+    // or its object closed, is not whole.
+    const last = index === parts.length - 1;
+    return last && !topic.summary && !/\}/.test(part) ? null : topic;
+  }).filter((topic) => topic?.title && topic.articles.length);
 }
 
 // Reads the AI's topics. Article numbers must name a real article; each
 // article belongs to at most one topic (the higher ranked); a topic left
 // without articles is dropped. Throws when nothing usable came back.
 export function parseTopics(text, count) {
+  return readTopics(text, count).topics;
+}
+
+// The same, with `whole`: false when the topics were salvaged from a reply
+// that was not valid JSON, so a reply that ended at the length limit after
+// its JSON closed is not cut.
+export function readTopics(text, count) {
   const raw = String(text || "");
   // The first JSON object with topics, or array of topic objects, in the
   // reply; text around it (a fence, a note, a remark with its own brackets)
@@ -218,7 +233,7 @@ export function parseTopics(text, count) {
     topics.push({ title, gist: clean(item?.gist, 80), summary: clean(item?.summary, 400), articles: unique });
   }
   if (!topics.length) throw new Error("AI 没有归出主题，请重新生成。");
-  return topics;
+  return { topics, whole: Boolean(data) };
 }
 
 const DIGEST_PROMPT = [

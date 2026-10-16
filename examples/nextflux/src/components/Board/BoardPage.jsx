@@ -269,10 +269,11 @@ export default function BoardPage() {
           {state.status === "error" && <RawOutput raw={state.raw} />}
           {done && <>
             <p className="nf-board-summary">
-              {tab === "topics" ? `AI 把今天的 ${read} 篇未读归成 ${state.topics.length} 个主题，按重要程度排列` : `把 ${state.topics.length} 个主题写成一篇文章`}
+              {tab !== "topics" ? `把 ${state.topics.length} 个主题写成一篇文章`
+                : state.cut ? `AI 读了今天的 ${read} 篇未读，回答中途断开，只列出完整收到的 ${state.topics.length} 个主题`
+                  : `AI 把今天的 ${read} 篇未读归成 ${state.topics.length} 个主题，按重要程度排列`}
               {state.skipped > 0 ? `（只看了最新的 ${read} 篇）` : ""}
               {state.newCount > 0 && !state.updating ? `，比上一版多 ${state.newCount} 篇新文章` : ""}
-              {state.cut && tab === "topics" ? "。AI 的回答中途断开，只列出完整收到的主题" : ""}
             </p>
             {state.error && <p className="nf-board-inline-error" role="alert">更新失败：{state.error}</p>}
             {state.error && <RawOutput raw={state.raw} />}

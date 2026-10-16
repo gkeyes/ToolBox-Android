@@ -28,7 +28,7 @@ the same hash-checked Tailwind Oxide archive, not independently upgraded.
 Original location fields describe the source inventory.
 Source inventory lockfile SHA-256: d9be22538f9a6060638f48035f90456611f71df2364ed106f86984fec2559de2
 
-Lockfile SHA-256: ed610e5a15353e09e0bc285f53cb817d4605c3618fa8b0d68041e059adec0769
+Lockfile SHA-256: 2c0931bf3d5d0a827f565116576ff779ebcfa8e48650d86e337f6755a6fc88ef
 Build-only cleanup removed unused direct dependencies and unreachable lock entries; the license inventory remains a conservative superset.
 Inventory entries: 237
 Distinct license/notice texts: 119

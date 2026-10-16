@@ -4,7 +4,7 @@ import { settingsState } from "@/stores/settingsStore.js";
 import { authState } from "@/stores/authStore.js";
 import { isSyncing } from "@/stores/syncStore.js";
 import { streamChat } from "@/api/openai.js";
-import { digestMessages, fitArticles, parseTopics, startOfDay, todaysUnread, topicsMessages } from "./board.mjs";
+import { digestMessages, fitArticles, parseTopics, readTopics, startOfDay, todaysUnread, topicsMessages } from "./board.mjs";
 
 // The board for today, kept while the app runs.
 // status: idle | loading | done | empty | error. While a newer board is being
@@ -86,47 +86,67 @@ export async function refreshBoard({ onlyIfNew = false } = {}) {
     if (!keep) stopDigest();
     board.set(keep ? { ...previous, updating: true, error: "" } : { ...EMPTY, status: "loading", day: today });
     const { articles, skipped } = fitArticles(all);
-    let text = "";
-    let thinking = "";
-    let frame = null;
-    const publish = () => {
-      frame = null;
-      if (live()) boardStream.set({ ...boardStream.get(), thinking, text });
-    };
-    const later = () => { frame ??= setTimeout(publish, 80); };
-    boardStream.set({ sent: articles.map(({ title, feedTitle }) => ({ title, feedTitle })), skipped, thinking: "", text: "" });
-    let topics;
-    let cut = false;
-    try {
-      const result = await streamChat(topicsMessages(articles), {
-        signal: controller.signal,
-        onChunk: (chunk) => { text += chunk; later(); },
-        onThink: (chunk) => { thinking += chunk; later(); },
-      });
-      // A reply stopped at the token limit can still parse, minus its last topics.
-      cut = result?.finishReason === "length";
-    } catch (error) {
-      // A reply cut off mid-way still makes a board from the topics that
-      // arrived whole; when none did, what had arrived stays on screen.
-      if (error?.code === "INCOMPLETE_STREAM" && text) {
-        try { topics = parseTopics(text, articles.length); cut = true; } catch { /* nothing whole arrived */ }
+    const sent = articles.map(({ title, feedTitle }) => ({ title, feedTitle }));
+    // One AI call. A reply that ran into the length limit before one topic
+    // was whole is asked again, once, for a shorter answer.
+    const ask = async (brief) => {
+      let text = "";
+      let thinking = "";
+      let frame = null;
+      const publish = () => {
+        frame = null;
+        if (live()) boardStream.set({ ...boardStream.get(), thinking, text });
+      };
+      const later = () => { frame ??= setTimeout(publish, 80); };
+      boardStream.set({ sent, skipped, thinking: "", text: "" });
+      let read = null;
+      let length = false;
+      try {
+        const result = await streamChat(topicsMessages(articles, { brief }), {
+          signal: controller.signal,
+          onChunk: (chunk) => { text += chunk; later(); },
+          onThink: (chunk) => { thinking += chunk; later(); },
+        });
+        length = result?.finishReason === "length";
+      } catch (error) {
+        // A reply cut off mid-way still makes a board from the topics that
+        // arrived whole; when none did, what had arrived stays on screen.
+        if (error?.code === "INCOMPLETE_STREAM" && text) {
+          try { read = { topics: parseTopics(text, articles.length), cut: true }; } catch { /* nothing whole arrived */ }
+        }
+        if (!read) {
+          if ((text || thinking) && error && typeof error === "object") error.raw ??= { thinking, text };
+          throw error;
+        }
+      } finally {
+        clearTimeout(frame);
+        publish();
       }
-      if (!topics) {
-        if ((text || thinking) && error && typeof error === "object") error.raw ??= { thinking, text };
-        throw error;
-      }
-    } finally {
-      clearTimeout(frame);
-      publish();
-    }
-    if (!live()) return;
-    if (!topics) {
-      try { topics = parseTopics(text, articles.length); } catch (error) {
+      if (read || !live()) return read;
+      try {
+        const { topics, whole } = readTopics(text, articles.length);
+        // Stopped at the length limit: later topics may be missing, unless
+        // the JSON had already closed.
+        return { topics, cut: length && !whole };
+      } catch (error) {
         // Keep what the AI said on screen so the reader can see why.
         error.raw = { thinking, text };
+        if (length) {
+          error.length = true;
+          error.message = "AI 的回答太长，在写完第一个主题之前就被截断了。请重新生成；如果一直这样，可以在 AI 设置里换一个输出长度上限更高的模型。";
+        }
         throw error;
       }
+    };
+    let read;
+    try {
+      read = await ask(false);
+    } catch (error) {
+      if (!error?.length || !live()) throw error;
+      read = await ask(true);
     }
+    if (!live()) return;
+    const { topics, cut } = read;
     boardStream.set(null);
     stopDigest();
     board.set({

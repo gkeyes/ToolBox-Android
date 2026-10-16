@@ -117,9 +117,16 @@ test("article references keep their numbers: lists, ranges and 2.0 are not glued
   assert.deepEqual(articleNumbers("[4]", 9), [4]);
   assert.deepEqual(articleNumbers(2.5, 9), []);
   assert.deepEqual(articleNumbers("第三篇", 9), []);
-  // A range past the last article is trimmed, not dropped; an open-ended one stays bounded.
+  // A range one past the last article is trimmed, not dropped; one longer
+  // than the board by more ("1-50" of 12) is junk.
   assert.deepEqual(articleNumbers("1-10", 9), [1, 2, 3, 4, 5, 6, 7, 8, 9]);
-  assert.deepEqual(articleNumbers("8-100", 9), [8, 9]);
+  assert.deepEqual(articleNumbers("8-10", 9), [8, 9]);
+  assert.deepEqual(articleNumbers("8-100", 9), []);
+  assert.deepEqual(articleNumbers("1-50", 12), []);
+  assert.deepEqual(articleNumbers("1-13", 12).length, 12);
+  assert.deepEqual(articleNumbers("1-14", 12), []);
+  const fifty = parseTopics('{"topics":[{"title":"一到五十","articles":["1-50"]},{"title":"台风","articles":[4,5]}]}', 12);
+  assert.deepEqual(fifty.map((topic) => [topic.title, topic.articles]), [["台风", [4, 5]]]);
   assert.deepEqual(articleNumbers("12-20", 9), []);
   // A range longer than 100 is junk and names nothing, so later topics keep their articles.
   assert.deepEqual(articleNumbers("1-99999", 9), []);
@@ -138,13 +145,13 @@ test("article references keep their numbers: lists, ranges and 2.0 are not glued
   assert.deepEqual(articleNumbers("３、４", 9), [3, 4]);
   assert.deepEqual(articleNumbers("第4篇", 9), [4]);
   assert.deepEqual(articleNumbers("[1,2]", 9), [1, 2]);
-  const cut = parseTopics('{"topics":[{"title":"丁","articles":["1-100", 2]', 3);
+  const cut = parseTopics('{"topics":[{"title":"丁","summary":"s","articles":["1-4", 2]', 3);
   assert.deepEqual(cut.map((topic) => topic.articles), [[1, 2, 3]]);
   const bracketed = salvageTopics('{"topics":[{"title":"戊","articles":["[3]", [4], 5]} oops', 9);
   assert.deepEqual(bracketed[0].articles, [3, 4, 5]);
   const topics = parseTopics('{"topics":[{"title":"甲","articles":["1-3","5、6","2.0"]},{"title":"乙","articles":["13", 7]}]}', 9);
   assert.deepEqual(topics.map((topic) => topic.articles), [[1, 2, 3, 5, 6], [7]]);
-  const salvaged = salvageTopics('{"topics":[{"title":"丙","gist":"x","articles":["1-2", 2.0, "4、5"]');
+  const salvaged = salvageTopics('{"topics":[{"title":"丙","gist":"x","summary":"s","articles":["1-2", 2.0, "4、5"]');
   assert.deepEqual(salvaged[0].articles, [1, 2, 2, 4, 5]);
   const closed = salvageTopics('{"title":"丙","gist":"he said "hi"","articles":["1-2", 3.0, "4、5"]}');
   assert.deepEqual(closed[0].articles, [1, 2, 3, 4, 5]);
@@ -189,4 +196,22 @@ test("the trailing-comma repair leaves commas inside text alone", async () => {
   assert.equal(topic.gist, "A, }");
   assert.equal(topic.summary, "x, ]");
   assert.deepEqual(topic.articles, [1]);
+});
+
+test("a cut reply's half-arrived last topic is left out, and quoted numbers in an inner list are read", async () => {
+  const { parseTopics, readTopics, salvageTopics } = await import("../src/toolbox/board/board.mjs");
+  const whole = '{"title":"甲","articles":[1,2],"gist":"g","summary":"s"}';
+  // Title and articles in, cut before the summary: not whole.
+  for (const tail of ['{"title":"乙","articles":[3],"gist":"g', '{"articles":[3],"title":"乙","gist":"g","sum', '{"title":"乙","articles":[3]']) {
+    const topics = parseTopics(`{"topics":[${whole},${tail}`, 9);
+    assert.deepEqual(topics.map((topic) => topic.title), ["甲"], tail);
+  }
+  // Its object closed: kept, even with no summary.
+  assert.deepEqual(salvageTopics(`{"topics":[${whole},{"title":"乙","articles":[3]} oops`, 9).map((topic) => topic.title), ["甲", "乙"]);
+  // Only the last piece can be half-arrived.
+  assert.deepEqual(salvageTopics('[{"title":"甲","articles":[1]},{"title":"乙","summary":"s","articles":[2]', 9).map((topic) => topic.title), ["甲", "乙"]);
+  assert.deepEqual(salvageTopics('{"topics":[{"title":"甲","summary":"s","articles":[["3"],4]}, oops', 9)[0].articles, [3, 4]);
+  // A whole JSON reply is whole; a salvaged one is not.
+  assert.equal(readTopics(`{"topics":[${whole}]}`, 9).whole, true);
+  assert.equal(readTopics(`{"topics":[${whole},{"title":"乙"`, 9).whole, false);
 });
