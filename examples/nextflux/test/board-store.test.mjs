@@ -1,0 +1,86 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { register } from "node:module";
+
+// boardStore with its app modules replaced by small stubs driven from here
+// (storage, settings, account, sync state and the AI stream).
+const stubs = {
+  "@/db/storage.js": `export const getFeeds = async () => [{ id: 1, title: "源" }];
+    export const getCachedArticleMetadata = async () => globalThis.__board.rows();`,
+  "@/stores/settingsStore.js": `import { atom } from "nanostores"; export const settingsState = atom({ aiApiKey: "k" });`,
+  "@/stores/authStore.js": `import { atom } from "nanostores"; export const authState = atom({ userId: 7 });`,
+  "@/stores/syncStore.js": `import { atom } from "nanostores"; export const isSyncing = atom(false); globalThis.__board.isSyncing = isSyncing;`,
+  "@/api/openai.js": `export const streamChat = (messages, options) => globalThis.__board.stream(messages, options);`,
+};
+const hooks = `
+const stubs = ${JSON.stringify(stubs)};
+export async function resolve(specifier, context, next) {
+  if (specifier in stubs) return { url: "data:text/javascript," + encodeURIComponent(stubs[specifier]), shortCircuit: true };
+  if (specifier === "nanostores" && context.parentURL?.startsWith("data:")) return next(specifier, { ...context, parentURL: ${JSON.stringify(import.meta.url)} });
+  if (specifier === "./board.mjs") return next(specifier, context);
+  return next(specifier, context);
+}`;
+register("data:text/javascript," + encodeURIComponent(hooks));
+
+const now = new Date();
+let rows = [];
+const article = (id) => ({ id, feedId: 1, status: "unread", title: `文章 ${id}`, published_at: now.toISOString(), created_at: now.toISOString() });
+const calls = [];
+let next = null;
+globalThis.localStorage = { getItem: () => "1", setItem() {} };
+globalThis.__board = {
+  rows: () => rows,
+  // Each AI call waits for the test to answer it.
+  stream: (messages, { onChunk, signal }) => new Promise((resolve, reject) => {
+    const call = { kind: messages[0].content.includes("文章") && messages[1].content.startsWith("主题") ? "digest" : "topics", onChunk, resolve, reject, signal };
+    signal?.addEventListener("abort", () => reject(Object.assign(new Error("aborted"), { name: "AbortError" })));
+    calls.push(call);
+    next?.(call);
+  }),
+};
+const waitCall = () => new Promise((resolve) => { next = (call) => { next = null; resolve(call); }; });
+const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+const { board, digest, refreshBoard, writeDigest } = await import("../src/toolbox/board/boardStore.js");
+const sync = async () => { globalThis.__board.isSyncing.set(true); globalThis.__board.isSyncing.set(false); await tick(); await tick(); };
+const TOPICS = JSON.stringify({ topics: [{ title: "主题", gist: "重点", summary: "摘要", articles: [1, 2] }] });
+
+test("a failed board does not ask the AI again on a sync with nothing new", async () => {
+  rows = [article(3)];
+  let call = waitCall();
+  refreshBoard();
+  (await call).reject(new Error("HTTP 500"));
+  await tick(); await tick();
+  assert.equal(board.get().status, "error");
+  const before = calls.length;
+  await sync(); await sync();
+  assert.equal(calls.length, before, "no AI call for a sync with nothing new");
+  // Something new does try again.
+  rows = [article(3), article(4)];
+  call = waitCall();
+  await sync();
+  const retry = await call;
+  assert.equal(retry.kind, "topics");
+  retry.reject(new Error("HTTP 500"));
+  await tick(); await tick();
+});
+
+test("a sync while the digest is written leaves it running and it finishes", async () => {
+  rows = [article(1), article(2)];
+  let call = waitCall();
+  refreshBoard();
+  (await call).onChunk(TOPICS); calls.at(-1).resolve();
+  await tick(); await tick();
+  assert.equal(board.get().status, "done");
+
+  call = waitCall();
+  writeDigest();
+  const written = await call;
+  assert.equal(written.kind, "digest");
+  written.onChunk("## 主题\n第一句 [1]");
+  await sync();
+  assert.equal(written.signal.aborted, false, "the sync left the digest stream running");
+  written.onChunk("第二句 [2]"); written.resolve();
+  await tick(); await tick();
+  assert.equal(digest.get().status, "done");
+  assert.match(digest.get().text, /第二句/);
+});

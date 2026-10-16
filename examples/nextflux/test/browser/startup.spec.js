@@ -127,8 +127,8 @@ test("an internal error restoring authentication is identified without blaming p
 
 // The list header floats three pieces (sidebar button, filter capsule, actions)
 // over the list. On narrow screens, large display sizes or large text with a
-// long unread count, the capsule must step down (or take its own row, or
-// scroll) instead of running under them.
+// long unread count, the capsule must step down (or scroll) instead of
+// running under them.
 for (const [width, scale] of [[300, 1], [320, 1.3], [320, 2], [320, 3], [360, 1], [393, 1.5], [430, 1]]) {
   test(`list header pieces stay apart at ${width}px, text x${scale}`, async ({ page }) => {
     const pageErrors = [];
@@ -152,7 +152,7 @@ for (const [width, scale] of [[300, 1], [320, 1.3], [320, 2], [320, 3], [360, 1]
       document.documentElement.style.fontSize = `${16 * scale}px`;
       for (const count of document.querySelectorAll(".article-tab-count")) count.textContent = "4262";
     }, scale);
-    await expect(page.locator(".article-list-inline-tabs")).toHaveAttribute("data-fit", /^(full|compact|tight|small)$/);
+    await expect(page.locator(".article-list-inline-tabs")).toHaveAttribute("data-fit", /^(full|compact|tight|small|minimal|bare)$/);
     await page.waitForTimeout(100);
     const layout = await page.evaluate(() => {
       const box = (selector) => {
@@ -179,5 +179,94 @@ for (const [width, scale] of [[300, 1], [320, 1.3], [320, 2], [320, 3], [360, 1]
     if (layout.clipped) expect(layout.scrollable).toBe(true);
     expect(layout.overflow).toBe(false);
     expect(pageErrors).toEqual([]);
+  });
+}
+
+// The smart-view top bar is one row whichever tab is selected and however
+// large the counts: sidebar, filter capsule, 看板, actions (NextFlux 1.15.2).
+for (const [width, scale, count] of [[400, 1, "5,203"], [320, 1, "5,203"], [320, 1, "12,345"], [390, 1, "5,203"], [390, 1, "12,345"], [320, 1.3, "12,345"], [390, 1.5, "12,345"], [320, 2, "12,345"]]) {
+  for (const tab of ["收藏", "未读"]) test(`top bar stays one row at ${width}px, text x${scale}, ${count}, ${tab} selected`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 800 });
+    await installNativeBoundary(page, {
+      auth: {
+        serverUrl: "https://miniflux.xiaochen.win", username: "layout-test-user", password: "", userId: 7,
+        token: "fixed-synthetic-test-token", authType: "token",
+      },
+      settings: { ...STORED_SETTINGS, syncInterval: "0" },
+      cacheRoot: {
+        version: 3, revision: 1, account: { serverUrl: "https://miniflux.xiaochen.win", userId: "7" },
+        transaction: null, lastSyncTime: null,
+        tables: { articles: null, feeds: null, categories: null, feedIcons: null },
+      },
+    });
+    await page.goto(PRODUCTION_URL);
+    await expect(page.locator(".article-list-inline-tabs .tabs__list")).toBeVisible();
+    await page.locator(".article-list-inline-tabs .tabs__tab", { hasText: tab }).evaluate((el) => el.click());
+    await page.evaluate(({ scale, count }) => {
+      // Measured mid-press: a pressed tab and pill grow, which must not count
+      // as the capsule being too wide (N5b).
+      document.head.appendChild(Object.assign(document.createElement("style"), {
+        textContent: ".article-list-inline-tabs .tabs__tab { transform: scale(1.04); } .article-list-inline-tabs .tabs__indicator { scale: 1.1; }",
+      }));
+      document.documentElement.style.fontSize = `${16 * scale}px`;
+      for (const label of document.querySelectorAll(".article-list-inline-tabs .article-tab-label")) {
+        const old = label.querySelector(".article-tab-count");
+        const span = old || label.appendChild(Object.assign(document.createElement("span"), { className: "article-tab-count ds-tnum" }));
+        span.textContent = count;
+      }
+    }, { scale, count });
+    await page.waitForTimeout(150);
+    const layout = await page.evaluate(() => {
+      const box = (el) => { const r = el.getBoundingClientRect(); return { left: r.left, right: r.right, top: r.top, bottom: r.bottom }; };
+      const q = (selector) => box(document.querySelector(selector));
+      const list = document.querySelector(".article-list-inline-tabs .tabs__list");
+      return {
+        trigger: q('.article-list-header > [data-sidebar="trigger"]'),
+        list: q(".article-list-inline-tabs .tabs__list"),
+        board: q(".article-list-header .article-board-button"),
+        actions: q(".article-list-header .article-list-actions"),
+        clipped: list.scrollWidth > list.clientWidth + 1,
+        scrollable: getComputedStyle(list).overflowX === "auto",
+        overflow: document.documentElement.scrollWidth > innerWidth + 1,
+      };
+    });
+    if (scale === 1 && width >= 390) expect(await page.locator(".article-list-inline-tabs").getAttribute("data-fit")).not.toMatch(/minimal|bare/);
+    await page.screenshot({ path: `test-results/topbar-${width}-${scale}-${count}-${tab}.png`, clip: { x: 0, y: 0, width, height: 120 } });
+    const pieces = [layout.trigger, layout.list, layout.board, layout.actions];
+    // One row: every piece shares the trigger's band and they run left to right.
+    const middle = (r) => (r.top + r.bottom) / 2;
+    for (const piece of pieces) expect(Math.abs(middle(piece) - middle(layout.trigger))).toBeLessThan(2);
+    for (let i = 1; i < pieces.length; i += 1) expect(pieces[i].left).toBeGreaterThanOrEqual(pieces[i - 1].right - 0.5);
+    expect(layout.board.right - layout.board.left).toBeLessThanOrEqual(layout.trigger.right - layout.trigger.left + 0.5);
+    expect(layout.actions.right).toBeLessThanOrEqual(width);
+    if (layout.clipped) expect(layout.scrollable).toBe(true);
+    expect(layout.overflow).toBe(false);
+    // Whatever shows in the 看板 circle stays inside it, and opening the board
+    // keeps the bar's layout.
+    const board = page.locator(".article-list-header .article-board-button");
+    const inside = () => board.evaluate((button) => {
+      const outer = button.getBoundingClientRect();
+      return [...button.querySelectorAll(".article-board-button-icon, .article-board-button-label, .article-board-badge")]
+        .filter((el) => getComputedStyle(el).visibility !== "hidden")
+        .every((el) => { const r = el.getBoundingClientRect(); return r.left >= outer.left - 0.5 && r.right <= outer.right + 0.5 && r.top >= outer.top - 0.5 && r.bottom <= outer.bottom + 0.5; });
+    });
+    expect(await inside()).toBe(true);
+    await board.evaluate((el) => el.click());
+    await expect(board).toHaveAttribute("aria-expanded", "true");
+    await page.waitForTimeout(150);
+    const opened = await board.evaluate((el) => { const r = el.getBoundingClientRect(); return { top: r.top, bottom: r.bottom, width: r.width }; });
+    expect(Math.abs((opened.top + opened.bottom) / 2 - middle(layout.trigger))).toBeLessThan(2);
+    expect(opened.width).toBeLessThanOrEqual(layout.trigger.right - layout.trigger.left + 0.5);
+    expect(await inside()).toBe(true);
+    await page.screenshot({ path: `test-results/topbar-open-${width}-${scale}-${count}-${tab}.png`, clip: { x: 0, y: 0, width, height: 120 } });
+    // Back folds the board away instead of reaching the host.
+    const handled = await page.evaluate(() => {
+      const event = new Event("toolboxback", { cancelable: true });
+      window.dispatchEvent(event);
+      return event.defaultPrevented;
+    });
+    expect(handled).toBe(true);
+    await expect(board).toHaveAttribute("aria-expanded", "false");
+    await expect(page.locator(".nf-board-panel")).toHaveCount(0);
   });
 }

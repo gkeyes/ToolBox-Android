@@ -192,9 +192,9 @@ body { font-family: var(--nf-sans); -webkit-tap-highlight-color: transparent; }
 
 /* The filter capsule fits whatever width it gets (narrow phones, large display
    size or system font): the header measures it and steps down from full, to
-   no icons, to tight padding, to smaller text; if it still does not fit it
-   takes a row of its own and steps down again there, so it never runs under
-   the buttons beside it. Past the smallest density it scrolls sideways. */
+   no icons, to tight padding, to smaller text, to only the selected tab's
+   count. The top bar stays one row, so past the smallest density the capsule
+   scrolls sideways instead of running under the buttons beside it. */
 .article-list-inline-tabs { justify-content: safe center; }
 :is(.article-list-inline-tabs, .article-list-scoped-tabs) :is(.article-list-tabs, .tabs, .tabs__list-container) { min-inline-size: 0; max-inline-size: 100%; }
 :is(.article-list-inline-tabs, .article-list-scoped-tabs) .tabs__list { max-inline-size: 100%; overflow: hidden; }
@@ -205,9 +205,13 @@ body { font-family: var(--nf-sans); -webkit-tap-highlight-color: transparent; }
 :is(.article-list-inline-tabs, .article-list-scoped-tabs)[data-fit="small"] .article-list-tabs .tabs__tab { padding-inline: 4px; font-size: 0.75rem; }
 :is(.article-list-inline-tabs, .article-list-scoped-tabs)[data-fit="small"] .article-list-tabs .tabs__list { padding: 2px; }
 :is(.article-list-inline-tabs, .article-list-scoped-tabs)[data-fit="small"] .article-tab-count { font-size: 0.6875rem; }
-/* Still too wide: the capsule takes a row of its own under the buttons. */
-.article-list-header.ds-topbar:has(> .article-list-inline-tabs[data-stacked="true"]) { flex-wrap: wrap; row-gap: 8px; }
-.article-list-inline-tabs[data-stacked="true"] { order: 3; flex: 1 0 100%; }
+/* Beside the buttons: the minimal step keeps only the selected tab's count,
+   the bare step none. */
+.article-list-inline-tabs:is([data-fit="minimal"], [data-fit="bare"]) .article-list-tabs .tabs__tab svg { display: none; }
+.article-list-inline-tabs:is([data-fit="minimal"], [data-fit="bare"]) .article-list-tabs .tabs__tab { padding-inline: 4px; font-size: 0.75rem; }
+.article-list-inline-tabs:is([data-fit="minimal"], [data-fit="bare"]) .article-list-tabs .tabs__list { padding: 2px; }
+.article-list-inline-tabs[data-fit="minimal"] .tabs__tab:not([data-selected="true"]) .article-tab-count,
+.article-list-inline-tabs[data-fit="bare"] .article-tab-count { display: none; }
 :is(.article-list-inline-tabs, .article-list-scoped-tabs)[data-scroll="true"] .tabs__list { overflow-x: auto; scrollbar-width: none; overscroll-behavior-x: contain; }
 :is(.article-list-inline-tabs, .article-list-scoped-tabs)[data-scroll="true"] .tabs__list::-webkit-scrollbar { display: none; }
 @media (max-width: 379px) {
@@ -770,4 +774,4 @@ fieldset, .fieldset { min-inline-size: 0; max-inline-size: 100%; }
   color: var(--ds-text-tertiary, var(--muted));
 }
 .article-list-tabs .tabs__tab[data-selected="true"] .article-tab-count { color: var(--accent); }
-:is(.article-list-inline-tabs, .article-list-scoped-tabs)[data-fit="small"] .article-tab-label .article-tab-count { font-size: 0.625rem; }
+:is(.article-list-inline-tabs, .article-list-scoped-tabs):is([data-fit="small"], [data-fit="minimal"]) .article-tab-label .article-tab-count { font-size: 0.625rem; }

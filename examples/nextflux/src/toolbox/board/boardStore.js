@@ -47,30 +47,38 @@ export async function refreshBoard({ onlyIfNew = false } = {}) {
   const previous = board.get();
   if (onlyIfNew && run) return;
   run?.abort();
-  digestRun?.abort();
   const controller = new AbortController();
   run = controller;
   const account = authState.get().userId;
   const live = () => run === controller && !controller.signal.aborted && authState.get().userId === account;
   const today = startOfDay().getTime();
   const keep = previous.status === "done" && previous.day === today;
+  // A failed board remembers the articles it tried, so a sync that brings
+  // nothing new does not ask the AI again.
+  const failed = previous.status === "error" && previous.day === today;
+  let all = [];
   try {
     if (!aiReady()) throw new Error("先在 NextFlux 设置里填好 AI 服务，才能生成今日看板。");
-    const all = await todaysArticles();
+    all = await todaysArticles();
     if (!live()) return;
-    const known = new Set(keep ? previous.ids : []);
+    const known = new Set(keep || failed ? previous.ids : []);
     const fresh = all.filter((article) => !known.has(article.id));
-    if (onlyIfNew && keep && !fresh.length) { if (run === controller) run = null; return; }
+    if (onlyIfNew && (keep || failed) && !fresh.length) { if (run === controller) run = null; return; }
     if (!all.length) {
+      stopDigest();
       board.set({ ...EMPTY, status: "empty", at: Date.now(), day: today });
       return;
     }
+    // The written digest belongs to the board on screen: it keeps streaming
+    // while a newer board is made and stops only when that board replaces it.
+    if (!keep) stopDigest();
     board.set(keep ? { ...previous, updating: true, error: "" } : { ...EMPTY, status: "loading", day: today });
     const { articles, skipped } = fitArticles(all);
     let text = "";
     await streamChat(topicsMessages(articles), { signal: controller.signal, onChunk: (chunk) => { text += chunk; } });
     if (!live()) return;
     const topics = parseTopics(text, articles.length);
+    stopDigest();
     board.set({
       ...EMPTY,
       status: "done",
@@ -88,10 +96,17 @@ export async function refreshBoard({ onlyIfNew = false } = {}) {
   } catch (error) {
     if (!live()) return;
     const message = error?.message || "生成今日看板失败。";
-    board.set(keep ? { ...board.get(), updating: false, error: message } : { ...EMPTY, status: "error", error: message, day: today });
+    board.set(keep
+      ? { ...board.get(), updating: false, error: message }
+      : { ...EMPTY, status: "error", error: message, day: today, ids: all.map((article) => article.id) });
   } finally {
     if (run === controller) run = null;
   }
+}
+
+function stopDigest() {
+  digestRun?.abort();
+  digestRun = null;
 }
 
 export function openBoard(open = !boardOpen.get()) {
@@ -139,9 +154,8 @@ export async function writeDigest({ again = false } = {}) {
 
 function reset() {
   run?.abort();
-  digestRun?.abort();
   run = null;
-  digestRun = null;
+  stopDigest();
   board.set({ ...EMPTY });
   digest.set({ status: "idle", text: "", error: "", boardAt: null });
   boardOpen.set(false);

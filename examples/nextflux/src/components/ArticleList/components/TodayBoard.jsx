@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useStore } from "@nanostores/react";
 import { useNavigate } from "react-router";
 import { Button } from "@heroui/react";
@@ -7,6 +7,7 @@ import CustomModal from "@/components/ui/CustomModal.jsx";
 import { Segmented } from "@/components/ui/settingItem.jsx";
 import { board, boardOpen, digest, openBoard, refreshBoard, writeDigest } from "@/toolbox/board/boardStore.js";
 import { parseDigest } from "@/toolbox/board/board.mjs";
+import { registerBackHandler } from "@/toolbox/systemBack.js";
 import "@/toolbox/board/board.css";
 
 const clock = (at) => new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
@@ -16,24 +17,46 @@ function Spinner() {
   return <span className="nf-board-spinner" aria-hidden="true" />;
 }
 
-// The 看板 button beside the filter tabs. A dot marks a board updated since
-// it was last opened; a ring while it is being made.
+// The 看板 button beside the filter tabs, a glass circle like the sidebar
+// button. A dot marks a board updated since it was last opened; while it is
+// being made, a ring takes the icon's place inside the circle.
 export function BoardButton() {
   const open = useStore(boardOpen);
   const state = useStore(board);
   const working = state.status === "loading" || state.updating;
+  const ref = useRef(null);
+  // With large text the label no longer fits the circle: show the icon alone
+  // (the button keeps its accessible name).
+  useLayoutEffect(() => {
+    const button = ref.current;
+    const label = button?.querySelector(".article-board-button-label");
+    if (!label) return undefined;
+    const fit = () => {
+      button.dataset.label = "shown";
+      const room = button.clientWidth - 6;
+      const tall = label.offsetHeight + 16 > button.clientHeight - 4;
+      button.dataset.label = label.scrollWidth > room || tall ? "hidden" : "shown";
+    };
+    fit();
+    const observer = typeof ResizeObserver === "function" ? new ResizeObserver(fit) : null;
+    observer?.observe(label);
+    return () => observer?.disconnect();
+  }, []);
   return (
     <Button
+      ref={ref}
       className="article-board-button"
-      variant={open ? "primary" : "secondary"}
+      variant="secondary"
       aria-label="今日看板"
       aria-expanded={open}
+      aria-busy={working}
       onPress={() => openBoard()}
     >
-      <AISummaryIcon className="size-4" />
+      <span className="article-board-button-icon" aria-hidden="true">
+        {working ? <span className="article-board-spinner" /> : <AISummaryIcon className="size-4" />}
+      </span>
       <span className="article-board-button-label">看板</span>
-      {working ? <span className="article-board-badge is-working" aria-hidden="true" />
-        : state.unseen && !open ? <span className="article-board-badge" aria-hidden="true" /> : null}
+      {!working && state.unseen && !open && <span className="article-board-badge" aria-hidden="true" />}
     </Button>
   );
 }
@@ -62,6 +85,8 @@ export function BoardPanel() {
   const open = useStore(boardOpen);
   const state = useStore(board);
   const [sheet, setSheet] = useState(null);
+  // Back folds the panel away (the sheet above it handles Back itself).
+  useEffect(() => (open ? registerBackHandler(() => openBoard(false)) : undefined), [open]);
   if (!open && !sheet) return null;
   const topics = state.topics;
   const read = state.total - state.skipped;
