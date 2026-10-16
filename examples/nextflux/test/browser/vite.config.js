@@ -28,6 +28,7 @@ const sidebarBoundaries = new Set([
 ].map((name) => path.join(sourceRoot, name)));
 const sidebarCatalogViews = new Set([
   "ArticlesGroup.jsx", "FeedsGroup.jsx", "SyncButton.jsx", "AddFeedButton.jsx", "ProfileButton.jsx",
+  "SidebarFeedNotifications.jsx", "FeedNotifyPrompts.jsx",
 ].map((name) => path.join(sourceRoot, "components/FeedList/components", name)));
 const controlBoundaries = new Set([
   "toolbox/actions.js", "handlers/articleHandlers.js",
