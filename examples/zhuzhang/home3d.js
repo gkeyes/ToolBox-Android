@@ -241,7 +241,9 @@ export function createHome(api) {
       if (!b) continue; q.bath = true;
       if ((!b.host || h.name === b.host) && h.type !== '卫生间' && len(q) >= .9 && (!bathDoor.has(b.name) || len(q) > len(bathDoor.get(b.name)))) bathDoor.set(b.name, q);
     }
-    for (const q of segs) addWall(q.A, q.Bp, q.n, q.a.type, q.o ? q.o.type : null, q.bath ? [...bathDoor.values()].includes(q) : undefined);
+    // A kitchen opens onto the living spaces, never into a bedroom, a study or a walk-in wardrobe.
+    const PRIVATE = new Set(['主卧', '次卧', '书房', '衣帽间']), shut = (a, o) => !!o && ((a === '厨房' && PRIVATE.has(o)) || (o === '厨房' && PRIVATE.has(a)));
+    for (const q of segs) addWall(q.A, q.Bp, q.n, q.a.type, q.o ? q.o.type : null, q.bath ? [...bathDoor.values()].includes(q) : shut(q.a.type, q.o && q.o.type) ? false : undefined);
     buildLabels();
   }
   function addWall(a, b, n, inside, outside, door) { // inside / outside: room types (outside null = an outer wall); door: false = none, true = a bathroom's door
@@ -532,9 +534,9 @@ export function createHome(api) {
   // A failure that lands mid-drag waits for the finger: a real move saves anew, a mere touch rolls back.
   function endDrag() { const d = drag; drag = null; d.e.g.position.y = 0; if (d.moved) { d.e.rollback = false; saveModel(d.e); } else if (d.e.rollback) { api.toast('没保存上，已放回原位，请再试一次', null, true); rollback(d.e); } }
   // 1.9.0 · 拼户型 saves the blocks (and renames 主卫/公卫 records that moved rooms) in one write.
-  function saveHome(home, renames, quiet) {
+  function saveHome(home, renames, quiet, move) {
     T = HM.planOf(home); planKey = JSON.stringify(HM.sizesOf(T)) + T.key; rebuildAll();
-    api.saveHome(home, renames).then(ok => { if (!ok) { if (!quiet) api.toast('户型没保存上，下次打开会回到上次保存的样子，请再调整一次', null, true); } else { if (T) { const ch = setPlan(); syncItems(ch || renames.length > 0); if (view === 'home') renderTray(); invalidate(); } if (!quiet) api.toast('户型已保存'); } });
+    return api.saveHome(home, renames, move).then(ok => { if (!ok) { if (!quiet) api.toast('户型没保存上，下次打开会回到上次保存的样子，请再调整一次', null, true); } else { if (T) { const ch = setPlan(); syncItems(ch || renames.length > 0); if (view === 'home') renderTray(); invalidate(); } if (!quiet) api.toast('户型已保存'); } return ok; });
   }
 
   /* ---------- modes, tray, sheets ---------- */
@@ -644,7 +646,7 @@ export function createHome(api) {
     // 拿走: the look leaves the house (back to the tray); the record and its money stay. The notice can put it back.
     else if (a === 'take') { const e2 = selected; if (!e2) return; const id = e2.id, was = e2.model; select(null);
       api.saveModel(id, null).then(ok => { if (!ok) { api.toast('没拿走，请再试一次', null, true); return; } syncItems(); renderTray(); invalidate();
-        api.toast(`拿走了${e2.name}，在「还没放进家里的」里`, { label: '撤销', run: () => api.saveModel(id, was).then(ok2 => { if (ok2) { syncItems(); renderTray(); invalidate(); } }) }); }); }
+        api.toast(`拿走了${e2.name}，在「还没放进家里的」里`, { label: '撤销', run: () => { if (api.data().items.find(x => x.id === id)?.model) { api.toast(`${e2.name}已经重新放好了，没有撤销`, null, 'info'); return; } api.saveModel(id, was).then(ok2 => { if (ok2) { syncItems(); renderTray(); invalidate(); } }); } }); }); }
     else if (a === 'relook') { const e2 = selected; if (!e2) return; openPicker({ sel: e2.model.kind, hint: `给「${e2.name}」换一个外观。`, cb: kind => { if (kind === e2.model.kind) return; api.saveModel(e2.id, { ...e2.model, kind }).then(ok => { if (!ok) api.toast('外观没换成，请再试一次', null, true); if (ok) { syncItems(); const n = items.get(e2.id); if (n?.shown) select(n); else select(null); } }); } }); }
   };
   root.addEventListener('click', onClick); layer.addEventListener('click', onClick);
@@ -764,7 +766,7 @@ function createPlanEditor({ root, layer, svg, icons, esc, toast, openSheet, clos
   layer.appendChild(sheet);
   const $ = s => el.querySelector(s), plan = $('.pe-plan');
 
-  let rooms = [], baths = [], sel = null, startNames = new Map(), startIds = new Set(), living = [], uid = 0, S = 30, OX = 0, OZ = 0, panX = 0, panZ = 0, drag = null;
+  let rooms = [], baths = [], sel = null, startNames = new Map(), startIds = new Set(), living = [], livingAt = new Map(), draft = null, base = '', uid = 0, S = 30, OX = 0, OZ = 0, panX = 0, panZ = 0, drag = null;
   const byId = id => rooms.find(r => r.id === id) || baths.find(b => b.id === id);
   const host = b => rooms.find(r => r.id === b.host);
   // A deleted room's name is free again: a new room by that name takes back the records still filed under it.
@@ -780,49 +782,76 @@ function createPlanEditor({ root, layer, svg, icons, esc, toast, openSheet, clos
 
   // Draft v3: 客厅 and 餐厅 are separate rooms. An old 客餐厅 (a template, or a plan saved by 1.9.0–1.9.1) becomes 客厅;
   // of an L-shaped one (two touching blocks) the bigger part becomes 客厅 and the other 餐厅. Its records follow to 客厅
-  // when the plan is saved.
+  // when the plan is saved; 1.11.1: each placed look keeps its spot on the floor and is filed under the part it stands in.
   function splitLiving() {
     const out = [];
     for (const n of new Set(rooms.filter(r => r.type === '客餐厅').map(r => r.name))) {
       const parts = rooms.filter(r => r.type === '客餐厅' && r.name === n).sort((a, b) => b.w * b.d - a.w * a.d);
+      if (!livingAt.has(n)) livingAt.set(n, parts.map(r => ({ id: r.id, x: r.x, z: r.z, w: r.w, d: r.d })));
       parts.forEach((r, i) => { r.type = i ? '餐厅' : '客厅'; r.name = HM.nextName(r.type, used(r)); });
       out.push([n, parts[0].name]);
     }
     for (const [a, b] of out) if (!living.some(x => x[0] === a)) living.push([a, b]);
   }
+  // Where a record of the old 客餐厅 goes: the part its look stands in (as the parts were when the editor opened),
+  // at the same point of that part as it is now. Without a look it goes to 客厅. null: not a 客餐厅 record.
+  function relocator(home) {
+    const map = new Map(living.filter(([a]) => livingAt.has(a)).map(([a]) => [a, livingAt.get(a)]));
+    if (!map.size) return null;
+    const box = (list, pick) => { const rs = list.filter(pick); return rs.length ? { x0: Math.min(...rs.map(r => r.x)), z0: Math.min(...rs.map(r => r.z)), x1: Math.max(...rs.map(r => r.x + r.w)), z1: Math.max(...rs.map(r => r.z + r.d)) } : null; };
+    const r4 = v => +Math.min(1, Math.max(0, v)).toFixed(4);
+    return (room, model) => {
+      const parts = map.get(room); if (!parts) return null;
+      const now = parts.map(p => home.blocks.find(b => b.id === p.id)), first = now.find(Boolean); if (!first) return null;
+      if (!model) return { room: first.name };
+      const ob = box(parts, () => true), ax = ob.x0 + model.x * (ob.x1 - ob.x0), az = ob.z0 + model.z * (ob.z1 - ob.z0);
+      const dist = p => Math.hypot(Math.max(p.x - ax, 0, ax - p.x - p.w), Math.max(p.z - az, 0, az - p.z - p.d));
+      const k = parts.map((p, i) => i).filter(i => now[i]).sort((i, j) => dist(parts[i]) - dist(parts[j]))[0], p = parts[k], b = now[k];
+      const x = b.x + Math.min(1, Math.max(0, (ax - p.x) / p.w)) * b.w, z = b.z + Math.min(1, Math.max(0, (az - p.z) / p.d)) * b.d;
+      const nb = box(home.blocks, r => r.name === b.name);
+      return { room: b.name, model: { ...model, x: r4(nb.x1 > nb.x0 ? (x - nb.x0) / (nb.x1 - nb.x0) : .5), z: r4(nb.z1 > nb.z0 ? (z - nb.z0) / (nb.z1 - nb.z0) : .5) } };
+    };
+  }
+  const keyOf = t => JSON.stringify(HM.sizesOf(t)) + t.key;
   function open(t) {
-    const b = HM.toBlocks(t); rooms = b.blocks; baths = b.baths; sel = null; living = []; panX = panZ = 0;
-    startNames = wetNames(); startIds = new Set([...rooms, ...baths].map(x => x.id)); splitLiving();
-    el.hidden = false; root.dataset.blocks = '1'; requestAnimationFrame(() => { fit(); render(); });
+    // A session that could not be saved when the editor was left (a tab, Back to the ledger, the background) comes back as it was.
+    if (draft && draft.key === keyOf(t)) { ({ rooms, baths, living, livingAt, startNames, startIds, uid } = draft); draft = null; sel = null; panX = panZ = 0; toast('上次没存上的户型还在，调整好再按完成'); }
+    else { draft = null; const b = HM.toBlocks(t); rooms = b.blocks; baths = b.baths; sel = null; living = []; livingAt = new Map(); panX = panZ = 0;
+      startNames = wetNames(); startIds = new Set([...rooms, ...baths].map(x => x.id)); splitLiving(); }
+    base = keyOf(t); el.hidden = false; root.dataset.blocks = '1'; requestAnimationFrame(() => { fit(); render(); });
   }
   function close() { el.hidden = true; delete root.dataset.blocks; sel = null; drag = null; }
   // A template replaces the whole plan, so the notice offers to put the old one back.
   function useTemplate(t, name) {
-    const prev = { rooms: rooms.map(r => ({ ...r })), baths: baths.map(b => ({ ...b })), living: living.slice() }, b = HM.toBlocks(t);
-    rooms = b.blocks; baths = b.baths; sel = null; splitLiving(); fit(); render();
-    toast(`已换成${name}，再拖方块调整`, { label: '撤销', run: () => { if (el.hidden) return; cancelDrag(); ({ rooms, baths, living } = prev); sel = null; fit(); render(); toast('已换回原来的户型'); } });
+    const prev = { rooms: rooms.map(r => ({ ...r })), baths: baths.map(b => ({ ...b })), living: living.slice(), livingAt: new Map(livingAt) }, b = HM.toBlocks(t);
+    // Block ids are positional per template, so the old 客餐厅 parts are measured again on the new one (undo puts the old map back).
+    rooms = b.blocks; baths = b.baths; sel = null; livingAt = new Map(); splitLiving(); fit(); render();
+    toast(`已换成${name}，再拖方块调整`, { label: '撤销', run: () => { if (el.hidden) return; cancelDrag(); ({ rooms, baths, living, livingAt } = prev); sel = null; fit(); render(); toast('已换回原来的户型'); } });
   }
   // 主卫 / 公卫 renames from moving a bathroom between rooms: the ledger's records follow the new name.
   // A drag still under the finger (Back pressed mid-drag) is undone first, so a red overlap is never what gets saved.
   function cancelDrag() { if (!drag) return; const it = drag.it; if (it.bad && drag.o) Object.assign(it, drag.o); it.bad = false; it.drag = null; drag = null; showLines([]); showAnchors(null); }
-  function done() {
+  function done(quiet) {
     cancelDrag();
-    const home = HM.sanitizeBlocks({ blocks: rooms, baths }); if (!home) { toast('至少要留一个房间'); return; }
+    const home = HM.sanitizeBlocks({ blocks: rooms, baths }); if (!home) { if (!quiet) toast('至少要留一个房间'); return false; }
     // The save never drops a block quietly: anything it would drop keeps the editor open to fix.
-    if (home.blocks.length < rooms.length || home.baths.length < baths.length) { render(); toast('有房间的位置存不了（叠在一起或太远），请调整后再按完成'); return; }
-    close(); onDone(home, renamesOf(home));
+    if (home.blocks.length < rooms.length || home.baths.length < baths.length) { render(); if (!quiet) toast('有房间的位置存不了（叠在一起或太远），请调整后再按完成'); return false; }
+    close(); onDone(home, renamesOf(home), false, relocator(home)); return true;
   }
   // Bathrooms, inside a room or standing alone, by id: one moved, or turned from one into the other, keeps its records.
   function wetNames(home = { blocks: rooms, baths }) { return new Map([...home.baths, ...home.blocks.filter(r => r.type === '卫生间')].map(x => [x.id, x.name])); }
   function renamesOf(home) { const renames = living.slice(); for (const b of [...home.baths, ...home.blocks.filter(r => r.type === '卫生间')]) { const was = startNames.get(b.id); if (was && was !== b.name) renames.push([was, b.name]); } return renames; }
   // Saved without closing (ToolBox sent to the background): later saves count renames from here.
+  // A failed write keeps the renames and the 客餐厅 move for the next save.
   function save() {
     cancelDrag(); render();
     const home = HM.sanitizeBlocks({ blocks: rooms, baths }); if (!home || home.blocks.length < rooms.length || home.baths.length < baths.length) return;
-    onDone(home, renamesOf(home), true); living = []; startNames = wetNames(home);
+    const sent = living.slice(), names = wetNames(home);
+    Promise.resolve(onDone(home, renamesOf(home), true, relocator(home))).then(ok => { if (!ok) return; living = living.filter(x => !sent.includes(x)); for (const [a] of sent) livingAt.delete(a); startNames = names; });
   }
-  // Leaving 我的家 by the tabs saves the plan, the same as 完成 and Back.
-  function leave() { if (!el.hidden) done(); close(); }
+  // Leaving 我的家 by the tabs saves the plan, the same as 完成 and Back. A plan 完成 would refuse is kept as it is
+  // and comes back the next time 户型 opens on the same saved plan.
+  function leave() { if (el.hidden) return; if (!done(true)) { cancelDrag(); draft = { key: base, rooms, baths, living, livingAt, startNames, startIds, uid }; close(); toast('户型有房间的位置存不了，先替你留着，下次打开「户型」接着改'); } }
 
   /* ---------- layout ---------- */
   function bounds() { const xs = rooms.flatMap(r => [r.x, r.x + r.w]), zs = rooms.flatMap(r => [r.z, r.z + r.d]); return { x0: Math.min(...xs, 0), z0: Math.min(...zs, 0), x1: Math.max(...xs, 4), z1: Math.max(...zs, 4) }; }
@@ -921,6 +950,14 @@ function createPlanEditor({ root, layer, svg, icons, esc, toast, openSheet, clos
   // A bathroom dragged out of every room onto empty floor stands alone, as a 卫生间 block keeping its id and name.
   function freeBath(b) { const r = { id: b.id, type: '卫生间', name: b.name, x: r2(r1(b.drag.x)), z: r2(r1(b.drag.z)), w: b.w, d: b.d }; return Math.abs(r.x) <= 60 && Math.abs(r.z) <= 60 && r.x + r.w <= 60 && r.z + r.d <= 60 && !rooms.some(o => HM.boxOverlap(r, o)) ? r : null; }
   // A standalone 卫生间 dropped with its centre in a room it fits becomes that room's bathroom (renamed 主卫/公卫).
+  // Why a standalone block can't land where it was dropped.
+  function whyNot(r) {
+    if (r.type !== '卫生间') return '房间不能叠在一起';
+    const cx = r.x + r.w / 2, cz = r.z + r.d / 2, h = rooms.find(o => o !== r && !HM.NOHOST.has(o.type) && cx > o.x && cx < o.x + o.w && cz > o.z && cz < o.z + o.d);
+    if (!h) return '房间不能叠在一起';
+    const d = dropHost({ id: r.id, w: r.w, d: r.d, drag: { x: r.x, z: r.z } });
+    return d && d.clash ? '跟另一个卫生间叠到了' : `${r.name}太大，放进${h.name}会让房间剩不到${HM.BLOCK_MIN}米`;
+  }
   function intoRoom(r) {
     const b = { id: r.id, w: r.w, d: r.d, drag: { x: r.x, z: r.z } }, d = dropHost(b); if (!d || d.clash) return null;
     const n = { id: r.id, host: d.h.id, w: r.w, d: r.d, ax: d.ax, az: d.az, name: r.name }; n.name = HM.nextName(HM.bathName(d.h), used(r)); return n;
@@ -946,18 +983,21 @@ function createPlanEditor({ root, layer, svg, icons, esc, toast, openSheet, clos
           if (!drag || drag.it !== it) return; // undone by Back mid-drag
           const dx = (x - sx) / S, dz = (y - sy) / S; if (Math.hypot(dx, dz) * S > 4) drag.moved = true; if (!drag.moved) return;
           if (!it.host) { it.x = r1(Math.min(60 - it.w, Math.max(-60, o.x + dx))); it.z = r1(Math.min(60 - it.d, Math.max(-60, o.z + dz))); showLines(snapMove(it)); it.bad = isBad(it); }
-          else { it.drag = { x: o.x + dx, z: o.z + dz }; const d = dropHost(it); it.bad = d ? !!d.clash : !freeBath(it); showAnchors(d && d.h, it); }
+          else { it.drag = { x: o.x + dx, z: o.z + dz }; const d = dropHost(it); it.bad = d ? !!d.clash : !freeBath(it) || rooms.length >= HM.BLOCK_MAX; showAnchors(d && d.h, it); }
           render();
         },
         end() {
           if (!drag || drag.it !== it) return;
           showLines([]); showAnchors(null);
-          const into = !it.host && it.bad && it.type === '卫生间' ? intoRoom(it) : null;
-          if (into) { rooms = rooms.filter(x => x !== it); baths.push(into); sel = into.id; toast(`${into.name}放进了${host(into).name}里`); }
-          else if (!it.host && it.bad) { it.x = o.x; it.z = o.z; it.bad = false; toast('房间不能叠在一起，已放回原位'); } else if (!it.host) splitNames();
+          const into = !it.host && it.bad && it.type === '卫生间' ? intoRoom(it) : null, full = into && baths.length >= HM.BATH_MAX;
+          if (into && !full) { rooms = rooms.filter(x => x !== it); baths.push(into); sel = into.id; toast(`${into.name}放进了${host(into).name}里`); }
+          else if (!it.host && it.bad) { const why = full ? `房间里最多${HM.BATH_MAX}个卫生间` : whyNot(it); it.x = o.x; it.z = o.z; it.bad = false; toast(`${why}，已放回原位`); } else if (!it.host) splitNames();
           if (it.host && it.drag) { const d = dropHost(it);
             if (d && !d.clash) { const was = it.name, moved = d.h.id !== it.host; it.host = d.h.id; it.ax = d.ax; it.az = d.az; if (moved) { rename(it); toast(it.name === was ? `${was}改放在${d.h.name}里` : `${was}改放在${d.h.name}里，现在叫${it.name}`); } }
-            else if (!d && freeBath(it)) { const r = freeBath(it); baths = baths.filter(x => x !== it); delete it.drag; rooms.push(r); sel = r.id; toast(`${r.name}改成独立的卫生间`); }
+            else if (!d && freeBath(it) && rooms.length >= HM.BLOCK_MAX) toast(`最多${HM.BLOCK_MAX}个房间，${it.name}不能单独成一间，已放回原位`);
+            else if (!d && freeBath(it)) { const r = freeBath(it), was = r.name; baths = baths.filter(x => x !== it); delete it.drag;
+              // 主卫 / 公卫 belong to a room; on its own it is a 卫生间 (its records follow the new name by id).
+              if (/^(主卫|公卫)/.test(was)) r.name = HM.nextName('卫生间', used(it)); rooms.push(r); sel = r.id; toast(r.name === was ? `${was}改成独立的卫生间` : `${was}改成独立的卫生间，现在叫${r.name}`); }
             else toast(d ? '跟另一个卫生间叠到了，已放回原位' : '这里会叠到别的房间，已放回原位');
             it.drag = null; it.bad = false; }
           drag = null; fit(); render();
@@ -967,8 +1007,8 @@ function createPlanEditor({ root, layer, svg, icons, esc, toast, openSheet, clos
   }
   function bindHandle(h, it) {
     track(h, (sx, sy) => {
-      // Rooms go down to 1.5 m (the design), or stay as small as an old template made them.
-      const k = h.dataset.k, o = { x: it.x, z: it.z, w: it.w, d: it.d }, MIN = Math.min(ROOM_MIN, k === 'l' || k === 'r' ? o.w : o.d); drag = { it, moved: true, handle: true, o };
+      // Rooms go down to 1.5 m (the design), a standalone 卫生间 to 1.2 m like one inside a room, or stay as small as an old template made them.
+      const k = h.dataset.k, o = { x: it.x, z: it.z, w: it.w, d: it.d }, MIN = Math.min(it.type === '卫生间' ? HM.BATH_MIN : ROOM_MIN, k === 'l' || k === 'r' ? o.w : o.d); drag = { it, moved: true, handle: true, o };
       return {
         move(x, y) {
           if (!drag || drag.it !== it) return; // undone by Back mid-drag
@@ -1012,14 +1052,14 @@ function createPlanEditor({ root, layer, svg, icons, esc, toast, openSheet, clos
     if (!picked || HM.NOHOST.has(picked.type)) { addRoom('卫生间'); return; }
     const ok = h => h && !HM.NOHOST.has(h.type) && b.w <= h.w && b.d <= h.d && leaves(b, h) && bathSpot(b, h);
     let h = ok(picked) ? picked : null;
-    if (!h) { toast(`${picked.name}放不下，改加一个独立的卫生间`); addRoom('卫生间'); return; }
+    if (!h) { addRoom('卫生间', `${picked.name}放不下卫生间`); return; }
     Object.assign(b, { host: h.id }, bathSpot(b, h)); b.name = HM.nextName(HM.bathName(h), used()); baths.push(b); sel = b.id; render();
     // Picked a room it can't go in: say why, and where it went instead.
     toast(`加了${b.name}，放在${h.name}里，可以拖到别处或拖到空地`);
   }
-  function addRoom(type) { if (rooms.length >= HM.BLOCK_MAX) { toast(`最多${HM.BLOCK_MAX}个房间`); return; } const s = size(type), spot = freeSpot(s.w, s.d);
+  function addRoom(type, why) { if (rooms.length >= HM.BLOCK_MAX) { toast(`最多${HM.BLOCK_MAX}个房间`); return; } const s = size(type), spot = freeSpot(s.w, s.d);
     if (spot.x < -60 || spot.z < -60 || spot.x + s.w > 60 || spot.z + s.d > 60 || rooms.some(o => HM.boxOverlap(spot, o))) { toast('没有空位放新房间了，先挪一挪别的房间'); return; }
-    const r = { id: newId('b'), type, name: HM.nextName(type, used()), ...spot }; rooms.push(r); sel = r.id; fit(); render(); toast(`加了${r.name}，拖去贴着别的房间`); }
+    const r = { id: newId('b'), type, name: HM.nextName(type, used()), ...spot }; rooms.push(r); sel = r.id; fit(); render(); toast(why ? `${why}，改加了独立的${r.name}，拖去贴着别的房间` : `加了${r.name}，拖去贴着别的房间`); }
   function remove() {
     const it = byId(sel); if (!it) return;
     if (!it.host) { const inside = baths.filter(x => x.host === it.id); if (inside.length) { toast(`先把${inside.map(x => x.name).join('、')}拖到别的房间或拿掉`); return; } if (rooms.length < 2) { toast('至少要留一个房间'); return; } rooms = rooms.filter(o => o !== it); }

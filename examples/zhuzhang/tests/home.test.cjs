@@ -89,7 +89,8 @@ test('template rooms use the ledger room names, with 次卧2 for the third bedro
   assert.ok(rooms.includes('次卧2'));
   for (const key of HM.TEMPLATE_ORDER) {
     const names = HM.roomNames(HM.makeRects(HM.planOf({ template: key })).rects);
-    for (const n of names) assert.ok(rooms.includes(n), `${key}: ${n}`);
+    // 客餐厅 is offered only while a plan has it (roomOptions adds the plan's names); 拼户型 turns it into 客厅 / 餐厅.
+    for (const n of names) assert.ok(rooms.includes(n) || n === '客餐厅', `${key}: ${n}`);
   }
   assert.ok(HM.roomNames(HM.makeRects(HM.planOf({ template: 't3l2' })).rects).includes('次卧2'));
 });
@@ -318,7 +319,7 @@ test('1.9.0 · 拼户型 is wired in: the editor ships in home3d.js, 户型 open
   assert.match(read('home3d.js'), /function createPlanEditor\(/);
   assert.match(read('home3d.js'), /a === 'layout'\) \{ setMode\('normal'\); editor\.open\(T\); \}/);
   assert.match(read('home3d.js').slice(read('home3d.js').indexOf('function createPlanEditor(')), /addEventListener\('touchstart'/, 'touch drives the drags');
-  assert.match(read('app.js'), /saveHome:\(home,renames=\[\]\)=>homeWrite\(next=>\{next\.project\.home=home;const to=new Map\(renames\);/);
+  assert.match(read('app.js'), /saveHome:\(home,renames=\[\],move=null\)=>homeWrite\(next=>\{next\.project\.home=home;const to=new Map\(renames\);/);
   assert.match(read('app.js'), /HM\.roomNames\(planRects\(data\)\)/, 'the plan\'s rooms are offered as 所在空间');
 });
 
