@@ -54,9 +54,9 @@
     // 1.4.0: optional floor plan. Unknown template → dropped (the plan is derived from 户型 again); sizes clamped.
     const home=HM.sanitizeHome(p.home);if(home)out.project.home=home;
     if(source.completedDrafts!==undefined){if(!Array.isArray(source.completedDrafts))fail('草稿提交记录无效。');out.completedDrafts=[...new Set(source.completedDrafts.map(id=>string(id,100,false)))];}
-    const ids=new Set(),renamed=new Map();
+    const ids=new Set(),raw=new Set(),renamed=new Map();
     for(const i of source.items){
-      if(!i||ids.has(i.id))fail('备份中费用项 ID 重复。');
+      if(!i||ids.has(i.id)||raw.has(i.id))fail('备份中费用项 ID 重复。');raw.add(i.id);
       // 1.11.2: ~ joins a record and its piece in 我的家; an older id with it is renamed (its payments follow).
       let id=string(i.id,100,false);if(id.includes('~')){const was=id,stem=was.replace(/~/g,'_').slice(0,94);let n=0;do id=stem+(n++?'_'+n:'');while(ids.has(id)||source.items.some(x=>x!==i&&x?.id===id));renamed.set(was,id);}ids.add(id);
       if(!CATS.some(c=>c.id===i.category)||!['estimate','confirmed','settled'].includes(i.status))fail('备份中存在不支持的分类或状态。');
@@ -187,10 +187,20 @@
     const w=weightsOf(i.parts,refOf(i,source)),rows=new Map();let net=0,prev=i.parts.map(()=>0);
     // In date order (a payment before a refund on the same day), the order the cash timeline is checked in.
     const ts=source.payments.map((p,n)=>[p,n]).filter(([p])=>p.itemId===i.id).sort(([a,x],[b,y])=>a.date.localeCompare(b.date)||(a.kind==='refund')-(b.kind==='refund')||x-y).map(([p])=>p);
-    for(const p of ts){const r=p.kind==='refund';net=Math.max(0,net+(r?-p.amount:p.amount));const cur=splitBy(net,w);rows.set(p.id,cur.map((v,k)=>r?prev[k]-v:v-prev[k]));prev=cur;}
+    for(const p of ts){const r=p.kind==='refund',d=Math.min(p.amount,r?net:Infinity);net+=r?-d:d;const step=stepSplit(prev,net,d,r,w);rows.set(p.id,step);prev=prev.map((v,k)=>r?v-step[k]:v+step[k]);}
     const out={rows,cash:prev};c.set(i.id,out);return out;
   }
   const pieceCash=(i,source=data)=>payShares(i,source).cash;
+  // One step of the running split, never against its direction: a payment goes to the pieces below their share of the
+  // new total, a refund comes off the pieces above it (never more than a piece holds). Whole yuan when everything is.
+  function stepSplit(prev,net,d,refund,w){
+    const W=w.reduce((a,b)=>a+b,0),gap=prev.map((v,k)=>Math.max(0,refund?v-net*w[k]/W:net*w[k]/W-v));
+    const u=d%100===0&&prev.every(v=>v%100===0)?100:1,n=d/u,G=gap.reduce((a,b)=>a+b,0),wt=G>0?gap:refund?prev:w,T=wt.reduce((a,b)=>a+b,0);
+    const raw=wt.map(x=>T>0?n*x/T:0),out=raw.map(Math.floor);let left=n-out.reduce((a,b)=>a+b,0);
+    for(const [,k]of raw.map((x,k)=>[x-out[k],k]).sort((a,b)=>b[0]-a[0])){if(left<=0)break;if(refund&&(out[k]+1)*u>prev[k])continue;out[k]++;left--;}
+    for(let k=0;left>0&&k<out.length;k++)while(left>0&&(!refund||(out[k]+1)*u<=prev[k])){out[k]++;left--;}
+    return out.map(x=>x*u);
+  }
   // One payment's amount for a room (a refund as the amount credited back), from the same running split.
   const payRoom=(i,room,t,source=data)=>{const s=payShares(i,source).rows.get(t.id);return s?i.parts.reduce((a,p,k)=>a+(p.room===room?s[k]:0),0):0;};
   const roomPaid=(i,room,source=data)=>pieceCash(i,source).reduce((a,v,k)=>a+(i.parts[k].room===room?v:0),0);
