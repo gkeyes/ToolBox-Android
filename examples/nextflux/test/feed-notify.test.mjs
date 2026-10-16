@@ -394,3 +394,69 @@ test("a foreground sync suppresses cached entries above an uncached gap", async 
   assert.deepEqual(await notifier.check({ syncId: "b" }), [{ feedId: 12, outcome: "notified", count: 1 }]);
   assert.match(posted.at(-1).body, /^缺$/);
 });
+
+// recheck-137 mutation gaps: each test below fails on a specific wrong variant of the pending logic.
+test("checking one sync twice does not age a pending entry", async () => {
+  const uncached = new Set([910]);
+  const { server, notifier, posted } = world({ uncached });
+  await notifier.setWatched(12, true);
+  server.add(12, 910, "排队");
+  await notifier.check({ syncId: "a" });
+  await notifier.check({ syncId: "a" });
+  await notifier.check({ syncId: "b" });
+  uncached.clear();
+  // Aging on every check would have dropped it at b.
+  assert.deepEqual(await notifier.check({ syncId: "c" }), [{ feedId: 12, outcome: "notified", count: 1 }]);
+  assert.match(posted.at(-1).body, /^排队$/);
+});
+
+test("a pending entry survives one later uncached sync", async () => {
+  const uncached = new Set([920]);
+  const { server, notifier } = world({ uncached });
+  await notifier.setWatched(12, true);
+  server.add(12, 920, "晚到");
+  await notifier.check({ syncId: "a" });
+  await notifier.check({ syncId: "b" });
+  uncached.clear();
+  assert.deepEqual(await notifier.check({ syncId: "c" }), [{ feedId: 12, outcome: "notified", count: 1 }]);
+});
+
+test("a pending entry is dropped when its second later sync still finds it uncached", async () => {
+  const uncached = new Set([930]);
+  const { server, notifier, posted } = world({ uncached });
+  await notifier.setWatched(12, true);
+  server.add(12, 930, "进不来");
+  await notifier.check({ syncId: "a" });
+  await notifier.check({ syncId: "b" });
+  await notifier.check({ syncId: "c" });
+  uncached.clear();
+  assert.deepEqual(await notifier.check({ syncId: "d" }), [{ feedId: 12, outcome: "none" }]);
+  assert.equal(posted.length, 0);
+});
+
+test("a new entry the sync cached as already read does not notify", async () => {
+  const { server, notifier, posted } = world({ cachedRead: new Set([940]) });
+  await notifier.setWatched(12, true);
+  server.add(12, 940, "本地已读");
+  assert.deepEqual(await notifier.check({ syncId: "a" }), [{ feedId: 12, outcome: "none" }]);
+  assert.equal(posted.length, 0);
+});
+
+test("a notice with cached entries still counts the ones beyond the first page", async () => {
+  const { server, notifier } = world();
+  await notifier.setWatched(12, true);
+  for (let id = 951; id <= 975; id += 1) server.add(12, id, `第${id}`);
+  assert.deepEqual(await notifier.check({ syncId: "a" }), [{ feedId: 12, outcome: "notified", count: 25 }]);
+});
+
+test("the carried count is cleared once a notice includes it", async () => {
+  const uncached = new Set();
+  const { server, notifier } = world({ uncached });
+  await notifier.setWatched(12, true);
+  for (let id = 981; id <= 1005; id += 1) { server.add(12, id, `第${id}`); if (id > 985) uncached.add(id); }
+  await notifier.check({ syncId: "a" });
+  uncached.clear();
+  assert.deepEqual(await notifier.check({ syncId: "b" }), [{ feedId: 12, outcome: "notified", count: 25 }]);
+  server.add(12, 1006, "下一篇");
+  assert.deepEqual(await notifier.check({ syncId: "c" }), [{ feedId: 12, outcome: "notified", count: 1 }]);
+});
