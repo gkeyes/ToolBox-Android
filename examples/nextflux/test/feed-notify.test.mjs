@@ -301,26 +301,47 @@ test("a feed missing from the committed catalog stops being watched", async () =
   assert.deepEqual(await notifier.watchedFeedIds(), []);
 });
 
-test("older entries the sync has not cached yet are not skipped by a newer cached one", async () => {
+test("older entries the sync has not cached yet still notify once cached", async () => {
   const uncached = new Set([300, 301]);
   const { server, notifier, posted } = world({ uncached });
   await notifier.setWatched(12, true);
   server.add(12, 300, "旧一");
   server.add(12, 301, "旧二");
   server.add(12, 302, "最新");
-  assert.deepEqual(await notifier.check(), [{ feedId: 12, outcome: "none" }]);
+  assert.deepEqual(await notifier.check({ syncId: "a" }), [{ feedId: 12, outcome: "notified", count: 1 }]);
+  assert.match(posted.at(-1).body, /^最新$/);
   uncached.clear();
-  assert.deepEqual(await notifier.check(), [{ feedId: 12, outcome: "notified", count: 3 }]);
-  assert.match(posted.at(-1).body, /最新.*旧二.*旧一/);
+  assert.deepEqual(await notifier.check({ syncId: "b" }), [{ feedId: 12, outcome: "notified", count: 2 }]);
+  assert.match(posted.at(-1).body, /旧二.*旧一/);
 });
 
-test("an entry still uncached after the next sync no longer holds the feed back", async () => {
-  const uncached = new Set([400]);
+test("entries that never reach the cache are dropped after a few syncs and never block newer ones", async () => {
+  const uncached = new Set([400, 401]);
   const { server, notifier, posted } = world({ uncached });
   await notifier.setWatched(12, true);
-  server.add(12, 400, "进不了缓存");
-  server.add(12, 401, "新");
-  assert.deepEqual(await notifier.check(), [{ feedId: 12, outcome: "none" }]);
-  assert.deepEqual(await notifier.check(), [{ feedId: 12, outcome: "notified", count: 1 }]);
-  assert.match(posted.at(-1).body, /^新$/);
+  server.add(12, 400, "进不了一");
+  server.add(12, 401, "进不了二");
+  server.add(12, 402, "新");
+  assert.deepEqual(await notifier.check({ syncId: "a" }), [{ feedId: 12, outcome: "notified", count: 1 }]);
+  // The same sync checked twice (two callers of one forceSync) does not age the pending ones.
+  await notifier.check({ syncId: "a" });
+  await notifier.check({ syncId: "b" });
+  await notifier.check({ syncId: "c" });
+  server.add(12, 403, "更新");
+  assert.deepEqual(await notifier.check({ syncId: "d" }), [{ feedId: 12, outcome: "notified", count: 1 }]);
+  assert.match(posted.at(-1).body, /^更新$/);
+  uncached.clear();
+  assert.deepEqual(await notifier.check({ syncId: "e" }), [{ feedId: 12, outcome: "none" }]);
+});
+
+test("a foreground sync suppresses cached entries above an uncached gap", async () => {
+  const uncached = new Set([500]);
+  const { server, notifier, posted } = world({ uncached });
+  await notifier.setWatched(12, true);
+  server.add(12, 500, "缺");
+  server.add(12, 501, "前台看过");
+  assert.deepEqual(await notifier.check({ foreground: true, syncId: "a" }), [{ feedId: 12, outcome: "foreground", count: 1 }]);
+  uncached.clear();
+  assert.deepEqual(await notifier.check({ syncId: "b" }), [{ feedId: 12, outcome: "notified", count: 1 }]);
+  assert.match(posted.at(-1).body, /^缺$/);
 });

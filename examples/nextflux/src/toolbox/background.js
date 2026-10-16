@@ -156,7 +156,7 @@ async function runBackgroundSync(reason) {
       setHealth({ type: "success" });
       await publishBackgroundStatus(result);
       // Per-feed update notifications ride on the same timer; a failure there never fails the sync.
-      await checkWatchedFeeds().catch(() => {});
+      await checkWatchedFeeds({ syncId: result.syncedAt }).catch(() => {});
       return true;
     } catch (error) {
       if (runtimeClosing.get()) return false;

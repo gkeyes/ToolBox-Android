@@ -116,7 +116,7 @@ export function createFeedNotifier({ api, notifications, storage, feedTitle = ()
    * Runs after a committed sync. One failing feed does not stop the others. `foreground` marks a
    * sync the reader ran on screen: it only moves the cursors, even if NextFlux leaves meanwhile.
    */
-  function check({ foreground = false, knownFeedIds = null } = {}) {
+  function check({ foreground = false, knownFeedIds = null, syncId = null } = {}) {
     return serial(async () => {
       const state = await load();
       const results = [];
@@ -143,23 +143,38 @@ export function createFeedNotifier({ api, notifications, storage, feedTitle = ()
           const { entries = [], total: reported = 0 } = await api.newUnreadEntries(feedId, watch.lastEntryId) || {};
           const newer = entries.filter((entry) => Number.isSafeInteger(entry?.id) && entry.id > watch.lastEntryId);
           // Only entries the committed sync wrote announce, so a tap never opens a missing one.
-          // The cursor stops below the oldest uncached entry, so it and anything newer announce
-          // after the sync that caches them. An entry still uncached after that sync is let go,
-          // so one that never reaches the cache can't hold the feed back.
+          // The cursor still moves past every new entry; uncached ones wait in `pending` and
+          // announce once a later sync caches them. A pending entry still uncached after two more
+          // distinct syncs is dropped, so one that never reaches the cache can't hold the feed.
           const cached = await Promise.all(newer.map((entry) => isCached(entry.id).catch(() => false)));
-          const missing = newer.filter((_, index) => !cached[index]).map((entry) => entry.id)
-            .filter((id) => id !== watch.held);
-          const holdAt = missing.length ? Math.min(...missing) : Infinity;
-          const fresh = newer.filter((entry, index) => cached[index] && entry.id < holdAt).sort((a, b) => b.id - a.id);
-          const total = Math.max(fresh.length, (Number(reported) || 0) - (newer.length - fresh.length));
-          const held = Number.isFinite(holdAt) ? holdAt : undefined;
+          const missingNew = newer.filter((_, index) => !cached[index]).map((entry) => entry.id);
+          const newSync = syncId == null || syncId !== watch.syncId;
+          const pendingNow = [];
+          const pendingFresh = [];
+          for (const item of Array.isArray(watch.pending) ? watch.pending : []) {
+            if (!Number.isSafeInteger(item?.id)) continue;
+            if (await isCached(item.id).catch(() => false)) { pendingFresh.push({ id: item.id, title: item.title }); continue; }
+            const tries = (Number(item.tries) || 0) + (newSync ? 1 : 0);
+            if (tries < 3) pendingNow.push({ ...item, tries });
+          }
+          const pending = [
+            ...pendingNow,
+            ...newer.filter((entry) => missingNew.includes(entry.id)).map((entry) => ({ id: entry.id, title: entry.title, tries: 0 })),
+          ];
+          const fresh = [...newer.filter((_, index) => cached[index]), ...pendingFresh].sort((a, b) => b.id - a.id);
+          const total = Math.max(fresh.length, (Number(reported) || 0) - missingNew.length + pendingFresh.length);
+          const next = {
+            lastEntryId: newer.reduce((max, entry) => Math.max(max, entry.id), watch.lastEntryId),
+            ...(pending.length ? { pending } : {}),
+            ...(syncId != null ? { syncId } : {}),
+          };
           if (!fresh.length) {
-            if (held !== watch.held) state.feeds[key] = { ...watch, held };
+            state.feeds[key] = next;
             results.push({ feedId, outcome: "none" });
             continue;
           }
           if (foreground || isForeground()) {
-            state.feeds[key] = { lastEntryId: fresh[0].id, held };
+            state.feeds[key] = next;
             results.push({ feedId, outcome: "foreground", count: fresh.length });
             continue;
           }
@@ -173,7 +188,7 @@ export function createFeedNotifier({ api, notifications, storage, feedTitle = ()
             throw error;
           }
           state.blocked = null;
-          state.feeds[key] = { lastEntryId: fresh[0].id, held };
+          state.feeds[key] = next;
           state.opens[id] = { feedId, entryIds: fresh.map((entry) => entry.id), total };
           results.push({ feedId, outcome: "notified", count: Math.max(Number(total) || 0, fresh.length) });
         } catch (error) {
