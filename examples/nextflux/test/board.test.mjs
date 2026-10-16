@@ -96,3 +96,14 @@ test("with hideDuplicates, today's unread keeps only the newest copy of a title 
   assert.deepEqual(todaysUnread(rows, { now, hideDuplicates: true }).map((row) => row.id), [2, 4]);
   assert.deepEqual(todaysUnread(rows, { now }).map((row) => row.id), [2, 3, 1, 4]);
 });
+
+// Replies that are not valid JSON still give their topics: a stray " inside a
+// value, a trailing comma, numbers written as strings, a reply cut off mid-way.
+test("parseTopics reads topics from replies that are not valid JSON", () => {
+  const stray = '{"topics":[{"title":"苹果发布"新品"","gist":"一句","summary":"他说"好"。","articles":[1,2]},{"title":"B","gist":"g","summary":"s","articles":[3]}]}';
+  assert.deepEqual(parseTopics(stray, 5).map((topic) => [topic.title, topic.articles]), [["苹果发布\"新品\"", [1, 2]], ["B", [3]]]);
+  assert.deepEqual(parseTopics('{"topics":[{"title":"A","gist":"g","summary":"s","articles":[1,2],},]}', 5).map((topic) => topic.articles), [[1, 2]]);
+  const cut = '```json\n{"topics":[{"title":"A","gist":"g","summary":"s","articles":["1","[2]"]},{"title":"B","gist":"g","summary":"s","articles":[3';
+  assert.deepEqual(parseTopics(cut, 5).map((topic) => [topic.title, topic.articles]), [["A", [1, 2]]]);
+  assert.throws(() => parseTopics("今天没有什么值得看的。", 5), /无法识别/);
+});

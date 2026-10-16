@@ -22,7 +22,8 @@ function safeEmitLength(str, tag) {
 // 创建一个有状态的思考内容过滤器
 // 过滤 <think>…</think> 标签（DeepSeek-R1、QwQ 等模型的推理过程）
 // 同时忽略 reasoning_content 字段（DeepSeek 原生 API）
-function createThinkFilter(onChunk) {
+// onThink, when given, receives the thinking text instead of dropping it.
+function createThinkFilter(onChunk, onThink) {
   let inThinking = false;
   let pending = "";
 
@@ -33,12 +34,15 @@ function createThinkFilter(onChunk) {
       if (inThinking) {
         const closeIdx = pending.indexOf("</think>");
         if (closeIdx >= 0) {
+          if (closeIdx > 0) onThink?.(pending.slice(0, closeIdx));
           inThinking = false;
           // 跳过 </think> 后紧跟的换行/空格，避免多余空行
           pending = pending.slice(closeIdx + 8).replace(/^\s+/, "");
         } else {
-          // 保留末尾可能是 </think> 部分前缀的内容，其余丢弃
-          pending = pending.slice(safeEmitLength(pending, "</think>"));
+          // 保留末尾可能是 </think> 部分前缀的内容，其余丢弃（或交给 onThink）
+          const safe = safeEmitLength(pending, "</think>");
+          if (safe > 0) onThink?.(pending.slice(0, safe));
+          pending = pending.slice(safe);
           break;
         }
       } else {
@@ -87,15 +91,17 @@ export const summarizeArticleStream = async (article, { onChunk, onDone, onError
   }
 };
 
-// Streams a chat completion for prepared messages, without the model's
-// thinking text (used by today's briefing).
-export const streamChat = async (messages, { onChunk, signal }) => {
+// Streams a chat completion for prepared messages (used by today's board).
+// The answer goes to onChunk; the model's thinking, from <think> tags or a
+// reasoning field, goes to onThink when given, and is dropped otherwise.
+export const streamChat = async (messages, { onChunk, onThink, signal }) => {
   const { aiApiKey, aiBaseUrl, aiModel } = settingsState.get();
   await streamChatCompletion({
     baseUrl: aiBaseUrl,
     apiKey: aiApiKey,
     signal,
-    onDelta: createThinkFilter(onChunk),
+    onDelta: createThinkFilter(onChunk, onThink),
+    onReasoning: onThink,
     body: { model: aiModel, messages, temperature: 0.3 },
   });
 };

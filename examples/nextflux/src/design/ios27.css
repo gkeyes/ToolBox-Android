@@ -785,3 +785,14 @@ fieldset, .fieldset { min-inline-size: 0; max-inline-size: 100%; }
   inset-block-start: 100%;
   pointer-events: none;
 }
+
+/* The scroll-to-top pill sits under the floating header, not on top of its
+   right-hand buttons; when the header tucks away it rises to the top. */
+.article-list-indicator {
+  inset-block-start: calc(var(--list-header-h, 84px) + 8px);
+  translate: 0 0;
+  transition: translate var(--ds-dur-spatial, 300ms) var(--ds-ease-spatial, ease);
+}
+.nextflux-article-list-page[data-chrome="hidden"] .article-list-indicator {
+  translate: 0 calc(var(--nf-safe-top) + 8px - var(--list-header-h, 84px) - 8px);
+}

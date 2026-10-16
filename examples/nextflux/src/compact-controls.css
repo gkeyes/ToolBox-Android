@@ -21,3 +21,14 @@
 @media (display-mode: standalone) {
   .action-buttons { padding-block-start: env(safe-area-inset-top, 0px); }
 }
+
+/* Touch screens: a tap can leave a control marked focus-visible (a blue
+   ring that stays after the finger lifts). There is no keyboard to need it,
+   so on touch screens no control draws a focus ring. */
+@media (hover: none) and (pointer: coarse) {
+  :is(button, a, [role="button"], [role="tab"], [role="switch"], [role="menuitem"], .button, .nextflux-close-button):is(:focus-visible, [data-focus-visible="true"]) {
+    outline: none !important;
+    --tw-ring-color: transparent !important;
+    --tw-ring-offset-color: transparent !important;
+  }
+}
