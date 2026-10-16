@@ -1,5 +1,5 @@
 @import "tailwindcss";
-@import "@heroui/styles";
+@import "./design/heroui.css";
 @import "./design/tokens.css";
 @import "./design/components.css";
 @import "./design/views.css";

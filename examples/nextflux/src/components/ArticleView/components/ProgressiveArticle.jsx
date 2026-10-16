@@ -7,6 +7,7 @@ import CodeBlock from "./CodeBlock.jsx";
 import { createReadingRenderer } from "@/reading/renderer.js";
 import { createHighlightQueue, startProgressiveReading } from "@/reading/client.js";
 import { sameReadingSource } from "@/lib/articleReadingState.js";
+import { imageIsInline } from "@/reading/inlineImage.mjs";
 
 function ReadingPortal({ item, highlights }) {
   useEffect(() => {
@@ -14,7 +15,9 @@ function ReadingPortal({ item, highlights }) {
     if (root) window.dispatchEvent(new CustomEvent("nextflux:reading-content", { detail: { root, blocks: [item.target] } }));
   }, [item]);
   let content;
-  if (item.type === "image") content = <ArticleImage imgNode={{ attribs: item.attrs }} />;
+  if (item.type === "image") {
+    content = <ArticleImage imgNode={{ attribs: item.attrs }} inline={imageIsInline(item.target)} />;
+  }
   else if (item.type === "media") content = <Iframe sources={item.sources} domNode={{ name: item.kind, attribs: { "data-media-kind": item.kind, "data-media-url": item.url } }} />;
   else if (item.type === "code") content = <CodeBlock code={item.code} language={item.language} highlights={highlights} plainElement={item.plainElement} container={item.container} />;
   else content = <div className="flex justify-center"><Chip color="accent" variant="soft" className="cursor-pointer my-2"><a href={item.href} className="border-none!" rel="noopener noreferrer" target="_blank">{new URL(item.href).hostname}</a><Link.Icon /></Chip></div>;

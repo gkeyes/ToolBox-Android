@@ -104,9 +104,16 @@ function Digest({ state, onOpen }) {
   </>;
 }
 
+// While a stream runs only its newest part is drawn: redrawing a whole
+// 200k-character thinking stream every 80ms held the page for up to 400ms
+// at a time. The full text stays in the store (and in RawOutput on failure).
+const LIVE_TAIL = 4000;
+
 // A box of streamed text that stays scrolled to its newest line while the
 // reader has not scrolled it back.
-function LiveText({ text, className }) {
+function LiveText({ text: full, className, tail = false }) {
+  const cut = tail && full.length > LIVE_TAIL ? full.length - LIVE_TAIL : 0;
+  const text = cut ? `……（前面 ${cut} 字略）\n${full.slice(cut)}` : full;
   const ref = useRef(null);
   const pinned = useRef(true);
   useEffect(() => {
@@ -140,8 +147,8 @@ function LiveRun({ stream }) {
     </section>
     <section className="nf-board-card nf-board-live-card">
       <div className="nf-board-live-head"><span className="nf-board-live-tag is-receive">接收</span><h3>{phase}</h3><Spinner /></div>
-      {stream.thinking && <LiveText className="is-thinking" text={stream.thinking} />}
-      {stream.text ? <LiveText text={stream.text} /> : null}
+      {stream.thinking && <LiveText className="is-thinking" text={stream.thinking} tail />}
+      {stream.text ? <LiveText text={stream.text} tail /> : null}
     </section>
   </div>;
 }
@@ -159,7 +166,7 @@ function RawOutput({ raw }) {
 function caption(state, stream) {
   if (state.status === "loading" || state.updating) {
     const phase = !stream ? "正在读取未读文章" : stream.text ? `AI 正在输出 · ${stream.text.length} 字` : stream.thinking ? "AI 正在思考" : `已发送 ${stream.sent.length} 篇，等待 AI`;
-    return state.updating && state.at ? `${phase}，下面是 ${clock(state.at)} 的版本` : phase;
+    return state.updating && state.at ? `${phase}，上面是 ${clock(state.at)} 的版本` : phase;
   }
   if (state.status === "done") return `${state.total} 篇未读 · ${clock(state.at)} 更新`;
   return "";
@@ -268,10 +275,12 @@ export default function BoardPage() {
             </p>
             {state.error && <p className="nf-board-inline-error" role="alert">更新失败：{state.error}</p>}
             {state.error && <RawOutput raw={state.raw} />}
-            {state.updating && <LiveRun stream={stream} />}
             <div className={state.updating ? "nf-board-cards is-stale" : "nf-board-cards"}>
               {tab === "topics" ? <Topics state={state} onOpen={openArticle} /> : <Digest state={state} onOpen={openArticle} />}
             </div>
+            {/* Under the cards: above them, its growing text pushed the board
+                being read down by up to 600px. */}
+            {state.updating && <LiveRun stream={stream} />}
           </>}
         </div>
       </div>

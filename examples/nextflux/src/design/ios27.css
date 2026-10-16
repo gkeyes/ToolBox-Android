@@ -671,9 +671,11 @@ fieldset, .fieldset { min-inline-size: 0; max-inline-size: 100%; }
 .card-time { overflow: hidden; text-overflow: ellipsis; }
 /* A narrow card at large text leaves the meta row only a sliver beside a side
    thumbnail; there the meta row spans the card, the time drops to its own
-   line and the thumbnail sits beside the title. */
-.article-card { container: nf-card / inline-size; }
-@container nf-card (max-width: 10rem) {
+   line and the thumbnail sits beside the title. A viewport query, not a
+   container: every card as a size container made each one restyle inside
+   layout as rows mounted while scrolling. On phones the list (and so each
+   card) is the screen width less ~2rem. */
+@media (max-width: 12rem) {
   .card-content:has(> .card-image) {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
@@ -784,6 +786,20 @@ fieldset, .fieldset { min-inline-size: 0; max-inline-size: 100%; }
   inset-inline: 0;
   inset-block-start: 100%;
   pointer-events: none;
+  display: flex;
+  justify-content: center;
+  padding: 4px 20px 0;
+}
+/* Floating over the first row, the caption is a frosted pill: bare text
+   printed over the 今天 label and its rule. */
+.article-list-caption-row > .article-list-caption {
+  max-inline-size: 100%;
+  padding: 3px 12px;
+  border-radius: 999px;
+  background: var(--nf-glass);
+  -webkit-backdrop-filter: var(--nf-lens, blur(12px)) var(--nf-glass-filter);
+  backdrop-filter: var(--nf-lens, blur(12px)) var(--nf-glass-filter);
+  box-shadow: var(--nf-glass-rim-soft);
 }
 
 /* The scroll-to-top pill sits under the floating header, not on top of its

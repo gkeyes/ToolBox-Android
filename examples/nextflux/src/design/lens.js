@@ -13,6 +13,7 @@ const NS = "http://www.w3.org/2000/svg";
 const EDGE = 16; // px of rim that bends
 const SCALE = 21; // displacement strength, as on the boards (lens 38 × 0.55)
 const REGION = 4096; // px of filter region around the element (see filterFor)
+const SPARE_MAPS = 12; // unused edge maps kept for sizes that come back
 
 // What gets a lens, and the inset of the painted disc inside the element
 // (the close button paints its 44px disc on ::before, 2px inside a 48px target).
@@ -97,7 +98,15 @@ export function installLens({ doc = document, win = window } = {}) {
   svg.dataset.nfLens = "";
   doc.body.append(svg);
 
-  const filters = new Map(); // "w×h×r" -> { id, node }
+  const filters = new Map(); // "w×h×r" -> { id, node, lens }
+  let paused = false;
+  // Same backdrop, no bending: the blur and tint after url() in each
+  // backdrop-filter are untouched.
+  const passThrough = () => {
+    const node = doc.createElementNS(NS, "feOffset");
+    node.setAttribute("in", "SourceGraphic");
+    return node;
+  };
   const bound = new Map(); // element -> { inset, key }
   let nextId = 0;
   const filterFor = (key, width, height, radius) => {
@@ -126,21 +135,27 @@ export function installLens({ doc = document, win = window } = {}) {
     }
     const displace = doc.createElementNS(NS, "feDisplacementMap");
     for (const [name, value] of Object.entries({ in: "SourceGraphic", in2: "map", scale: SCALE, xChannelSelector: "R", yChannelSelector: "G" })) displace.setAttribute(name, String(value));
-    filter.append(neutral, image, merge, displace);
+    const lens = [neutral, image, merge, displace];
+    filter.append(...(paused ? [passThrough()] : lens));
     svg.append(filter);
-    filters.set(key, { id, node: filter });
+    filters.set(key, { id, node: filter, lens });
     return id;
   };
 
-  // Drop elements that left the page and every map no element uses any more,
-  // so resizing (split screen, font size) doesn't pile up filters.
+  // Drop elements that left the page and the oldest maps no element uses any
+  // more, so resizing (split screen, font size) doesn't pile up filters.
   const prune = () => {
     for (const element of bound.keys()) {
       if (!element.isConnected) { resizes.unobserve(element); bound.delete(element); }
     }
+    // A few unused maps stay: the filter capsule changes width with every
+    // tab switch and redrawing its map (a canvas toDataURL) each time cost
+    // ~20ms per switch at 4x CPU throttling.
     const used = new Set([...bound.values()].map((entry) => entry.key));
+    let spare = [...filters.keys()].filter((key) => !used.has(key)).length - SPARE_MAPS;
     for (const [key, { node }] of filters) {
-      if (!used.has(key)) { node.remove(); filters.delete(key); }
+      if (spare <= 0) break;
+      if (!used.has(key)) { node.remove(); filters.delete(key); spare -= 1; }
     }
   };
 
@@ -204,23 +219,45 @@ export function installLens({ doc = document, win = window } = {}) {
   scan();
 
   // While anything scrolls, the glass keeps its blur but drops the edge
-  // bending (lens-host.css): re-running the displacement filter on every
-  // scrolled frame tripled the dropped frames on a phone. It comes back
-  // once scrolling has been still for a moment.
-  const root = doc.documentElement;
+  // bending: re-running the displacement filter on every scrolled frame
+  // tripled the dropped frames on a phone. Only the few SVG filters change:
+  // a document-wide attribute restyled every glass subtree (~110 elements)
+  // at each scroll start and stop. The bending returns once nothing has
+  // scrolled for a moment and no finger is down, so a held or slow drag does
+  // not flip it on and off.
   let still = 0;
-  const settle = () => { still = 0; delete root.dataset.nfScrolling; };
+  let touches = 0;
+  const setPaused = (value) => {
+    if (paused === value) return;
+    paused = value;
+    for (const { node, lens } of filters.values()) node.replaceChildren(...(value ? [passThrough()] : lens));
+  };
+  const settle = () => {
+    still = 0;
+    if (!touches) setPaused(false);
+  };
   const onScroll = () => {
-    if (!still) root.dataset.nfScrolling = "";
-    else win.clearTimeout(still);
+    setPaused(true);
+    if (still) win.clearTimeout(still);
     still = win.setTimeout(settle, 180);
   };
+  const onTouch = (event) => {
+    touches = event.touches?.length ?? 0;
+    if (!touches && paused && !still) still = win.setTimeout(settle, 180);
+  };
+  const touchTypes = ["touchstart", "touchend", "touchcancel"];
   doc.addEventListener("scroll", onScroll, { capture: true, passive: true });
+  for (const type of touchTypes) doc.addEventListener(type, onTouch, { capture: true, passive: true });
   return {
     scan,
+    get paused() { return paused; },
     dispose() {
       doc.removeEventListener("scroll", onScroll, { capture: true });
-      if (still) { win.clearTimeout(still); settle(); }
+      for (const type of touchTypes) doc.removeEventListener(type, onTouch, { capture: true });
+      if (still) win.clearTimeout(still);
+      still = 0;
+      touches = 0;
+      setPaused(false);
       mutations.disconnect();
       resizes.disconnect();
       if (frame) win.cancelAnimationFrame(frame);
@@ -280,9 +317,10 @@ export function installGlassPress({ doc = document } = {}) {
   // shows them again once a key is pressed.
   const root = doc.documentElement;
   const touched = (event) => {
-    if (event.type === "touchstart" || event.pointerType === "touch") root.dataset.nfInput = "touch";
+    // Only on a change: rewriting it restyles every control on the page.
+    if ((event.type === "touchstart" || event.pointerType === "touch") && root.dataset.nfInput !== "touch") root.dataset.nfInput = "touch";
   };
-  const typed = () => { root.dataset.nfInput = "keyboard"; };
+  const typed = () => { if (root.dataset.nfInput !== "keyboard") root.dataset.nfInput = "keyboard"; };
   listeners.push(["touchstart", touched], ["pointerdown", touched], ["keydown", typed]);
   const win = doc.defaultView;
   for (const [type, handler] of listeners) doc.addEventListener(type, handler, options);
