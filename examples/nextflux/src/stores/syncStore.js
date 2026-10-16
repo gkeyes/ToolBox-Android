@@ -497,8 +497,8 @@ async function performSync() {
 }
 
 export async function flushSyncWork() {
-  while (activeOperation || currentSync || pendingManual.length || pendingAutomatic.length || pumpScheduled) {
-    await Promise.allSettled([activeOperation, currentSync, iconQueue]);
+  while (activeOperation || currentSync || feedNotifyCheck || pendingManual.length || pendingAutomatic.length || pumpScheduled) {
+    await Promise.allSettled([activeOperation, currentSync, feedNotifyCheck, iconQueue]);
     await new Promise((resolve) => queueMicrotask(resolve));
   }
   await iconQueue;
@@ -506,12 +506,20 @@ export async function flushSyncWork() {
 
 // A sync on screen still moves the update-notification cursors (without posting), so the next
 // background run does not announce entries the reader already saw.
-async function checkFeedNotifications(result) {
-  if (result?.outcome !== "committed") return;
-  try {
-    const { checkWatchedFeeds } = await import("../toolbox/feed-notifications.js");
-    await checkWatchedFeeds({ foreground: true });
-  } catch { /* notifications never fail a sync */ }
+let feedNotifyCheck = null;
+
+// Tracked by flushSyncWork, so closing the runtime waits for the cursors to move.
+function checkFeedNotifications(result) {
+  if (result?.outcome !== "committed") return Promise.resolve();
+  const run = (async () => {
+    try {
+      const { checkWatchedFeeds } = await import("../toolbox/feed-notifications.js");
+      await checkWatchedFeeds({ foreground: true });
+    } catch { /* notifications never fail a sync */ }
+  })();
+  feedNotifyCheck = run;
+  void run.finally(() => { if (feedNotifyCheck === run) feedNotifyCheck = null; });
+  return run;
 }
 
 export const forceSync = () => sync("foreground").then(async (result) => { await checkFeedNotifications(result); return result; });

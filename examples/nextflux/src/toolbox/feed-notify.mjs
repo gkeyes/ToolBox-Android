@@ -102,8 +102,8 @@ export function createFeedNotifier({ api, notifications, storage, feedTitle = ()
         // Fails with PERMISSION_DENIED while the tool's notification grant is off. It can't see
         // Android's own switch; only a refused post shows that, recorded as state.blocked.
         await notifications.cancel(feedNotificationId(id));
-        // The tool's grant is back; a later refused post records Android's switch again.
-        state.blocked = null;
+        // The probe proves the tool's grant is back; it can't see Android's own switch.
+        if (state.blocked === "PERMISSION_DENIED") state.blocked = null;
         // An empty feed starts at 0, so its first entry notifies.
         state.feeds[id] = { lastEntryId: Number(await api.latestEntryId(id)) || 0 };
         await save(state);
@@ -179,7 +179,8 @@ export function createFeedNotifier({ api, notifications, storage, feedTitle = ()
   /** Logout: forgets every watch, cursor and pending open, and withdraws posted notices. */
   function clear() {
     return serial(async () => {
-      const state = await load();
+      // Removal runs even when the state can't be read; only the notice cleanup needs it.
+      const state = await load().catch(() => emptyState());
       await storage.remove(FEED_NOTIFY_KEY);
       await Promise.all(Object.keys(state.feeds).map((key) =>
         notifications?.cancel?.(feedNotificationId(Number(key))).catch(() => {})));
