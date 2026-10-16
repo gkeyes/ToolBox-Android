@@ -134,6 +134,10 @@ class RuntimeTransitionTest {
         assertTrue(b.sourceAboveRuntime)
         assertEquals(0f, b.sourceDepth())
         assertFalse(b.sourceHidden)
+        // Held under the incoming cover, the source stays out of the semantics tree; the old one,
+        // going out, kept its semantics.
+        assertTrue(b.sourceSemanticsHidden)
+        assertFalse(a.sourceSemanticsHidden)
     }
 
     @Test
@@ -172,7 +176,6 @@ class RuntimeTransitionTest {
         }
         compose.waitForIdle()
         assertFalse(a.runtimeLeaving)
-        assertEquals(1, a.reopenRevision)
         assertFalse(a.sourceAboveRuntime)
         assertEquals(0f, a.sourceReturnProgress.value)
         assertTrue(a.sourceHidden)

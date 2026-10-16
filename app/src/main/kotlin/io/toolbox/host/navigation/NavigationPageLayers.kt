@@ -136,6 +136,7 @@ internal fun RuntimeSessionLayer(
     modifier: Modifier = Modifier,
     toolName: String? = null,
     reopenRevision: Int = 0,
+    onReopenHandled: () -> Unit = {},
 ) {
     val owner = remember(route) { RuntimeEntryViewModelStoreOwner() }
     DisposableEffect(owner) {
@@ -152,7 +153,10 @@ internal fun RuntimeSessionLayer(
     // view model was made count.
     val seenRevision = remember(viewModel) { reopenRevision }
     LaunchedEffect(viewModel, reopenRevision) {
-        if (reopenRevision != seenRevision) viewModel.reopen()
+        if (reopenRevision != seenRevision) {
+            viewModel.reopen()
+            onReopenHandled()
+        }
     }
     Box(modifier) {
         RuntimeShellScreen(

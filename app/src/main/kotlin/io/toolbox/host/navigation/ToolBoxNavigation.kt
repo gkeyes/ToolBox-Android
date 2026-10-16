@@ -122,8 +122,11 @@ internal class RuntimeTransition(
     var entryCoverMeasured by mutableStateOf(false)
     /** The running return (or the animation cancelling it), so a reopen or Back can stop it. */
     var returnJob: Job? = null
-    /** Bumped when a return is cancelled, so the tool's runtime reopens what Back closed. */
-    var reopenRevision by mutableIntStateOf(0)
+    /**
+     * The tool was reopened while Back may still be saving for its exit; a return that save then
+     * starts is skipped, and the runtime cancels the exit. Cleared once the runtime handled it.
+     */
+    var reopenRequested = false
 
     /** Returning from a settled tool: the source fades in over the tool, not over the cover. */
     val returningFromSettled: Boolean
@@ -132,6 +135,13 @@ internal class RuntimeTransition(
     /** The source sits opaque beneath a cover that is still showing (returning while loading). */
     val sourceUnderCover: Boolean
         get() = sourceAboveRuntime && entryCoverVisible
+
+    /**
+     * Whether the source layer is out of the semantics tree: whenever the tool is in front of it,
+     * including while it is held opaque under a cover that is coming in (not going out).
+     */
+    val sourceSemanticsHidden: Boolean
+        get() = route != null && (!sourceAboveRuntime || (entryCoverVisible && !runtimeLeaving))
 
     /**
      * How far the source layer has gone (0 = fully shown, 1 = gone); its alpha is 1 minus this.
@@ -151,7 +161,6 @@ internal class RuntimeTransition(
     fun beginReturnCancel(): Boolean {
         if (route == null || !runtimeLeaving) return false
         runtimeLeaving = false
-        reopenRevision += 1
         return true
     }
 
@@ -373,6 +382,9 @@ internal fun ToolBoxNavigation(
     SideEffect { pageProgress.keys.retainAll(retainedRoutes.toSet()) }
     val firstRetainedProgress = retainedRoutes.firstOrNull()?.let(::progressFor)
     var runtimeGeneration by remember { mutableIntStateOf(0) }
+    // Outside the per-route transition: a same-tool re-push keeps the retained runtime, which
+    // must still see the reopen and undo the exit the finished return sealed.
+    var runtimeReopenRevision by remember { mutableIntStateOf(0) }
     val transition = rememberRuntimeTransition(runtimeRoute, runtimeGeneration)
     val entryProgress = transition.entryProgress
     val sourceReturnProgress = transition.sourceReturnProgress
@@ -397,7 +409,7 @@ internal fun ToolBoxNavigation(
         }
     }
 
-    LaunchedEffect(runtimeRoute, entryCoverMeasured) {
+    LaunchedEffect(transition, entryCoverMeasured) {
         if (runtimeRoute != null && entryCoverMeasured) {
             HostTrace.bestEffortAsyncSection("tool.shell.enter") {
                 withFrameNanos { }
@@ -409,7 +421,7 @@ internal fun ToolBoxNavigation(
         }
     }
 
-    LaunchedEffect(runtimeRoute, runtimeLayerEnabled, runtimePresentationReady, runtimeLeaving, sourceAboveRuntime) {
+    LaunchedEffect(transition, runtimeLayerEnabled, runtimePresentationReady, runtimeLeaving, sourceAboveRuntime) {
         if (
             runtimeRoute != null && runtimeLayerEnabled && runtimePresentationReady &&
             !runtimeLeaving && !sourceAboveRuntime
@@ -422,7 +434,9 @@ internal fun ToolBoxNavigation(
 
     val leaveRuntime: () -> Unit = {
         val activeRoute = runtimeRoute
-        if (activeRoute != null && !runtimeLeaving) {
+        if (transition.reopenRequested) {
+            // Reopened while the exit was saving: stay; the runtime cancels the exit.
+        } else if (activeRoute != null && !runtimeLeaving) {
             runtimeLeaving = true
             // A cancelled return may still be animating back; continue from where it stands.
             val resuming = sourceAboveRuntime
@@ -458,11 +472,19 @@ internal fun ToolBoxNavigation(
     fun navigate(route: ToolBoxRoute) {
         // The live stack top, not the composed route: the return may have just popped it.
         when (runtimeReopen(route, secondaryBackStack.lastOrNull() as? RuntimeRoute, runtimeLeaving)) {
-            RuntimeReopen.CancelReturn -> cancelReturn()
+            RuntimeReopen.CancelReturn -> {
+                cancelReturn()
+                runtimeReopenRevision += 1
+            }
             // The runtime cancels the close only when Back is still saving for an exit.
-            RuntimeReopen.CancelExit -> transition.reopenRevision += 1
+            RuntimeReopen.CancelExit -> if (runtimeLayerEnabled) {
+                transition.reopenRequested = true
+                runtimeReopenRevision += 1
+            }
             RuntimeReopen.None -> if (secondaryBackStack.pushSecondary(route) && route is RuntimeRoute) {
                 runtimeGeneration += 1
+                // Pushed again right after its return popped it: the retained runtime reopens.
+                runtimeReopenRevision += 1
             }
         }
     }
@@ -503,7 +525,7 @@ internal fun ToolBoxNavigation(
                     alpha = 1f - runtimeDepth
                 }
                 .then(
-                    if (runtimeRoute != null && !sourceAboveRuntime) {
+                    if (transition.sourceSemanticsHidden) {
                         Modifier.clearAndSetSemantics { }
                     } else {
                         Modifier
@@ -633,7 +655,8 @@ internal fun ToolBoxNavigation(
                     onPresentationReady = { runtimePresentationReady = true },
                     onBack = leaveRuntime,
                     toolName = runtimeTitle,
-                    reopenRevision = transition.reopenRevision,
+                    reopenRevision = runtimeReopenRevision,
+                    onReopenHandled = { transition.reopenRequested = false },
                     modifier = Modifier
                         .fillMaxSize()
                         .zIndex(1f)
@@ -649,9 +672,9 @@ internal fun ToolBoxNavigation(
         }
 
         if (runtimeRoute != null && entryCoverVisible) {
-            // Keyed per tool: a tool switch gives the new cover a fresh node, so its first
-            // placement reports entryCoverMeasured and the entry starts.
-            key(runtimeRoute) {
+            // Keyed per transition: a tool switch (or the same tool pushed again) gives the new
+            // cover a fresh node, so its first placement reports entryCoverMeasured.
+            key(transition) {
                 // After a switch during a return the source is still half-transparent; the new
                 // cover fills in opaque beneath it (where the replaced tool was) until the
                 // source has faded out, instead of leaving the bare background showing through.
