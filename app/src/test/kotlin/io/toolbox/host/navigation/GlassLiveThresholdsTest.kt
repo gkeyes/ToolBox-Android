@@ -38,7 +38,7 @@ class GlassLiveThresholdsTest {
     }
 
     @Test
-    fun theRuntimeEntryHidesTheSourceExactlyWhereTheSourceLayerReachesZeroAlpha() {
+    fun theRuntimeEntryHidesTheSourceWhereTheSourceLayerAlphaReachesTheHiddenEdge() {
         // The source layer's alpha during the entry is fadeThroughOutgoingAlpha(1 - entryProgress)
         // (ToolBoxNavigation's graphicsLayer), so the glass must pause on the progress where that
         // alpha reaches GlassHiddenEdge: 1 - FadeThroughSplit * (1 - GlassHiddenEdge).
