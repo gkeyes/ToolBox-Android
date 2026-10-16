@@ -334,6 +334,12 @@ body { font-family: var(--nf-sans); -webkit-tap-highlight-color: transparent; }
 .sidebar-row[data-size="lg"] { min-block-size: 52px; }
 [data-sidebar="menu-badge"] { block-size: 44px; }
 .sidebar-row[data-size="lg"] ~ [data-sidebar="menu-badge"] { block-size: 52px; }
+/* The unread count is laid over the row's end, so the label stops before it:
+   the count's 0.75rem inset + 8px gap + one tabular digit (about 0.66em of
+   the count's 0.9375rem) per character. */
+.nf-count-item[data-count="true"] > .sidebar-row {
+  padding-inline-end: calc(0.75rem + 8px + var(--nf-count-chars, 0) * 0.66 * 0.9375rem * var(--nf-feed-scale, 1));
+}
 [data-sidebar="menu-action"].sidebar-disclosure { inline-size: 44px; block-size: 44px; }
 /* Hairlines between rows, inset from the leading edge. */
 [data-sidebar="group-content"] .sidebar-menu [data-sidebar="menu-item"] + [data-sidebar="menu-item"],

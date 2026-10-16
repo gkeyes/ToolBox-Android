@@ -51,7 +51,7 @@ const ArticlesGroup = () => {
     <SidebarGroup className="group-data-[collapsible=icon]:hidden">
       <SidebarGroupLabel>{t("common.article")}</SidebarGroupLabel>
       <SidebarMenu>
-        <SidebarMenuItem>
+        <SidebarMenuItem className="nf-count-item" data-count={count ? "true" : undefined} style={{ "--nf-count-chars": String(count || "").length }}>
           <SidebarMenuButton asChild size="lg" isActive={!feedId && !categoryId && !onBoard}>
             <Link to="/" onClick={() => isMobile && setOpenMobile(false)}>
               {icon}

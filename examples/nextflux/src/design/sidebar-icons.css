@@ -154,10 +154,9 @@
 }
 html[data-reduce-motion="true"] .nf-sb *, html[data-reduce-motion="true"] .nf-sb *::before { animation: none !important; }
 
-/* A closed phone sidebar is only moved off-screen: its tiles stop moving. */
 /* A closed sidebar only moves off-screen (phone) or folds away (wider
    screens): its tiles stop moving. */
 .sidebar-mobile-panel[data-open="false"] .nf-sb *,
 .sidebar-mobile-panel[data-open="false"] .nf-sb *::before,
-[data-state="collapsed"] .nf-sb *,
-[data-state="collapsed"] .nf-sb *::before { animation-play-state: paused !important; }
+.sidebar-desktop[data-state="collapsed"] .nf-sb *,
+.sidebar-desktop[data-state="collapsed"] .nf-sb *::before { animation-play-state: paused !important; }
