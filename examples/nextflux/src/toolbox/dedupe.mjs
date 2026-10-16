@@ -13,7 +13,8 @@ const text = (value) => (typeof value === "string" ? value.trim() : "");
 // Placeholder titles that many different posts share (a photo post titled
 // 图片, an Untitled entry, a line of hashtags) never count as the same title;
 // such posts are still matched by URL.
-const GENERIC_TITLES = new Set(["图片", "图片分享", "视频", "无标题", "（无标题）", "(无标题)", "untitled", "no title", "(no title)", "photo", "image", "video"]);
+const GENERIC_TITLES = new Set(["图片", "圖片", "图片分享", "圖片分享", "照片", "视频", "視頻", "影片", "无标题", "無標題", "（无标题）", "(无标题)", "（無標題）", "(無標題)",
+  "untitled", "no title", "(no title)", "photo", "photos", "image", "images", "video", "videos"]);
 // Only hashtags, optionally after an emoji or symbol: "#系统资讯", "🖼 #系统资讯",
 // full-width "＃系统资讯", "# 系统".
 const HASHTAGS_ONLY = /^[\p{Extended_Pictographic}\p{S}\uFE0F\u200D\s]*(?:[#＃]\s?[^\s#＃]+\s*)+$/u;
