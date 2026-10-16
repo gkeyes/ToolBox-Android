@@ -64,9 +64,12 @@ export async function forgetFeedNotification(feedId) {
 }
 
 /** After a committed background sync. Reads the watch list from storage, so it also works before the sidebar restored it. */
-export function checkWatchedFeeds(options) {
-  if (!toolbox()?.notifications || !toolbox()?.storage) return Promise.resolve([]);
-  return current().check(options);
+export async function checkWatchedFeeds(options = {}) {
+  if (!toolbox()?.notifications || !toolbox()?.storage) return [];
+  const knownFeedIds = new Set(feeds.get().map((feed) => Number(feed.id)));
+  const results = await current().check({ ...options, knownFeedIds });
+  if (results.some((result) => result.outcome === "removed")) watchedFeeds.set(await current().watchedFeedIds());
+  return results;
 }
 
 /** Opens the entry or feed behind a tapped notification. Hosts without onOpen just open NextFlux. */

@@ -284,3 +284,17 @@ test("a failed storage read aborts the check and keeps the watches", async () =>
   assert.deepEqual(data.get(FEED_NOTIFY_KEY), saved);
   assert.deepEqual(await notifier.watchedFeedIds(), [12]);
 });
+
+test("a feed missing from the committed catalog stops being watched", async () => {
+  const { notifier, cancelled } = world();
+  await notifier.setWatched(12, true);
+  await notifier.setWatched(13, true);
+  cancelled.length = 0;
+  const results = await notifier.check({ knownFeedIds: new Set([12]) });
+  assert.deepEqual(results.find((result) => result.feedId === 13), { feedId: 13, outcome: "removed" });
+  assert.deepEqual(await notifier.watchedFeedIds(), [12]);
+  assert.deepEqual(cancelled, [feedNotificationId(13)]);
+  // An empty catalog (not loaded yet) prunes nothing.
+  await notifier.check({ knownFeedIds: new Set() });
+  assert.deepEqual(await notifier.watchedFeedIds(), [12]);
+});
