@@ -184,8 +184,13 @@
   // auto (a drag, true or its heading {dx,dz}): a look that is not free and comes within SNAP of a wall turns its back to it and backs onto it.
   const SNAP=.35,SLACK=.1,MINH=.03,HOLD=.15;
   function clampPlacement(dims,bb,x,z,rot,auto=false){
-    const NR=nearestRect(bb.rs,x,z).r,[x0,z0,x1,z1]=NR,h=GAP;
-    rot=((rot|0)%4+4)%4;let snap=false;
+    rot=((rot|0)%4+4)%4;let snap=false;const h=GAP;
+    // Only a part of the room the look fits in (a room beside a bathroom is cut into strips that can be narrower than
+    // the look): one it fits as it is turned, else one it fits turned a quarter (it then turns), else the nearest part.
+    const fitAs=(R,r)=>{const [w,d]=dims.wall?[dims.w,dims.d]:footprint(dims,r),[a,b,c,e]=R.r;return dims.wall?Math.max(c-a,e-b)>=w+2*h&&Math.min(c-a,e-b)>=d+2*h:w<=c-a-2*h+1e-9&&d<=e-b-2*h+1e-9;};
+    const asIs=bb.rs.filter(R=>fitAs(R,rot)),turned=bb.rs.filter(R=>fitAs(R,rot+1));
+    if(!asIs.length&&turned.length&&!dims.wall)rot=(rot+1)%4;
+    const NR=nearestRect(asIs.length?asIs:turned.length?turned:bb.rs,x,z).r,[x0,z0,x1,z1]=NR;
     if(auto&&!dims.wall&&!dims.free){
       // A side counts only when it is a real wall (not the open seam to the other part of an L-shaped room) and the turned look fits.
       const me=NR,seam=sd=>bb.rs.some(({r})=>r!==me&&(sd===0?Math.abs(r[3]-z0)<.01&&x>r[0]&&x<r[2]:sd===2?Math.abs(r[1]-z1)<.01&&x>r[0]&&x<r[2]:sd===1?Math.abs(r[2]-x0)<.01&&z>r[1]&&z<r[3]:Math.abs(r[0]-x1)<.01&&z>r[1]&&z<r[3]));
@@ -232,7 +237,8 @@
       snap=side!==null;
     }
     if(dims.wall){
-      const side=[[z-z0,0],[x-x0,1],[z1-z,2],[x1-x,3]].sort((a,b)=>a[0]-b[0])[0][1];
+      const sides=[[z-z0,0],[x-x0,1],[z1-z,2],[x1-x,3]].sort((a,b)=>a[0]-b[0]),long=sd=>(sd&1?z1-z0:x1-x0)>=dims.w+2*h;
+      const side=(sides.find(([,sd])=>long(sd))||sides[0])[1]; // a wall long enough for the unit
       const cl=(v,a,b,s)=>b-a<2*s?(a+b)/2:clamp(v,a+s,b-s);
       if(side===0){z=z0+h+dims.d/2;x=cl(x,x0,x1,dims.w/2+h);}
       else if(side===2){z=z1-h-dims.d/2;x=cl(x,x0,x1,dims.w/2+h);}
@@ -273,7 +279,7 @@
     const W=Math.max(...rects.map(r=>r.r[2])),D=Math.max(...rects.map(r=>r.r[3]));
     let best=null;
     const fitPart=([x0,z0,x1,z1])=>[0,1].some(r=>{const [w,d]=footprint(dims,r);return w<=x1-x0-2*GAP&&d<=z1-z0-2*GAP;});
-    const parts=bb.rs.some(R=>fitPart(R.r))?bb.rs.filter(R=>fitPart(R.r)):bb.rs;
+    const parts=bb.rs.filter(R=>fitPart(R.r));if(!parts.length)return null; // never in a part it doesn't fit (it would poke into the bathroom)
     for(const R of parts){const [x0,z0,x1,z1]=R.r;
       for(let i=0;i<=6;i++)for(let j=0;j<=6;j++){
         const px=x0+(x1-x0)*i/6,pz=z0+(z1-z0)*j/6;

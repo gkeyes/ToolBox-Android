@@ -563,6 +563,13 @@ body[data-page="home"] #toast.has-action{top:calc(var(--home-top,64px) + 78px);b
 .pe-blk{position:absolute;border:2px solid var(--pe-line);background:var(--pe-room);border-radius:3px;display:grid;place-content:center;text-align:center;font-size:12px;font-weight:650;line-height:1.25;color:var(--ink);touch-action:none;cursor:grab}
 .pe-blk small{display:block;font-weight:500;color:var(--muted);font-size:10px;font-variant-numeric:tabular-nums}
 .pe-lbl{position:absolute;transform:translate(-50%,-50%);white-space:nowrap}
+/* 1.9.2 · a narrow block (a 1.9 m 卫生间 at 320 px) shrinks its name rather than cutting it */
+.pe-blk{container-type:size;overflow:hidden}
+.pe-bt{white-space:nowrap}
+@container (max-width:64px){.pe-lbl,.pe-bt{font-size:10px;letter-spacing:-.3px}}
+@container (max-width:46px){.pe-lbl small,.pe-bt small{display:none}}
+.pe-sum span{white-space:nowrap}
+.pe-plan.pan{cursor:move}
 .pe-blk.balcony{background:var(--pe-balcony)}
 .pe-blk.wet{background:var(--pe-bath)}
 .pe-blk.bath{background:var(--pe-bath);border:2px dashed var(--pe-bath-line);border-radius:2px;z-index:5;font-size:11px}
