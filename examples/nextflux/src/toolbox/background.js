@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { backgroundHealth, backgroundIntervalMs } from "./background-policy.mjs";
 import { continuousSync, nativeTimerEffective } from "./background-state.js";
 import { runtimeForeground, runtimeClosing } from "./foreground.js";
+import { checkWatchedFeeds } from "./feed-notifications.js";
 
 export { continuousSync };
 export const backgroundSyncHealth = atom(backgroundHealth());
@@ -154,6 +155,8 @@ async function runBackgroundSync(reason) {
       }
       setHealth({ type: "success" });
       await publishBackgroundStatus(result);
+      // Per-feed update notifications ride on the same timer; a failure there never fails the sync.
+      await checkWatchedFeeds().catch(() => {});
       return true;
     } catch (error) {
       if (runtimeClosing.get()) return false;

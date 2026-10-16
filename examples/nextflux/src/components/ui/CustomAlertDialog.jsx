@@ -9,6 +9,9 @@ export default function CustomAlertDialog({
   onClose,
   cancelText = "取消",
   confirmText = "确定",
+  status = "danger",
+  confirmVariant = "danger",
+  // Without onConfirm the dialog only informs: one button that closes it.
 }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -52,7 +55,7 @@ export default function CustomAlertDialog({
           <AlertDialog.Dialog className="nextflux-modal-surface sm:max-w-[400px] p-0">
             <AlertDialog.CloseTrigger className="nextflux-close-button" isDisabled={loading} />
             <AlertDialog.Header className="nextflux-close-header px-4 pt-4">
-              <AlertDialog.Icon status="danger" />
+              <AlertDialog.Icon status={status} />
               <AlertDialog.Heading>{title}</AlertDialog.Heading>
             </AlertDialog.Header>
             <AlertDialog.Body className="nextflux-modal-body px-4">
@@ -60,17 +63,23 @@ export default function CustomAlertDialog({
               {error && <p className="nextflux-dialog-error" role="alert">{error}</p>}
             </AlertDialog.Body>
             <AlertDialog.Footer className="nextflux-modal-footer p-4">
-              <Button variant="tertiary" onPress={handleClose} isDisabled={loading}>
-                {cancelText}
-              </Button>
-              <Button
-                variant="danger"
-                onPress={handleConfirm}
-                isPending={loading}
-              >
-                {loading && <Spinner color="current" size="sm" />}
-                {confirmText}
-              </Button>
+              {onConfirm ? (
+                <>
+                  <Button variant="tertiary" onPress={handleClose} isDisabled={loading}>
+                    {cancelText}
+                  </Button>
+                  <Button
+                    variant={confirmVariant}
+                    onPress={handleConfirm}
+                    isPending={loading}
+                  >
+                    {loading && <Spinner color="current" size="sm" />}
+                    {confirmText}
+                  </Button>
+                </>
+              ) : (
+                <Button variant={confirmVariant} onPress={handleClose}>{confirmText}</Button>
+              )}
             </AlertDialog.Footer>
           </AlertDialog.Dialog>
         </AlertDialog.Container>
