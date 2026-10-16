@@ -1,6 +1,8 @@
-/* Sidebar icon styles (Settings › Appearance › Sidebar icons). The tile keeps
-   the size the sidebar gives .sidebar-row-icon; only its look changes. */
+/* Sidebar icon styles (Settings › Appearance › Sidebar icons). The draft's
+   tile is 36px with a 22px symbol; the row height stays as it is. */
 .sidebar-row .sidebar-row-icon.nf-sb {
+  inline-size: 36px;
+  block-size: 36px;
   position: relative;
   isolation: isolate;
   overflow: visible;
@@ -8,16 +10,16 @@
 .sidebar-row .sidebar-row-icon.nf-sb > svg {
   /* The tile's own colour: ios27.css paints every badge glyph white. */
   color: inherit;
-  inline-size: 64%;
-  block-size: 64%;
+  inline-size: 22px;
+  block-size: 22px;
   position: relative;
   z-index: 2;
   overflow: visible;
   stroke-width: 2;
 }
-/* A glyph's moving parts: an <svg> laid exactly over the glyph (64% of the
-   tile, centred), animated as a whole so only the compositor works. */
-.sidebar-row .sidebar-row-icon.nf-sb > .nf-sb-layer { position: absolute; inset: 18%; z-index: 2; display: block; pointer-events: none; }
+/* A glyph's moving parts: an <svg> laid exactly over the glyph (22px,
+   centred), animated as a whole so only the compositor works. */
+.sidebar-row .sidebar-row-icon.nf-sb > .nf-sb-layer { position: absolute; inset: 7px; z-index: 2; display: block; pointer-events: none; }
 .nf-sb-layer svg, .nf-sb-sun { display: block; inline-size: 100%; block-size: 100%; overflow: visible; color: inherit; stroke-width: 2; }
 .nf-sb .nf-sb-fx { position: absolute; inset: 0; border-radius: inherit; overflow: hidden; z-index: 1; pointer-events: none; }
 .nf-sb.is-new::after {

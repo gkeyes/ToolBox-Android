@@ -447,11 +447,13 @@ test("sidebar icon style switches the tiles and the board shows new and writing"
   }, value);
 
   const sizes = {};
+  const rows = {};
   for (const style of ["a", "b", "c", "classic"]) {
     if (style !== "a") await setStyle(style);
     await expect.poll(async () => (await tiles())[1].cls).toContain(style === "classic" ? "ds-icon-badge" : `nf-sb-${style}`);
     const [first, second] = await tiles();
     sizes[style] = [first.w, first.h, second.w, second.h];
+    rows[style] = await page.evaluate(() => [...document.querySelectorAll('[data-sidebar="menu-button"]')].slice(0, 2).map((el) => el.getBoundingClientRect().height));
     if (style === "classic") {
       expect(second.cls).not.toContain("nf-sb");
       await expect(boardTile.locator(".nf-board-side-icon")).toHaveCount(1);
@@ -469,8 +471,11 @@ test("sidebar icon style switches the tiles and the board shows new and writing"
       if (style === "b") expect(second.radius).toBe("50%");
     }
   }
-  // Switching only changes the look, not the row layout.
-  expect(new Set(Object.values(sizes).map(String)).size).toBe(1);
+  // The three sets use the draft's 36px tile; 经典 keeps its 30px one. The
+  // rows stay the same height either way.
+  for (const style of ["a", "b", "c"]) expect(sizes[style]).toEqual([36, 36, 36, 36]);
+  expect(sizes.classic).toEqual([30, 30, 30, 30]);
+  expect(new Set(Object.values(rows).map(String)).size).toBe(1);
 
   await setStyle("c");
   await page.evaluate(async () => {
