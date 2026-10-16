@@ -11,14 +11,18 @@ export function feedNotificationId(feedId) {
 }
 
 function emptyState() {
-  return { feeds: {}, opens: {} };
+  return { feeds: {}, opens: {}, blocked: null };
 }
+
+// Post failures that mean notifications are switched off, not a passing error.
+const BLOCKED_CODES = new Set(["PERMISSION_DENIED", "SYSTEM_PERMISSION_DENIED"]);
 
 function normalizeState(saved) {
   if (!saved || typeof saved !== "object" || Array.isArray(saved)) return emptyState();
   const feeds = saved.feeds && typeof saved.feeds === "object" ? saved.feeds : {};
   const opens = saved.opens && typeof saved.opens === "object" ? saved.opens : {};
-  return { feeds: { ...feeds }, opens: { ...opens } };
+  const blocked = BLOCKED_CODES.has(saved.blocked) ? saved.blocked : null;
+  return { feeds: { ...feeds }, opens: { ...opens }, blocked };
 }
 
 function cleanTitle(value, fallback) {
@@ -66,7 +70,11 @@ export function createFeedNotifier({ api, notifications, storage, feedTitle = ()
     return Object.keys(state.feeds).map(Number).filter((id) => id > 0);
   }
 
-  /** Turning a feed on records its newest entry, so only entries that arrive afterwards notify. */
+  /**
+   * Turning a feed on records its newest entry, so only entries that arrive afterwards notify.
+   * Resolves true, false when turned off, or "blocked" when it is on but the last post was refused
+   * because notifications are switched off (Android or the tool's grant); the caller says so.
+   */
   function setWatched(feedId, enabled) {
     const id = Number(feedId);
     if (!(id > 0)) return Promise.reject(new Error("订阅编号无效。"));
@@ -79,13 +87,15 @@ export function createFeedNotifier({ api, notifications, storage, feedTitle = ()
         await notifications?.cancel?.(feedNotificationId(id)).catch(() => {});
         return false;
       }
-      if (state.feeds[id]) return true;
-      // Fails with PERMISSION_DENIED while the tool's notification switch is off; the caller says so.
-      await notifications.cancel(feedNotificationId(id));
-      // An empty feed starts at 0, so its first entry notifies.
-      state.feeds[id] = { lastEntryId: Number(await api.latestEntryId(id)) || 0 };
-      await save(state);
-      return true;
+      if (!state.feeds[id]) {
+        // Fails with PERMISSION_DENIED while the tool's notification grant is off. It can't see
+        // Android's own switch; only a refused post shows that, recorded as state.blocked.
+        await notifications.cancel(feedNotificationId(id));
+        // An empty feed starts at 0, so its first entry notifies.
+        state.feeds[id] = { lastEntryId: Number(await api.latestEntryId(id)) || 0 };
+        await save(state);
+      }
+      return state.blocked ? "blocked" : true;
     });
   }
 
@@ -107,11 +117,22 @@ export function createFeedNotifier({ api, notifications, storage, feedTitle = ()
           const fresh = entries.filter((entry) => Number.isSafeInteger(entry?.id) && entry.id > watch.lastEntryId)
             .sort((a, b) => b.id - a.id);
           if (!fresh.length) { results.push({ feedId, outcome: "none" }); continue; }
-          state.feeds[key] = { lastEntryId: fresh[0].id };
-          if (isForeground()) { results.push({ feedId, outcome: "foreground", count: fresh.length }); continue; }
+          if (isForeground()) {
+            state.feeds[key] = { lastEntryId: fresh[0].id };
+            results.push({ feedId, outcome: "foreground", count: fresh.length });
+            continue;
+          }
           const id = feedNotificationId(feedId);
           const text = feedNotificationText(feedTitle(feedId) || fresh[0].feed?.title, fresh, total);
-          await notifications.post(id, text.title, text.body);
+          try {
+            await notifications.post(id, text.title, text.body);
+          } catch (error) {
+            // The cursor stays put, so these entries notify once posting works again.
+            if (BLOCKED_CODES.has(error?.code)) state.blocked = error.code;
+            throw error;
+          }
+          state.blocked = null;
+          state.feeds[key] = { lastEntryId: fresh[0].id };
           state.opens[id] = { feedId, entryIds: fresh.map((entry) => entry.id) };
           results.push({ feedId, outcome: "notified", count: Math.max(Number(total) || 0, fresh.length) });
         } catch (error) {

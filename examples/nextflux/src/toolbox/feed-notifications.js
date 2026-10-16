@@ -28,9 +28,11 @@ export async function restoreFeedNotifications() {
   watchedFeeds.set(await current().watchedFeedIds());
 }
 
+/** Resolves true, false, or "blocked" (on, but notifications are switched off). */
 export async function setFeedNotification(feedId, enabled) {
-  await current().setWatched(feedId, enabled);
+  const result = await current().setWatched(feedId, enabled);
   watchedFeeds.set(await current().watchedFeedIds());
+  return result;
 }
 
 /** After a committed background sync. Reads the watch list from storage, so it also works before the sidebar restored it. */

@@ -33,8 +33,9 @@ import { watchedFeeds, setFeedNotification } from "@/toolbox/feed-notifications.
 import { continuousSync, startContinuousSync } from "@/toolbox/background.js";
 
 async function toggleFeedNotification(feed, enabled, t) {
+  let result;
   try {
-    await setFeedNotification(feed.id, enabled);
+    result = await setFeedNotification(feed.id, enabled);
   } catch (error) {
     toast.error(error?.code === "PERMISSION_DENIED" || error?.code === "SYSTEM_PERMISSION_DENIED"
       ? t("feedNotify.permission")
@@ -42,6 +43,7 @@ async function toggleFeedNotification(feed, enabled, t) {
     return;
   }
   if (!enabled) { toast.success(t("feedNotify.off", { title: feed.title })); return; }
+  if (result === "blocked") { toast.error(t("feedNotify.blocked")); return; }
   if (continuousSync.get()) { toast.success(t("feedNotify.on", { title: feed.title })); return; }
   // Update notifications are fetched by background sync.
   toast(t("feedNotify.needsSync"), {

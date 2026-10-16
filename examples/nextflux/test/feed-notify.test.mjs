@@ -13,6 +13,7 @@ function world({ notificationsGranted = true } = {}) {
   const posted = [];
   const openListeners = [];
   let foreground = false;
+  let systemAllowed = true;
   const denied = () => Object.assign(new Error("denied"), { code: "PERMISSION_DENIED" });
   const server = {
     add(feedId, id, title, status = "unread") { entries.push({ id, feed_id: feedId, title, status }); },
@@ -39,7 +40,11 @@ function world({ notificationsGranted = true } = {}) {
       async set(key, value) { data.set(key, structuredClone(value)); },
     },
     notifications: {
-      async post(id, title, body) { if (!notificationsGranted) throw denied(); posted.push({ id, title, body }); },
+      async post(id, title, body) {
+        if (!notificationsGranted) throw denied();
+        // Android's own switch: only a post sees it, cancel does not.
+        if (!systemAllowed) throw Object.assign(new Error("off"), { code: "SYSTEM_PERMISSION_DENIED" });
+        posted.push({ id, title, body }); },
       async cancel() { if (!notificationsGranted) throw denied(); },
       onOpen(listener) { openListeners.push(listener); return () => {}; },
     },
@@ -47,6 +52,7 @@ function world({ notificationsGranted = true } = {}) {
   const host = {
     tap(id) { openListeners.forEach((listener) => listener({ id, openedAt: Date.now() })); },
     setForeground(value) { foreground = value; },
+    setSystemNotifications(value) { systemAllowed = value; },
   };
   const titles = { 12: "少数派", 13: "Hacker News" };
   const notifier = createFeedNotifier({
@@ -150,6 +156,21 @@ test("turning a feed on without the notification permission fails and saves noth
   const { notifier, data } = world({ notificationsGranted: false });
   await assert.rejects(notifier.setWatched(12, true), (error) => error.code === "PERMISSION_DENIED");
   assert.equal(data.has(FEED_NOTIFY_KEY), false);
+});
+
+test("a refused post keeps the entries for the next sync and the toggle reports it", async () => {
+  const { server, host, notifier, posted } = world();
+  await notifier.setWatched(12, true);
+  host.setSystemNotifications(false);
+  server.add(12, 1, "一篇");
+  assert.deepEqual(await notifier.check(), [{ feedId: 12, outcome: "failed", code: "SYSTEM_PERMISSION_DENIED" }]);
+  assert.equal(await notifier.setWatched(12, true), "blocked");
+
+  host.setSystemNotifications(true);
+  server.add(12, 2, "两篇");
+  assert.deepEqual(await notifier.check(), [{ feedId: 12, outcome: "notified", count: 2 }]);
+  assert.deepEqual(posted.map((item) => item.body), ["2 篇新文章：两篇；一篇"]);
+  assert.equal(await notifier.setWatched(12, true), true);
 });
 
 test("turning a feed off forgets it and its pending tap", async () => {
