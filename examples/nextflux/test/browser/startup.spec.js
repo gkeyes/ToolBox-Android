@@ -350,6 +350,16 @@ test("a tapped control shows no focus ring until a key is pressed", async ({ pag
   await page.evaluate(() => document.activeElement.dispatchEvent(new TouchEvent("touchstart", { bubbles: true, touches: [] })));
   expect(await page.evaluate(() => document.documentElement.dataset.nfInput)).toBe("touch");
   await expect.poll(() => trigger.evaluate((el) => getComputedStyle(el).outlineStyle)).not.toBe("solid");
+  // HeroUI draws its ring as a box-shadow on tabs: none after a touch either.
+  const tab = page.locator('.article-list-inline-tabs [role="tab"][aria-selected="true"]');
+  await page.keyboard.press("Shift");
+  await tab.focus();
+  // Strongest colour in the element's box-shadow (0 when nothing shows).
+  const ringAlpha = () => tab.evaluate((el) => Math.max(0, ...[...getComputedStyle(el).boxShadow.matchAll(/rgba?\(([^)]*)\)/g)]
+    .map((match) => { const parts = match[1].split(",").map(Number); return parts.length > 3 ? parts[3] : 1; })));
+  await expect.poll(ringAlpha).toBeGreaterThan(0.9);
+  await page.evaluate(() => document.activeElement.dispatchEvent(new TouchEvent("touchstart", { bubbles: true, touches: [] })));
+  await expect.poll(ringAlpha).toBe(0);
   await page.keyboard.press("Shift");
   expect(await page.evaluate(() => document.documentElement.dataset.nfInput)).toBe("keyboard");
 });

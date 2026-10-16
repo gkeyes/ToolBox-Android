@@ -92,6 +92,10 @@ export async function refreshBoard({ onlyIfNew = false } = {}) {
         onChunk: (chunk) => { text += chunk; later(); },
         onThink: (chunk) => { thinking += chunk; later(); },
       });
+    } catch (error) {
+      // A reply cut off mid-way keeps what had arrived on screen.
+      if ((text || thinking) && error && typeof error === "object") error.raw ??= { thinking, text };
+      throw error;
     } finally {
       clearTimeout(frame);
       publish();

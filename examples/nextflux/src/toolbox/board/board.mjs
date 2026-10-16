@@ -97,9 +97,45 @@ export function topicsMessages(articles) {
 const clean = (value, max) => String(value ?? "").replace(/\*\*/g, "").replace(/\s+/g, " ").trim().slice(0, max);
 
 // JSON as models write it: also accepts a trailing comma before } or ].
+// Drops trailing commas before } or ], leaving text inside strings alone.
+const CLOSER = /\s*[}\]]/y;
+function dropTrailingCommas(text) {
+  let out = "";
+  let inString = false;
+  for (let i = 0; i < text.length; i += 1) {
+    const char = text[i];
+    if (inString) {
+      out += char;
+      if (char === "\\") { out += text[i + 1] ?? ""; i += 1; } else if (char === '"') inString = false;
+    } else if (char === '"') { inString = true; out += char; }
+    else if (char === ",") {
+      CLOSER.lastIndex = i + 1;
+      if (!CLOSER.test(text)) out += char;
+    } else out += char;
+  }
+  return out;
+}
 function looseJson(text) {
   try { return JSON.parse(text); } catch { /* try the repaired text */ }
-  try { return JSON.parse(text.replace(/,\s*([}\]])/g, "$1")); } catch { return null; }
+  if (!/,\s*[}\]]/.test(text)) return null;
+  try { return JSON.parse(dropTrailingCommas(text)); } catch { return null; }
+}
+
+// An article reference as the AI wrote it: 3, "3", "[3]", "2.0", a list
+// "1,2" / "1、2", or a range "1-3". Anything else names no article.
+export function articleNumbers(value, count) {
+  if (typeof value === "number") return Number.isInteger(value) ? [value] : [];
+  const text = String(value ?? "").trim();
+  const range = text.match(/^\[?(\d+)\s*[-–—~～至到]\s*(\d+)\]?$/);
+  if (range) {
+    const [from, to] = [Number(range[1]), Number(range[2])];
+    if (from > to || to - from >= count) return [];
+    return Array.from({ length: to - from + 1 }, (_, index) => from + index);
+  }
+  const whole = text.match(/^\[?(\d+)(?:\.0+)?\]?$/);
+  if (whole) return [Number(whole[1])];
+  if (/^[\d\s,，、;；\[\]]+$/.test(text)) return (text.match(/\d+/g) || []).map(Number);
+  return [];
 }
 
 // When the reply is not valid JSON at all (an unescaped " inside a summary,
@@ -120,7 +156,7 @@ export function salvageTopics(raw) {
       return end >= 0 ? unescape(rest.slice(0, end)) : "";
     };
     const numbers = part.match(/"articles"\s*:\s*\[([^\]]*)\]/);
-    return { title: field("title"), gist: field("gist"), summary: field("summary"), articles: numbers ? (numbers[1].match(/\d+/g) || []).map(Number) : [] };
+    return { title: field("title"), gist: field("gist"), summary: field("summary"), articles: numbers ? (numbers[1].match(/"[^"]*"|[^,\s"]+/g) || []).flatMap((item) => articleNumbers(item.replace(/^"|"$/g, ""), Infinity)) : [] };
   }).filter((topic) => topic.title && topic.articles.length);
 }
 
@@ -150,7 +186,7 @@ export function parseTopics(text, count) {
     if (topics.length >= MAX_TOPICS) break;
     const title = clean(item?.title, 40);
     const numbers = (Array.isArray(item?.articles) ? item.articles : [])
-      .map((n) => (typeof n === "number" ? n : Number(String(n).replace(/[^\d]/g, "") || NaN)))
+      .flatMap((n) => articleNumbers(n, count))
       .filter((n) => Number.isInteger(n) && n >= 1 && n <= count && !taken.has(n));
     if (!title || !numbers.length) continue;
     const unique = [...new Set(numbers)];

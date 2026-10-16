@@ -16,7 +16,7 @@ function safeError(code, status) {
     NETWORK_TIMEOUT: "AI 服务响应超时，请稍后重试。",
     QUOTA_EXCEEDED: "可用资源不足，无法继续接收 AI 响应，请稍后重试。",
     INVALID_RESPONSE: "AI 服务返回的数据格式无效。",
-    INCOMPLETE_STREAM: "AI 响应意外中断，请重新生成摘要。",
+    INCOMPLETE_STREAM: "AI 响应意外中断，请重新生成。",
     NETWORK_BLOCKED: "AI 服务连接失败，请检查 HTTPS 地址。",
   };
   const error = new Error(status ?
@@ -69,10 +69,14 @@ function textFragments(value, depth = 0) {
 export function extractReasoningText(choice) {
   const delta = choice?.delta;
   const message = choice?.message;
-  const values = delta
-    ? [delta.reasoning_content, delta.reasoning_details]
-    : [message?.reasoning_content, message?.reasoning_details];
-  return values.flatMap((value) => textFragments(value)).join("");
+  const source = delta || message;
+  // Providers name the field reasoning_content, reasoning or reasoning_details;
+  // some send the same text under two names, so the first one with text wins.
+  for (const value of [source?.reasoning_content, source?.reasoning, source?.reasoning_details]) {
+    const text = textFragments(value).join("");
+    if (text) return text;
+  }
+  return "";
 }
 
 export function extractContentText(choice) {

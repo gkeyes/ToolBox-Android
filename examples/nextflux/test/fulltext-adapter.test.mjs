@@ -261,3 +261,10 @@ test("a gateway error counts as unreachable, and a refusal names the rules", asy
   await assert.rejects(testScraperRule({ feedId: 1, entryId: 9, candidate: "article", baselineRule: ".old", api: b, journal }),
     (e) => e.code === "ROLLBACK_FAILED" && e.failure === "server" && e.candidate === "article" && e.baselineRule === ".old" && /保留测试规则/.test(e.message));
 });
+
+test("reasoning sent as delta.reasoning is shown, and a field repeated under two names shows once", async () => {
+  const { extractReasoningText } = await import("../src/toolbox/ai-network.js");
+  assert.equal(extractReasoningText({ delta: { reasoning: "想一想" } }), "想一想");
+  assert.equal(extractReasoningText({ delta: { reasoning: "同一段", reasoning_details: [{ type: "reasoning.text", text: "同一段" }] } }), "同一段");
+  assert.equal(extractReasoningText({ message: { reasoning: "完整" } }), "完整");
+});
