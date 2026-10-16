@@ -614,3 +614,7 @@ body[data-page="home"] #toast.has-action{top:calc(var(--home-top,64px) + 78px);b
 .detail-parts{display:flex;flex-direction:column;gap:2px;margin-bottom:6px}
 @media (prefers-color-scheme:dark){.lg-plan,.bc-bar{background:#3a4a40}.parts-start,.parts-add{border-color:#4b5f52}.bar-share,.lg-share{background:#8fd0b4}}
 .legend-inline i.lg-share{width:7px;height:7px;border-radius:2px}
+/* 1.11.1 · placement row at large text: the pill grows with its label, and the name keeps room (the buttons wrap below it) */
+.hv-selbar{flex-wrap:wrap;row-gap:6px}
+.hv-selbar .gchip{height:auto;min-height:38px;padding-top:4px;padding-bottom:4px;line-height:1.25}
+.hv-selbar .hv-who{flex:1 1 64px}

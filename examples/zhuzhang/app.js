@@ -4,7 +4,7 @@
   // Ledger money is integer cents. DOM content originating from users is escaped.
   const KEY = 'ledger.v1';
   const runtime = window.ZZRuntime;
-  const VERSION = '1.11.0';
+  const VERSION = '1.11.1';
   const MAX_CENTS = 100000000000;
   const $ = s => document.querySelector(s);
   const $$ = s => [...document.querySelectorAll(s)];
@@ -35,7 +35,7 @@
     {id:'furniture',name:'家具家电',icon:'sofa',color:'#c5ab8a'},
     {id:'soft',name:'软装杂项',icon:'lamp',color:'#cbd4c3'}
   ];
-  const ROOMS=['全屋','客厅','餐厅','客餐厅','厨房','主卧','次卧','次卧2','书房','卫生间','主卫','阳台']; // 1.9.2: 客厅 餐厅 书房 主卫, as in the 拼户型 draft
+  const ROOMS=['全屋','客厅','餐厅','厨房','主卧','次卧','次卧2','书房','卫生间','主卫','阳台']; // 1.9.2: 客厅 餐厅 书房 主卫, as in the 拼户型 draft; 1.11.1: 客餐厅 only while the plan or a record still has it
   const HM=window.ZZHomeModel; // 1.4.0 我的家: templates, saved-shape sanitizers, placement math (home-model.js)
   // 1.11.0: 测算 is gone; 预算 lists and adds budgets, 清单 keeps the money actually paid and still to pay.
   const NAV=[['overview','grid','总览','预算总览'],['budget','budget','预算','预算'],['ledger','list','清单','费用清单'],['statistics','chart','统计','预算统计'],['home','home','我的家','我的家']];
@@ -415,7 +415,10 @@
     // A record whose room is gone from the plan, filed under a room of the plan (picked from the tray).
     setRoom:(id,room,model)=>homeWrite(next=>{const at=pieceIn(next,id);if(!at)return false;const o=at.p||at.i;o.room=room;o.model=model;if(at.p)at.i.room=bundleRoom(at.i.parts);}),
     // renames: [[old,new]] room names from 拼户型 (a bathroom moved to another room), applied to the records in the same write.
-    saveHome:(home,renames=[])=>homeWrite(next=>{next.project.home=home;const to=new Map(renames);if(to.size)for(const i of next.items){if(to.has(i.room))i.room=to.get(i.room);if(partsOf(i)){for(const p of i.parts)if(to.has(p.room))p.room=to.get(p.room);i.room=bundleRoom(i.parts);}}}),
+    // move(room,model): 1.11.1, a record of an old 客餐厅 goes to the part its look stands in, at the same spot ({room,model}, or null).
+    saveHome:(home,renames=[],move=null)=>homeWrite(next=>{next.project.home=home;const to=new Map(renames);
+      const fix=o=>{const m=move&&move(o.room,o.model);if(m){o.room=m.room;if(m.model)o.model=m.model;}else if(to.has(o.room))o.room=to.get(o.room);};
+      if(to.size||move)for(const i of next.items){if(partsOf(i)){i.parts.forEach(fix);i.room=bundleRoom(i.parts);}else fix(i);}}),
     saveUi:value=>{homeState.ui=value;if(storageOK)runtime.set('home.ui.v1',value).catch(()=>{});}
   });
   // Probe WebGL before importing three.js: without it the tab shows the static plan, with no error from the renderer.
