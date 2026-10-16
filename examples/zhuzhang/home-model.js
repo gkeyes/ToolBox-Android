@@ -99,7 +99,7 @@
   // Types the ➕ 加空间 sheet offers, with the size a new one starts at (metres). 客餐厅 only comes from the old templates.
   const SPACE_TYPES=[['主卧',3.6,3.6],['次卧',3.0,3.3],['书房',2.4,3.0],['客厅',4.5,4.5],['餐厅',3.0,3.3],['厨房',2.4,3.0],['阳台',3.6,1.4],['储物间',1.5,1.8],['衣帽间',1.8,2.1],['卫生间',1.6,2.0]];
   const BLOCK_TYPES=new Set([...SPACE_TYPES.map(t=>t[0]),'客餐厅']);
-  const BLOCK_MIN=1.2,BATH_MIN=1.2,NOHOST=new Set(['阳台','卫生间']);
+  const BLOCK_MIN=1.2,BATH_MIN=1.2,BLOCK_MAX=60,BATH_MAX=40,NOHOST=new Set(['阳台','卫生间']);
   const typeOfName=n=>{const b=String(n).replace(/\d+$/,'');return b==='主卫'||b==='公卫'?'卫生间':BLOCK_TYPES.has(b)?b:'次卧';};
   const isBathType=t=>t==='卫生间';
   const boxOverlap=(a,b)=>Math.min(a.x+a.w,b.x+b.w)-Math.max(a.x,b.x)>.01&&Math.min(a.z+a.d,b.z+b.d)-Math.max(a.z,b.z)>.01;
@@ -111,7 +111,7 @@
   // project.home with blocks, as saved: bad blocks, overlaps and homeless or clashing bathrooms are dropped.
   function sanitizeBlocks(h){
     const r2=v=>Math.round(v*100)/100,ids=new Set(),names=new Set(),blocks=[],baths=[];
-    for(const b of h.blocks.slice(0,60)){
+    for(const b of h.blocks.slice(0,BLOCK_MAX)){
       if(!b||typeof b!=='object'||!BLOCK_TYPES.has(b.type)||![b.x,b.z,b.w,b.d].every(num))continue;
       const id=typeof b.id==='string'&&/^[\w-]{1,24}$/.test(b.id)&&!ids.has(b.id)?b.id:null;if(!id)continue;
       const o={id,type:b.type,x:r2(clamp(b.x,-60,60)),z:r2(clamp(b.z,-60,60)),w:r2(clamp(b.w,BLOCK_MIN,30)),d:r2(clamp(b.d,BLOCK_MIN,30))};
@@ -123,7 +123,7 @@
       ids.add(id);names.add(o.name);blocks.push(o);
     }
     if(!blocks.length)return null;
-    for(const b of (Array.isArray(h.baths)?h.baths:[]).slice(0,40)){
+    for(const b of (Array.isArray(h.baths)?h.baths:[]).slice(0,BATH_MAX)){
       if(!b||typeof b!=='object'||![b.w,b.d].every(num))continue;
       const host=blocks.find(q=>q.id===b.host);if(!host||NOHOST.has(host.type))continue;
       const id=typeof b.id==='string'&&/^[\w-]{1,24}$/.test(b.id)&&!ids.has(b.id)?b.id:null;if(!id)continue;
@@ -336,7 +336,7 @@
     }
     return out+'</svg>';
   }
-  const api={SPACE_TYPES,BLOCK_TYPES,BLOCK_MIN,BATH_MIN,NOHOST,bathBox,bathName,nextName,sanitizeBlocks,cutRects,toBlocks,typeOf,typeOfName,boxOverlap,FURNITURE,KINDS,ORDER,LABELS,TEMPLATES,TEMPLATE_ORDER,MAX_PER_ROOM,WALL_T,GAP,deriveTemplate,planOf,sizesOf,sanitizeHome,sanitizeModel,makeRects,roomNames,area,bbox,nearestRect,footprint,clampPlacement,placeFromModel,fitsRoom,fitRoom,findSpot,lookState,applyLook,handles,moveHandle,planSvg};
+  const api={SPACE_TYPES,BLOCK_TYPES,BLOCK_MIN,BATH_MIN,BLOCK_MAX,BATH_MAX,NOHOST,bathBox,bathName,nextName,sanitizeBlocks,cutRects,toBlocks,typeOf,typeOfName,boxOverlap,FURNITURE,KINDS,ORDER,LABELS,TEMPLATES,TEMPLATE_ORDER,MAX_PER_ROOM,WALL_T,GAP,deriveTemplate,planOf,sizesOf,sanitizeHome,sanitizeModel,makeRects,roomNames,area,bbox,nearestRect,footprint,clampPlacement,placeFromModel,fitsRoom,fitRoom,findSpot,lookState,applyLook,handles,moveHandle,planSvg};
   root.ZZHomeModel=Object.freeze(api);
   if(typeof module==='object'&&module.exports)module.exports=api;
 })(typeof globalThis!=='undefined'?globalThis:this);

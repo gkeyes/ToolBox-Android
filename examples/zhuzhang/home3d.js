@@ -520,7 +520,7 @@ export function createHome(api) {
   // 1.9.0 · 拼户型 saves the blocks (and renames 主卫/公卫 records that moved rooms) in one write.
   function saveHome(home, renames) {
     T = HM.planOf(home); planKey = JSON.stringify(HM.sizesOf(T)) + T.key; rebuildAll();
-    api.saveHome(home, renames).then(ok => { if (!ok) api.toast('户型没保存上，下次打开会回到上次保存的样子，请再调整一次', null, true); else api.toast('户型已保存'); });
+    api.saveHome(home, renames).then(ok => { if (!ok) api.toast('户型没保存上，下次打开会回到上次保存的样子，请再调整一次', null, true); else { if (renames.length) { syncItems(true); if (view === 'home') renderTray(); invalidate(); } api.toast('户型已保存'); } });
   }
 
   /* ---------- modes, tray, sheets ---------- */
@@ -669,13 +669,13 @@ export function createHome(api) {
     view = kind; host = target;
     if (!T) { applyTheme(); setPlan(); }
     if (!layer.isConnected) document.body.appendChild(layer);
-    if (kind === 'home') { target.appendChild(root); slotHome.appendChild(canvas); if (was !== 'home') { closeAll(); editor.close(); setMode('normal'); resetView(false); wallsStep(true); } }
-    else { target.appendChild(canvas); closeAll(); editor.close(); if (mode !== 'normal') { mode = 'normal'; root.dataset.mode = 'normal'; select(null); } cam.pol = VIEW.pol; cam.zoom = 1; cam.tx = cam.tz = 0; tw = null; inertia = null; }
+    if (kind === 'home') { target.appendChild(root); slotHome.appendChild(canvas); if (was !== 'home') { closeAll(); editor.leave(); setMode('normal'); resetView(false); wallsStep(true); } }
+    else { target.appendChild(canvas); closeAll(); editor.leave(); if (mode !== 'normal') { mode = 'normal'; root.dataset.mode = 'normal'; select(null); } cam.pol = VIEW.pol; cam.zoom = 1; cam.tx = cam.tz = 0; tw = null; inertia = null; }
     spinOn = kind === 'mini' && !reduced();
     resizeObs.observe(target); if (kind === 'mini') { onScreen = true; io?.observe(target); }
     sync(); fit(); wallsStep(true); last = 0; invalidate();
   }
-  function hide() { closeAll(); view = null; if (raf) cancelAnimationFrame(raf); raf = 0; gesture = drag = pinch = null; editor.close(); if (host) { resizeObs.unobserve(host); io?.unobserve(host); } host = null; }
+  function hide() { closeAll(); view = null; if (raf) cancelAnimationFrame(raf); raf = 0; gesture = drag = pinch = null; editor.leave(); if (host) { resizeObs.unobserve(host); io?.unobserve(host); } host = null; }
   // 1.5.0 · after a look is recorded: fly to its room and drop it in (instant with reduced motion).
   function reveal(id) {
     if (view !== 'home') return false;
@@ -729,7 +729,7 @@ function createPlanEditor({ root, layer, svg, icons, esc, toast, openSheet, clos
   layer.appendChild(sheet);
   const $ = s => el.querySelector(s), plan = $('.pe-plan');
 
-  let rooms = [], baths = [], sel = null, startNames = new Map(), uid = 0, S = 30, OX = 0, OZ = 0, drag = null;
+  let rooms = [], baths = [], sel = null, startNames = new Map(), startIds = new Set(), uid = 0, S = 30, OX = 0, OZ = 0, drag = null;
   const byId = id => rooms.find(r => r.id === id) || baths.find(b => b.id === id);
   const host = b => rooms.find(r => r.id === b.host);
   const used = skip => new Set([...rooms, ...baths].filter(o => o !== skip).map(o => o.name));
@@ -738,11 +738,11 @@ function createPlanEditor({ root, layer, svg, icons, esc, toast, openSheet, clos
   const clash = (b, h, ax, az) => { const p = bathPos(b, h, ax, az); return baths.some(o => o !== b && o.host === h.id && HM.boxOverlap(p, bathPos(o))); };
   const isBad = r => rooms.some(o => o !== r && HM.boxOverlap(r, o));
   const fitsBaths = r => baths.filter(b => b.host === r.id).every(b => b.w <= r.w + 1e-6 && b.d <= r.d + 1e-6 && !clash(b, r, b.ax, b.az));
-  const newId = p => { let id; do id = p + (++uid); while (byId(id)); return id; };
+  const newId = p => { let id; do id = p + (++uid); while (byId(id) || startIds.has(id)); return id; };
 
   function open(t) {
     const b = HM.toBlocks(t); rooms = b.blocks; baths = b.baths; sel = null;
-    startNames = new Map(baths.map(x => [x.id, x.name]));
+    startNames = new Map(baths.map(x => [x.id, x.name])); startIds = new Set([...rooms, ...baths].map(x => x.id));
     el.hidden = false; root.dataset.blocks = '1'; requestAnimationFrame(() => { fit(); render(); });
   }
   function close() { el.hidden = true; delete root.dataset.blocks; sel = null; drag = null; }
@@ -753,12 +753,14 @@ function createPlanEditor({ root, layer, svg, icons, esc, toast, openSheet, clos
     const renames = []; for (const b of home.baths) { const was = startNames.get(b.id); if (was && was !== b.name) renames.push([was, b.name]); }
     close(); onDone(home, renames);
   }
+  // Leaving 我的家 by the tabs saves the plan, the same as 完成 and Back.
+  function leave() { if (!el.hidden) done(); close(); }
 
   /* ---------- layout ---------- */
   function bounds() { const xs = rooms.flatMap(r => [r.x, r.x + r.w]), zs = rooms.flatMap(r => [r.z, r.z + r.d]); return { x0: Math.min(...xs, 0), z0: Math.min(...zs, 0), x1: Math.max(...xs, 4), z1: Math.max(...zs, 4) }; }
   function fit() {
     const b = bounds(), pw = plan.clientWidth || 320, ph = plan.clientHeight || 400, pad = 14;
-    S = Math.max(14, Math.min(40, (pw - pad * 2) / (b.x1 - b.x0 + 1), (ph - pad * 2) / (b.z1 - b.z0 + 1)));
+    S = Math.max(4, Math.min(40, (pw - pad * 2) / (b.x1 - b.x0 + 1), (ph - pad * 2) / (b.z1 - b.z0 + 1)));
     OX = pad + ((pw - pad * 2) - (b.x1 - b.x0) * S) / 2 - b.x0 * S; OZ = pad + ((ph - pad * 2) - (b.z1 - b.z0) * S) / 2 - b.z0 * S;
     plan.style.setProperty('--g', S + 'px'); plan.style.backgroundPosition = `${OX}px ${OZ}px`;
   }
@@ -896,6 +898,7 @@ function createPlanEditor({ root, layer, svg, icons, esc, toast, openSheet, clos
   function bathSpot(b, h) { for (const [ax, az] of [[1, 0], [0, 0], [1, 1], [0, 1], [.5, 0], [.5, 1], [0, .5], [1, .5], [.5, .5]]) if (!clash(b, h, ax, az)) return { ax, az }; return null; }
   const size = t => { const s = HM.SPACE_TYPES.find(x => x[0] === t); return { w: s[1], d: s[2] }; };
   function addBath() {
+    if (baths.length >= HM.BATH_MAX) { toast(`最多${HM.BATH_MAX}个卫生间`); return; }
     const b = { id: newId('w'), ...size('卫生间'), host: null, ax: 1, az: 0 };
     const it = byId(sel), picked = it ? (it.host ? host(it) : it) : null;
     const ok = h => h && !HM.NOHOST.has(h.type) && b.w <= h.w && b.d <= h.d && bathSpot(b, h);
@@ -906,7 +909,7 @@ function createPlanEditor({ root, layer, svg, icons, esc, toast, openSheet, clos
     Object.assign(b, { host: h.id }, bathSpot(b, h)); b.name = HM.nextName(HM.bathName(h), used()); baths.push(b); sel = b.id; render();
     if (!picked || h === picked) toast(`加了${b.name}，放在${h.name}里，可以拖到别处`);
   }
-  function addRoom(type) { const s = size(type), r = { id: newId('b'), type, name: HM.nextName(type, used()), ...freeSpot(s.w, s.d) }; rooms.push(r); sel = r.id; fit(); render(); toast(`加了${r.name}，拖去贴着别的房间`); }
+  function addRoom(type) { if (rooms.length >= HM.BLOCK_MAX) { toast(`最多${HM.BLOCK_MAX}个房间`); return; } const s = size(type), r = { id: newId('b'), type, name: HM.nextName(type, used()), ...freeSpot(s.w, s.d) }; rooms.push(r); sel = r.id; fit(); render(); toast(`加了${r.name}，拖去贴着别的房间`); }
   function remove() {
     const it = byId(sel); if (!it) return;
     if (!it.host) { const inside = baths.filter(x => x.host === it.id); if (inside.length) { toast(`先把${inside.map(x => x.name).join('、')}拖到别的房间或拿掉`); return; } if (rooms.length < 2) { toast('至少要留一个房间'); return; } rooms = rooms.filter(o => o !== it); }
@@ -922,5 +925,5 @@ function createPlanEditor({ root, layer, svg, icons, esc, toast, openSheet, clos
   });
   sheet.addEventListener('click', e => { const b = e.target.closest('[data-space]'); if (!b) return; closeSheet(sheet); b.dataset.space === '卫生间' ? addBath() : addRoom(b.dataset.space); });
   addEventListener('resize', () => { if (!el.hidden) { fit(); render(); } });
-  return { open, close, done, useTemplate, isOpen: () => !el.hidden, debug: () => ({ rooms, baths, S, OX, OZ }) };
+  return { open, close, done, leave, useTemplate, isOpen: () => !el.hidden, debug: () => ({ rooms, baths, S, OX, OZ }) };
 }
