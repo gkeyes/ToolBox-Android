@@ -824,7 +824,8 @@ function createPlanEditor({ root, layer, svg, icons, esc, toast, openSheet, clos
   // A template replaces the whole plan, so the notice offers to put the old one back.
   function useTemplate(t, name) {
     const prev = { rooms: rooms.map(r => ({ ...r })), baths: baths.map(b => ({ ...b })), living: living.slice(), livingAt: new Map(livingAt) }, b = HM.toBlocks(t);
-    rooms = b.blocks; baths = b.baths; sel = null; splitLiving(); fit(); render();
+    // Block ids are positional per template, so the old 客餐厅 parts are measured again on the new one (undo puts the old map back).
+    rooms = b.blocks; baths = b.baths; sel = null; livingAt = new Map(); splitLiving(); fit(); render();
     toast(`已换成${name}，再拖方块调整`, { label: '撤销', run: () => { if (el.hidden) return; cancelDrag(); ({ rooms, baths, living, livingAt } = prev); sel = null; fit(); render(); toast('已换回原来的户型'); } });
   }
   // 主卫 / 公卫 renames from moving a bathroom between rooms: the ledger's records follow the new name.
