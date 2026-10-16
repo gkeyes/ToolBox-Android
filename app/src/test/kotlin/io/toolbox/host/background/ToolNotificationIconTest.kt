@@ -47,4 +47,12 @@ class ToolNotificationIconTest {
         assertEquals(Icon.TYPE_BITMAP, notification.getLargeIcon()?.type)
         assertFalse(notification.extras.containsKey(MIUI_APP_ICON_EXTRA))
     }
+
+    @Test fun onlyAHyperOsOrMiuiSystemCountsAsTheXiaomiShade() {
+        assertEquals(true, isMiuiNotificationShade { if (it == "ro.mi.os.version.name") "OS2.0" else "" })
+        assertEquals(true, isMiuiNotificationShade { if (it == "ro.miui.ui.version.name") "V14" else null })
+        // An AOSP ROM on Xiaomi hardware, or any other phone, keeps the tool icon as the large icon.
+        assertFalse(isMiuiNotificationShade { "" })
+        assertFalse(isMiuiNotificationShade { null })
+    }
 }

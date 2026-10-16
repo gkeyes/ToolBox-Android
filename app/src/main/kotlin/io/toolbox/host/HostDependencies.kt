@@ -114,6 +114,7 @@ internal class HostDependencies(
         preparer = runtimePreparer,
         permitProvider = runtimePermitProvider,
         bridgeProvider = { runtimeBridgeProvider },
+        toolIcons = toolIcons,
     )
 
     private val background = ProductionHostBackgroundOperations(application, repositories, runtimeSessions)
