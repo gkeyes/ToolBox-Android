@@ -15,6 +15,7 @@ const defaultValue = {
   sortDirection: "desc", // asc, desc
   sortField: "published_at", // published_at, created_at
   showHiddenFeeds: false,
+  hideDuplicateArticles: true, // 标题完全相同或原文链接相同的文章只显示第一条
   markAsReadOnScroll: false,
   cardImageSize: "large", // none, small, large
   articleListStyle: "lines", // lines (style 1: hairlines + day headers), cards (style 2: paper cards)

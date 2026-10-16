@@ -83,3 +83,16 @@ test("the whole topics prompt stays within the budget", () => {
   const size = topicsMessages(articles).reduce((sum, message) => sum + message.content.length, 0);
   assert.ok(size <= PROMPT_BUDGET, `${size} > ${PROMPT_BUDGET}`);
 });
+
+test("with hideDuplicates, today's unread keeps only the newest copy of a title or URL", () => {
+  const now = new Date(2026, 9, 16, 13, 0);
+  const at = (h) => new Date(2026, 9, 16, h, 0).toISOString();
+  const rows = [
+    { id: 1, feedId: 1, status: "unread", title: "同题", url: "https://a.example/1", published_at: at(9), created_at: at(9) },
+    { id: 2, feedId: 1, status: "unread", title: "同题", url: "https://a.example/2", published_at: at(11), created_at: at(11) },
+    { id: 3, feedId: 1, status: "unread", title: "别的", url: "https://a.example/2", published_at: at(10), created_at: at(10) },
+    { id: 4, feedId: 1, status: "unread", title: "第四", url: "https://a.example/4", published_at: at(8), created_at: at(8) },
+  ];
+  assert.deepEqual(todaysUnread(rows, { now, hideDuplicates: true }).map((row) => row.id), [2, 4]);
+  assert.deepEqual(todaysUnread(rows, { now }).map((row) => row.id), [2, 3, 1, 4]);
+});

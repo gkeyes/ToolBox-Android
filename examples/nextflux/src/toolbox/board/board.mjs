@@ -3,6 +3,8 @@
 // can open them. "读成文章" asks the AI for a short written digest of those
 // topics that cites its articles as [n].
 
+import { dedupeArticles } from "../dedupe.mjs";
+
 // One request carries every chosen article. The whole prompt (instructions,
 // titles, excerpts and numbering) stays within this many characters, so a
 // busy day still fits a common context window.
@@ -33,13 +35,15 @@ export function arrivedAt(row, now = Date.now()) {
 }
 
 // Unread articles that arrived since local midnight, newest first, from feeds
-// the list would show.
-export function todaysUnread(rows, { now = new Date(), isVisibleFeed = () => true } = {}) {
+// the list would show. With `hideDuplicates`, later copies of a title or
+// original URL are left out as in the article lists (the newest copy stays).
+export function todaysUnread(rows, { now = new Date(), isVisibleFeed = () => true, hideDuplicates = false } = {}) {
   const since = startOfDay(now).getTime();
   const at = now.getTime();
-  return rows
+  const today = rows
     .filter((row) => row?.status === "unread" && isVisibleFeed(row.feedId) && arrivedAt(row, at) >= since)
     .sort((a, b) => arrivedAt(b, at) - arrivedAt(a, at) || b.id - a.id);
+  return dedupeArticles(today, { enabled: hideDuplicates });
 }
 
 // Preview text is already plain text; only tidy its whitespace.

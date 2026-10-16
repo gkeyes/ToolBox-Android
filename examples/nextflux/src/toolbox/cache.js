@@ -1,5 +1,6 @@
 import { currentArticleMetadata, deriveArticleMetadata } from "./cache-metadata.js";
 import { decodeCacheValue, loadLegacyCache, LEGACY_PREFIX, LEGACY_MANIFEST_KEY } from "./cache-legacy.js";
+import { dedupeArticles } from "./dedupe.mjs";
 
 // The production caller runs this engine in cache-worker.js. No DOM, body
 // archive, compression or query index crosses back to the window.
@@ -1036,11 +1037,14 @@ export function createArticleCache(storage, options = {}) {
         return left < right ? -1 : left > right ? 1 : a.id - b.id;
       });
       if ((query.direction ?? "desc") === "desc") rows.reverse();
+      // Hidden duplicates leave the ID sequence, so pages, the total and
+      // prev/next all follow the shown list. Rows stay untouched in the cache.
+      const shown = dedupeArticles(rows, { enabled: query.hideDuplicates === true });
       const pageSize = query.pageSize ?? 30;
       if (!Number.isSafeInteger(pageSize) || pageSize < 1) throw invalid();
       const queryId = `${epoch}.${++serial}`;
-      queries.set(queryId, { revision: current.root.revision, ids: rows.map((row) => row.id), pageSize, epoch });
-      return { queryId, revision: current.root.revision, total: rows.length };
+      queries.set(queryId, { revision: current.root.revision, ids: shown.map((row) => row.id), pageSize, epoch });
+      return { queryId, revision: current.root.revision, total: shown.length };
     },
     async readQueryPage(queryId, page = 1) {
       const query = queries.get(queryId);

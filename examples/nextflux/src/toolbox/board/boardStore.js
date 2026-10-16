@@ -28,7 +28,10 @@ async function todaysArticles() {
   const feeds = new Map((await getFeeds())
     .filter((feed) => settings.showHiddenFeeds || !feed.hide_globally)
     .map((feed) => [feed.id, feed]));
-  const rows = todaysUnread(await getCachedArticleMetadata({ filter: "unread" }), { isVisibleFeed: (id) => feeds.has(id) });
+  const rows = todaysUnread(await getCachedArticleMetadata({ filter: "unread" }), {
+    isVisibleFeed: (id) => feeds.has(id),
+    hideDuplicates: settings.hideDuplicateArticles !== false,
+  });
   return rows.map((row) => ({
     id: row.id,
     title: row.titleText || row.title || "",
