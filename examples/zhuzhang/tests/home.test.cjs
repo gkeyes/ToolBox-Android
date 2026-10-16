@@ -139,6 +139,18 @@ test('1.7.0 · a dragged look turns its back to a wall it comes near; tables sta
   assert.equal(corner.rot, 1, 'in a corner the current wall wins');
 });
 
+test('1.7.3 · in a narrow room only the wall a drag heads for can turn a look; exactly 35 cm snaps', () => {
+  const { rects } = HM.makeRects(HM.planOf({ template: 't3l2' }));
+  const bb = HM.bbox(rects, '次卧'), bed = HM.KINDS.bedA, [x0, , x1] = bb.rs[0].r, cx = (x0 + x1) / 2; // 3.0 m wide: side walls always within 35 cm
+  const down = { dx: 0, dz: .06 }, up = { dx: 0, dz: -.06 };
+  assert.equal(HM.clampPlacement(bed, bb, cx, 1.8, 0, down).rot, 0, 'crossing the middle keeps the bed facing the room');
+  assert.equal(HM.clampPlacement(bed, bb, cx, 1.8, 1, up).rot, 1, 'no wall ahead yet: keeps its turn');
+  assert.equal(HM.clampPlacement(bed, bb, cx, 1.3, 1, up).rot, 0, 'dragged back to the head wall it backs onto it again');
+  assert.equal(HM.clampPlacement(bed, bb, x0 + .93, 1.8, 0, { dx: -.06, dz: .01 }).rot, 1, 'pushed into a side wall it turns to it');
+  const f = HM.KINDS.fridgeA, mb = HM.bbox(rects, '主卧');
+  assert.equal(HM.clampPlacement(f, mb, 3.6 - HM.GAP - f.d / 2 - .35, 1.8, 0, true).rot, 3, 'exactly 35 cm away snaps');
+});
+
 test('a saved position survives a room resize as a fraction of the room', () => {
   const t = HM.planOf({ template: 't3l2' });
   const model = { kind: 'cabB', x: .5, z: .5, rot: 0 };
