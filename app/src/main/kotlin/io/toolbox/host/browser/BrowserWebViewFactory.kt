@@ -252,6 +252,10 @@ internal class BrowserWebViewFactory(
                 state.loadProgress = newProgress.coerceIn(0, 100)
                 if (state.loadProgress == 100) state.interaction = state.interaction.pageFinished()
             }
+            // WebView's stock poster is a grey square with a play circle that flashes before the site's own
+            // poster or first frame; a transparent poster lets the page show through instead.
+            override fun getDefaultVideoPoster(): Bitmap =
+                Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888)
             override fun onReceivedTitle(view: WebView, newTitle: String?) {
                 if (view === state.webView) state.title = newTitle.orEmpty()
             }
