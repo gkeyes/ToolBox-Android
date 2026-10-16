@@ -618,3 +618,9 @@ body[data-page="home"] #toast.has-action{top:calc(var(--home-top,64px) + 78px);b
 .hv-selbar{flex-wrap:wrap;row-gap:6px}
 .hv-selbar .gchip{height:auto;min-height:38px;padding-top:4px;padding-bottom:4px;line-height:1.25}
 .hv-selbar .hv-who{flex:1 1 64px}
+/* 1.11.2 · large text and 320 px: amounts wrap instead of being cut, room names stay whole, nav labels stay on one line */
+.budget-sum{grid-template-columns:repeat(auto-fit,minmax(min(100%,6.2em),1fr))}.budget-sum b{text-overflow:clip}
+.bundle-share{flex-wrap:wrap}.bundle-share>span{flex:1 1 8em;min-width:0;word-break:keep-all;overflow-wrap:anywhere}.bundle-share b{margin-left:auto}
+.bundle-rest,.bc-sub{word-break:keep-all;overflow-wrap:anywhere}
+.bottom-nav button{white-space:nowrap;container-type:inline-size}.bottom-nav button>span{font-size:min(1em,31cqi)}
+.hv-who span{white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}

@@ -516,3 +516,8 @@ test('1.11.0 · a bundle keeps its pieces, each with its own room and look, and 
     const s = base(); s.items[0].parts = bad; assert.throws(() => app.validate(s));
   }
 });
+
+test('1.11.2 · a record id with ~ is refused (3D piece ids are record~piece)', () => {
+  const s = base(); s.items[0].id = 'a~x'; s.payments[0].itemId = 'a~x';
+  assert.throws(() => app.validate(s));
+});
