@@ -49,15 +49,33 @@ export function releaseStuckGallery(isOpen = () => false) {
 // gesture: swipes stayed locked to the old direction and a pull no longer
 // closed it. The page can also be hidden or lose focus mid-drag with no
 // cancel at all. In each case give the viewer the touchend it waits for, at
-// the point the touch started: a cancelled pull or swipe snaps back instead
-// of closing the viewer or changing the image. It is nudged one pixel so it
-// never counts as a tap (a tap would zoom or close).
+// the point its drag is measured from, so a cancelled pull or swipe snaps back
+// instead of closing the viewer or changing the image. The viewer measures a
+// drag from the first move more than 20px from where the touch started (its
+// direction lock), not from the start itself; until such a move, the start.
+// The release is nudged one pixel so it never counts as a tap (a tap would
+// zoom or close).
 const OPEN_PORTAL = ".PhotoView-Portal:not([style*='visibility: hidden'])";
+const LOCK_DISTANCE = 20;
 let touchStart = null;
 
+// Every one-finger touch starts a fresh record, so a touchend that never
+// arrived cannot leave an old start behind for the next gesture.
 function rememberTouchStart(event) {
   const first = event.touches?.[0];
-  if (!touchStart && first) touchStart = { identifier: first.identifier, target: first.target, x: first.clientX, y: first.clientY };
+  if (!first) return;
+  if (event.touches.length === 1 || !touchStart) {
+    touchStart = { identifier: first.identifier, target: first.target, x: first.clientX, y: first.clientY, anchor: null };
+  }
+}
+
+function rememberDragAnchor(event) {
+  if (!touchStart || touchStart.anchor) return;
+  const touch = [...(event.touches || [])].find((item) => item.identifier === touchStart.identifier);
+  if (!touch) return;
+  if (Math.abs(touch.clientX - touchStart.x) > LOCK_DISTANCE || Math.abs(touch.clientY - touchStart.y) > LOCK_DISTANCE) {
+    touchStart.anchor = { x: touch.clientX, y: touch.clientY };
+  }
 }
 
 function forgetTouchStart(event) {
@@ -68,8 +86,9 @@ function releaseGalleryTouch() {
   const start = touchStart;
   touchStart = null;
   if (!start || !document.querySelector(OPEN_PORTAL)) return;
-  const x = start.x + 1;
-  const y = start.y;
+  const from = start.anchor || start;
+  const x = from.x + 1;
+  const y = from.y;
   let end;
   try {
     const touch = new Touch({ identifier: start.identifier, target: start.target, clientX: x, clientY: y, pageX: x, pageY: y, screenX: x, screenY: y });
@@ -83,6 +102,7 @@ function releaseGalleryTouch() {
 
 if (typeof window !== "undefined") {
   window.addEventListener("touchstart", rememberTouchStart, true);
+  window.addEventListener("touchmove", rememberDragAnchor, { capture: true, passive: true });
   window.addEventListener("touchend", forgetTouchStart, true);
   window.addEventListener("touchcancel", releaseGalleryTouch, true);
   window.addEventListener("blur", releaseGalleryTouch);

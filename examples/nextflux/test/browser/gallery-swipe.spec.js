@@ -32,24 +32,23 @@ async function state(page) {
     };
   });
 }
-async function openArticleWithImage(page, second = false) {
+// `images` article images: nf1, nf2, nf3 (true means two).
+async function openArticleWithImage(page, images = 1) {
+  const count = images === true ? 2 : Number(images) || 1;
+  const sources = Array.from({ length: count }, (_, i) => (i ? `${IMG}&b=${i + 1}` : IMG));
   await page.goto("/article-navigation.html#/");
-  await page.evaluate(async ({ src, second }) => {
+  await page.evaluate(async (sources) => {
     const { rows } = await import("/article-navigation-state.js");
-    const more = second ? `<p><img src="${src}&b=2" alt="nf2" width="640" height="320"></p>` : "";
-    rows[0].content = `<p>前言段落。</p><p><img src="${src}" alt="nf1" width="640" height="320"></p>${more}` + rows[0].content;
-  }, { src: IMG, second });
+    rows[0].content = "<p>前言段落。</p>" + sources.map((src, i) => `<p><img src="${src}" alt="nf${i + 1}" width="640" height="320"></p>`).join("") + rows[0].content;
+  }, sources);
   await page.getByRole("button", { name: "打开文章 1", exact: true }).click();
   await expect(page.locator(".article-scroll-area .article-title")).toHaveText("文章 1");
   await expect(page.locator(".nextflux-article-page")).toHaveAttribute("data-navigation-state", "idle");
-  await expect.poll(() => page.evaluate(async (s) => (await import("/media-transport.js")).pendingRequests(s), IMG)).toBe(1);
-  await page.evaluate(async (s) => (await import("/media-transport.js")).settleImage(s), IMG);
-  await expect(page.locator(".article-scroll-area img[alt=nf1]")).toBeVisible();
-  if (!second) return;
-  const src2 = IMG + "&b=2";
-  await expect.poll(() => page.evaluate(async (s) => (await import("/media-transport.js")).pendingRequests(s), src2)).toBe(1);
-  await page.evaluate(async (s) => (await import("/media-transport.js")).settleImage(s), src2);
-  await expect(page.locator(".article-scroll-area img[alt=nf2]")).toBeVisible();
+  for (const [i, src] of sources.entries()) {
+    await expect.poll(() => page.evaluate(async (s) => (await import("/media-transport.js")).pendingRequests(s), src)).toBe(1);
+    await page.evaluate(async (s) => (await import("/media-transport.js")).settleImage(s), src);
+    await expect(page.locator(`.article-scroll-area img[alt=nf${i + 1}]`)).toBeVisible();
+  }
 }
 // Clicks via element.click(): a click event only, no pointer events.
 const openImage = (page) => page.locator(".article-scroll-area img[alt=nf1]").evaluate((el) => el.click());
@@ -136,6 +135,14 @@ async function drag(page, from, points) {
   for (const point of points) { await touchAt(page, "touchmove", ...point); await page.waitForTimeout(30); }
 }
 const counter = (page) => page.locator(".PhotoView-Slider__Counter");
+// The middle of three images, so a wrong release could move either way.
+async function openMiddleViewer(page) {
+  await openArticleWithImage(page, 3);
+  await page.locator(".article-scroll-area img[alt=nf2]").evaluate((el) => el.click());
+  await expect(page.locator(".PhotoView-Portal")).toBeVisible();
+  await page.waitForTimeout(1000);
+  await expect(counter(page)).toHaveText("2 / 3");
+}
 
 // A cancelled gesture must snap back, not finish: a three-finger screenshot
 // swipe must not close the viewer or change the image behind it.
@@ -149,12 +156,39 @@ test("a cancelled long pull-down leaves the viewer open", async ({ page }) => {
   await expect(counter(page)).toHaveText("1 / 2");
 });
 
-test("a cancelled long sideways drag keeps the same image", async ({ page }) => {
-  await openTwoImageViewer(page);
-  await drag(page, [300, 420], [[280, 421], [240, 421], [180, 421], [120, 421]]);
-  await touchAt(page, "touchcancel", 120, 421);
+// The viewer measures a drag from its first move past 20px, so the first
+// move may already be far from where the finger landed.
+for (const [name, from, moves] of [
+  ["a cancelled sideways drag keeps the middle image", [300, 420], [[280, 421], [240, 421], [180, 421], [120, 421]]],
+  ["a cancelled drag whose first move is large keeps the image (left)", [300, 420], [[200, 421], [150, 421]]],
+  ["a cancelled drag whose first move is large keeps the image (right)", [100, 420], [[200, 421], [250, 421]]],
+]) test(name, async ({ page }) => {
+  await openMiddleViewer(page);
+  await drag(page, from, moves);
+  await touchAt(page, "touchcancel", ...moves.at(-1));
   await page.waitForTimeout(800);
-  await expect(counter(page)).toHaveText("1 / 2");
+  await expect(counter(page)).toHaveText("2 / 3");
+});
+
+test("a cancelled pull whose first move is large leaves the viewer open", async ({ page }) => {
+  await openMiddleViewer(page);
+  await drag(page, [200, 300], [[200, 430], [200, 480]]);
+  await touchAt(page, "touchcancel", 200, 480);
+  await page.waitForTimeout(1200);
+  await expect(page.locator(".PhotoView-Portal")).toBeVisible();
+  expect((await state(page)).galleryActive).toBe(true);
+  await expect(counter(page)).toHaveText("2 / 3");
+});
+
+// A touchend that never arrived must not leave its start for the next gesture.
+test("a lost touchend does not move the release point of the next cancelled drag", async ({ page }) => {
+  await openMiddleViewer(page);
+  await touchAt(page, "touchstart", 60, 420);
+  await page.waitForTimeout(100);
+  await drag(page, [300, 420], [[280, 421], [240, 421], [180, 421]]);
+  await touchAt(page, "touchcancel", 180, 421);
+  await page.waitForTimeout(800);
+  await expect(counter(page)).toHaveText("2 / 3");
 });
 
 // The page can be hidden or lose focus mid-drag without any touchcancel.
