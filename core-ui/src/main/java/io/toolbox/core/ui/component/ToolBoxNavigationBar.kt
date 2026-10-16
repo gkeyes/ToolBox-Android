@@ -179,23 +179,34 @@ private fun StandInTabNavigationBar(
                         verticalArrangement = Arrangement.spacedBy(LiquidBottomTabsMetrics.TabSpacing, Alignment.CenterVertically),
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
-                        ToolBoxIcon(icon = item.icon, contentDescription = null, tint = tint, modifier = Modifier.size(24.dp))
-                        if (!iconOnly) {
-                            ToolBoxText(
-                                text = item.label,
-                                style = ToolBoxThemeTokens.textStyles.label.copy(
-                                    color = tint,
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                ),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        }
+                        TabContent(item, tint, iconOnly)
                     }
                 }
             }
         }
+    }
+}
+
+/** One tab's icon over its label, shared by the live bar and its stand-in so both draw the same. */
+@Composable
+private fun TabContent(item: ToolBoxNavigationItem, tint: androidx.compose.ui.graphics.Color, iconOnly: Boolean) {
+    ToolBoxIcon(
+        icon = item.icon,
+        contentDescription = null,
+        tint = tint,
+        modifier = Modifier.size(LiquidBottomTabsMetrics.IconSize),
+    )
+    if (!iconOnly) {
+        ToolBoxText(
+            text = item.label,
+            style = ToolBoxThemeTokens.textStyles.label.copy(
+                color = tint,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.SemiBold,
+            ),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 
@@ -241,24 +252,7 @@ private fun LiquidTabNavigationBar(
                             this.selected = index == selectedIndex
                         },
                 ) {
-                    ToolBoxIcon(
-                        icon = item.icon,
-                        contentDescription = null,
-                        tint = colors.textPrimary,
-                        modifier = Modifier.size(24.dp),
-                    )
-                    if (!iconOnly) {
-                        ToolBoxText(
-                            text = item.label,
-                            style = ToolBoxThemeTokens.textStyles.label.copy(
-                                color = colors.textPrimary,
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.SemiBold,
-                            ),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
+                    TabContent(item, colors.textPrimary, iconOnly)
                 }
             }
         }

@@ -70,6 +70,7 @@ object LiquidBottomTabsMetrics {
     val BarPadding = 4f.dp
     val LensHeight = 56f.dp
     val TabSpacing = 2f.dp
+    val IconSize = 24f.dp
 
     fun restingLensInk(isLightTheme: Boolean): Color =
         if (isLightTheme) Color.Black.copy(0.1f) else Color.White.copy(0.1f)
@@ -100,7 +101,7 @@ fun LiquidBottomTabs(
     ) {
         val density = LocalDensity.current
         val tabWidth = with(density) {
-            (constraints.maxWidth.toFloat() - 8f.dp.toPx()) / tabsCount
+            (constraints.maxWidth.toFloat() - 2f * LiquidBottomTabsMetrics.BarPadding.toPx()) / tabsCount
         }
 
         // The drag/highlight objects below are remembered across recompositions, so everything they
@@ -259,7 +260,7 @@ fun LiquidBottomTabs(
                     .then(interactiveHighlight.modifier)
                     .height(LiquidBottomTabsMetrics.LensHeight)
                     .fillMaxWidth()
-                    .padding(horizontal = 4f.dp)
+                    .padding(horizontal = LiquidBottomTabsMetrics.BarPadding)
                     .graphicsLayer(colorFilter = ColorFilter.tint(accentColor)),
                 verticalAlignment = Alignment.CenterVertically,
                 content = content
@@ -268,7 +269,7 @@ fun LiquidBottomTabs(
 
         Box(
             Modifier
-                .padding(horizontal = 4f.dp)
+                .padding(horizontal = LiquidBottomTabsMetrics.BarPadding)
                 .graphicsLayer {
                     translationX =
                         if (isLtr) dampedDragAnimation.value * tabWidth + panelOffset

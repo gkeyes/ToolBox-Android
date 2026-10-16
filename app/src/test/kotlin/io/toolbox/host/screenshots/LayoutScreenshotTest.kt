@@ -113,6 +113,7 @@ import io.toolbox.core.ui.component.ToolBoxNavigationItem
 import io.toolbox.core.ui.component.rememberToolBoxGlassState
 import io.toolbox.core.ui.component.toolBoxBackdropSource
 import androidx.compose.ui.test.getBoundsInRoot
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.onAllNodesWithTag
 
 /**
@@ -333,12 +334,15 @@ class LayoutScreenshotTest(private val fontScale: Float) {
         fun bounds(tag: String) = compose.onAllNodesWithTag(tag, useUnmergedTree = true).onFirst().getBoundsInRoot()
         val live = (0..2).map { bounds("live-$it") }
         val standIn = (0..2).map { bounds("standin-$it") }
-        val dy = standIn[0].top - live[0].top
+        // Each tab is measured from the top of its own bar, so a shift of every tab inside one bar fails too.
+        val liveBar = bounds("live-bar")
+        val standInBar = bounds("standin-bar")
+        assertEquals("bar height", (liveBar.bottom - liveBar.top).value, (standInBar.bottom - standInBar.top).value, 0.5f)
         live.zip(standIn).forEachIndexed { index, (a, b) ->
             assertEquals("tab $index left", a.left.value, b.left.value, 0.5f)
             assertEquals("tab $index width", (a.right - a.left).value, (b.right - b.left).value, 0.5f)
             assertEquals("tab $index height", (a.bottom - a.top).value, (b.bottom - b.top).value, 0.5f)
-            assertEquals("tab $index top", dy.value, (b.top - a.top).value, 0.5f)
+            assertEquals("tab $index top", (a.top - liveBar.top).value, (b.top - standInBar.top).value, 0.5f)
         }
     }
 
@@ -356,11 +360,11 @@ class LayoutScreenshotTest(private val fontScale: Float) {
             Column(Modifier.fillMaxWidth().align(Alignment.TopCenter)) {
                 Spacer(Modifier.height(24.dp))
                 ToolBoxGlassActivity(active = true) {
-                    ToolBoxNavigationBar(items("live"), "tools", {}, glassState = glass)
+                    ToolBoxNavigationBar(items("live"), "tools", {}, Modifier.testTag("live-bar"), glassState = glass)
                 }
                 Spacer(Modifier.height(24.dp))
                 ToolBoxGlassActivity(active = false) {
-                    ToolBoxNavigationBar(items("standin"), "tools", {}, glassState = glass)
+                    ToolBoxNavigationBar(items("standin"), "tools", {}, Modifier.testTag("standin-bar"), glassState = glass)
                 }
             }
         }

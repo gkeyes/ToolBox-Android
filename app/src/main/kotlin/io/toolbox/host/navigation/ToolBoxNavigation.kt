@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -199,6 +200,24 @@ internal fun ToolBoxNavigation(
         }
     }
 
+    // The primary screen's glass (tab bar, top bar) stays live for as long as any of it can be
+    // seen, through the runtime fade-through and under a sliding secondary page, and pauses only
+    // once the screen is fully hidden: a stand-in swapped in mid-transition reads as the bar
+    // changing material. Derived, so only the hidden edge recomposes the glass readers.
+    val primaryGlassLive by remember(runtimeRoute, firstRetainedProgress) {
+        derivedStateOf {
+            val coveredBySecondary = firstRetainedProgress != null && firstRetainedProgress.value <= 0.001f
+            val hiddenByRuntime = when {
+                runtimeRoute == null -> false
+                sourceAboveRuntime -> sourceReturnProgress.value >= 0.999f
+                entryCoverVisible ->
+                    ToolBoxMotion.fadeThroughOutgoingAlpha(1f - entryProgress.value.coerceIn(0f, 1f)) <= 0.001f
+                else -> true
+            }
+            !coveredBySecondary && !hiddenByRuntime
+        }
+    }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -234,9 +253,7 @@ internal fun ToolBoxNavigation(
                     },
                 ),
         ) {
-            ToolBoxGlassActivity(
-                active = retainedRoutes.isEmpty() && runtimeRoute == null,
-            ) {
+            ToolBoxGlassActivity(active = primaryGlassLive) {
                 Box(
                     Modifier
                         .fillMaxSize()
