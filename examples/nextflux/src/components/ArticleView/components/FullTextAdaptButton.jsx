@@ -103,8 +103,11 @@ export default function FullTextAdaptButton() {
   // Miniflux keeps refusing the rollback: keep the rule it has now and drop
   // the owed rollback, so this feed can be adapted again.
   async function keepCurrentRule(){
+    // Closing the sheet meanwhile aborts this run: then stay closed.
+    const run=controller.current;
     try{ await rollbackJournal(authState.get())?.clear(feedId); }
-    catch{ setError("没能放弃这次恢复，请重试。"); return; }
+    catch{ if(!run?.signal.aborted) setError("没能放弃这次恢复，请重试。"); return; }
+    if(run?.signal.aborted) return;
     start();
   }
 
@@ -113,7 +116,13 @@ export default function FullTextAdaptButton() {
     try{
       const result=await testScraperRule({feedId,entryId:article.id,candidate:candidate.rule,baselineRule:baseline.scraper_rules||"",api:minifluxAPI,journal:rollbackJournal(authState.get())});
       setTested(result);setPhase("tested");
-    }catch(e){setError(e.message||"测试抓取失败。");setPhase("candidate");}
+    }catch(e){
+      setError(e.message||"测试抓取失败。");
+      // A rollback still owed blocks every further test: offer the same way
+      // out as when the adapter opens.
+      if(e?.code==="ROLLBACK_FAILED"||e?.code==="ROLLBACK_PENDING"){setRefused(e.failure==="server");setPhase("error");}
+      else setPhase("candidate");
+    }
   }
 
   async function apply(){

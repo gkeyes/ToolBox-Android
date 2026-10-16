@@ -200,3 +200,16 @@ test("a candidate write whose reply was lost is still rolled back", async () => 
   await assert.rejects(testScraperRule({ feedId: 1, entryId: 9, candidate: "article", baselineRule: ".old", api: b, journal }));
   assert.equal((await journal.list())[0]?.failure, "network");
 });
+
+test("apply drops an owed rollback only for a saved rule, and writes nothing if it cannot drop it", async () => {
+  const storage = memoryStorage();
+  const journal = createRollbackJournal({ storage, account: "s#1" });
+  const a = api();
+  await journal.save({ feedId: 1, candidate: "article", baselineRule: ".old" });
+  const failing = { ...journal, clear: async () => { throw new Error("storage"); } };
+  await assert.rejects(applyScraperRule({ feedId: 1, candidate: "article", baselineRule: ".old", api: a, journal: failing }), /storage/);
+  assert.equal(a.writes.length, 0);
+  await applyScraperRule({ feedId: 1, candidate: "article", baselineRule: ".old", api: a, journal });
+  assert.equal((await a.getFeed()).scraper_rules, "article");
+  assert.deepEqual(await journal.list(), []);
+});

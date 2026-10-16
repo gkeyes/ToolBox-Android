@@ -102,12 +102,18 @@ export function assertNoPendingRollback(pending, feedId) {
   const failure = entry.failure === "server" ? "server" : "network";
   throw fail("ROLLBACK_PENDING", PENDING_MESSAGES[failure], { failure });
 }
-// Once the rule is saved, an older cut-short test of this feed must not undo
-// it; until then its rollback stays owed.
+// An older cut-short test of this feed must not undo the rule saved here, so
+// its rollback is dropped first: if that fails nothing is written. Should the
+// save then fail, the rollback is owed again.
 export async function applyScraperRule({ feedId, candidate, baselineRule, api, journal }) {
-  const saved = await saveScraperRule({ feedId, candidate, baselineRule, api });
-  await journal?.clear(feedId);
-  return saved;
+  const owed = journal ? (await journal.list()).find((entry) => entry.feedId === Number(feedId)) : null;
+  if (owed) await journal.clear(feedId);
+  try {
+    return await saveScraperRule({ feedId, candidate, baselineRule, api });
+  } catch (error) {
+    if (owed) await journal.save(owed).catch(() => {});
+    throw error;
+  }
 }
 
 async function saveScraperRule({ feedId, candidate, baselineRule, api }) {
