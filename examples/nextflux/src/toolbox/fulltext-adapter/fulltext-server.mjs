@@ -26,11 +26,19 @@ async function restoreBaseline({ feedId, candidate, baselineRule, api }) {
 
 const PENDING_MESSAGES = {
   network: "上次测试的规则还没恢复：连不上 Miniflux。请检查网络后重新打开全文适配。",
-  server: "上次测试的规则还没恢复：Miniflux 拒绝了恢复。可以到 Miniflux 核对规则，或保留服务器上现在的规则、放弃这次恢复。",
+  server: "上次测试的规则还没恢复：Miniflux 拒绝了恢复，服务器上现在是测试规则。可以到 Miniflux 核对，或保留测试规则、不再恢复原规则。",
 };
+const ROLLBACK_FAILED_MESSAGES = {
+  network: "测试规则未能安全回滚，下次打开全文适配时会再试；也可以先到 Miniflux 核对规则。",
+  server: "测试规则未能回滚：Miniflux 拒绝了恢复。下次打开全文适配时会再试；也可以到 Miniflux 核对，或保留测试规则、不再恢复原规则。",
+};
+// A gateway in front of Miniflux answering for it (bad gateway, unavailable,
+// timeout) means Miniflux was not reached.
+const GATEWAY_STATUSES = new Set([502, 503, 504]);
 // A reply from the server (an HTTP status, or a write it did not keep) is a
 // refusal; anything else never reached it or never came back.
 function failureKind(error) {
+  if (GATEWAY_STATUSES.has(error?.response?.status)) return "network";
   return error?.response || error?.code === "ROLLBACK_REFUSED" ? "server" : "network";
 }
 
@@ -71,7 +79,8 @@ export async function testScraperRule({ feedId, entryId, candidate, baselineRule
   else if (rollbackError) await journal?.save({ feedId, candidate, baselineRule: baselineRule || "", failure: failureKind(rollbackError) }).catch(() => {});
   if (rollbackError) {
     if (rollbackError.code === "ROLLBACK_CONFLICT") throw rollbackError;
-    throw fail("ROLLBACK_FAILED", "测试规则未能安全回滚，下次打开全文适配时会再试；也可以先到 Miniflux 核对规则。", { failure: failureKind(rollbackError) });
+    const failure = failureKind(rollbackError);
+    throw fail("ROLLBACK_FAILED", ROLLBACK_FAILED_MESSAGES[failure], { failure, candidate, baselineRule: baselineRule || "" });
   }
   if (testError) throw testError;
   return { content, metrics: contentMetrics(content) };
@@ -100,20 +109,27 @@ export function assertNoPendingRollback(pending, feedId) {
   const entry = pending.find((item) => item.feedId === Number(feedId));
   if (!entry) return;
   const failure = entry.failure === "server" ? "server" : "network";
-  throw fail("ROLLBACK_PENDING", PENDING_MESSAGES[failure], { failure });
+  throw fail("ROLLBACK_PENDING", PENDING_MESSAGES[failure], { failure, candidate: entry.candidate, baselineRule: entry.baselineRule });
 }
-// An older cut-short test of this feed must not undo the rule saved here, so
-// its rollback is dropped first: if that fails nothing is written. Should the
-// save then fail, the rollback is owed again.
+// An older cut-short test of this feed stays owed until the rule here is
+// saved, then is dropped. Replay never undoes a different saved rule (it only
+// restores a server still holding the old candidate), so a drop that fails or
+// never runs is harmless; the one rule it would undo is the old candidate
+// itself, so for that rule the rollback is first pointed at it: if that fails
+// nothing is written.
 export async function applyScraperRule({ feedId, candidate, baselineRule, api, journal }) {
   const owed = journal ? (await journal.list()).find((entry) => entry.feedId === Number(feedId)) : null;
-  if (owed) await journal.clear(feedId);
+  const retarget = owed?.candidate === candidate;
+  if (retarget) await journal.save({ ...owed, baselineRule: candidate });
+  let saved;
   try {
-    return await saveScraperRule({ feedId, candidate, baselineRule, api });
+    saved = await saveScraperRule({ feedId, candidate, baselineRule, api });
   } catch (error) {
-    if (owed) await journal.save(owed).catch(() => {});
+    if (retarget) await journal.save(owed).catch(() => {});
     throw error;
   }
+  if (owed) await journal.clear(feedId).catch(() => {});
+  return saved;
 }
 
 async function saveScraperRule({ feedId, candidate, baselineRule, api }) {

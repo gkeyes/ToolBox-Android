@@ -201,15 +201,63 @@ test("a candidate write whose reply was lost is still rolled back", async () => 
   assert.equal((await journal.list())[0]?.failure, "network");
 });
 
-test("apply drops an owed rollback only for a saved rule, and writes nothing if it cannot drop it", async () => {
+test("apply drops an owed rollback only for a saved rule, and writes nothing if it cannot retarget it", async () => {
   const storage = memoryStorage();
   const journal = createRollbackJournal({ storage, account: "s#1" });
   const a = api();
   await journal.save({ feedId: 1, candidate: "article", baselineRule: ".old" });
-  const failing = { ...journal, clear: async () => { throw new Error("storage"); } };
+  const failing = { ...journal, save: async () => { throw new Error("storage"); } };
   await assert.rejects(applyScraperRule({ feedId: 1, candidate: "article", baselineRule: ".old", api: a, journal: failing }), /storage/);
   assert.equal(a.writes.length, 0);
   await applyScraperRule({ feedId: 1, candidate: "article", baselineRule: ".old", api: a, journal });
   assert.equal((await a.getFeed()).scraper_rules, "article");
   assert.deepEqual(await journal.list(), []);
+});
+
+test("apply never loses an owed rollback while the server holds its test rule", async () => {
+  const storage = memoryStorage();
+  const journal = createRollbackJournal({ storage, account: "s#1" });
+  // The server still holds the old test rule; the save fails and so would any re-save.
+  const a = api();
+  await a.updateFeed(1, { scraper_rules: "article" });
+  await journal.save({ feedId: 1, candidate: "article", baselineRule: ".old", failure: "server" });
+  const refusing = { ...a, updateFeed: async () => { throw Object.assign(new Error("500"), { response: { status: 500 } }); } };
+  const noSave = { ...journal, save: async () => { throw new Error("storage"); } };
+  await assert.rejects(applyScraperRule({ feedId: 1, candidate: ".new", baselineRule: "article", api: refusing, journal: noSave }));
+  assert.equal((await journal.list()).length, 1);
+  // Saved, but the drop fails: replay leaves the saved rule alone.
+  const noClear = { ...journal, clear: async () => { throw new Error("storage"); } };
+  await applyScraperRule({ feedId: 1, candidate: ".new", baselineRule: "article", api: a, journal: noClear });
+  assert.equal((await journal.list()).length, 1);
+  await replayScraperRollbacks({ api: a, journal });
+  assert.equal((await a.getFeed()).scraper_rules, ".new");
+  assert.deepEqual(await journal.list(), []);
+  // Applying the old test rule itself: a drop that fails cannot undo it either.
+  const b = api();
+  await journal.save({ feedId: 1, candidate: "article", baselineRule: ".old" });
+  await applyScraperRule({ feedId: 1, candidate: "article", baselineRule: ".old", api: b, journal: { ...journal, clear: noClear.clear } });
+  await replayScraperRollbacks({ api: b, journal });
+  assert.equal((await b.getFeed()).scraper_rules, "article");
+  assert.deepEqual(await journal.list(), []);
+});
+
+test("a gateway error counts as unreachable, and a refusal names the rules", async () => {
+  const storage = memoryStorage();
+  const journal = createRollbackJournal({ storage, account: "s#1" });
+  const a = api();
+  await a.updateFeed(1, { scraper_rules: "article" });
+  await journal.save({ feedId: 1, candidate: "article", baselineRule: ".old" });
+  for (const status of [502, 503, 504]) {
+    const gateway = { ...a, getFeed: async () => { throw Object.assign(new Error(String(status)), { response: { status } }); } };
+    assert.equal((await replayScraperRollbacks({ api: gateway, journal }))[0].failure, "network");
+  }
+  const refusing = { ...a, updateFeed: async () => { throw Object.assign(new Error("500"), { response: { status: 500 } }); } };
+  const pending = await replayScraperRollbacks({ api: refusing, journal });
+  assert.throws(() => assertNoPendingRollback(pending, 1), (e) => e.failure === "server" && e.candidate === "article" && e.baselineRule === ".old" && /保留测试规则/.test(e.message));
+  await journal.clear(1);
+  const b = api();
+  const update = b.updateFeed;
+  b.updateFeed = async (id, patch) => { if (patch.scraper_rules === ".old") throw Object.assign(new Error("400"), { response: { status: 400 } }); return update(id, patch); };
+  await assert.rejects(testScraperRule({ feedId: 1, entryId: 9, candidate: "article", baselineRule: ".old", api: b, journal }),
+    (e) => e.code === "ROLLBACK_FAILED" && e.failure === "server" && e.candidate === "article" && e.baselineRule === ".old" && /保留测试规则/.test(e.message));
 });
