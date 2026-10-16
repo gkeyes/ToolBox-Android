@@ -176,7 +176,7 @@ export function createHome(api) {
   root.innerHTML = `<div class="hv-stage"><div class="hv-slot"></div><div class="hv-labels" aria-hidden="false"></div></div>
   <div class="hv-top"><div class="hv-title"><h1>我的家</h1><p class="hv-sub">单指转动 · 双指缩放</p></div><div class="hv-tools"><button type="button" class="hg gbtn gchip" data-hv="place">${svg(ICON.place)}<span>摆放</span></button><button type="button" class="hg gbtn gchip" data-hv="layout">${svg(ICON.layout)}<span>户型</span></button></div></div>
   <div class="hv-side"><button type="button" class="hg gbtn gcirc" data-hv="labels" aria-pressed="true" aria-label="隐藏房间标签"></button><button type="button" class="hg gbtn gcirc" data-hv="reset" aria-label="回到默认视角">${svg(ICON.reset)}</button></div>
-  <div class="hv-dock" data-dock="place" hidden><div class="hg hv-selbar" hidden><button type="button" class="hv-who" data-hv="relook" aria-label="换外观"></button><button type="button" class="hg gbtn gchip" data-hv="rot">${svg(ICON.rot)}<span>转向</span></button><button type="button" class="hg gbtn gchip" data-hv="drop">放下</button></div><div class="hg hv-tray"><h3>还没放进家里的 <span class="hv-tray-n"></span></h3><div class="hv-tray-row"></div></div></div>
+  <div class="hv-dock" data-dock="place" hidden><div class="hg hv-selbar" hidden><button type="button" class="hv-who" data-hv="relook" aria-label="换外观"></button><button type="button" class="hg gbtn gchip" data-hv="rot">${svg(ICON.rot)}<span>转向</span></button><button type="button" class="hg gbtn gcirc hv-take" data-hv="take" aria-label="拿走这件，帐还在">${svg(ICON.trash)}</button><button type="button" class="hg gbtn gchip" data-hv="drop">放下</button></div><div class="hg hv-tray"><h3>还没放进家里的 <span class="hv-tray-n"></span></h3><div class="hv-tray-row"></div></div></div>
 `;
   // Sheets live on <body> so they cover the tab bar; the tab's own stacking context would keep them under it.
   const layer = document.createElement('div'); layer.className = 'hv-layer';
@@ -233,12 +233,13 @@ export function createHome(api) {
         push(run);
       });
     });
-    // A bathroom gets one door, on its longest wall shared with its own room; none into any other room.
+    // A bathroom gets one door: inside a room, on its longest wall shared with that room; standing alone, on its
+    // longest wall shared with any room. No other wall of it has a door.
     const len = q => Math.hypot(q.Bp[0] - q.A[0], q.Bp[1] - q.A[1]), bathDoor = new Map();
     for (const q of segs) {
       if (!q.o) continue; const [b, h] = q.a.type === '卫生间' ? [q.a, q.o] : q.o.type === '卫生间' ? [q.o, q.a] : [];
       if (!b) continue; q.bath = true;
-      if (h.name === b.host && len(q) >= .9 && (!bathDoor.has(b.name) || len(q) > len(bathDoor.get(b.name)))) bathDoor.set(b.name, q);
+      if ((!b.host || h.name === b.host) && h.type !== '卫生间' && len(q) >= .9 && (!bathDoor.has(b.name) || len(q) > len(bathDoor.get(b.name)))) bathDoor.set(b.name, q);
     }
     for (const q of segs) addWall(q.A, q.Bp, q.n, q.a.type, q.o ? q.o.type : null, q.bath ? [...bathDoor.values()].includes(q) : undefined);
     buildLabels();
@@ -270,7 +271,7 @@ export function createHome(api) {
     add(solid, kind === 'rail' ? M('#e8e1d7') : wallMat(), true);
     add(panes, kind === 'rail' ? M('#cfe6f2', { t: .3, r: .05 }) : glassMat(), false);
     add(frames, M('#3a3f42'), false);
-    houseG.add(g); walls.push({ g, kind, n, cur: 1 });
+    houseG.add(g); walls.push({ g, kind, n, cur: 1, door: kind === 'int' && ops.length ? [inside, outside] : null });
   }
   // Near-side outer walls drop low so the inside is always visible; interior walls stay half height.
   function wallsStep(force) {
@@ -638,6 +639,10 @@ export function createHome(api) {
     else if (a === 'pick-ok') { if (!pick.sel) return; const cb = pick.cb; const sel = pick.sel; closeSheet(q('[data-sheet="pick"]')); cb && cb(sel); }
     else if (a === 'rot') { const e2 = selected; if (!e2) return; if (HM.KINDS[e2.model.kind].wall) { api.toast('挂墙的东西会自动朝向屋内', null, 'info'); return; } const r = HM.clampPlacement(HM.KINDS[e2.model.kind], HM.bbox(RECTS, e2.room), e2.x, e2.z, (e2.rot + 1) % 4); e2.model = { ...e2.model, x: +r.fx.toFixed(4), z: +r.fz.toFixed(4), rot: r.rot }; placeEntry(e2); updateRing(); saveModel(e2); invalidate(); }
     else if (a === 'drop') select(null);
+    // 拿走: the look leaves the house (back to the tray); the record and its money stay. The notice can put it back.
+    else if (a === 'take') { const e2 = selected; if (!e2) return; const id = e2.id, was = e2.model; select(null);
+      api.saveModel(id, null).then(ok => { if (!ok) { api.toast('没拿走，请再试一次', null, true); return; } syncItems(); renderTray(); invalidate();
+        api.toast(`拿走了${e2.name}，在「还没放进家里的」里`, { label: '撤销', run: () => api.saveModel(id, was).then(ok2 => { if (ok2) { syncItems(); renderTray(); invalidate(); } }) }); }); }
     else if (a === 'relook') { const e2 = selected; if (!e2) return; openPicker({ sel: e2.model.kind, hint: `给「${e2.name}」换一个外观。`, cb: kind => { if (kind === e2.model.kind) return; api.saveModel(e2.id, { ...e2.model, kind }).then(ok => { if (!ok) api.toast('外观没换成，请再试一次', null, true); if (ok) { syncItems(); const n = items.get(e2.id); if (n?.shown) select(n); else select(null); } }); } }); }
   };
   root.addEventListener('click', onClick); layer.addEventListener('click', onClick);
@@ -727,7 +732,7 @@ export function createHome(api) {
   function setUi(ui) { if (ui && typeof ui.labels === 'boolean') { labelsOn = ui.labels; paintLabelBtn(); paintLabels(); } }
   paintLabelBtn();
   // Test hooks for the screenshot script: none of these change the ledger.
-  const debug = { cam, items, select: id => select(items.get(id) || null), screen: (id, h = .3) => { const e = items.get(id); if (!e) return null; const r = canvas.getBoundingClientRect(); const [x, y] = project(new THREE.Vector3(e.x, h, e.z)); return [r.left + x, r.top + y]; }, mode: () => mode, setMode, editor: () => editor.debug() };
+  const debug = { cam, items, select: id => select(items.get(id) || null), screen: (id, h = .3) => { const e = items.get(id); if (!e) return null; const r = canvas.getBoundingClientRect(); const [x, y] = project(new THREE.Vector3(e.x, h, e.z)); return [r.left + x, r.top + y]; }, mode: () => mode, setMode, editor: () => editor.debug(), doors: () => walls.filter(w => w.door).map(w => w.door) };
   // ToolBox closing with 拼户型 open: save it, like 完成.
   function flush() { if (editor.isOpen()) editor.done(); }
   // ToolBox going to the background with 拼户型 open: save it but keep it open, in case the system then closes ToolBox.
@@ -785,7 +790,7 @@ function createPlanEditor({ root, layer, svg, icons, esc, toast, openSheet, clos
   }
   function open(t) {
     const b = HM.toBlocks(t); rooms = b.blocks; baths = b.baths; sel = null; living = []; panX = panZ = 0;
-    startNames = new Map(baths.map(x => [x.id, x.name])); startIds = new Set([...rooms, ...baths].map(x => x.id)); splitLiving();
+    startNames = wetNames(); startIds = new Set([...rooms, ...baths].map(x => x.id)); splitLiving();
     el.hidden = false; root.dataset.blocks = '1'; requestAnimationFrame(() => { fit(); render(); });
   }
   function close() { el.hidden = true; delete root.dataset.blocks; sel = null; drag = null; }
@@ -805,12 +810,14 @@ function createPlanEditor({ root, layer, svg, icons, esc, toast, openSheet, clos
     if (home.blocks.length < rooms.length || home.baths.length < baths.length) { render(); toast('有房间的位置存不了（叠在一起或太远），请调整后再按完成'); return; }
     close(); onDone(home, renamesOf(home));
   }
-  function renamesOf(home) { const renames = living.slice(); for (const b of home.baths) { const was = startNames.get(b.id); if (was && was !== b.name) renames.push([was, b.name]); } return renames; }
+  // Bathrooms, inside a room or standing alone, by id: one moved, or turned from one into the other, keeps its records.
+  function wetNames(home = { blocks: rooms, baths }) { return new Map([...home.baths, ...home.blocks.filter(r => r.type === '卫生间')].map(x => [x.id, x.name])); }
+  function renamesOf(home) { const renames = living.slice(); for (const b of [...home.baths, ...home.blocks.filter(r => r.type === '卫生间')]) { const was = startNames.get(b.id); if (was && was !== b.name) renames.push([was, b.name]); } return renames; }
   // Saved without closing (ToolBox sent to the background): later saves count renames from here.
   function save() {
     cancelDrag(); render();
     const home = HM.sanitizeBlocks({ blocks: rooms, baths }); if (!home || home.blocks.length < rooms.length || home.baths.length < baths.length) return;
-    onDone(home, renamesOf(home), true); living = []; startNames = new Map(home.baths.map(b => [b.id, b.name]));
+    onDone(home, renamesOf(home), true); living = []; startNames = wetNames(home);
   }
   // Leaving 我的家 by the tabs saves the plan, the same as 完成 and Back.
   function leave() { if (!el.hidden) done(); close(); }
@@ -909,6 +916,13 @@ function createPlanEditor({ root, layer, svg, icons, esc, toast, openSheet, clos
       const was = o.name; o.name = HM.nextName(o.type, used(o)); toast(`两块${was}分开了，这一块改叫${o.name}`); }
   }
   function rename(b) { b.name = HM.nextName(HM.bathName(host(b)), used(b)); }
+  // A bathroom dragged out of every room onto empty floor stands alone, as a 卫生间 block keeping its id and name.
+  function freeBath(b) { const r = { id: b.id, type: '卫生间', name: b.name, x: r2(r1(b.drag.x)), z: r2(r1(b.drag.z)), w: b.w, d: b.d }; return Math.abs(r.x) <= 60 && Math.abs(r.z) <= 60 && r.x + r.w <= 60 && r.z + r.d <= 60 && !rooms.some(o => HM.boxOverlap(r, o)) ? r : null; }
+  // A standalone 卫生间 dropped with its centre in a room it fits becomes that room's bathroom (renamed 主卫/公卫).
+  function intoRoom(r) {
+    const b = { id: r.id, w: r.w, d: r.d, drag: { x: r.x, z: r.z } }, d = dropHost(b); if (!d || d.clash) return null;
+    const n = { id: r.id, host: d.h.id, w: r.w, d: r.d, ax: d.ax, az: d.az, name: r.name }; n.name = HM.nextName(HM.bathName(d.h), used(r)); return n;
+  }
 
   /* ---------- gestures: touch first, mouse as a fallback ---------- */
   function track(target, start, self) { // self: only gestures that start on the target itself, not on what is inside it
@@ -930,16 +944,19 @@ function createPlanEditor({ root, layer, svg, icons, esc, toast, openSheet, clos
           if (!drag || drag.it !== it) return; // undone by Back mid-drag
           const dx = (x - sx) / S, dz = (y - sy) / S; if (Math.hypot(dx, dz) * S > 4) drag.moved = true; if (!drag.moved) return;
           if (!it.host) { it.x = r1(Math.min(60 - it.w, Math.max(-60, o.x + dx))); it.z = r1(Math.min(60 - it.d, Math.max(-60, o.z + dz))); showLines(snapMove(it)); it.bad = isBad(it); }
-          else { it.drag = { x: o.x + dx, z: o.z + dz }; const d = dropHost(it); it.bad = !d || !!d.clash; showAnchors(d && d.h, it); }
+          else { it.drag = { x: o.x + dx, z: o.z + dz }; const d = dropHost(it); it.bad = d ? !!d.clash : !freeBath(it); showAnchors(d && d.h, it); }
           render();
         },
         end() {
           if (!drag || drag.it !== it) return;
           showLines([]); showAnchors(null);
-          if (!it.host && it.bad) { it.x = o.x; it.z = o.z; it.bad = false; toast('房间不能叠在一起，已放回原位'); } else if (!it.host) splitNames();
+          const into = !it.host && it.bad && it.type === '卫生间' ? intoRoom(it) : null;
+          if (into) { rooms = rooms.filter(x => x !== it); baths.push(into); sel = into.id; toast(`${into.name}放进了${host(into).name}里`); }
+          else if (!it.host && it.bad) { it.x = o.x; it.z = o.z; it.bad = false; toast('房间不能叠在一起，已放回原位'); } else if (!it.host) splitNames();
           if (it.host && it.drag) { const d = dropHost(it);
             if (d && !d.clash) { const was = it.name, moved = d.h.id !== it.host; it.host = d.h.id; it.ax = d.ax; it.az = d.az; if (moved) { rename(it); toast(it.name === was ? `${was}改放在${d.h.name}里` : `${was}改放在${d.h.name}里，现在叫${it.name}`); } }
-            else toast(d ? '跟另一个卫生间叠到了，已放回原位' : '卫生间要放在某个房间里');
+            else if (!d && freeBath(it)) { const r = freeBath(it); baths = baths.filter(x => x !== it); delete it.drag; rooms.push(r); sel = r.id; toast(`${r.name}改成独立的卫生间`); }
+            else toast(d ? '跟另一个卫生间叠到了，已放回原位' : '这里会叠到别的房间，已放回原位');
             it.drag = null; it.bad = false; }
           drag = null; fit(); render();
         }
@@ -989,14 +1006,14 @@ function createPlanEditor({ root, layer, svg, icons, esc, toast, openSheet, clos
     if (baths.length >= HM.BATH_MAX) { toast(`最多${HM.BATH_MAX}个卫生间`); return; }
     const b = { id: newId('w'), ...size('卫生间'), host: null, ax: 1, az: 0 };
     const it = byId(sel), picked = it ? (it.host ? host(it) : it) : null;
+    // No room picked (or one that can't take it): a bathroom of its own, on free floor, to drag next to the others.
+    if (!picked || HM.NOHOST.has(picked.type)) { addRoom('卫生间'); return; }
     const ok = h => h && !HM.NOHOST.has(h.type) && b.w <= h.w && b.d <= h.d && leaves(b, h) && bathSpot(b, h);
     let h = ok(picked) ? picked : null;
-    if (!h) h = rooms.filter(ok).sort((m, n) => (baths.filter(x => x.host === m.id).length - baths.filter(x => x.host === n.id).length) || (n.w * n.d - m.w * m.d))[0];
-    if (!h) { toast('没有房间放得下，先拉大一个房间'); return; }
+    if (!h) { toast(`${picked.name}放不下，改加一个独立的卫生间`); addRoom('卫生间'); return; }
     Object.assign(b, { host: h.id }, bathSpot(b, h)); b.name = HM.nextName(HM.bathName(h), used()); baths.push(b); sel = b.id; render();
     // Picked a room it can't go in: say why, and where it went instead.
-    const why = picked && h !== picked ? (HM.NOHOST.has(picked.type) ? `${picked.name}里不能放卫生间` : `${picked.name}放不下`) + '，' : '';
-    toast(`${why}加了${b.name}，放在${h.name}里，可以拖到别处`);
+    toast(`加了${b.name}，放在${h.name}里，可以拖到别处或拖到空地`);
   }
   function addRoom(type) { if (rooms.length >= HM.BLOCK_MAX) { toast(`最多${HM.BLOCK_MAX}个房间`); return; } const s = size(type), spot = freeSpot(s.w, s.d);
     if (spot.x < -60 || spot.z < -60 || spot.x + s.w > 60 || spot.z + s.d > 60 || rooms.some(o => HM.boxOverlap(spot, o))) { toast('没有空位放新房间了，先挪一挪别的房间'); return; }
@@ -1012,7 +1029,7 @@ function createPlanEditor({ root, layer, svg, icons, esc, toast, openSheet, clos
     if (a === 'done') done();
     else if (a === 'tpl') onTemplates();
     else if (a === 'del') remove();
-    else if (a === 'add') { const it = byId(sel); sheet.querySelector('.pe-sheet-hint').textContent = it && !it.host && !HM.NOHOST.has(it.type) ? `选「卫生间」会放在${it.name}里；其他放在空位，再拖去拼` : '选好后放在空位，再拖去贴着别的房间'; openSheet('space'); }
+    else if (a === 'add') { const it = byId(sel); sheet.querySelector('.pe-sheet-hint').textContent = it && !it.host && !HM.NOHOST.has(it.type) ? `选「卫生间」会放在${it.name}里；其他放在空位，再拖去拼` : '选好后放在空位，再拖去贴着别的房间；先选中一个房间再加卫生间，就放在那个房间里'; openSheet('space'); }
   });
   sheet.addEventListener('click', e => { const b = e.target.closest('[data-space]'); if (!b) return; closeSheet(sheet); b.dataset.space === '卫生间' ? addBath() : addRoom(b.dataset.space); });
   addEventListener('resize', () => { if (!el.hidden) { fit(); render(); } });

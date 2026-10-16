@@ -4,7 +4,7 @@
   // Ledger money is integer cents. DOM content originating from users is escaped.
   const KEY = 'ledger.v1';
   const runtime = window.ZZRuntime;
-  const VERSION = '1.9.2';
+  const VERSION = '1.10.0';
   const MAX_CENTS = 100000000000;
   const $ = s => document.querySelector(s);
   const $$ = s => [...document.querySelectorAll(s)];
@@ -373,7 +373,7 @@
   let homeQueue=Promise.resolve(true);
   const homeApi=Object.freeze({
     data:()=>data,paid:i=>paid(i),money,esc,toast,
-    saveModel:(id,model)=>homeWrite(next=>{const i=next.items.find(x=>x.id===id);if(!i)return false;i.model=model;}),
+    saveModel:(id,model)=>homeWrite(next=>{const i=next.items.find(x=>x.id===id);if(!i)return false;if(model)i.model=model;else delete i.model;}),
     // A record whose room is gone from the plan, filed under a room of the plan (picked from the tray).
     setRoom:(id,room,model)=>homeWrite(next=>{const i=next.items.find(x=>x.id===id);if(!i)return false;i.room=room;i.model=model;}),
     // renames: [[old,new]] room names from 拼户型 (a bathroom moved to another room), applied to the records in the same write.
