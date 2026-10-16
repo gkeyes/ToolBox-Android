@@ -4,7 +4,7 @@
 (function(root){
   const FURNITURE='furniture'; // CATS id of 家具家电 in app.js
   const WALL_T=.12, GAP=WALL_T/2+.02; // wall thickness and the clearance kept from a wall face
-  const MAX_PER_ROOM=6;
+  const MAX_PER_ROOM=Infinity; // 1.8.1: no count cap; the 90% floor-area check below still keeps a room from overflowing
   // Footprint (metres, before rotation) of every look; wall:1 hangs on a wall facing into the room;
   // free:1 stands anywhere (tables), every other look turns its back to a wall it is dragged near.
   // Every look's front faces +z at rot 0, so rot = the wall side (0 back, 1 left, 2 front, 3 right).
@@ -27,6 +27,8 @@
     lampA:{k:'liv',w:.45,d:.45,free:1},lampB:{k:'liv',w:.45,d:.45,free:1},catTree:{k:'liv',w:.6,d:.6},
     catBed:{k:'liv',w:.55,d:.55,free:1},plantA:{k:'liv',w:.45,d:.45,free:1},plantB:{k:'liv',w:.4,d:.4,free:1}
   };
+  // Screen-reader names for looks a number can't tell apart.
+  const LABELS={lampA:'弯臂落地灯',lampB:'灯罩落地灯',catTree:'猫爬架',catBed:'猫窝',plantA:'圆叶盆栽',plantB:'长叶盆栽'};
   const ORDER={app:['fridgeA','fridgeB','fridgeC','tvA','tvB','acA','acB','hoodA','hoodB','microA','microB','washerA','washerB'],fur:['sofaA','sofaB','sofaC','armA','bedA','bedB','diningA','diningB','tableA','chairA','stoolA','coffeeA','coffeeB','sideA','deskA','deskB','dresserA','cabA','cabB','cabC','shoeA'],liv:['lampA','lampB','catTree','catBed','plantA','plantB']};
   // Room names match ROOMS in app.js. back = rooms along the back wall, left to right, with widths.
   const TEMPLATES={
@@ -110,12 +112,17 @@
       const me=NR,seam=sd=>bb.rs.some(({r})=>r!==me&&(sd===0?Math.abs(r[3]-z0)<.01&&x>r[0]&&x<r[2]:sd===2?Math.abs(r[1]-z1)<.01&&x>r[0]&&x<r[2]:sd===1?Math.abs(r[2]-x0)<.01&&z>r[1]&&z<r[3]:Math.abs(r[0]-x1)<.01&&z>r[1]&&z<r[3]));
       const fits=sd=>{const [along,across]=sd&1?[z1-z0,x1-x0]:[x1-x0,z1-z0];return dims.w<=along-2*h&&dims.d<=across-2*h;};
       const near=[[z-z0,0],[x-x0,1],[z1-z,2],[x1-x,3]].map(([g,sd])=>[g-h-dims.d/2,sd]).filter(([g,sd])=>g<=SNAP+1e-6&&!seam(sd)&&fits(sd)).sort((a,b)=>a[0]-b[0]);
-      // With a heading ({dx,dz}), only a wall the drag mostly moves towards can take over, so crossing a narrow room
-      // never turns it to a side wall; without one (true) the nearest wall wins. Either way the wall it backs onto keeps it.
+      // The wall it backs onto keeps it until the look leaves that wall's range; only then may another wall take over.
+      // With a heading ({dx,dz}) a wall the drag clearly moves towards wins; crossing a narrow room between two
+      // in-range side walls turns to neither; otherwise (no clear heading, or none at all) the nearest wall wins.
       let side=null;
-      if(typeof auto==='object'){const m=Math.hypot(auto.dx,auto.dz),tw=sd=>m>1e-6&&[-auto.dz,-auto.dx,auto.dz,auto.dx][sd]>m*.6;
-        side=near.find(([,sd])=>tw(sd))?.[1]??(near.some(([,sd])=>sd===rot)?rot:null);}
-      else if(near.length)side=near.some(([,sd])=>sd===rot)?rot:near[0][1];
+      if(near.some(([,sd])=>sd===rot))side=rot;
+      else if(near.length){
+        if(typeof auto==='object'){const m=Math.hypot(auto.dx,auto.dz),comp=sd=>m>1e-6?[-auto.dz,-auto.dx,auto.dz,auto.dx][sd]/m:0;
+          const to=near.find(([,sd])=>comp(sd)>.6);
+          if(to)side=to[1];
+          else if(!near.some(([,sd])=>near.some(([,o])=>o===(sd+2)%4)&&Math.abs(comp(sd))<.6))side=near[0][1];}
+        else side=near[0][1];}
       if(side!==null){rot=side;if(side===0)z=z0;else if(side===2)z=z1;else if(side===1)x=x0;else x=x1;} // pushed flush below by the clamp
     }
     if(dims.wall){
@@ -229,7 +236,7 @@
     }
     return out+'</svg>';
   }
-  const api={FURNITURE,KINDS,ORDER,TEMPLATES,TEMPLATE_ORDER,MAX_PER_ROOM,WALL_T,GAP,deriveTemplate,planOf,sizesOf,sanitizeHome,sanitizeModel,makeRects,roomNames,area,bbox,nearestRect,footprint,clampPlacement,placeFromModel,fitsRoom,fitRoom,findSpot,lookState,applyLook,handles,moveHandle,planSvg};
+  const api={FURNITURE,KINDS,ORDER,LABELS,TEMPLATES,TEMPLATE_ORDER,MAX_PER_ROOM,WALL_T,GAP,deriveTemplate,planOf,sizesOf,sanitizeHome,sanitizeModel,makeRects,roomNames,area,bbox,nearestRect,footprint,clampPlacement,placeFromModel,fitsRoom,fitRoom,findSpot,lookState,applyLook,handles,moveHandle,planSvg};
   root.ZZHomeModel=Object.freeze(api);
   if(typeof module==='object'&&module.exports)module.exports=api;
 })(typeof globalThis!=='undefined'?globalThis:this);
