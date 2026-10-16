@@ -288,6 +288,12 @@ export default {
       showUnreadByDefaultDescription: "Refresh the page for changes to take effect",
       hideDuplicateArticles: "Hide duplicate entries",
       hideDuplicateArticlesDescription: "Articles with the exact same title or original link are shown only once",
+      hideDuplicateArticlesDescriptionTitle: "Articles with the exact same title are shown only once",
+      hideDuplicateArticlesDescriptionUrl: "Articles with the same original link are shown only once",
+      duplicateMatch: "Match by",
+      duplicateMatchTitle: "Title",
+      duplicateMatchUrl: "URL",
+      duplicateMatchEither: "Both",
     },
     appearance: {
       title: "Appearance",

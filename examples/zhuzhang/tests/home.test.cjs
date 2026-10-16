@@ -22,6 +22,20 @@ function loadApp() {
   return window.ZZApp;
 }
 const app = loadApp(), ZZ = app;
+// One function declaration of a source file, found by name and its braces (not by exact spacing), for code that only
+// runs inside a module we can't load here (home3d.js needs three.js).
+function fnSource(src, name) {
+  const m = new RegExp('function\\s+' + name + '\\s*\\(').exec(src); assert.ok(m, name + ' exists');
+  let k = src.indexOf('{', src.indexOf(')', m.index)), depth = 0, q = null;
+  for (; k < src.length; k++) {
+    const ch = src[k];
+    if (q) { if (ch === '\\') k++; else if (ch === q) q = null; continue; }
+    if (ch === "'" || ch === '"' || ch === '`') q = ch; else if (ch === '{') depth++; else if (ch === '}' && !--depth) return src.slice(m.index, k + 1);
+  }
+  throw new Error('unbalanced ' + name);
+}
+const home3dSaveHome = (api) => new Function('HM', 'api', 'rebuildAll', 'setPlan', 'syncItems', 'renderTray', 'invalidate', 'let T, planKey, view;' + fnSource(read('home3d.js'), 'saveHome') + 'return saveHome;')(
+  { planOf: () => ({ key: 'k' }), sizesOf: () => ({}) }, api, () => {}, () => false, () => {}, () => {}, () => {});
 const base = () => ({
   schemaVersion: 2, revision: 1, completedDrafts: [],
   project: { name: '我的新家', area: '98', layout: '三室两厅', budget: 30000000, initialBudget: 30000000 },
@@ -319,7 +333,8 @@ test('1.9.0 · 拼户型 is wired in: the editor ships in home3d.js, 户型 open
   assert.match(read('home3d.js'), /function createPlanEditor\(/);
   assert.match(read('home3d.js'), /a === 'layout'\) \{ setMode\('normal'\); editor\.open\(T\); \}/);
   assert.match(read('home3d.js').slice(read('home3d.js').indexOf('function createPlanEditor(')), /addEventListener\('touchstart'/, 'touch drives the drags');
-  assert.match(read('app.js'), /saveHome:\(home,renames=\[\],move=null\)=>homeWrite\(next=>\{next\.project\.home=home;const to=new Map\(renames\);/);
+  const next = { project: {}, items: [{ id: 'w', room: '公卫' }] }; app.applyHome(next, { k: 1 }, [['公卫', '公卫2']]);
+  assert.deepEqual(next, { project: { home: { k: 1 } }, items: [{ id: 'w', room: '公卫2' }] }, 'a renamed bathroom carries its record');
   assert.match(read('app.js'), /HM\.roomNames\(planRects\(data\)\)/, 'the plan\'s rooms are offered as 所在空间');
 });
 
@@ -586,38 +601,36 @@ test('1.11.5 · HM.relocate clamps on x too: a look in the notch beside the seco
 
 test('1.11.5 · 完成 hands the move to the ledger, which applies it with no bath renames and to bundle pieces too', () => {
   // home3d: saveHome passes move through to api.saveHome.
-  const h3 = read('home3d.js'), fn = h3.slice(h3.indexOf('  function saveHome(home, renames, quiet, move) {'), h3.indexOf('  function', h3.indexOf('  function saveHome(home, renames, quiet, move) {') + 10));
-  const got = []; const api = { saveHome: (...a) => (got.push(a), Promise.resolve(false)), toast() {} };
-  const saveHome = new Function('HM', 'api', 'rebuildAll', 'setPlan', 'syncItems', 'renderTray', 'invalidate', 'let T, planKey, view;' + fn + 'return saveHome;')({ planOf: () => ({ key: 'k' }), sizesOf: () => ({}) }, api, () => {}, () => false, () => {}, () => {}, () => {});
+  const got = [], saveHome = home3dSaveHome({ saveHome: (...a) => (got.push(a), Promise.resolve(false)), toast() {} });
   const mv = () => null; saveHome({}, [], true, mv);
   assert.equal(got[0][2], mv, 'move reaches api.saveHome');
-  // app.js: saveHome applies move even when nothing was renamed, to plain records and to each piece of a bundle.
-  const app = read('app.js'), src = app.match(/saveHome:(\(home,renames=\[\],move=null\)=>homeWrite\(next=>\{[\s\S]*?\}\}\)),\n/)[1];
+  // app.js: the move applies even when nothing was renamed, to plain records and to each piece of a bundle.
   const next = { project: {}, items: [{ id: 'a', room: '客餐厅', model: { kind: 'tvA', x: .5 } }, { id: 'b', room: '多个空间', parts: [{ id: 'x', room: '客餐厅', model: { kind: 'sofaA', x: .5 } }, { id: 'y', room: '主卧' }] }] };
-  const run = new Function('homeWrite', 'partsOf', 'bundleRoom', 'return ' + src)((f) => f(next), (i) => i.parts || null, (ps) => new Set(ps.map((p) => p.room)).size > 1 ? '多个空间' : ps[0].room);
-  run({ k: 1 }, [], (room, model) => room === '客餐厅' ? { room: '餐厅', model: { ...model, x: .1 } } : null);
+  app.applyHome(next, { k: 1 }, [], (room, model) => room === '客餐厅' ? { room: '餐厅', model: { ...model, x: .1 } } : null);
   assert.deepEqual(next.items[0], { id: 'a', room: '餐厅', model: { kind: 'tvA', x: .1 } });
   assert.deepEqual(next.items[1].parts[0], { id: 'x', room: '餐厅', model: { kind: 'sofaA', x: .1 } }, 'the piece moves');
   assert.equal(next.items[1].parts[1].room, '主卧'); assert.deepEqual(next.project.home, { k: 1 });
 });
 
-test('1.12.1 · a failed plan save says so; moved pieces re-file their bundle; the restore notice counts early refunds', async () => {
+test('1.12.1 · a failed plan save says so; moved pieces re-file their bundle; the restore dialog shows how many refunds are early', async () => {
   // home3d: when the ledger write fails, 完成 (not quiet) tells the user.
-  const h3 = read('home3d.js'), at = h3.indexOf('  function saveHome(home, renames, quiet, move) {'), fn = h3.slice(at, h3.indexOf('  function', at + 10));
-  const toasts = []; const api = { saveHome: () => Promise.resolve(false), toast: (m) => toasts.push(m) };
-  const saveHome = new Function('HM', 'api', 'rebuildAll', 'setPlan', 'syncItems', 'renderTray', 'invalidate', 'let T, planKey, view;' + fn + 'return saveHome;')({ planOf: () => ({ key: 'k' }), sizesOf: () => ({}) }, api, () => {}, () => false, () => {}, () => {}, () => {});
+  const toasts = [], saveHome = home3dSaveHome({ saveHome: () => Promise.resolve(false), toast: (m) => toasts.push(m) });
   assert.equal(await saveHome({}, [], false, null), false);
   assert.ok(toasts.some((m) => m.startsWith('户型没保存上')), 'the failure is shown');
   // app.js: a bundle whose pieces all move to 餐厅 is filed under 餐厅 itself.
-  const app = read('app.js'), src = app.match(/saveHome:(\(home,renames=\[\],move=null\)=>homeWrite\(next=>\{[\s\S]*?\}\}\)),\n/)[1];
   const next = { project: {}, items: [{ id: 'b', room: '客餐厅', parts: [{ id: 'x', room: '客餐厅' }, { id: 'y', room: '客餐厅' }] }] };
-  new Function('homeWrite', 'partsOf', 'bundleRoom', 'return ' + src)((f) => f(next), (i) => i.parts || null, (ps) => new Set(ps.map((p) => p.room)).size > 1 ? '多个空间' : ps[0].room)({}, [], (room, model) => room === '客餐厅' ? { room: '餐厅' } : null);
+  app.applyHome(next, {}, [], (room) => room === '客餐厅' ? { room: '餐厅' } : null);
   assert.equal(next.items[0].room, '餐厅', 'the bundle follows its pieces');
-  // The restore notice: N is the number of items with a refund dated before its payment.
-  const line = app.match(/const early=parsed\.items[^\n]*/)[0];
-  const parsed = { items: [{ id: 'a' }, { id: 'b' }, { id: 'c' }], payments: [{ itemId: 'a', amount: 5, date: '2026-09-01', kind: 'refund' }, { itemId: 'a', amount: 9, date: '2026-09-02', kind: 'payment' }, { itemId: 'b', amount: 9, date: '2026-09-01', kind: 'payment' }, { itemId: 'c', amount: 1, date: '2026-08-01', kind: 'refund' }, { itemId: 'c', amount: 2, date: '2026-08-02', kind: 'payment' }] };
-  assert.equal(new Function('parsed', 'assertCashTimeline', line + 'return early;')(parsed, app.length && ZZ.assertCashTimeline), 2);
-  assert.match(app, /\$\{early\?`<p class="form-hint">有 \$\{early\} 个项目的退款日期早于付款/);
+  // The restore dialog: N is the number of items with a refund dated before its payment, and the line is visible.
+  const B = base(); B.items[1].status = 'confirmed'; B.items.push({ ...B.items[0], id: 'c', name: '床' });
+  B.payments = [{ id: 'r1', itemId: 'a', amount: 500, date: '2026-09-01', kind: 'refund', note: '' }, { id: 'p1', itemId: 'a', amount: 900, date: '2026-09-02', kind: 'payment', note: '' },
+    { id: 'p2', itemId: 'b', amount: 900, date: '2026-09-01', kind: 'payment', note: '' },
+    { id: 'r3', itemId: 'c', amount: 100, date: '2026-08-01', kind: 'refund', note: '' }, { id: 'p3', itemId: 'c', amount: 200, date: '2026-08-02', kind: 'payment', note: '' }];
+  const html = app.importBody(app.validate(B)), text = html.replace(/<[^>]*>/g, '');
+  assert.ok(text.includes('有 2 个项目的退款日期早于付款，会从之后的付款里扣，合计不受影响。'), 'the count is shown');
+  assert.doesNotMatch(html, /\shidden\b|display\s*:\s*none|visibility\s*:\s*hidden/, 'nothing in the dialog is hidden');
+  B.payments = B.payments.filter((p) => p.itemId === 'b');
+  assert.ok(!app.importBody(app.validate(B)).includes('退款日期早于付款'), 'no early refund, no line');
 });
 
 test('1.12.0 · a refund that names its piece comes off that piece only; one whose piece is gone falls back to the shares', () => {
@@ -632,6 +645,24 @@ test('1.12.0 · a refund that names its piece comes off that piece only; one who
   const gone = app.validate({ ...base(), items: [{ ...b, parts: b.parts.slice(1).concat({ id: 'pd', name: '冰箱', room: '厨房', amount: null }) }], payments: pays });
   assert.equal(gone.payments[1].part, undefined, 'a removed piece drops the link, the ledger still loads');
   assert.equal(app.validate({ ...base(), payments: [...base().payments, { id: 'x', itemId: 'a', amount: 10, date: '2026-10-02', kind: 'refund', note: '', part: 'zz' }] }).payments[1].part, undefined, 'not a bundle: no link');
+});
+
+test('1.12.2 · a whole refund next to aimed ones comes off the other pieces first, so nothing spills', () => {
+  const b = { id: 'bd', name: '电器打包', category: 'furniture', room: '多个空间', budget: null, price: 1409700, costMode: 'estimated', status: 'confirmed', merchant: '', due: '', note: '',
+    parts: [{ id: 'pa', name: '空调', room: '次卧', amount: 319900 }, { id: 'pb', name: '电脑', room: '次卧2', amount: null }, { id: 'pc', name: '电视', room: '客餐厅', amount: null }] };
+  const pays = [{ id: 'p', itemId: 'bd', amount: 1409700, date: '2026-10-01', kind: 'payment', note: '' },
+    { id: 'r1', itemId: 'bd', amount: 100000, date: '2026-10-05', kind: 'refund', note: '', part: 'pa' },
+    { id: 'r2', itemId: 'bd', amount: 200000, date: '2026-10-05', kind: 'refund', note: '', part: 'pa' },
+    { id: 'w', itemId: 'bd', amount: 100000, date: '2026-10-05', kind: 'refund', note: '' }];
+  for (const order of [pays, [pays[0], pays[3], pays[1], pays[2]]]) {
+    const L = app.validate({ ...base(), items: [b], payments: order }), out = app.payShares(L.items[0], L);
+    assert.deepEqual(out.rows.get('r1'), [100000, 0, 0]);
+    assert.deepEqual(out.rows.get('r2'), [200000, 0, 0]);
+    assert.equal(out.rows.get('w')[0], 0, 'the whole refund leaves the held-back 空调 money alone');
+    assert.equal(out.rows.get('w').reduce((a, c) => a + c, 0), 100000);
+    assert.equal(out.cash[0], 19900);
+    assert.equal(out.cash.reduce((a, c) => a + c, 0), 1409700 - 400000);
+  }
 });
 
 test('1.11.3 · the plan editor refuses drags past 60 rooms / 40 bathrooms and keeps a refused session as a draft', () => {

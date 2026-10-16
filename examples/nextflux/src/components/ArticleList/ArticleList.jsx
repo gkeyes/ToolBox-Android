@@ -30,6 +30,7 @@ const ArticleList = () => {
     sortField,
     showHiddenFeeds,
     hideDuplicateArticles,
+    duplicateMatch,
     showIndicator,
     floatingSidebar,
     articleListStyle,
@@ -42,7 +43,7 @@ const ArticleList = () => {
   const lastQuery = useRef(null);
 
   useEffect(() => {
-    const query = JSON.stringify([feedId, categoryId, $filter, sortDirection, sortField, showHiddenFeeds, hideDuplicateArticles]);
+    const query = JSON.stringify([feedId, categoryId, $filter, sortDirection, sortField, showHiddenFeeds, hideDuplicateArticles, duplicateMatch]);
     // A sync refresh away from the top keeps this session alive for pagination.
     // A changed filter/source always starts a new session, even after a sync.
     if (
@@ -80,6 +81,7 @@ const ArticleList = () => {
     sortField,
     showHiddenFeeds,
     hideDuplicateArticles,
+    duplicateMatch,
     $lastSync,
   ]);
 

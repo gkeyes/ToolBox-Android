@@ -41,7 +41,8 @@ globalThis.__board = {
 };
 const waitCall = () => new Promise((resolve) => { next = (call) => { next = null; resolve(call); }; });
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
-const { board, boardStream, digest, refreshBoard, writeDigest } = await import("../src/toolbox/board/boardStore.js");
+const { settingsState } = await import("@/stores/settingsStore.js");
+const { board, boardOpen, boardStream, digest, openBoard, refreshBoard, writeDigest } = await import("../src/toolbox/board/boardStore.js");
 const sync = async () => { globalThis.__board.isSyncing.set(true); globalThis.__board.isSyncing.set(false); await tick(); await tick(); };
 const TOPICS = JSON.stringify({ topics: [{ title: "主题", gist: "重点", summary: "摘要", articles: [1, 2] }] });
 
@@ -152,3 +153,27 @@ test("a reply cut off after whole topics still makes a board from them", async (
   assert.match(page, /state\.cut && tab === "topics" \? "。AI 的回答中途断开，只列出完整收到的主题"/);
 });
 
+
+test("changing 查重方式 makes today's board out of date", async () => {
+  rows = [article(1), article(2)];
+  let call = waitCall();
+  refreshBoard();
+  (await call).onChunk(TOPICS); calls.at(-1).resolve();
+  await tick(); await tick();
+  assert.equal(board.get().status, "done");
+  // Reopening under the same settings keeps the board.
+  const before = calls.length;
+  openBoard(true); openBoard(false);
+  await tick();
+  assert.equal(calls.length, before, "same settings: no new board");
+  settingsState.set({ ...settingsState.get(), duplicateMatch: "url" });
+  call = waitCall();
+  openBoard(true);
+  const again = await call;
+  assert.equal(again.kind, "topics", "a new board is made for the new match mode");
+  again.onChunk(TOPICS); again.resolve();
+  await tick(); await tick();
+  assert.equal(board.get().status, "done");
+  openBoard(false);
+  assert.equal(boardOpen.get(), false);
+});

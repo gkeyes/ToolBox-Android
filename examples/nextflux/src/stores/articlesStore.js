@@ -83,6 +83,7 @@ function queryOptions(sourceId, type) {
     // The cache query drops later copies of a title or original URL from the
     // list's ID sequence; see toolbox/dedupe.mjs.
     hideDuplicates: settings.hideDuplicateArticles !== false,
+    duplicateMatch: settings.duplicateMatch,
   };
 }
 const signature = (options) => JSON.stringify(options);

@@ -133,6 +133,49 @@ class RuntimeTransitionTest {
     }
 
     @Test
+    fun reopeningTheSameToolAfterClosingItStartsFresh() {
+        composeTransition(RuntimeRoute("a"))
+        snap(current().entryProgress, 0f)
+
+        route = null
+        compose.waitForIdle()
+        route = RuntimeRoute("a")
+        compose.waitForIdle()
+        assertEquals(1f, current().entryProgress.value)
+        assertFalse(current().returnInterrupted)
+    }
+
+    @Test
+    fun aToolRestoredMidReturnShowsTheSourceAndFinishesTheReturn() {
+        val restoration = StateRestorationTester(compose)
+        var restored: RuntimeTransition? = null
+        restoration.setContent { restored = rememberRuntimeTransition(RuntimeRoute("a")) }
+        compose.waitForIdle()
+        assertFalse(checkNotNull(restored).returnInterrupted)
+        compose.runOnIdle { checkNotNull(restored).runtimeLeaving = true }
+
+        restoration.emulateSavedInstanceStateRestore()
+        compose.waitForIdle()
+        val transition = checkNotNull(restored)
+        assertTrue(transition.returnInterrupted)
+        assertTrue(transition.runtimeLeaving)
+        assertTrue(transition.sourceAboveRuntime)
+        assertFalse(transition.entryCoverVisible)
+        assertFalse(transition.sourceHidden)
+    }
+
+    @Test
+    fun aSwitchDuringTheReturnIsNotTreatedAsAnInterruptedReturn() {
+        composeTransition(RuntimeRoute("a"))
+        compose.runOnIdle { current().runtimeLeaving = true }
+
+        route = RuntimeRoute("b")
+        compose.waitForIdle()
+        assertFalse(current().returnInterrupted)
+        assertFalse(current().runtimeLeaving)
+    }
+
+    @Test
     fun aToolRestoredAfterRecreationStartsSettledInsteadOfReplayingItsEntry() {
         val restoration = StateRestorationTester(compose)
         var restored: RuntimeTransition? = null

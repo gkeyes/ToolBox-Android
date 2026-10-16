@@ -15,6 +15,7 @@ import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.LaunchedEffect
@@ -84,16 +85,30 @@ internal class RuntimeTransition(
     initialEntry: Float,
     /** The replaced tool was returning, so this tool's cover sits beneath the fading source. */
     val coverBeneathSource: Boolean,
+    /**
+     * The activity was recreated (rotation) mid-return: the source shows on top at once and the
+     * caller finishes the return by removing the route, instead of the tool landing settled.
+     */
+    val returnInterrupted: Boolean = false,
+    /** Survives recreation: true while this tool is returning to its source. */
+    private val savedLeaving: MutableState<Boolean> = mutableStateOf(false),
 ) {
+
     /** 1 = source fully shown, 0 = cover (then tool) fully shown. */
     val entryProgress = Animatable(initialEntry)
     /** 1 = tool fully shown under the returning source, 0 = source fully shown. */
     val sourceReturnProgress = Animatable(0f)
     var runtimeLayerEnabled by mutableStateOf(false)
-    var entryCoverVisible by mutableStateOf(route != null)
-    var sourceAboveRuntime by mutableStateOf(false)
+    var entryCoverVisible by mutableStateOf(route != null && !returnInterrupted)
+    var sourceAboveRuntime by mutableStateOf(returnInterrupted)
     var runtimePresentationReady by mutableStateOf(false)
-    var runtimeLeaving by mutableStateOf(false)
+    private var leaving by mutableStateOf(returnInterrupted)
+    var runtimeLeaving: Boolean
+        get() = leaving
+        set(value) {
+            leaving = value
+            savedLeaving.value = value
+        }
     var entryCoverMeasured by mutableStateOf(false)
 
     /** True once the transition fully hides the source layer (primary screen and retained pages). */
@@ -124,6 +139,7 @@ internal fun rememberRuntimeTransition(runtimeRoute: RuntimeRoute?): RuntimeTran
     val previous = remember { arrayOfNulls<RuntimeTransition>(1) }
     // Saved per tool, so it survives recreation; reset whenever a different tool opens.
     var shownBefore by rememberSaveable(runtimeRoute?.toolId) { mutableStateOf(false) }
+    val savedLeaving = rememberSaveable(runtimeRoute?.toolId) { mutableStateOf(false) }
     val transition = remember(runtimeRoute) {
         val replaced = previous[0]?.takeIf { runtimeRoute != null }
         RuntimeTransition(
@@ -133,6 +149,9 @@ internal fun rememberRuntimeTransition(runtimeRoute: RuntimeRoute?): RuntimeTran
                 carriedEntry = replaced?.entryEquivalent() ?: if (shownBefore) 0f else null,
             ),
             coverBeneathSource = replaced?.sourceAboveRuntime == true,
+            // A switch opens normally; only a restored tool resumes its saved return.
+            returnInterrupted = runtimeRoute != null && replaced == null && savedLeaving.value,
+            savedLeaving = savedLeaving,
         )
     }
     SideEffect {
@@ -298,6 +317,13 @@ internal fun ToolBoxNavigation(
         enabled = retainedRoutes.isEmpty() && runtimeRoute == null && primaryBackStack.size > 1,
         onBack = ::goBackPrimary,
     )
+
+    LaunchedEffect(transition) {
+        val route = transition.route
+        if (transition.returnInterrupted && secondaryBackStack.lastOrNull() == route) {
+            secondaryBackStack.removeLastOrNull()
+        }
+    }
 
     LaunchedEffect(runtimeRoute, entryCoverMeasured) {
         if (runtimeRoute != null && entryCoverMeasured) {
@@ -538,11 +564,13 @@ internal fun ToolBoxNavigation(
                         }
                         .graphicsLayer {
                             val motion = entryProgress.value.coerceIn(0f, 1f)
-                            translationX = trailingDirection * motion * PageShiftPx
-                            alpha = if (transition.coverBeneathSource) {
-                                1f
+                            if (transition.coverBeneathSource) {
+                                // Stands in for the replaced tool, which sat settled: no slide.
+                                translationX = 0f
+                                alpha = 1f
                             } else {
-                                ToolBoxMotion.fadeThroughIncomingAlpha(1f - motion)
+                                translationX = trailingDirection * motion * PageShiftPx
+                                alpha = ToolBoxMotion.fadeThroughIncomingAlpha(1f - motion)
                             }
                         },
                 ) {

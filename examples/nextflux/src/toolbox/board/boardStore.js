@@ -27,6 +27,13 @@ let digestRun = null;
 
 const aiReady = () => Boolean(settingsState.get().aiApiKey);
 
+// The settings that decide which articles a board is made from. A board made
+// under other values is out of date, like one from another day.
+const articleFilter = () => {
+  const settings = settingsState.get();
+  return `${Boolean(settings.showHiddenFeeds)}|${settings.hideDuplicateArticles !== false}|${settings.duplicateMatch || "either"}`;
+};
+
 async function todaysArticles() {
   const settings = settingsState.get();
   const feeds = new Map((await getFeeds())
@@ -35,6 +42,7 @@ async function todaysArticles() {
   const rows = todaysUnread(await getCachedArticleMetadata({ filter: "unread" }), {
     isVisibleFeed: (id) => feeds.has(id),
     hideDuplicates: settings.hideDuplicateArticles !== false,
+    duplicateMatch: settings.duplicateMatch,
   });
   return rows.map((row) => ({
     id: row.id,
@@ -55,10 +63,11 @@ export async function refreshBoard({ onlyIfNew = false } = {}) {
   const account = authState.get().userId;
   const live = () => run === controller && !controller.signal.aborted && authState.get().userId === account;
   const today = startOfDay().getTime();
-  const keep = previous.status === "done" && previous.day === today;
+  const filter = articleFilter();
+  const keep = previous.status === "done" && previous.day === today && previous.filter === filter;
   // A failed board remembers the articles it tried, so a sync that brings
   // nothing new does not ask the AI again.
-  const failed = previous.status === "error" && previous.day === today;
+  const failed = previous.status === "error" && previous.day === today && previous.filter === filter;
   let all = [];
   try {
     if (!aiReady()) throw new Error("先在 NextFlux 设置里填好 AI 服务，才能生成今日看板。");
@@ -69,7 +78,7 @@ export async function refreshBoard({ onlyIfNew = false } = {}) {
     if (onlyIfNew && (keep || failed) && !fresh.length) { if (run === controller) run = null; return; }
     if (!all.length) {
       stopDigest();
-      board.set({ ...EMPTY, status: "empty", at: Date.now(), day: today });
+      board.set({ ...EMPTY, status: "empty", at: Date.now(), day: today, filter });
       return;
     }
     // The written digest belongs to the board on screen: it keeps streaming
@@ -131,6 +140,7 @@ export async function refreshBoard({ onlyIfNew = false } = {}) {
       total: all.length,
       at: Date.now(),
       day: today,
+      filter,
       ids: all.map((article) => article.id),
       newCount: keep ? fresh.length : 0,
       // Articles new since the previous board, for the topic 新 marks.
@@ -143,7 +153,7 @@ export async function refreshBoard({ onlyIfNew = false } = {}) {
     const message = error?.message || "生成今日看板失败。";
     board.set(keep
       ? { ...board.get(), updating: false, error: message, raw: error?.raw ?? null }
-      : { ...EMPTY, status: "error", error: message, raw: error?.raw ?? null, day: today, ids: all.map((article) => article.id) });
+      : { ...EMPTY, status: "error", error: message, raw: error?.raw ?? null, day: today, filter, ids: all.map((article) => article.id) });
     boardStream.set(null);
   } finally {
     if (run === controller) run = null;
@@ -161,7 +171,7 @@ export function openBoard(open = !boardOpen.get()) {
   if (!open) { if (board.get().newCount) board.set({ ...board.get(), newCount: 0, freshIds: [] }); return; }
   const state = board.get();
   board.set({ ...state, unseen: false });
-  const stale = state.day !== startOfDay().getTime();
+  const stale = state.day !== startOfDay().getTime() || state.filter !== articleFilter();
   if (!run && (state.status === "idle" || state.status === "error" || stale)) refreshBoard();
 }
 

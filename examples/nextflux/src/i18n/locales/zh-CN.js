@@ -287,6 +287,12 @@ export default {
       showUnreadByDefaultDescription: "修改后需要刷新页面才能生效",
       hideDuplicateArticles: "隐藏重复条目",
       hideDuplicateArticlesDescription: "标题完全相同或原文链接相同的文章只显示第一条",
+      hideDuplicateArticlesDescriptionTitle: "标题完全相同的文章只显示第一条",
+      hideDuplicateArticlesDescriptionUrl: "原文链接相同的文章只显示第一条",
+      duplicateMatch: "查重方式",
+      duplicateMatchTitle: "标题",
+      duplicateMatchUrl: "URL",
+      duplicateMatchEither: "同时",
     },
     appearance: {
       title: "外观",
