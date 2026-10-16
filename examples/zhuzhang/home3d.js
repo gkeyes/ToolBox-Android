@@ -242,8 +242,15 @@ export function createHome(api) {
       if ((!b.host || h.name === b.host) && h.type !== '卫生间' && len(q) >= .9 && (!bathDoor.has(b.name) || len(q) > len(bathDoor.get(b.name)))) bathDoor.set(b.name, q);
     }
     // A kitchen opens onto the living spaces, never into a bedroom, a study or a walk-in wardrobe.
-    const PRIVATE = new Set(['主卧', '次卧', '书房', '衣帽间']), shut = (a, o) => !!o && ((a === '厨房' && PRIVATE.has(o)) || (o === '厨房' && PRIVATE.has(a)));
-    for (const q of segs) addWall(q.A, q.Bp, q.n, q.a.type, q.o ? q.o.type : null, q.bath ? [...bathDoor.values()].includes(q) : shut(q.a.type, q.o && q.o.type) ? false : undefined);
+    // One that touches only those keeps its longest such wall as its door, so it is never sealed.
+    const PRIVATE = new Set(['主卧', '次卧', '书房', '衣帽间']), kit = q => q.o && !q.bath ? (q.a.type === '厨房' ? [q.a, q.o] : q.o.type === '厨房' ? [q.o, q.a] : null) : null, keep = new Set();
+    for (const k of new Set(segs.map(kit).filter(Boolean).map(([a]) => a.name))) {
+      const mine = segs.filter(q => { const p = kit(q); return p && p[0].name === k && len(q) >= .9; });
+      if (mine.some(q => !PRIVATE.has(kit(q)[1].type))) continue;
+      const best = mine.sort((a, b) => len(b) - len(a))[0]; if (best) keep.add(k + '|' + kit(best)[1].name);
+    }
+    const shut = q => { const p = kit(q); return !!p && PRIVATE.has(p[1].type) && !keep.has(p[0].name + '|' + p[1].name); };
+    for (const q of segs) addWall(q.A, q.Bp, q.n, q.a.type, q.o ? q.o.type : null, q.bath ? [...bathDoor.values()].includes(q) : shut(q) ? false : undefined);
     buildLabels();
   }
   function addWall(a, b, n, inside, outside, door) { // inside / outside: room types (outside null = an outer wall); door: false = none, true = a bathroom's door
@@ -798,27 +805,20 @@ function createPlanEditor({ root, layer, svg, icons, esc, toast, openSheet, clos
   function relocator(home) {
     const map = new Map(living.filter(([a]) => livingAt.has(a)).map(([a]) => [a, livingAt.get(a)]));
     if (!map.size) return null;
-    const box = (list, pick) => { const rs = list.filter(pick); return rs.length ? { x0: Math.min(...rs.map(r => r.x)), z0: Math.min(...rs.map(r => r.z)), x1: Math.max(...rs.map(r => r.x + r.w)), z1: Math.max(...rs.map(r => r.z + r.d)) } : null; };
-    const r4 = v => +Math.min(1, Math.max(0, v)).toFixed(4);
-    return (room, model) => {
-      const parts = map.get(room); if (!parts) return null;
-      const now = parts.map(p => home.blocks.find(b => b.id === p.id)), first = now.find(Boolean); if (!first) return null;
-      if (!model) return { room: first.name };
-      const ob = box(parts, () => true), ax = ob.x0 + model.x * (ob.x1 - ob.x0), az = ob.z0 + model.z * (ob.z1 - ob.z0);
-      const dist = p => Math.hypot(Math.max(p.x - ax, 0, ax - p.x - p.w), Math.max(p.z - az, 0, az - p.z - p.d));
-      const k = parts.map((p, i) => i).filter(i => now[i]).sort((i, j) => dist(parts[i]) - dist(parts[j]))[0], p = parts[k], b = now[k];
-      const x = b.x + Math.min(1, Math.max(0, (ax - p.x) / p.w)) * b.w, z = b.z + Math.min(1, Math.max(0, (az - p.z) / p.d)) * b.d;
-      const nb = box(home.blocks, r => r.name === b.name);
-      return { room: b.name, model: { ...model, x: r4(nb.x1 > nb.x0 ? (x - nb.x0) / (nb.x1 - nb.x0) : .5), z: r4(nb.z1 > nb.z0 ? (z - nb.z0) / (nb.z1 - nb.z0) : .5) } };
-    };
+    return (room, model) => { const parts = map.get(room); return parts ? HM.relocate(parts, home.blocks, model) : null; };
   }
   const keyOf = t => JSON.stringify(HM.sizesOf(t)) + t.key;
   function open(t) {
     // A session that could not be saved when the editor was left (a tab, Back to the ledger, the background) comes back as it was.
-    if (draft && draft.key === keyOf(t)) { ({ rooms, baths, living, livingAt, startNames, startIds, uid } = draft); draft = null; sel = null; panX = panZ = 0; toast('上次没存上的户型还在，调整好再按完成'); }
-    else { draft = null; const b = HM.toBlocks(t); rooms = b.blocks; baths = b.baths; sel = null; living = []; livingAt = new Map(); panX = panZ = 0;
-      startNames = wetNames(); startIds = new Set([...rooms, ...baths].map(x => x.id)); splitLiving(); }
+    if (draft && draft.key === keyOf(t)) { ({ rooms, baths, living, livingAt, startNames, startIds, uid } = draft); draft = null; sel = null; panX = panZ = 0;
+      toast('上次没存上的户型还在，调整好再按完成', { label: '放弃', run: () => { if (!el.hidden) { cancelDrag(); fresh(t); fit(); render(); toast('已放弃，回到保存的户型'); } } }); }
+    else { if (draft) toast('户型在别处改过了，上次没存上的修改对不上，已放弃'); fresh(t); }
     base = keyOf(t); el.hidden = false; root.dataset.blocks = '1'; requestAnimationFrame(() => { fit(); render(); });
+  }
+  // The saved plan as it is, with nothing pending.
+  function fresh(t) {
+    draft = null; const b = HM.toBlocks(t); rooms = b.blocks; baths = b.baths; sel = null; living = []; livingAt = new Map(); panX = panZ = 0;
+    startNames = wetNames(); startIds = new Set([...rooms, ...baths].map(x => x.id)); splitLiving();
   }
   function close() { el.hidden = true; delete root.dataset.blocks; sel = null; drag = null; }
   // A template replaces the whole plan, so the notice offers to put the old one back.
@@ -847,7 +847,7 @@ function createPlanEditor({ root, layer, svg, icons, esc, toast, openSheet, clos
     cancelDrag(); render();
     const home = HM.sanitizeBlocks({ blocks: rooms, baths }); if (!home || home.blocks.length < rooms.length || home.baths.length < baths.length) return;
     const sent = living.slice(), names = wetNames(home);
-    Promise.resolve(onDone(home, renamesOf(home), true, relocator(home))).then(ok => { if (!ok) return; living = living.filter(x => !sent.includes(x)); for (const [a] of sent) livingAt.delete(a); startNames = names; });
+    Promise.resolve(onDone(home, renamesOf(home), true, relocator(home))).then(ok => { if (!ok) return; living = living.filter(x => !sent.includes(x)); for (const [a] of sent) livingAt.delete(a); startNames = names; base = keyOf(HM.planOf(home)); });
   }
   // Leaving 我的家 by the tabs saves the plan, the same as 完成 and Back. A plan 完成 would refuse is kept as it is
   // and comes back the next time 户型 opens on the same saved plan.
