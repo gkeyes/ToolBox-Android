@@ -93,7 +93,7 @@
   const footprint=(dims,rot)=>(rot&1)?[dims.d,dims.w]:[dims.w,dims.d];
   // Keep a look inside its own room: the nearest part of the room (an L-shaped 客餐厅 has two),
   // clear of the walls; a wall-mounted look snaps to the nearest wall and faces into the room.
-  // auto (a drag): a look that is not free and comes within SNAP of a wall turns its back to it and backs onto it.
+  // auto (a drag, true or its heading {dx,dz}): a look that is not free and comes within SNAP of a wall turns its back to it and backs onto it.
   const SNAP=.35;
   function clampPlacement(dims,bb,x,z,rot,auto=false){
     const NR=nearestRect(bb.rs,x,z).r,[x0,z0,x1,z1]=NR,h=GAP;
@@ -103,9 +103,14 @@
       // A side counts only when it is a real wall (not the open seam to the other part of an L-shaped room) and the turned look fits.
       const me=NR,seam=sd=>bb.rs.some(({r})=>r!==me&&(sd===0?Math.abs(r[3]-z0)<.01&&x>r[0]&&x<r[2]:sd===2?Math.abs(r[1]-z1)<.01&&x>r[0]&&x<r[2]:sd===1?Math.abs(r[2]-x0)<.01&&z>r[1]&&z<r[3]:Math.abs(r[0]-x1)<.01&&z>r[1]&&z<r[3]));
       const fits=sd=>{const [along,across]=sd&1?[z1-z0,x1-x0]:[x1-x0,z1-z0];return dims.w<=along-2*h&&dims.d<=across-2*h;};
-      const near=[[z-z0,0],[x-x0,1],[z1-z,2],[x1-x,3]].map(([g,sd])=>[g-h-dims.d/2,sd]).filter(([g,sd])=>g<SNAP&&!seam(sd)&&fits(sd)).sort((a,b)=>a[0]-b[0]);
-      if(near.length){const side=near.some(([,sd])=>sd===rot)?rot:near[0][1];rot=side;
-        if(side===0)z=z0;else if(side===2)z=z1;else if(side===1)x=x0;else x=x1;} // pushed flush below by the clamp
+      const near=[[z-z0,0],[x-x0,1],[z1-z,2],[x1-x,3]].map(([g,sd])=>[g-h-dims.d/2,sd]).filter(([g,sd])=>g<=SNAP+1e-6&&!seam(sd)&&fits(sd)).sort((a,b)=>a[0]-b[0]);
+      // With a heading ({dx,dz}), only a wall the drag mostly moves towards can take over, so crossing a narrow room
+      // never turns it to a side wall; without one (true) the nearest wall wins. Either way the wall it backs onto keeps it.
+      let side=null;
+      if(typeof auto==='object'){const m=Math.hypot(auto.dx,auto.dz),tw=sd=>m>1e-6&&[-auto.dz,-auto.dx,auto.dz,auto.dx][sd]>m*.6;
+        side=near.find(([,sd])=>tw(sd))?.[1]??(near.some(([,sd])=>sd===rot)?rot:null);}
+      else if(near.length)side=near.some(([,sd])=>sd===rot)?rot:near[0][1];
+      if(side!==null){rot=side;if(side===0)z=z0;else if(side===2)z=z1;else if(side===1)x=x0;else x=x1;} // pushed flush below by the clamp
     }
     if(dims.wall){
       const side=[[z-z0,0],[x-x0,1],[z1-z,2],[x1-x,3]].sort((a,b)=>a[0]-b[0])[0][1];

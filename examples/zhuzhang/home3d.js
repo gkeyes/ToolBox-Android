@@ -428,8 +428,12 @@ export function createHome(api) {
     if (gesture.kind === 'drag' && drag) {
       const p = floorHit(x, y); if (!p) return;
       if (Math.hypot(x - gesture.x, y - gesture.y) > 4) drag.moved = true;
+      if (!drag.moved) return; // a tap that wobbles a few pixels never moves it unsaved
       const bb = HM.bbox(RECTS, drag.e.room); if (!bb) return;
-      const r = HM.clampPlacement(HM.KINDS[drag.e.model.kind], bb, p.x + drag.off[0], p.z + drag.off[1], drag.e.rot, drag.moved); // snap only once it is a real drag, so a tap never turns it unsaved
+      const tx = p.x + drag.off[0], tz = p.z + drag.off[1];
+      // Heading of the drag over the last ~5 cm: the wall it is pushed towards is the one it may back onto.
+      if (!drag.last) drag.last = [tx, tz]; const mv = { dx: tx - drag.last[0], dz: tz - drag.last[1] }; if (Math.hypot(mv.dx, mv.dz) > .05) drag.last = [tx, tz];
+      const r = HM.clampPlacement(HM.KINDS[drag.e.model.kind], bb, tx, tz, drag.e.rot, mv);
       Object.assign(drag.e, { x: r.x, z: r.z, rot: r.rot }); drag.e.model = { ...drag.e.model, x: +r.fx.toFixed(4), z: +r.fz.toFixed(4), rot: r.rot };
       drag.e.g.position.set(r.x, .08, r.z); drag.e.g.rotation.y = r.rot * PI / 2; updateRing(); invalidate(); return;
     }
@@ -619,7 +623,7 @@ export function createHome(api) {
     else if (a === 'labels') { labelsOn = !labelsOn; paintLabelBtn(); paintLabels(); api.saveUi({ labels: labelsOn }); api.toast(labelsOn ? '已显示房间标签' : '已隐藏房间标签'); }
     else if (a === 'close') closeSheet(b.closest('.hv-sheet'));
     else if (a === 'pick-ok') { if (!pick.sel) return; const cb = pick.cb; const sel = pick.sel; closeSheet(q('[data-sheet="pick"]')); cb && cb(sel); }
-    else if (a === 'rot') { const e2 = selected; if (!e2) return; if (HM.KINDS[e2.model.kind].wall) { api.toast('挂墙的东西会自动朝向屋内'); return; } const r = HM.clampPlacement(HM.KINDS[e2.model.kind], HM.bbox(RECTS, e2.room), e2.x, e2.z, (e2.rot + 1) % 4); e2.model = { ...e2.model, x: +r.fx.toFixed(4), z: +r.fz.toFixed(4), rot: r.rot }; placeEntry(e2); updateRing(); saveModel(e2); invalidate(); }
+    else if (a === 'rot') { const e2 = selected; if (!e2) return; if (HM.KINDS[e2.model.kind].wall) { api.toast('挂墙的东西会自动朝向屋内', null, 'info'); return; } const r = HM.clampPlacement(HM.KINDS[e2.model.kind], HM.bbox(RECTS, e2.room), e2.x, e2.z, (e2.rot + 1) % 4); e2.model = { ...e2.model, x: +r.fx.toFixed(4), z: +r.fz.toFixed(4), rot: r.rot }; placeEntry(e2); updateRing(); saveModel(e2); invalidate(); }
     else if (a === 'drop') select(null);
     else if (a === 'relook') { const e2 = selected; if (!e2) return; openPicker({ sel: e2.model.kind, hint: `给「${e2.name}」换一个外观。`, cb: kind => { if (kind === e2.model.kind) return; api.saveModel(e2.id, { ...e2.model, kind }).then(ok => { if (!ok) api.toast('外观没换成，请再试一次', null, true); if (ok) { syncItems(); const n = items.get(e2.id); if (n?.shown) select(n); else select(null); } }); } }); }
   };

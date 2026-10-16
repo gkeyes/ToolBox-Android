@@ -4,7 +4,7 @@
   // Ledger money is integer cents. DOM content originating from users is escaped.
   const KEY = 'ledger.v1';
   const runtime = window.ZZRuntime;
-  const VERSION = '1.7.2';
+  const VERSION = '1.7.3';
   const MAX_CENTS = 100000000000;
   const $ = s => document.querySelector(s);
   const $$ = s => [...document.querySelectorAll(s)];
@@ -161,15 +161,15 @@
   function comparisonLabel(g){return g.unbudgeted?'预算未齐':g.expected>g.budget?(g.unknown?'至少超出 ':'超出 ')+money(g.expected-g.budget):g.unknown?'待补估价':signed(g.expected-g.budget);}
 
   // action: {label, run} adds one button (1.5.0 「去摆放」); the toast then stays a little longer and takes taps.
-  // warn: a failure; it shows the info mark instead of the tick and stays a little longer.
+  // warn: a failure; it shows the info mark instead of the tick and stays a little longer. warn 'info': the info mark only.
   // ms: how long it stays, for a notice that lasts as long as a wait.
   function toast(text,action,warn=false,ms=0){
-    const el=$('#toast');clearTimeout(toastTimer);el.classList.toggle('warn',warn);el.innerHTML=icon(warn?'info':'check')+`<span class="toast-text">${esc(text)}</span>`+(action?`<button type="button" class="toast-action">${esc(action.label)}</button>`:'');
+    const el=$('#toast');clearTimeout(toastTimer);el.classList.toggle('warn',warn===true);el.innerHTML=icon(warn?'info':'check')+`<span class="toast-text">${esc(text)}</span>`+(action?`<button type="button" class="toast-action">${esc(action.label)}</button>`:'');
     el.classList.toggle('has-action',Boolean(action));
     const hide=()=>hideToast();
     if(action)el.querySelector('.toast-action').onclick=()=>{hide();action.run();};
     try{if(el.showPopover&&!el.matches(':popover-open'))el.showPopover();}catch(_){}
-    placeToast(el);el.classList.add('show');toastTimer=setTimeout(hide,ms||(action||warn?5200:3000));
+    placeToast(el);el.classList.add('show');toastTimer=setTimeout(hide,ms||(action||warn===true?5200:3000));
   }
   // On a phone, with a sheet open the notice goes just above the sheet (any page) so it covers none of it.
   // Re-run when a sheet opens or closes under a notice that is already showing.
@@ -773,7 +773,7 @@
   });
   for(const d of [$('#sheet'),$('#picker')])d.addEventListener('click',e=>{
     if(e.target!==d)return;const r=d.getBoundingClientRect();
-    if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom){if(d.id==='sheet')closeDialog();else d.close();}
+    if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom){if(d.id==='sheet')closeDialog();else{cancelWait();d.close();}}
   });
   $('#sheet').addEventListener('cancel',e=>{e.preventDefault();closeDialog();});
   // System Back (ToolBox hosts that send toolboxback) closes the topmost layer the way ✕ or Escape would.
@@ -792,6 +792,8 @@
   }
   // However the picker closes (✕, Escape, backdrop), a pick still waiting on a 我的家 save is dropped.
   $('#picker').addEventListener('close',cancelWait);
+  // Escape cancels before the dialog closes, so a pick waiting on a save never lands after it.
+  $('#picker').addEventListener('cancel',cancelWait);
   $('#guard').addEventListener('cancel',e=>{e.preventDefault();if(draftBusy)return;cancelWait();pendingNavigation=null;closeGuard();});
   document.addEventListener('input',e=>{if(e.target.closest('#sheet form'))markDraft();});
   document.addEventListener('change',e=>{if(e.target.closest('#sheet form'))markDraft();});
@@ -799,9 +801,9 @@
   window.addEventListener('pagehide',()=>{flushCalc();if(isFormDirty())saveDraftNow().catch(()=>{});});
   runtime.onFlush(async()=>{
     let failure=null;flushCalc();const calcWrite=calcSaving;
-    // A 我的家 save in flight would make the draft save skip: wait for it (within the host's 2 s window).
-    for(let n=0;n<30&&busy&&isFormDirty();n++)await new Promise(r=>setTimeout(r,50));
-    if(isFormDirty())await saveDraftNow({resume:true}).catch(error=>{failure=error;});
+    // The form's own save may still finish within the host's window; if it doesn't, the draft is written anyway.
+    for(let n=0;n<30&&busy&&!busyBackground&&isFormDirty();n++)await new Promise(r=>setTimeout(r,50));
+    if(isFormDirty())await saveDraftNow({resume:true,force:true}).catch(error=>{failure=error;});
     // An unchanged form that is a saved draft (e.g. reopened from the list) reopens next time too.
     else if($('#sheet').open&&activeDraftId&&storedDraftIds.has(activeDraftId)){closing=true;const id=activeDraftId;await mutateDrafts(list=>list.map(x=>x.id===id?{...x,resume:true}:x)).catch(error=>{failure=error;});}
     else await draftQueue.catch(()=>{});
@@ -856,7 +858,7 @@
     }finally{draftBusy=false;controls.forEach(b=>b.disabled=false);}
   }
   function markDraft(){
-    if(busy)return;
+    if(busy&&!busyBackground)return;
     if(!isFormDirty()){clearTimeout(draftTimer);if(activeDraftId&&!activeDraftOriginal&&activeDraftWritten&&$('#sheet').open){activeDraftWritten=false;$('#draft-status').textContent='';clearDraft(activeDraftId).catch(()=>{});}return;}
     $('#draft-status').textContent='草稿待保存';clearTimeout(draftTimer);
     draftTimer=setTimeout(()=>saveDraftNow().catch(error=>{if($('#sheet').open){$('#draft-status').textContent='草稿未保存';showError('草稿保存失败：'+runtime.explain(error));}}),450);
@@ -875,10 +877,12 @@
   // A cancelled exit also takes the mark off drafts the flush already wrote.
   const unmarkResume=list=>list.map(x=>{if(!x.resume)return x;const{resume,...rest}=x;return rest;});
   runtime.onState?.(s=>{if(s&&s.closing===false&&closing){closing=false;if(drafts.some(x=>x.resume))mutateDrafts(unmarkResume).catch(()=>{});}});
-  function saveDraftNow({resume=false}={}){
+  // force: the close flush, which writes the draft even while the form's own save is still running.
+  function saveDraftNow({resume=false,force=false}={}){
     if(resume)closing=true;resume=resume||closing;
     clearTimeout(draftTimer);const form=$('#sheet form[data-form]');
-    if(!form||!isFormDirty()||busy)return Promise.resolve();
+    // A 我的家 background save does not hold the draft back; only the form's own save does.
+    if(!form||!isFormDirty()||busy&&!busyBackground&&!force)return Promise.resolve();
     const id=activeDraftId||(activeDraftId=uid('d'));activeDraftWritten=true;
     const record={id,type:form.dataset.form,title:$('#sheet-title').textContent,fields:formFields(form),baseRevision:data.revision||0,baseEntity:clone(form.dataset.form==='apply'?draftBase():activeDraftBase),requiresReview:activeDraftReview,time:new Date().toISOString(),applyTotal:applyResult?.total??null,entryValues:clone(entryValues),...(resume?{resume:true}:{})};
     return mutateDrafts(list=>[record,...list.filter(d=>d.id!==id)]).then(()=>{if($('#sheet').open&&activeDraftId===id&&isFormDirty())$('#draft-status').textContent='草稿已保存';});
