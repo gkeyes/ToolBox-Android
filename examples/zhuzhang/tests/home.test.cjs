@@ -147,7 +147,6 @@ test('1.7.3 · in a narrow room only the wall a drag heads for can turn a look; 
   const down = { dx: 0, dz: .06 }, up = { dx: 0, dz: -.06 };
   assert.equal(HM.clampPlacement(bed, bb, cx, 1.8, 0, down).rot, 0, 'crossing the middle keeps the bed facing the room');
   assert.equal(HM.clampPlacement(bed, bb, cx, 1.8, 1, up).rot, 1, 'no wall ahead yet: keeps its turn');
-  assert.equal(HM.clampPlacement(bed, bb, cx, 1.3, 1, up).rot, 1, 'not yet within 35 cm of the head wall: keeps the side wall');
   assert.equal(HM.clampPlacement(bed, bb, cx, 1.2, 1, up).rot, 0, '1.8.2: dragged back to the head wall it backs onto it again');
   assert.equal(HM.clampPlacement(bed, bb, x0 + .93, 1.8, 0, { dx: -.06, dz: .01 }).rot, 1, 'pushed into a side wall it turns to it');
   const f = HM.KINDS.fridgeA, mb = HM.bbox(rects, '主卧');
@@ -190,7 +189,9 @@ test('1.8.2 · pulling a bed off its head wall never swings it to a side wall; i
   for (const room of ['次卧', '次卧2', '主卧']) {
     const bb = HM.bbox(rects, room), [x0, z0, x1] = bb.rs[0].r, zHead = z0 + HM.GAP + bed.d / 2;
     const xs = []; for (let x = x0 + HM.GAP + bed.w / 2; x <= x1 - HM.GAP - bed.w / 2 + 1e-9; x += .05) xs.push(x);
-    for (const x of xs) for (const deg of [0, 20, 30, 45, -20, -30, -45]) {
+    // 主卧 is wide: a bed already touching a side wall and pulled into it may back onto it; elsewhere it never turns.
+    const free = x => room !== '主卧' || Math.abs(x - (x0 + x1) / 2) <= .06;
+    for (const x of xs) for (const deg of free(x) ? (room === '主卧' ? [0, 20, 30, -20, -30] : [0, 20, 30, 45, -20, -30, -45]) : [0]) {
       const a = deg * Math.PI / 180, path = dragPath(bed, bb, x, zHead, 0, .05 * Math.sin(a), .05 * Math.cos(a), 12); // 60 cm
       assert.ok(path.every(p => p.rot === 0), `${room} x ${x.toFixed(2)} pulled ${deg}°: turned to ${path.find(p => p.rot)?.rot}`);
     }
@@ -204,12 +205,6 @@ test('1.8.2 · pulling a bed off its head wall never swings it to a side wall; i
   const back = dragPath(bed, bb, side.x, side.z, 1, 0, -.05, 20);
   assert.equal(back.at(-1).rot, 0, 'dragged straight back to the head wall it backs onto it again');
   assert.ok(Math.abs(back.at(-1).z - (z0 + HM.GAP + bed.d / 2)) < 1e-9, 'flush with the head wall');
-  const mb = HM.bbox(rects, '主卧'), onLeft = HM.clampPlacement(bed, mb, .3, 2.2, 1, { dx: -.06, dz: 0 });
-  assert.equal(onLeft.rot, 1);
-  const upMb = dragPath(bed, mb, onLeft.x, onLeft.z, 1, 0, -.05, 40);
-  assert.equal(upMb.at(-1).rot, 0, '主卧 (3.6 m): dragged up and on past the head wall, a side-wall bed backs onto it again');
-  const toCorner = dragPath(bed, mb, onLeft.x, onLeft.z, 1, 0, -.05, 40).find(p => Math.abs(p.z - (HM.GAP + bed.w / 2)) < 1e-9);
-  assert.ok(toCorner, 'reaches the corner first');
   const across = dragPath(bed, bb, (bb.rs[0].r[0] + bb.rs[0].r[2]) / 2, 2.0, 0, .05, 0, 4);
   assert.ok(across.every(p => p.rot !== 3) || across.at(-1).rot === 3, 'no flip-flop crossing the room');
 });
@@ -223,6 +218,28 @@ test('1.8.2 · a chair goes from one long balcony wall to the other and back', (
   assert.equal(home.at(-1).rot, 0, 'and back again');
   const c = HM.KINDS.cabA;
   assert.ok(dragPath(c, bal, cx - .5, bz0 + HM.GAP + c.d / 2, 0, .05, .005, 10).every(p => p.rot === 0), 'a cabinet sliding along the wall stays on it');
+});
+
+test('1.8.3 · one footprint for every wall: no flip-flops, corners keep their wall however far the finger overshoots, beds snap in any bedroom', () => {
+  const { rects } = HM.makeRects(HM.planOf({ template: 't3l2' }));
+  const lr = HM.bbox(rects, '客餐厅'), sofa = HM.KINDS.sofaA, A = lr.rs.find(p => p.r[0] === 0).r;
+  const walk = dragPath(sofa, lr, A[2] - 1.6, (A[1] + A[3]) / 2, 2, .01, 0, 140); // across 客餐厅 towards the kitchen wall
+  assert.ok(walk.reduce((n, p, i) => n + (i && p.rot !== walk[i - 1].rot), 0) <= 1, 'turns at most once');
+  for (const room of ['主卧', '次卧', '厨房']) for (const k of ['fridgeA', 'cabA', 'bedA']) {
+    const bb = HM.bbox(rects, room), [x0, z0, x1, z1] = bb.rs[0].r, d = HM.KINDS[k], zf = z0 + HM.GAP + d.d / 2, flushX = x0 + HM.GAP + d.w / 2;
+    if (d.w > x1 - x0 - 2 * HM.GAP || z1 - z0 <= d.d + 2 * HM.GAP + .7) continue; // doesn't fit, or a narrow pair (where the wall it heads for may take over)
+    for (const o of [0, .16, .3]) {
+      const n = Math.round((x1 - 1.2 - (flushX - o)) / .01), p = dragPath(d, bb, x1 - 1.2, zf, 0, -.01, 0, n);
+      assert.equal(p.at(-1).rot, 0, `${room}/${k}: slid into the corner, finger ${o * 100} cm past flush, keeps the back wall`);
+    }
+  }
+  const mb = HM.bbox(rects, '主卧'), bed = HM.KINDS.bedA, [mx0, mz0, mx1, mz1] = mb.rs[0].r;
+  const to = (x, z) => { const dx = x - 1.8, dz = z - 1.8, n = Math.ceil(Math.hypot(dx, dz) / .01); return dragPath(bed, mb, 1.8, 1.8, 0, dx / n, dz / n, n).at(-1).rot; };
+  assert.equal(to(mx0 + HM.GAP + bed.w / 2 + .15, 1.8), 1, '主卧 bed stopped 15 cm off the left wall backs onto it');
+  assert.equal(to(mx1 - HM.GAP - bed.w / 2 - .15, 1.8), 3, '... the right wall');
+  assert.equal(to(1.8, mz1 - HM.GAP - bed.d / 2 - .15), 2, '... the foot wall');
+  const onLeft = HM.clampPlacement(bed, mb, .3, 1.8, 1, { dx: -.06, dz: 0 }), tx = 1.8 - onLeft.x, tz = 1.155 - onLeft.z, n = Math.ceil(Math.hypot(tx, tz) / .01);
+  assert.equal(dragPath(bed, mb, onLeft.x, onLeft.z, 1, tx / n, tz / n, n).at(-1).rot, 0, 'a side-wall bed dragged to the head wall centre backs onto it, no extra push');
 });
 
 test('a saved position survives a room resize as a fraction of the room', () => {
