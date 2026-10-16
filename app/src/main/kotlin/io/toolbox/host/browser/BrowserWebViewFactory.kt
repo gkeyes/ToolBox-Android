@@ -78,11 +78,26 @@ internal class BrowserWebViewFactory(
     /** The current document's main frame failed: its page stays on the pre-paint colour, never white. */
     private var mainFrameFailed = false
 
+    /** The live page still shows the pre-paint colour (nothing drawn yet, or its load failed). */
+    private var prePaintBase = false
+
     private fun prePaintColor() = activity.getColor(io.toolbox.host.R.color.toolbox_window_background)
+
+    private fun showPrePaintBase(view: WebView) {
+        view.setBackgroundColor(prePaintColor())
+        prePaintBase = true
+    }
 
     /** White is the base colour pages without their own background expect, once a real page has drawn. */
     private fun restorePageBase(view: WebView) {
-        if (view !== state.webView || !mainFrameFailed) view.setBackgroundColor(android.graphics.Color.WHITE)
+        if (view === state.webView && mainFrameFailed) return
+        view.setBackgroundColor(android.graphics.Color.WHITE)
+        if (view === state.webView) prePaintBase = false
+    }
+
+    /** Night mode changed without recreating the page: a pre-paint base follows the new window colour. */
+    fun onNightModeChanged(page: WebView) {
+        if (page === state.webView && prePaintBase) page.setBackgroundColor(prePaintColor())
     }
 
     /** One shared transparent poster; WebView asks for it on every video element. */
@@ -93,7 +108,8 @@ internal class BrowserWebViewFactory(
         // Until the first document paints, WebView fills itself with its background colour (white by
         // default), which flashes in dark mode. Use the window colour until then; once the page has
         // drawn (or finished loading) white returns, the base colour pages without a background expect.
-        page.setBackgroundColor(prePaintColor())
+        mainFrameFailed = false
+        showPrePaintBase(page)
         page.settings.apply {
             BrowserCompatibilityPolicy.apply(this)
             applyUserAgent(this)
@@ -208,7 +224,7 @@ internal class BrowserWebViewFactory(
                     // The error overlay fades out over the page on retry: keep the pre-paint colour under it,
                     // not white, until the next document draws.
                     mainFrameFailed = true
-                    view.setBackgroundColor(prePaintColor())
+                    showPrePaintBase(view)
                     state.error = "网页加载失败，请检查网络后重试。"
                     state.interaction = state.interaction.pageFinished()
                     state.loadProgress = 100

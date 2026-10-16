@@ -176,16 +176,17 @@ internal fun RuntimeShellScreen(
                                 private var downInGestureEdge = false
 
                                 override fun dispatchTouchEvent(event: android.view.MotionEvent): Boolean {
-                                    when (event.actionMasked) {
-                                        android.view.MotionEvent.ACTION_DOWN -> downInGestureEdge = inGestureEdge(event)
-                                        android.view.MotionEvent.ACTION_UP -> {
-                                            val handledAt = SystemClock.elapsedRealtime()
-                                            pageTouchedAt = liftedAtElapsed(handledAt, SystemClock.uptimeMillis(), event.eventTime)
-                                            pageTouchHandledAt = handledAt
-                                            pageTouchFromEdge = downInGestureEdge
-                                        }
+                                    if (event.actionMasked == android.view.MotionEvent.ACTION_DOWN) downInGestureEdge = inGestureEdge(event)
+                                    val handled = super.dispatchTouchEvent(event)
+                                    if (event.actionMasked == android.view.MotionEvent.ACTION_UP) {
+                                        // Stamped after the page has processed the lift, so a stall inside that
+                                        // dispatch delays this time just as it delays the Back behind it.
+                                        val handledAt = SystemClock.elapsedRealtime()
+                                        pageTouchedAt = liftedAtElapsed(handledAt, SystemClock.uptimeMillis(), event.eventTime)
+                                        pageTouchHandledAt = handledAt
+                                        pageTouchFromEdge = downInGestureEdge
                                     }
-                                    return super.dispatchTouchEvent(event)
+                                    return handled
                                 }
 
                                 private fun inGestureEdge(event: android.view.MotionEvent): Boolean {
