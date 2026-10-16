@@ -157,12 +157,16 @@ test("a reply stopped at the token limit before one whole topic asks once more f
   refreshBoard();
   const first = await call;
   assert.doesNotMatch(first.messages[0].content, /截断/);
+  assert.equal(boardStream.get().first, null);
   call = waitCall();
   first.onChunk('{"topics":[{"title":"甲","articles":[1],"summary":"写到一半');
   first.resolve({ finishReason: "length" });
   const second = await call;
   assert.equal(second.kind, "topics");
   assert.match(second.messages[0].content, /被截断了。这次回答要短/);
+  // The first, cut reply stays on screen above the second.
+  assert.deepEqual(boardStream.get().first, { text: '{"topics":[{"title":"甲","articles":[1],"summary":"写到一半' });
+  assert.equal(boardStream.get().text, "");
   // The shorter answer fits: a board.
   second.onChunk('{"topics":[{"title":"甲","gist":"g","summary":"s","articles":[1]}]}');
   second.resolve({ finishReason: "stop" });
