@@ -317,13 +317,19 @@ test("tab switches keep the list mounted and scrolling pauses the edge lens", as
     expect(await page.evaluate(() => document.querySelector(".article-list-content [data-virtuoso-scroller]") === window.__scroller)).toBe(true);
     await expect(page.locator(".vlist-footer")).toHaveCount(0);
   }
-  const lensRule = await page.evaluate(() => {
-    const scroller = window.__scroller;
-    scroller.dispatchEvent(new Event("scroll"));
-    return document.documentElement.hasAttribute("data-nf-scrolling");
+  // A scroll empties the header's lens filters (blur stays, no bending) and
+  // restyles nothing on the page; they fill again once scrolling stops.
+  const bending = () => page.evaluate(() => [...document.querySelectorAll("svg[data-nf-lens] filter")]
+    .map((filter) => Boolean(filter.querySelector("feDisplacementMap"))));
+  await expect.poll(async () => (await bending()).length).toBeGreaterThan(0);
+  expect((await bending()).every(Boolean)).toBe(true);
+  const scrolling = await page.evaluate(() => {
+    window.__scroller.dispatchEvent(new Event("scroll"));
+    return [...document.querySelectorAll("svg[data-nf-lens] filter")].map((filter) => filter.querySelector("feDisplacementMap") === null);
   });
-  expect(lensRule).toBe(true);
-  await expect.poll(() => page.evaluate(() => document.documentElement.hasAttribute("data-nf-scrolling"))).toBe(false);
+  expect(scrolling.every(Boolean)).toBe(true);
+  expect(await page.evaluate(() => document.documentElement.hasAttribute("data-nf-scrolling"))).toBe(false);
+  await expect.poll(async () => (await bending()).every(Boolean)).toBe(true);
   expect(pageErrors).toEqual([]);
 });
 

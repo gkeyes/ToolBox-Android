@@ -187,8 +187,3 @@
     backdrop-filter: none;
   }
 }
-
-/* Scrolling (design/lens.js sets data-nf-scrolling): same blur and tint, no
-   edge bending, so the filter is cheap while the page moves under it. A
-   stylesheet !important beats lens.js's inline --nf-lens. */
-:root[data-nf-scrolling] [style*="--nf-lens"] { --nf-lens: blur(0px) !important; }
