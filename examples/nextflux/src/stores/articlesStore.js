@@ -7,7 +7,8 @@ import {
   patchArticleState,
 } from "../db/storage.js";
 import minifluxAPI from "../api/miniflux.js";
-import { duplicateView, starredCounts, unreadCounts } from "./feedsStore.js";
+import { duplicateView, feeds as feedList, starredCounts, unreadCounts } from "./feedsStore.js";
+import { hiddenFeedIds, mergeCounts } from "./count-merge.mjs";
 import { settingsState } from "./settingsStore.js";
 import { clearAllSummaries } from "./aiStore.js";
 import { toggleStarAcknowledged } from "../toolbox/star-toggle.mjs";
@@ -154,8 +155,9 @@ export async function loadArticles(sourceId = null, type = "feed", page = 1, app
 }
 
 function publishCounts(counts) {
-  unreadCounts.set({ ...unreadCounts.get(), ...counts.unread });
-  starredCounts.set({ ...starredCounts.get(), ...counts.starred });
+  const hidden = hiddenFeedIds(feedList.get(), settingsState.get().showHiddenFeeds);
+  unreadCounts.set(mergeCounts(unreadCounts.get(), counts.unread, hidden));
+  starredCounts.set(mergeCounts(starredCounts.get(), counts.starred, hidden));
 }
 
 function publishUpdates(result, check) {
