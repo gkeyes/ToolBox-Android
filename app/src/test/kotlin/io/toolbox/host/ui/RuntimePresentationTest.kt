@@ -143,6 +143,20 @@ class RuntimePresentationTest {
     }
 
     @Test
+    fun aStallBetweenTheLiftAndItsBackKeepsTheLiftWithTheSwipe() {
+        val streak = PageBackStreak()
+        streak.pageTook(9_000L)
+        streak.pageTook(10_000L)
+        // The swipe began at 11 800 and its lift was handled at 11 900, then a stall held the Back
+        // until 12 400: 500 ms after the lift, but inside the swipe, so it is the swipe's finger.
+        assertTrue(streak.hostTakes(12_400L, pageTouchedAt = 11_900L, pageTouchHandledAt = 11_900L, backStartedAt = 11_800L))
+        // The same from the gesture edge, where the plain window is 500 ms.
+        assertTrue(streak.hostTakes(13_000L, 11_900L, fromGestureEdge = true, pageTouchHandledAt = 11_900L, backStartedAt = 11_800L))
+        // A tap lifted before the swipe began is a real tap and restarts the count.
+        assertTrue(!streak.hostTakes(12_400L, pageTouchedAt = 11_700L, pageTouchHandledAt = 11_700L, backStartedAt = 11_800L))
+    }
+
+    @Test
     fun aHostTakenBackRestartsTheCount() {
         val streak = PageBackStreak()
         streak.pageTook(10_000L)

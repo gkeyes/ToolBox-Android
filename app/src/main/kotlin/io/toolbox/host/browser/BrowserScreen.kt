@@ -182,8 +182,11 @@ private fun BrowserErrorOverlay(state: BrowserUiState, actions: BrowserScreenAct
                 Modifier.widthIn(max = 360.dp).fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(ToolBoxThemeTokens.spacing.xs),
             ) {
+                // The overlay stays up while the retry loads, so the button says it is under way.
+                val retrying = state.interaction.loading && state.webView != null
                 io.toolbox.core.ui.component.ToolBoxPrimaryButton(
-                    "重新加载", actions::reload, Modifier.fillMaxWidth(), enabled = !state.clearing && !state.interaction.restarting,
+                    if (retrying) "正在重新加载…" else "重新加载", actions::reload, Modifier.fillMaxWidth(),
+                    enabled = !retrying && !state.clearing && !state.interaction.restarting,
                 )
                 ToolBoxTextButton("使用系统浏览器", actions::openSystemBrowser, Modifier.fillMaxWidth(), enabled = !state.clearing, outlined = false)
             }

@@ -288,7 +288,8 @@ private fun BrowserGlassCircle(
 /**
  * Static lens edge for a glass circle over the live page, which it must never sample: a thin inner
  * ring lit at the top left and shaded at the bottom right. On a light fill the highlight barely
- * shows, so the shade is deeper and a fine white line just inside the ring carries the edge.
+ * shows, so the shade is deeper, a fine neutral hairline closes the whole outline (on a white page
+ * the white line alone vanishes) and a fine white line just inside the ring carries it on dark pages.
  */
 private fun Modifier.browserLensRim(light: Boolean): Modifier = drawWithContent {
     drawContent()
@@ -306,6 +307,12 @@ private fun Modifier.browserLensRim(light: Boolean): Modifier = drawWithContent 
         style = androidx.compose.ui.graphics.drawscope.Stroke(stroke),
     )
     if (light) {
+        val hairline = 0.5.dp.toPx()
+        drawCircle(
+            color = androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.07f),
+            radius = size.minDimension / 2f - hairline / 2f,
+            style = androidx.compose.ui.graphics.drawscope.Stroke(hairline),
+        )
         val line = 0.75.dp.toPx()
         drawCircle(
             color = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.5f),

@@ -1,7 +1,7 @@
 package io.toolbox.host.ui
 
 import android.os.SystemClock
-import androidx.activity.compose.BackHandler
+import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -452,6 +452,7 @@ internal fun RuntimeExitConfirmation(
     // While the page is deciding, one further Back waits for its answer instead of being lost.
     var askingPage by remember { mutableStateOf(false) }
     var pendingBackAt by remember { mutableLongStateOf(0L) }
+    var pendingBackStartedAt by remember { mutableLongStateOf(0L) }
     val pageBackStreak = remember { PageBackStreak() }
     var disposed by remember { mutableStateOf(false) }
     DisposableEffect(Unit) { onDispose { disposed = true } }
@@ -469,9 +470,9 @@ internal fun RuntimeExitConfirmation(
         }
     }
 
-    fun offerBack(now: Long) {
+    fun offerBack(now: Long, startedAt: Long) {
         val ask = currentAskPage
-        val pageKeepsBack = pageBackStreak.hostTakes(now, pageTouchedAt(), pageTouchFromEdge(), pageTouchHandledAt())
+        val pageKeepsBack = pageBackStreak.hostTakes(now, pageTouchedAt(), pageTouchFromEdge(), pageTouchHandledAt(), startedAt)
         // While the exit hint shows, the next Back confirms it rather than going to the page again.
         val hintShowing = shouldExitRuntimeOnBack(lastBackAt, now)
         if (ask == null || pageKeepsBack || hintShowing) {
@@ -493,15 +494,24 @@ internal fun RuntimeExitConfirmation(
             val pending = pendingBackAt
             if (pending != 0L) {
                 pendingBackAt = 0L
-                if (!leaving) offerBack(pending)
+                if (!leaving) offerBack(pending, pendingBackStartedAt)
             }
         }
     }
 
-    BackHandler(enabled = !leaving) {
+    PredictiveBackHandler(enabled = !leaving) { progress ->
+        // A Back swipe starts here, finger still down (API 34+; older systems only run this on the press):
+        // a lift handled from now until the Back lands is the swipe's own, however long a stall holds it.
+        val startedAt = SystemClock.elapsedRealtime()
+        progress.collect { }
         // The press time, not the answer time, counts towards the confirmation window.
         val now = SystemClock.elapsedRealtime()
-        if (askingPage) pendingBackAt = now else offerBack(now)
+        if (askingPage) {
+            pendingBackAt = now
+            pendingBackStartedAt = startedAt
+        } else {
+            offerBack(now, startedAt)
+        }
     }
 
     AnimatedVisibility(
