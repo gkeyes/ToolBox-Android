@@ -333,8 +333,8 @@ class LayoutScreenshotTest(private val fontScale: Float) {
         val dy = standIn[0].top - live[0].top
         live.zip(standIn).forEachIndexed { index, (a, b) ->
             assertEquals("tab $index left", a.left.value, b.left.value, 0.5f)
-            assertEquals("tab $index width", a.width.value, b.width.value, 0.5f)
-            assertEquals("tab $index height", a.height.value, b.height.value, 0.5f)
+            assertEquals("tab $index width", (a.right - a.left).value, (b.right - b.left).value, 0.5f)
+            assertEquals("tab $index height", (a.bottom - a.top).value, (b.bottom - b.top).value, 0.5f)
             assertEquals("tab $index top", dy.value, (b.top - a.top).value, 0.5f)
         }
     }
