@@ -147,8 +147,9 @@ internal class RuntimeForegroundService : Service() {
                                 },
                                 currentSnapshot = { sessions.notificationSnapshots.value },
                                 present = { current ->
-                                    notifications.render(current)
+                                    // Icons already loaded go into the first post, so it doesn't show ToolBox first.
                                     synchronizeIcons(current, dependencies.toolIcons, sessions)
+                                    notifications.render(current)
                                 },
                                 stopIfEmpty = { stopIfCurrent(latestStartId) },
                             )
@@ -193,6 +194,13 @@ internal class RuntimeForegroundService : Service() {
         toolIcons.keys.retainAll(activeIconSessions)
         snapshot.sessions.forEach { session ->
             val id = session.sessionId
+            if (!toolIcons.containsKey(id)) {
+                loader.cached(session.toolId)?.let {
+                    toolIcons[id] = it
+                    // The bootstrap post may already show this card; its icon isn't part of the card, so re-post it.
+                    notifications.refreshArtwork(id)
+                }
+            }
             if (!toolIcons.containsKey(id) && id !in iconLoads) {
                 iconLoads[id] = scope.launch {
                     try {

@@ -7,10 +7,12 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
 import io.toolbox.host.MainActivity
 import io.toolbox.host.R
 import io.toolbox.host.background.AndroidNotificationGateway
 import io.toolbox.host.background.LiveNotificationSupportState
+import io.toolbox.host.background.setToolIcon
 import io.toolbox.tool.runtime.RuntimeAndroidLiveStatus
 import io.toolbox.tool.runtime.RuntimeHandlerException
 import io.toolbox.tool.runtime.RuntimeHyperOsIslandStatus
@@ -20,6 +22,8 @@ import io.toolbox.tool.runtime.RuntimeRpcErrorCode
 /** Long-running reminders, undelivered alarm notices and the live-notification support check. */
 internal class RuntimeSessionNotifications(
     private val appContext: Context,
+    /** The tool's icon if already loaded; these notices are posted at once and never wait for a load. */
+    private val cachedToolIcon: (toolId: String) -> Bitmap? = { null },
 ) {
     private val notificationManager = appContext.getSystemService(NotificationManager::class.java)
 
@@ -35,6 +39,7 @@ internal class RuntimeSessionNotifications(
         val stop = RuntimeForegroundService.stopSessionPendingIntent(appContext, toolId, sessionId)
         val notification = Notification.Builder(appContext, RUNTIME_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_toolbox_notification)
+            .setToolIcon(appContext, cachedToolIcon(toolId))
             .setContentTitle("ToolBox 后台运行提醒")
             .setContentText("此工具已连续运行 12 小时")
             .setContentIntent(open)
@@ -56,6 +61,7 @@ internal class RuntimeSessionNotifications(
         )
         val notification = Notification.Builder(appContext, RUNTIME_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_toolbox_notification)
+            .setToolIcon(appContext, cachedToolIcon(toolId))
             .setContentTitle("ToolBox 提醒")
             .setContentText("点击打开对应工具")
             .setContentIntent(open)

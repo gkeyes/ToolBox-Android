@@ -8,6 +8,7 @@ import io.toolbox.core.data.ToolVersion
 import io.toolbox.core.data.ThemeMode
 import io.toolbox.tool.runtime.RuntimeWebViewTheme
 import io.toolbox.host.HostTrace
+import io.toolbox.host.icons.ToolIconLoader
 import io.toolbox.host.background.AndroidNotificationGateway
 import io.toolbox.tool.runtime.HardenedRuntimeWebView
 import io.toolbox.tool.runtime.PreparedToolRuntime
@@ -52,6 +53,7 @@ internal class RuntimeSessionManager(
     private val permitProvider: RuntimePermitProvider,
     private val bridgeProvider: () -> RuntimeBridgeProvider,
     private val nowMillis: () -> Long = System::currentTimeMillis,
+    private val toolIcons: ToolIconLoader? = null,
 ) {
     private val appContext = context.applicationContext
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -74,7 +76,7 @@ internal class RuntimeSessionManager(
     private val liveNotifications = LiveNotificationCoordinator(scope, nowMillis) {
         refreshForegroundService()
     }
-    private val notifications = RuntimeSessionNotifications(appContext)
+    private val notifications = RuntimeSessionNotifications(appContext) { toolId -> toolIcons?.cached(toolId) }
     private val store = RuntimeSessionStore(repositories, nowMillis)
     private val reminders = RuntimeSessionReminders(
         scope = scope,
