@@ -96,3 +96,21 @@ test("a line with nothing after the image yet stays open", () => {
   element("P", [ended, element("BR"), text("caption")]);
   assert.equal(imageLineOpen(ended), false);
 });
+
+test("a nested break ends the line, the root bounds the article, an icon class survives cleaning", async () => {
+  const photo = image();
+  element("P", [text("caption "), photo, element("SPAN", [element("BR"), text("next line")])]);
+  assert.equal(imageIsInline(photo, {}), false);
+  const tail = image();
+  const root = element("DIV", [element("P", [text("text "), tail])]);
+  root.hasAttribute = (name) => name === "data-font-reading-root";
+  element("SECTION", [root, element("P", [text("正在准备正文…")])]);
+  assert.equal(imageLineOpen(tail), true);
+  const { cleanAttributes } = await import("../src/toolbox/content.js");
+  const attrs = cleanAttributes("img", { class: "wp-smiley emoji", src: "https://example.com/123" });
+  assert.equal(attrs["data-image-icon"], "true");
+  assert.equal(cleanAttributes("img", { class: "wide photo" })["data-image-icon"], undefined);
+  const icon = image();
+  element("P", [element("STRONG", [text("标签")]), icon]);
+  assert.equal(imageIsInline(icon, attrs), true);
+});
