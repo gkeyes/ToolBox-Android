@@ -321,6 +321,7 @@
       "app.js",
       "lens.js",
       "home3d.js",
+      "plan-editor.js",
       "vendor/three.module.min.js",
       "vendor/RoundedBoxGeometry.js",
       "vendor/BufferGeometryUtils.js",

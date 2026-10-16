@@ -5,6 +5,7 @@
 import * as THREE from './vendor/three.module.min.js';
 import { RoundedBoxGeometry } from './vendor/RoundedBoxGeometry.js';
 import { mergeGeometries } from './vendor/BufferGeometryUtils.js';
+import { createPlanEditor } from './plan-editor.js';
 
 const HM = window.ZZHomeModel;
 const PI = Math.PI;
@@ -20,8 +21,9 @@ const ICON = {
   close: '<path d="M6 6l12 12M18 6 6 18"/>',
   tag: '<path d="M3 12V5a2 2 0 0 1 2-2h7l9 9-9 9-9-9z"/><circle cx="8" cy="8" r="1.3"/>',
   tagOff: '<path d="M3 12V5a2 2 0 0 1 2-2h7l9 9-9 9-9-9z"/><circle cx="8" cy="8" r="1.3"/><path d="M3 3l18 18"/>',
-  hx: '<path d="M8 8l-4 4 4 4M16 8l4 4-4 4M4 12h16"/>',
-  hz: '<path d="M8 8l4-4 4 4M8 16l4 4 4-4M12 4v16"/>'
+  check: '<path d="m5 12 4 4L19 6"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  trash: '<path d="M5 7h14M10 11v6M14 11v6M7 7l1 12h8l1-12M9 7V4h6v3"/>'
 };
 
 /* ================= materials & primitives (from the approved design) ================= */
@@ -142,7 +144,8 @@ function textures() {
   };
   return TEX;
 }
-const floorKind = n => n === '客餐厅' ? ['terr', 2.2] : n === '厨房' || n === '卫生间' ? ['tile', 1.6] : n === '阳台' ? ['deck', 2] : n === '主卧' ? ['oak', 2.4] : ['light', 2.4];
+// By room type (1.9.0: names count on, 次卧2, 公卫2…).
+const floorKind = t => t === '客餐厅' || t === '客厅' || t === '餐厅' ? ['terr', 2.2] : t === '厨房' || t === '卫生间' ? ['tile', 1.6] : t === '阳台' ? ['deck', 2] : t === '主卧' ? ['oak', 2.4] : ['light', 2.4];
 
 /* ================= the home ================= */
 export function createHome(api) {
@@ -175,12 +178,11 @@ export function createHome(api) {
   <div class="hv-top"><div class="hv-title"><h1>我的家</h1><p class="hv-sub">单指转动 · 双指缩放</p></div><div class="hv-tools"><button type="button" class="hg gbtn gchip" data-hv="place">${svg(ICON.place)}<span>摆放</span></button><button type="button" class="hg gbtn gchip" data-hv="layout">${svg(ICON.layout)}<span>户型</span></button></div></div>
   <div class="hv-side"><button type="button" class="hg gbtn gcirc" data-hv="labels" aria-pressed="true" aria-label="隐藏房间标签"></button><button type="button" class="hg gbtn gcirc" data-hv="reset" aria-label="回到默认视角">${svg(ICON.reset)}</button></div>
   <div class="hv-dock" data-dock="place" hidden><div class="hg hv-selbar" hidden><button type="button" class="hv-who" data-hv="relook" aria-label="换外观"></button><button type="button" class="hg gbtn gchip" data-hv="rot">${svg(ICON.rot)}<span>转向</span></button><button type="button" class="hg gbtn gchip" data-hv="drop">放下</button></div><div class="hg hv-tray"><h3>还没放进家里的 <span class="hv-tray-n"></span></h3><div class="hv-tray-row"></div></div></div>
-  <div class="hv-dock" data-dock="resize" hidden><div class="hg hv-selbar"><div class="hv-who"><b>拖动墙上的把手调整房间</b><span class="hv-area"></span></div><button type="button" class="hg gbtn gchip" data-hv="tpl">换户型</button></div></div>
 `;
   // Sheets live on <body> so they cover the tab bar; the tab's own stacking context would keep them under it.
   const layer = document.createElement('div'); layer.className = 'hv-layer';
   layer.innerHTML = `<div class="hv-scrim"></div>
-  <div class="hv-sheet hg" data-sheet="tpl" role="dialog" aria-modal="true" aria-label="选户型"><div class="hv-grab"></div><div class="hv-sheet-head"><h2>选户型</h2><button type="button" class="hg gbtn gcirc" data-hv="close" aria-label="关闭">${svg(ICON.close)}</button></div><div class="hv-sheet-body"><p class="hv-hint">选一个最接近的，再拖墙调整每个房间的大小。</p><div class="hv-tpl"></div><button type="button" class="hv-primary gbtn" data-hv="tpl-ok">调整房间大小</button></div></div>
+  <div class="hv-sheet hg" data-sheet="tpl" role="dialog" aria-modal="true" aria-label="选户型"><div class="hv-grab"></div><div class="hv-sheet-head"><h2>选户型</h2><button type="button" class="hg gbtn gcirc" data-hv="close" aria-label="关闭">${svg(ICON.close)}</button></div><div class="hv-sheet-body"><p class="hv-hint">选一个最接近的当起点，再拖方块调整，按「完成」才保存。</p><div class="hv-tpl"></div></div></div>
   <div class="hv-sheet hg" data-sheet="pick" role="dialog" aria-modal="true" aria-label="选外观"><div class="hv-grab"></div><div class="hv-sheet-head"><h2>选外观</h2><button type="button" class="hg gbtn gcirc" data-hv="close" aria-label="关闭">${svg(ICON.close)}</button></div><div class="hv-sheet-body"><p class="hv-hint hv-pick-hint">挑一个和你买的东西样子相近的就行。</p><div class="hv-pal-sec"><h3>家电</h3><div class="hv-pal" data-pal="app"></div></div><div class="hv-pal-sec"><h3>家具</h3><div class="hv-pal" data-pal="fur"></div></div><div class="hv-pal-sec"><h3>生活</h3><div class="hv-pal" data-pal="liv"></div></div><button type="button" class="hv-primary gbtn" data-hv="pick-ok" disabled>用这个外观</button></div></div>`;
   const q = s => root.querySelector(s) || layer.querySelector(s), qa = s => [...root.querySelectorAll(s), ...layer.querySelectorAll(s)];
   const slotHome = q('.hv-slot'), labelsEl = q('.hv-labels');
@@ -200,13 +202,13 @@ export function createHome(api) {
     const R = Math.max(W, D) * .75 + 1; Object.assign(sun.shadow.camera, { left: -R, right: R, top: R, bottom: -R }); sun.shadow.camera.updateProjectionMatrix();
     const dark = isDark(), tex = textures();
     const slabs = [];
-    rects.forEach(({ name, r }) => {
+    rects.forEach(({ type, r }) => {
       const w = r[2] - r[0], d = r[3] - r[1];
       slabs.push(new THREE.BoxGeometry(w + WT, .36, d + WT).translate(r[0] + w / 2, -.2, r[1] + d / 2));
-      const [k, s] = floorKind(name); const t = tex[k].clone(); t.needsUpdate = true; t.repeat.set(w / s, d / s);
+      const [k, s] = floorKind(type); const t = tex[k].clone(); t.needsUpdate = true; t.repeat.set(w / s, d / s);
       const f = new THREE.Mesh(new THREE.BoxGeometry(w, .04, d), new THREE.MeshStandardMaterial({ map: t, roughness: .8 })); f.userData.own = true;
       f.position.set(r[0] + w / 2, -.02, r[1] + d / 2); f.receiveShadow = true; houseG.add(f);
-      if (name !== '阳台' && w * d > 3) { // night: a warm pool of light on each room's floor instead of a point light
+      if (type !== '阳台' && w * d > 3) { // night: a warm pool of light on each room's floor instead of a point light
         const gm = new THREE.MeshBasicMaterial({ map: tex.glow, transparent: true, opacity: .7, blending: THREE.AdditiveBlending, depthWrite: false }); gm.userData = {};
         const p = new THREE.Mesh(new THREE.PlaneGeometry(Math.min(w, d) * 1.5, Math.min(w, d) * 1.5), gm); p.userData.own = true;
         p.rotation.x = -PI / 2; p.position.set(r[0] + w / 2, .015, r[1] + d / 2); p.scale.set(w / Math.min(w, d), d / Math.min(w, d), 1); p.visible = dark; p.renderOrder = 2;
@@ -222,7 +224,7 @@ export function createHome(api) {
         const push = r => {
           const o = r.j >= 0 ? rects[r.j] : null; if (o && o.name === Rc.name) return; if (o && r.j < i) return;
           const A = [a[0] + (b[0] - a[0]) * r.t0, a[1] + (b[1] - a[1]) * r.t0], Bp = [a[0] + (b[0] - a[0]) * r.t1, a[1] + (b[1] - a[1]) * r.t1];
-          if (Math.hypot(Bp[0] - A[0], Bp[1] - A[1]) < .15) return; addWall(A, Bp, n, Rc.name, o ? o.name : null);
+          if (Math.hypot(Bp[0] - A[0], Bp[1] - A[1]) < .15) return; addWall(A, Bp, n, Rc.type, o ? o.type : null);
         };
         for (let k = 0; k < N; k++) {
           const t = (k + .5) / N, px = a[0] + (b[0] - a[0]) * t + n[0] * eps, pz = a[1] + (b[1] - a[1]) * t + n[1] * eps; const j = rectAt(px, pz);
@@ -233,7 +235,7 @@ export function createHome(api) {
     });
     buildLabels();
   }
-  function addWall(a, b, n, inside, outside) {
+  function addWall(a, b, n, inside, outside) { // inside / outside: room types (outside null = an outer wall)
     const len = Math.hypot(b[0] - a[0], b[1] - a[1]); const g = new THREE.Group(); g.position.set((a[0] + b[0]) / 2, 0, (a[1] + b[1]) / 2);
     if (Math.abs(b[0] - a[0]) < .01) g.rotation.y = PI / 2;
     const ext = !outside, balc = inside === '阳台' || outside === '阳台'; let ops = [], kind = ext ? 'ext' : 'int';
@@ -268,7 +270,6 @@ export function createHome(api) {
     for (const w of walls) {
       let tgt = 1; if (w.kind === 'int') tgt = .42;
       if (w.kind === 'ext' && (w.n[0] * vx + w.n[1] * vz) > .25) tgt = .07;
-      if (mode === 'resize' && view === 'home' && w.kind !== 'rail') tgt = .1;
       const next = force || reduced() ? tgt : w.cur + (tgt - w.cur) * .18;
       if (Math.abs(next - tgt) > .004) moving = true; else if (!force) { w.cur = tgt; w.g.scale.y = tgt; continue; }
       w.cur = next; w.g.scale.y = w.cur;
@@ -323,7 +324,7 @@ export function createHome(api) {
   }
 
   /* ---------- labels, handles ---------- */
-  let labelEls = [], handleEls = [];
+  let labelEls = [];
   function buildLabels() {
     labelsEl.innerHTML = ''; labelEls = [];
     for (const n of HM.roomNames(RECTS)) {
@@ -331,34 +332,15 @@ export function createHome(api) {
       const el = document.createElement('div'); el.className = 'hv-label hg'; labelsEl.appendChild(el);
       labelEls.push({ el, n, p: new THREE.Vector3((rs[0] + rs[2]) / 2, .1, (rs[1] + rs[3]) / 2) });
     }
-    buildHandles(); paintLabels();
+    paintLabels();
   }
   function paintLabels() {
-    const resize = mode === 'resize';
     for (const l of labelEls) {
       const extra = overflow[l.n] ? `<span class="hv-more">+${overflow[l.n]}</span>` : '';
       // With labels hidden, a room that holds more than it can draw still shows its +N on its own.
-      const moreOnly = !labelsOn && !resize && !!extra;
-      l.el.innerHTML = resize ? `${l.n}<small>${HM.area(RECTS, l.n).toFixed(1)}㎡</small>` : moreOnly ? `<span class="hv-more" role="img" aria-label="${l.n}还有 ${overflow[l.n]} 件没画出来">+${overflow[l.n]}</span>` : `${l.n}${extra}`;
-      l.el.hidden = !labelsOn && !resize && !moreOnly; l.el.classList.toggle('dim', mode === 'place'); l.el.classList.toggle('more-only', moreOnly);
-    }
-  }
-  function buildHandles() {
-    const next = mode === 'resize' ? HM.handles(T) : [];
-    // While a wall is dragged the plan rebuilds every frame: keep the same handle elements (the touch stays on them).
-    if (next.length && next.length === handleEls.length && next.every((h, i) => h.key === handleEls[i].key)) {
-      next.forEach((h, i) => { handleEls[i].p = h.p; handleEls[i].v.set(h.p[0], .3, h.p[1]); labelsEl.appendChild(handleEls[i].el); });
-      return;
-    }
-    handleEls.forEach(h => h.el.remove()); handleEls = [];
-    for (const h of next) {
-      const el = document.createElement('button'); el.type = 'button'; el.className = 'hv-handle hg gbtn'; el.setAttribute('aria-label', '拖动调整房间');
-      el.innerHTML = svg(h.ax === 'x' ? ICON.hx : ICON.hz); labelsEl.appendChild(el);
-      h.el = el; h.v = new THREE.Vector3(h.p[0], .3, h.p[1]); handleEls.push(h);
-      const start = () => { handleDrag = h; el.classList.add('pressed'); };
-      el.addEventListener('touchstart', e => { e.preventDefault(); e.stopPropagation(); start(); }, { passive: false });
-      el.addEventListener('pointerdown', e => { if (e.pointerType === 'touch') return; e.preventDefault(); e.stopPropagation(); start(); });
-      el.addEventListener('mousedown', e => { if (window.PointerEvent) return; e.preventDefault(); start(); });
+      const moreOnly = !labelsOn && !!extra;
+      l.el.innerHTML = moreOnly ? `<span class="hv-more" role="img" aria-label="${l.n}还有 ${overflow[l.n]} 件没画出来">+${overflow[l.n]}</span>` : `${l.n}${extra}`;
+      l.el.hidden = !labelsOn && !moreOnly; l.el.classList.toggle('dim', mode === 'place'); l.el.classList.toggle('more-only', moreOnly);
     }
   }
   const v3 = new THREE.Vector3();
@@ -366,7 +348,6 @@ export function createHome(api) {
   function updateOverlay() {
     if (view !== 'home') return;
     for (const l of labelEls) { const [x, y] = project(l.p); l.el.style.transform = `translate(${x.toFixed(1)}px,${y.toFixed(1)}px) translate(-50%,-50%)`; }
-    for (const h of handleEls) { const [x, y] = project(h.v); h.el.style.transform = `translate(${x.toFixed(1)}px,${y.toFixed(1)}px) translate(-50%,-50%)`; }
   }
   function paintLabelBtn() {
     const b = q('[data-hv="labels"]'); b.setAttribute('aria-pressed', String(labelsOn)); b.setAttribute('aria-label', labelsOn ? '隐藏房间标签' : '显示房间标签');
@@ -381,7 +362,7 @@ export function createHome(api) {
     let ww, hh;
     let up = .5; // share of the frustum above the target: more than half sets the house lower, clear of the card caption
     if (view === 'mini') { hh = S * (a > 2 ? .98 : 1.22); ww = hh * a; if (ww < S * 1.6) { ww = S * 1.6; hh = ww / a; } up = .56; }
-    else { const F = S * 1.47; if (a < 1) { ww = F; hh = ww / a; } else { hh = S * 1.22; ww = hh * a; } up = a < 1 ? (mode === 'place' ? .42 : mode === 'resize' ? .48 : .54) : .5; }
+    else { const F = S * 1.47; if (a < 1) { ww = F; hh = ww / a; } else { hh = S * 1.22; ww = hh * a; } up = a < 1 ? (mode === 'place' ? .42 : .54) : .5; }
     Object.assign(camera, { left: -ww / 2, right: ww / 2, top: hh * up, bottom: -hh * (1 - up) });
     return true;
   }
@@ -436,7 +417,7 @@ export function createHome(api) {
     const hits = ray.intersectObjects([...items.values()].filter(e => e.g.visible).map(e => e.g), true);
     return hits.length ? hits[0].object.userData.entry || null : null;
   }
-  let gesture = null, drag = null, handleDrag = null, inertia = null, selected = null;
+  let gesture = null, drag = null, inertia = null, selected = null;
   function beginOne(x, y) {
     inertia = null;
     if (mode === 'place') {
@@ -446,7 +427,6 @@ export function createHome(api) {
     gesture = { kind: 'rotate', x, y, lx: x, ly: y, t: performance.now(), moved: false };
   }
   function moveOne(x, y, ts) {
-    if (handleDrag) { const p = floorHit(x, y); if (p) applyHandle(handleDrag, p); return; }
     if (!gesture) return;
     if (gesture.kind === 'drag' && drag) {
       const p = floorHit(x, y); if (!p) return;
@@ -471,7 +451,6 @@ export function createHome(api) {
     }
   }
   function endOne() {
-    if (handleDrag) { handleDrag.el.classList.remove('pressed'); handleDrag = null; saveHome(); }
     if (gesture?.kind === 'rotate') {
       if (!gesture.moved && mode === 'place') select(null);
       else if (gesture.v && !reduced() && performance.now() - gesture.t > 60) inertia = { ...gesture.v };
@@ -501,10 +480,6 @@ export function createHome(api) {
     if (!e.touches.length) endOne();
   };
   canvas.addEventListener('touchend', touchEnd); canvas.addEventListener('touchcancel', touchEnd);
-  // Handles live in the label layer; their drags follow the finger anywhere on the page.
-  document.addEventListener('touchmove', e => { if (handleDrag && e.touches.length) { e.preventDefault(); moveOne(e.touches[0].clientX, e.touches[0].clientY); } }, { passive: false });
-  document.addEventListener('touchend', e => { if (handleDrag && !e.touches.length) endOne(); });
-  document.addEventListener('touchcancel', () => { if (handleDrag) endOne(); });
   if (window.PointerEvent) {
     canvas.addEventListener('pointerdown', e => {
       if (view !== 'home' || e.pointerType === 'touch' || e.button !== 0) return;
@@ -512,12 +487,10 @@ export function createHome(api) {
       const mv = ev => moveOne(ev.clientX, ev.clientY), up = () => { removeEventListener('pointermove', mv); removeEventListener('pointerup', up); removeEventListener('pointercancel', up); endOne(); };
       addEventListener('pointermove', mv); addEventListener('pointerup', up); addEventListener('pointercancel', up);
     });
-    addEventListener('pointermove', e => { if (handleDrag && e.pointerType !== 'touch') moveOne(e.clientX, e.clientY); });
-    addEventListener('pointerup', e => { if (handleDrag && e.pointerType !== 'touch') endOne(); });
   } else {
     canvas.addEventListener('mousedown', e => { if (view !== 'home') return; e.preventDefault(); beginOne(e.clientX, e.clientY); });
-    addEventListener('mousemove', e => { if (gesture || handleDrag) moveOne(e.clientX, e.clientY); });
-    addEventListener('mouseup', () => { if (gesture || handleDrag) endOne(); });
+    addEventListener('mousemove', e => { if (gesture) moveOne(e.clientX, e.clientY); });
+    addEventListener('mouseup', () => { if (gesture) endOne(); });
   }
   canvas.addEventListener('wheel', e => { if (view !== 'home') return; e.preventDefault(); cam.zoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, cam.zoom * Math.pow(.9985, e.deltaY))); tw = null; invalidate(); }, { passive: false });
   canvas.addEventListener('webglcontextlost', e => e.preventDefault());
@@ -545,26 +518,27 @@ export function createHome(api) {
   function rollback(e) { e.rollback = false; const i = api.data().items.find(x => x.id === e.id); if (i?.model) { e.model = { ...i.model }; placeEntry(e); applyFit(); } updateRing(); invalidate(); }
   // A failure that lands mid-drag waits for the finger: a real move saves anew, a mere touch rolls back.
   function endDrag() { const d = drag; drag = null; d.e.g.position.y = 0; if (d.moved) { d.e.rollback = false; saveModel(d.e); } else if (d.e.rollback) { api.toast('没保存上，已放回原位，请再试一次', null, true); rollback(d.e); } }
-  let homeTimer = 0;
-  function saveHome() { clearTimeout(homeTimer); homeTimer = setTimeout(() => api.saveHome({ template: T.key, sizes: HM.sizesOf(T) }).then(ok => { if (!ok) api.toast('户型没保存上，下次打开会回到上次保存的样子，请再调整一次', null, true); }), 300); }
+  // 1.9.0 · 拼户型 saves the blocks (and renames 主卫/公卫 records that moved rooms) in one write.
+  function saveHome(home, renames) {
+    T = HM.planOf(home); planKey = JSON.stringify(HM.sizesOf(T)) + T.key; rebuildAll();
+    api.saveHome(home, renames).then(ok => { if (!ok) api.toast('户型没保存上，下次打开会回到上次保存的样子，请再调整一次', null, true); else api.toast('户型已保存'); });
+  }
 
   /* ---------- modes, tray, sheets ---------- */
   function setMode(m) {
-    if (mode === 'resize' && m !== 'resize') saveHome();
     mode = m; root.dataset.mode = m;
-    q('[data-dock="place"]').hidden = m !== 'place'; q('[data-dock="resize"]').hidden = m !== 'resize';
+    q('[data-dock="place"]').hidden = m !== 'place';
     const pb = q('[data-hv="place"]'), lb = q('[data-hv="layout"]');
-    pb.classList.toggle('on', m === 'place'); lb.classList.toggle('on', m === 'resize');
-    pb.lastChild.textContent = m === 'place' ? '完成' : '摆放'; lb.lastChild.textContent = m === 'resize' ? '完成' : '户型';
-    q('.hv-sub').textContent = m === 'place' ? '点选家具，按住拖动' : m === 'resize' ? '拖动把手调整房间' : '单指转动 · 双指缩放';
+    pb.classList.toggle('on', m === 'place'); lb.hidden = m === 'place';
+    pb.lastChild.textContent = m === 'place' ? '完成' : '摆放';
+    q('.hv-sub').textContent = m === 'place' ? '点选家具，按住拖动' : '单指转动 · 双指缩放';
     if (m !== 'place') select(null);
-    buildHandles(); paintLabels(); renderTray(); paintArea(); fit();
-    if (m === 'resize') tween({ az: PI / 4, pol: .45, zoom: .95, tx: 0, tz: 0 }, 600);
-    else if (view === 'home') resetView(true);
+    paintLabels(); renderTray(); fit();
+    if (view === 'home') resetView(true);
     invalidate();
   }
-  function paintArea() { if (mode === 'resize') q('.hv-area').textContent = `套内约 ${RECTS.reduce((s, { r }) => s + (r[2] - r[0]) * (r[3] - r[1]), 0).toFixed(0)}㎡ · 外墙不动`; }
-  function trayItems() { const d = api.data(); return d.items.filter(i => qualifies(i) && !(i.model && HM.KINDS[i.model.kind])); }
+  // Not placed yet, or placed in a room the plan no longer has (拿掉 in 拼户型): both wait in the tray.
+  function trayItems() { const d = api.data(), rooms = new Set(HM.roomNames(RECTS)); return d.items.filter(i => qualifies(i) && !(i.model && HM.KINDS[i.model.kind] && rooms.has(i.room))); }
   function renderTray() {
     const list = trayItems(), rooms = new Set(HM.roomNames(RECTS));
     q('.hv-tray-n').textContent = list.length ? `· ${list.length}` : '';
@@ -602,17 +576,10 @@ export function createHome(api) {
   function renderTpl() {
     q('.hv-tpl').innerHTML = HM.TEMPLATE_ORDER.map(k => {
       const t = HM.planOf({ template: k }), { rects } = HM.makeRects(t), a = rects.reduce((s, { r }) => s + (r[2] - r[0]) * (r[3] - r[1]), 0);
-      return `<button type="button" data-tplk="${k}" class="${k === T.key ? 'sel' : ''}" aria-pressed="${k === T.key}">${HM.planSvg(t)}<b>${t.n}</b><small>约 ${a.toFixed(0)}㎡</small></button>`;
+      return `<button type="button" data-tplk="${k}">${HM.planSvg(t)}<b>${t.n}</b><small>约 ${a.toFixed(0)}㎡</small></button>`;
     }).join('');
   }
-  function applyHandle(h, p) {
-    const next = HM.moveHandle(T, h.key, p.x, p.z);
-    if (JSON.stringify(next) === JSON.stringify(T)) return;
-    T = HM.planOf({ template: T.key, sizes: HM.sizesOf(next) }); planKey = JSON.stringify(HM.sizesOf(T)) + T.key;
-    if (!rebuildQ) { rebuildQ = true; requestAnimationFrame(() => { rebuildQ = false; rebuildAll(); }); }
-  }
-  let rebuildQ = false;
-  function rebuildAll() { buildHouse(); for (const e of items.values()) placeEntry(e); applyFit(); updateRing(); wallsStep(true); paintArea(); renderTray(); invalidate(); }
+  function rebuildAll() { buildHouse(); for (const e of items.values()) placeEntry(e); applyFit(); updateRing(); wallsStep(true); renderTray(); invalidate(); }
   function placeFromTray(id, kind) {
     const i = api.data().items.find(x => x.id === id); if (!i) return;
     if (!HM.bbox(RECTS, i.room)) { api.toast(`户型里没有「${i.room}」，换个户型或改这笔帐的空间`); return; }
@@ -637,13 +604,11 @@ export function createHome(api) {
     const tile = e.target.closest('[data-look]');
     if (tile) { pick.sel = tile.dataset.look; qa('.hv-tile').forEach(t => { t.classList.toggle('sel', t === tile); t.setAttribute('aria-pressed', String(t === tile)); }); q('[data-hv="pick-ok"]').disabled = false; return; }
     const tk = e.target.closest('[data-tplk]');
-    if (tk) { if (tk.dataset.tplk !== T.key) { T = HM.planOf({ template: tk.dataset.tplk }); planKey = JSON.stringify(HM.sizesOf(T)) + T.key; rebuildAll(); saveHome(); renderTpl(); } return; }
+    if (tk) { const t = HM.planOf({ template: tk.dataset.tplk }); closeSheet(q('[data-sheet="tpl"]')); editor.useTemplate(t, t.n); return; }
     const b = e.target.closest('[data-hv]'); if (!b || b.disabled) return;
     const a = b.dataset.hv;
     if (a === 'place') setMode(mode === 'place' ? 'normal' : 'place');
-    else if (a === 'layout') { if (mode === 'resize') setMode('normal'); else { renderTpl(); openSheet('tpl'); } }
-    else if (a === 'tpl') { renderTpl(); openSheet('tpl'); }
-    else if (a === 'tpl-ok') { closeSheet(); setMode('resize'); }
+    else if (a === 'layout') { setMode('normal'); editor.open(T); }
     else if (a === 'reset') resetView(true);
     else if (a === 'labels') { labelsOn = !labelsOn; paintLabelBtn(); paintLabels(); api.saveUi({ labels: labelsOn }); api.toast(labelsOn ? '已显示房间标签' : '已隐藏房间标签'); }
     else if (a === 'close') closeSheet(b.closest('.hv-sheet'));
@@ -653,6 +618,7 @@ export function createHome(api) {
     else if (a === 'relook') { const e2 = selected; if (!e2) return; openPicker({ sel: e2.model.kind, hint: `给「${e2.name}」换一个外观。`, cb: kind => { if (kind === e2.model.kind) return; api.saveModel(e2.id, { ...e2.model, kind }).then(ok => { if (!ok) api.toast('外观没换成，请再试一次', null, true); if (ok) { syncItems(); const n = items.get(e2.id); if (n?.shown) select(n); else select(null); } }); } }); }
   };
   root.addEventListener('click', onClick); layer.addEventListener('click', onClick);
+  const editor = createPlanEditor({ root, layer, svg, icons: ICON, esc: api.esc, toast: m => api.toast(m, null, 'info'), openSheet, closeSheet, onTemplates: () => { renderTpl(); openSheet('tpl'); }, onDone: saveHome });
   layer.addEventListener('touchstart', e => { const b = e.target.closest('.gbtn'); if (b && e.touches[0]) press(b, e.touches[0].clientX, e.touches[0].clientY); }, { passive: true });
   q('.hv-scrim').addEventListener('click', () => closeSheet());
   layer.addEventListener('keydown', e => { if (e.key === 'Escape' && openSheets.length) { e.stopPropagation(); closeSheet(); } });
@@ -704,13 +670,13 @@ export function createHome(api) {
     view = kind; host = target;
     if (!T) { applyTheme(); setPlan(); }
     if (!layer.isConnected) document.body.appendChild(layer);
-    if (kind === 'home') { target.appendChild(root); slotHome.appendChild(canvas); if (was !== 'home') { closeAll(); setMode('normal'); resetView(false); wallsStep(true); } }
-    else { target.appendChild(canvas); closeAll(); if (mode !== 'normal') { mode = 'normal'; root.dataset.mode = 'normal'; select(null); } cam.pol = VIEW.pol; cam.zoom = 1; cam.tx = cam.tz = 0; tw = null; inertia = null; }
+    if (kind === 'home') { target.appendChild(root); slotHome.appendChild(canvas); if (was !== 'home') { closeAll(); editor.close(); setMode('normal'); resetView(false); wallsStep(true); } }
+    else { target.appendChild(canvas); closeAll(); editor.close(); if (mode !== 'normal') { mode = 'normal'; root.dataset.mode = 'normal'; select(null); } cam.pol = VIEW.pol; cam.zoom = 1; cam.tx = cam.tz = 0; tw = null; inertia = null; }
     spinOn = kind === 'mini' && !reduced();
     resizeObs.observe(target); if (kind === 'mini') { onScreen = true; io?.observe(target); }
     sync(); fit(); wallsStep(true); last = 0; invalidate();
   }
-  function hide() { closeAll(); view = null; if (raf) cancelAnimationFrame(raf); raf = 0; gesture = drag = handleDrag = pinch = null; if (host) { resizeObs.unobserve(host); io?.unobserve(host); } host = null; }
+  function hide() { closeAll(); view = null; if (raf) cancelAnimationFrame(raf); raf = 0; gesture = drag = pinch = null; editor.close(); if (host) { resizeObs.unobserve(host); io?.unobserve(host); } host = null; }
   // 1.5.0 · after a look is recorded: fly to its room and drop it in (instant with reduced motion).
   function reveal(id) {
     if (view !== 'home') return false;
@@ -724,9 +690,11 @@ export function createHome(api) {
     setMode('place'); const e = items.get(id);
     if (e && e.shown) { select(e); focusRoom(e.room, 1.45); }
   }
-  // System Back on 我的家: closes a sheet, then drops the selection, then leaves place/resize mode. False when nothing is open.
+  // System Back on 我的家: closes a sheet, then 拼户型 (saving it, like 完成), then drops the selection, then leaves
+  // place mode. False when nothing is open.
   function back() {
     if (openSheets.length) { closeSheet(); return true; }
+    if (editor.isOpen()) { editor.done(); return true; }
     if (selected) { select(null); return true; }
     if (mode !== 'normal') { setMode('normal'); return true; }
     return false;
@@ -736,6 +704,6 @@ export function createHome(api) {
   function setUi(ui) { if (ui && typeof ui.labels === 'boolean') { labelsOn = ui.labels; paintLabelBtn(); paintLabels(); } }
   paintLabelBtn();
   // Test hooks for the screenshot script: none of these change the ledger.
-  const debug = { cam, items, select: id => select(items.get(id) || null), screen: (id, h = .3) => { const e = items.get(id); if (!e) return null; const r = canvas.getBoundingClientRect(); const [x, y] = project(new THREE.Vector3(e.x, h, e.z)); return [r.left + x, r.top + y]; }, mode: () => mode, setMode };
+  const debug = { cam, items, select: id => select(items.get(id) || null), screen: (id, h = .3) => { const e = items.get(id); if (!e) return null; const r = canvas.getBoundingClientRect(); const [x, y] = project(new THREE.Vector3(e.x, h, e.z)); return [r.left + x, r.top + y]; }, mode: () => mode, setMode, editor: () => editor.debug() };
   return { mount, hide, sync, setUi, openPicker, lendPicker, reveal, arrange, thumbs, back, closeTopSheet, debug };
 }
