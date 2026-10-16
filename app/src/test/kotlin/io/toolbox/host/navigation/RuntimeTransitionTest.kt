@@ -5,81 +5,150 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import io.toolbox.core.ui.component.ToolBoxMotion
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotSame
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
+/**
+ * Composes the same transition holders ToolBoxNavigation uses, so dropping the carry, starting a
+ * replacing tool at Animatable(1f) or losing a per-route key fails here.
+ */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [36])
 class RuntimeTransitionTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
 
-    @Test
-    fun primaryGlassFollowsTheCurrentRoutesHiddenStateAfterAToolSwitch() {
-        // ToolBoxNavigation recreates the runtime transition state per route, so the glass must read
-        // the new route's state after a switch, not the replaced route's.
-        var route by mutableStateOf<RuntimeRoute?>(RuntimeRoute("a"))
-        val hiddenA = mutableStateOf(false)
-        val hiddenB = mutableStateOf(true)
-        var live: Boolean? = null
+    private var route by mutableStateOf<RuntimeRoute?>(null)
+    private var transition: RuntimeTransition? = null
+    private var glassLive: Boolean? = null
+    private var sourceHidden: Boolean? = null
+
+    private fun composeTransition(initial: RuntimeRoute?) {
+        route = initial
         compose.setContent {
-            val current = route
-            val hidden = if (current?.toolId == "b") hiddenB else hiddenA
-            val glassLive by rememberPrimaryGlassLive(current, firstRetainedProgress = null) { hidden.value }
-            live = glassLive
+            val current = rememberRuntimeTransition(route)
+            val live by rememberPrimaryGlassLive(current, firstRetainedProgress = null)
+            val hidden by rememberSourceHidden(current)
+            transition = current
+            glassLive = live
+            sourceHidden = hidden
         }
-        compose.runOnIdle { assertEquals(true, live) }
-
-        route = RuntimeRoute("b")
-        compose.runOnIdle { assertEquals(false, live) }
-
-        hiddenB.value = false
-        compose.runOnIdle { assertEquals(true, live) }
+        compose.waitForIdle()
     }
 
-    @Test
-    fun primaryGlassPausesOnlyOnceTheFirstPageFullyCoversIt() {
-        val progress = Animatable(0.5f)
-        var live: Boolean? = null
-        compose.setContent {
-            val glassLive by rememberPrimaryGlassLive(null, progress) { false }
-            live = glassLive
-        }
-        compose.runOnIdle { assertEquals(true, live) }
+    private fun current() = checkNotNull(transition)
 
-        compose.runOnIdle { runBlocking { progress.snapTo(0f) } }
-        compose.runOnIdle { assertEquals(false, live) }
-    }
+    private fun snap(animatable: Animatable<Float, *>, value: Float) =
+        compose.runOnIdle { runBlocking { animatable.snapTo(value) } }
 
     @Test
     fun aFreshToolOpensFromAFullyVisibleSource() {
-        assertEquals(1f, runtimeEntryStart(opening = true, carriedEntry = null))
-        assertEquals(0f, runtimeEntryStart(opening = false, carriedEntry = 0.4f))
+        composeTransition(null)
+        assertEquals(0f, current().entryProgress.value)
+
+        route = RuntimeRoute("a")
+        compose.waitForIdle()
+        assertEquals(1f, current().entryProgress.value)
+        assertFalse(current().coverBeneathSource)
     }
 
     @Test
-    fun aToolSwitchContinuesTheTransitionInsteadOfReplayingIt() {
-        // Mid-entry: the incoming tool picks up at the outgoing tool's entry progress.
-        val midEntry = runtimeEntryEquivalent(sourceAboveRuntime = false, sourceReturnProgress = 0f, entryProgress = 0.4f)
-        assertEquals(0.4f, runtimeEntryStart(opening = true, carriedEntry = midEntry))
-        // Settled tool: the incoming tool starts with its cover fully shown and the source hidden.
-        val settled = runtimeEntryEquivalent(sourceAboveRuntime = false, sourceReturnProgress = 0f, entryProgress = 0f)
-        assertEquals(0f, runtimeEntryStart(opening = true, carriedEntry = settled))
+    fun aSwitchMidEntryContinuesFromTheReplacedToolsProgress() {
+        composeTransition(RuntimeRoute("a"))
+        val a = current()
+        snap(a.entryProgress, 0.4f)
+
+        route = RuntimeRoute("b")
+        compose.waitForIdle()
+        assertNotSame(a, current())
+        assertEquals(0.4f, current().entryProgress.value)
+        assertFalse(current().coverBeneathSource)
     }
 
     @Test
-    fun aSwitchDuringTheReturnKeepsTheSourceAtTheSameAlpha() {
-        for (returnProgress in listOf(1f, 0.6f, 0.2f, 0f)) {
-            val entry = runtimeEntryEquivalent(sourceAboveRuntime = true, sourceReturnProgress = returnProgress, entryProgress = 0f)
-            val sourceAlphaWhileReturning = 1f - returnProgress
-            val sourceAlphaAfterSwitch = ToolBoxMotion.fadeThroughOutgoingAlpha(1f - entry)
-            assertEquals(sourceAlphaWhileReturning, sourceAlphaAfterSwitch, 0.0001f)
+    fun aSwitchFromASettledToolKeepsTheSourceHidden() {
+        composeTransition(RuntimeRoute("a"))
+        snap(current().entryProgress, 0f)
+        compose.runOnIdle { current().entryCoverVisible = false }
+
+        route = RuntimeRoute("b")
+        compose.waitForIdle()
+        assertEquals(0f, current().entryProgress.value)
+        compose.runOnIdle { assertEquals(true, sourceHidden) }
+    }
+
+    @Test
+    fun aSwitchDuringTheReturnKeepsTheSourceAlphaAndPutsTheCoverBeneathIt() {
+        composeTransition(RuntimeRoute("a"))
+        val a = current()
+        compose.runOnIdle { a.sourceAboveRuntime = true }
+        snap(a.sourceReturnProgress, 0.6f)
+
+        route = RuntimeRoute("b")
+        compose.waitForIdle()
+        val b = current()
+        assertTrue(b.coverBeneathSource)
+        assertEquals(1f - 0.6f, ToolBoxMotion.fadeThroughOutgoingAlpha(1f - b.entryProgress.value), 0.0001f)
+    }
+
+    @Test
+    fun glassAndSourceHiddenFollowTheNewToolAfterASwitch() {
+        composeTransition(RuntimeRoute("a"))
+        snap(current().entryProgress, 0.9f)
+        compose.runOnIdle {
+            assertEquals(true, glassLive)
+            assertEquals(false, sourceHidden)
         }
+
+        route = RuntimeRoute("b")
+        compose.waitForIdle()
+        // The new tool settles: only its state hides the source now.
+        compose.runOnIdle { current().entryCoverVisible = false }
+        compose.runOnIdle {
+            assertEquals(false, glassLive)
+            assertEquals(true, sourceHidden)
+        }
+    }
+
+    @Test
+    fun closingTheToolStartsTheNextOpenFresh() {
+        composeTransition(RuntimeRoute("a"))
+        snap(current().entryProgress, 0f)
+
+        route = null
+        compose.waitForIdle()
+        route = RuntimeRoute("b")
+        compose.waitForIdle()
+        assertEquals(1f, current().entryProgress.value)
+    }
+
+    @Test
+    fun aToolRestoredAfterRecreationStartsSettledInsteadOfReplayingItsEntry() {
+        val restoration = StateRestorationTester(compose)
+        var restored: RuntimeTransition? = null
+        restoration.setContent { restored = rememberRuntimeTransition(RuntimeRoute("a")) }
+        compose.waitForIdle()
+        assertEquals(1f, checkNotNull(restored).entryProgress.value)
+
+        restoration.emulateSavedInstanceStateRestore()
+        compose.waitForIdle()
+        assertEquals(0f, checkNotNull(restored).entryProgress.value)
+    }
+
+    @Test
+    fun runtimeEntryStartMapsOpeningAndCarry() {
+        assertEquals(1f, runtimeEntryStart(opening = true, carriedEntry = null))
+        assertEquals(0.4f, runtimeEntryStart(opening = true, carriedEntry = 0.4f))
+        assertEquals(0f, runtimeEntryStart(opening = false, carriedEntry = 0.4f))
     }
 }

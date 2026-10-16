@@ -9,6 +9,7 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.AnimationVector1D
 import androidx.compose.foundation.background
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.Stable
 import androidx.compose.runtime.State
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 import androidx.compose.foundation.layout.Box
@@ -73,22 +74,90 @@ internal fun pageFullyCovered(coveringProgress: Float?): Boolean =
 internal fun pageOffScreen(progress: Float): Boolean = progress >= 1f - GlassHiddenEdge
 
 /**
- * The primary screen's glass is live unless the runtime transition hides its layer or the first
- * secondary page fully covers it. Keyed on [runtimeRoute] as well: [sourceHiddenByRuntime] reads
- * state that is recreated per route, and a stale capture would keep reading the previous route's.
+ * One tool's runtime transition: the fade-through into the tool, the return to the source, and
+ * the flags that gate each step. A new holder is made per route; [rememberRuntimeTransition]
+ * seeds it from the holder it replaces so a tool switch continues instead of replaying.
+ */
+@Stable
+internal class RuntimeTransition(
+    val route: RuntimeRoute?,
+    initialEntry: Float,
+    /** The replaced tool was returning, so this tool's cover sits beneath the fading source. */
+    val coverBeneathSource: Boolean,
+) {
+    /** 1 = source fully shown, 0 = cover (then tool) fully shown. */
+    val entryProgress = Animatable(initialEntry)
+    /** 1 = tool fully shown under the returning source, 0 = source fully shown. */
+    val sourceReturnProgress = Animatable(0f)
+    var runtimeLayerEnabled by mutableStateOf(false)
+    var entryCoverVisible by mutableStateOf(route != null)
+    var sourceAboveRuntime by mutableStateOf(false)
+    var runtimePresentationReady by mutableStateOf(false)
+    var runtimeLeaving by mutableStateOf(false)
+    var entryCoverMeasured by mutableStateOf(false)
+
+    /** True once the transition fully hides the source layer (primary screen and retained pages). */
+    val sourceHidden: Boolean
+        get() = sourceLayerHiddenByRuntime(
+            runtimeOpen = route != null,
+            sourceAboveRuntime = sourceAboveRuntime,
+            sourceReturnProgress = sourceReturnProgress.value,
+            entryCoverVisible = entryCoverVisible,
+            entryProgress = entryProgress.value,
+        )
+
+    /** Where this transition stands, as the entry progress a replacing tool should start from. */
+    fun entryEquivalent(): Float = runtimeEntryEquivalent(
+        sourceAboveRuntime = sourceAboveRuntime,
+        sourceReturnProgress = sourceReturnProgress.value,
+        entryProgress = entryProgress.value,
+    )
+}
+
+/**
+ * The transition for [runtimeRoute], recreated when the route changes. A tool that replaces
+ * another starts where the replaced tool's transition stood; a tool restored after the activity
+ * was recreated (rotation) starts settled instead of replaying its entry over the source.
+ */
+@Composable
+internal fun rememberRuntimeTransition(runtimeRoute: RuntimeRoute?): RuntimeTransition {
+    val previous = remember { arrayOfNulls<RuntimeTransition>(1) }
+    // Saved per tool, so it survives recreation; reset whenever a different tool opens.
+    var shownBefore by rememberSaveable(runtimeRoute?.toolId) { mutableStateOf(false) }
+    val transition = remember(runtimeRoute) {
+        val replaced = previous[0]?.takeIf { runtimeRoute != null }
+        RuntimeTransition(
+            route = runtimeRoute,
+            initialEntry = runtimeEntryStart(
+                opening = runtimeRoute != null,
+                carriedEntry = replaced?.entryEquivalent() ?: if (shownBefore) 0f else null,
+            ),
+            coverBeneathSource = replaced?.sourceAboveRuntime == true,
+        )
+    }
+    SideEffect {
+        previous[0] = transition.takeIf { runtimeRoute != null }
+        if (runtimeRoute != null) shownBefore = true
+    }
+    return transition
+}
+
+/** Whether [transition] fully hides the source layer, derived so only that edge recomposes. */
+@Composable
+internal fun rememberSourceHidden(transition: RuntimeTransition): State<Boolean> =
+    remember(transition) { derivedStateOf { transition.sourceHidden } }
+
+/**
+ * The primary screen's glass is live unless [transition] hides its layer or the first secondary
+ * page fully covers it. Keyed on the transition, which is recreated per route: a stale capture
+ * would keep reading the replaced tool's state.
  */
 @Composable
 internal fun rememberPrimaryGlassLive(
-    runtimeRoute: RuntimeRoute?,
+    transition: RuntimeTransition,
     firstRetainedProgress: Animatable<Float, AnimationVector1D>?,
-    sourceHiddenByRuntime: () -> Boolean,
-): State<Boolean> = remember(runtimeRoute, firstRetainedProgress) {
-    derivedStateOf { !sourceHiddenByRuntime() && !pageFullyCovered(firstRetainedProgress?.value) }
-}
-
-/** Holds how far the current tool's transition has gone, read when another tool replaces it. */
-internal class RuntimeEntryCarry {
-    var current: (() -> Float)? = null
+): State<Boolean> = remember(transition, firstRetainedProgress) {
+    derivedStateOf { !transition.sourceHidden && !pageFullyCovered(firstRetainedProgress?.value) }
 }
 
 /**
@@ -213,32 +282,15 @@ internal fun ToolBoxNavigation(
     fun progressFor(route: ToolBoxRoute) = pageProgress.getOrPut(route) { Animatable(1f) }
     SideEffect { pageProgress.keys.retainAll(retainedRoutes.toSet()) }
     val firstRetainedProgress = retainedRoutes.firstOrNull()?.let(::progressFor)
-    // Switching tools mid-transition (one tool replaces another) continues the fade-through from
-    // where the outgoing tool's transition stood instead of replaying it from a fully visible source.
-    val runtimeEntryCarry = remember { RuntimeEntryCarry() }
-    val entryProgress = remember(runtimeRoute) {
-        Animatable(runtimeEntryStart(opening = runtimeRoute != null, carriedEntry = runtimeEntryCarry.current?.invoke()))
-    }
-    val sourceReturnProgress = remember(runtimeRoute) { Animatable(0f) }
-    var runtimeLayerEnabled by remember(runtimeRoute) { mutableStateOf(false) }
-    var entryCoverVisible by remember(runtimeRoute) { mutableStateOf(runtimeRoute != null) }
-    var sourceAboveRuntime by remember(runtimeRoute) { mutableStateOf(false) }
-    var runtimePresentationReady by remember(runtimeRoute) { mutableStateOf(false) }
-    var runtimeLeaving by remember(runtimeRoute) { mutableStateOf(false) }
-    var entryCoverMeasured by remember(runtimeRoute) { mutableStateOf(false) }
-    SideEffect {
-        runtimeEntryCarry.current = if (runtimeRoute == null) {
-            null
-        } else {
-            {
-                runtimeEntryEquivalent(
-                    sourceAboveRuntime = sourceAboveRuntime,
-                    sourceReturnProgress = sourceReturnProgress.value,
-                    entryProgress = entryProgress.value,
-                )
-            }
-        }
-    }
+    val transition = rememberRuntimeTransition(runtimeRoute)
+    val entryProgress = transition.entryProgress
+    val sourceReturnProgress = transition.sourceReturnProgress
+    var runtimeLayerEnabled by transition::runtimeLayerEnabled
+    var entryCoverVisible by transition::entryCoverVisible
+    var sourceAboveRuntime by transition::sourceAboveRuntime
+    var runtimePresentationReady by transition::runtimePresentationReady
+    var runtimeLeaving by transition::runtimeLeaving
+    var entryCoverMeasured by transition::entryCoverMeasured
     val layoutDirection = LocalLayoutDirection.current
     val trailingDirection = if (layoutDirection == LayoutDirection.Rtl) -1f else 1f
 
@@ -292,18 +344,8 @@ internal fun ToolBoxNavigation(
     // seen, through the runtime fade-through and under a sliding secondary page, and pauses only
     // once the screen is fully hidden: a stand-in swapped in mid-transition reads as the bar
     // changing material. Derived, so only the hidden edge recomposes the glass readers.
-    val sourceHiddenByRuntime by remember(runtimeRoute) {
-        derivedStateOf {
-            sourceLayerHiddenByRuntime(
-                runtimeOpen = runtimeRoute != null,
-                sourceAboveRuntime = sourceAboveRuntime,
-                sourceReturnProgress = sourceReturnProgress.value,
-                entryCoverVisible = entryCoverVisible,
-                entryProgress = entryProgress.value,
-            )
-        }
-    }
-    val primaryGlassLive by rememberPrimaryGlassLive(runtimeRoute, firstRetainedProgress) { sourceHiddenByRuntime }
+    val sourceHiddenByRuntime by rememberSourceHidden(transition)
+    val primaryGlassLive by rememberPrimaryGlassLive(transition, firstRetainedProgress)
 
     Box(
         modifier = Modifier
@@ -478,22 +520,34 @@ internal fun ToolBoxNavigation(
         }
 
         if (runtimeRoute != null && entryCoverVisible) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .zIndex(3f)
-                    .onGloballyPositioned { coordinates ->
-                        if (coordinates.size.width > 0 && coordinates.size.height > 0) {
-                            entryCoverMeasured = true
+            // Keyed per tool: a tool switch gives the new cover a fresh node, so its first
+            // placement reports entryCoverMeasured and the entry starts.
+            key(runtimeRoute) {
+                // After a switch during a return the source is still half-transparent; the new
+                // cover fills in opaque beneath it (where the replaced tool was) until the
+                // source has faded out, instead of leaving the bare background showing through.
+                val coverBeneath = transition.coverBeneathSource && !sourceHiddenByRuntime
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .zIndex(if (coverBeneath) -1f else 3f)
+                        .onGloballyPositioned { coordinates ->
+                            if (coordinates.size.width > 0 && coordinates.size.height > 0) {
+                                entryCoverMeasured = true
+                            }
                         }
-                    }
-                    .graphicsLayer {
-                        val motion = entryProgress.value.coerceIn(0f, 1f)
-                        translationX = trailingDirection * motion * PageShiftPx
-                        alpha = ToolBoxMotion.fadeThroughIncomingAlpha(1f - motion)
-                    },
-            ) {
-                RuntimeShellPreviewContent(toolName = runtimeTitle)
+                        .graphicsLayer {
+                            val motion = entryProgress.value.coerceIn(0f, 1f)
+                            translationX = trailingDirection * motion * PageShiftPx
+                            alpha = if (transition.coverBeneathSource) {
+                                1f
+                            } else {
+                                ToolBoxMotion.fadeThroughIncomingAlpha(1f - motion)
+                            }
+                        },
+                ) {
+                    RuntimeShellPreviewContent(toolName = runtimeTitle)
+                }
             }
         }
 
