@@ -14,6 +14,7 @@ export const STORED_SETTINGS = {
   sortField: "published_at",
   showHiddenFeeds: false,
   hideDuplicateArticles: true,
+  duplicateMatch: "either",
   markAsReadOnScroll: false,
   cardImageSize: "large",
   articleListStyle: "lines",
