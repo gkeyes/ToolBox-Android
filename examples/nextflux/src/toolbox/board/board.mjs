@@ -121,22 +121,28 @@ function looseJson(text) {
   try { return JSON.parse(dropTrailingCommas(text)); } catch { return null; }
 }
 
-// An article reference as the AI wrote it: 3, "3", "[3]", "2.0", a list
-// "1,2" / "1、2", or a range "1-3". Anything else names no article.
+// An article reference as the AI wrote it: 3, "3", "[3]", "2.0", "第3篇",
+// full-width "３", a list "1,2" / "1、2" / "1,2-3", or a range "1-3" (also
+// reversed "3-1"). A range is trimmed to the articles there are; anything
+// else names no article.
 const MAX_RANGE = 100;
+const ITEM = /^\[?第?(\d+)(?:\.0+)?篇?\]?$/;
+const RANGE = /^\[?第?(\d+)篇?\s*[-–—~至到]\s*第?(\d+)篇?\]?$/;
 export function articleNumbers(value, count) {
   if (typeof value === "number") return Number.isInteger(value) ? [value] : [];
-  const text = String(value ?? "").trim();
-  const range = text.match(/^\[?(\d+)\s*[-–—~～至到]\s*(\d+)\]?$/);
-  if (range) {
-    const [from, to] = [Number(range[1]), Number(range[2])];
-    if (from > to || to - from >= Math.min(count, MAX_RANGE)) return [];
-    return Array.from({ length: to - from + 1 }, (_, index) => from + index);
-  }
-  const whole = text.match(/^\[?(\d+)(?:\.0+)?\]?$/);
-  if (whole) return [Number(whole[1])];
-  if (/^[\d\s,，、;；\[\]]+$/.test(text)) return (text.match(/\d+/g) || []).map(Number);
-  return [];
+  // NFKC turns full-width digits and ～ into their ASCII forms.
+  const parts = String(value ?? "").normalize("NFKC").trim().split(/\s*[,，、;；]\s*/);
+  return parts.flatMap((part) => {
+    const range = part.match(RANGE);
+    if (range) {
+      const [a, b] = [Number(range[1]), Number(range[2])];
+      const from = Math.max(1, Math.min(a, b));
+      const to = Math.min(Math.max(a, b), Number.isFinite(count) ? count : from + MAX_RANGE - 1);
+      return to < from ? [] : Array.from({ length: Math.min(to - from + 1, MAX_RANGE) }, (_, index) => from + index);
+    }
+    const item = part.match(ITEM);
+    return item ? [Number(item[1])] : [];
+  });
 }
 
 // When the reply is not valid JSON at all (an unescaped " inside a summary,
@@ -156,7 +162,8 @@ export function salvageTopics(raw, count = Infinity) {
       const end = rest.search(/"\s*(?:,\s*"[A-Za-z_]+"\s*:|\})/);
       return end >= 0 ? unescape(rest.slice(0, end)) : "";
     };
-    const numbers = part.match(/"articles"\s*:\s*\[([^\]]*)\]/);
+    // The list may hold bracketed items ("[3]" or [3]), so an inner ] does not end it.
+    const numbers = part.match(/"articles"\s*:\s*\[((?:"[^"]*"|\[[^\]"]*\]|[^\]"[])*)\]/);
     return { title: field("title"), gist: field("gist"), summary: field("summary"), articles: numbers ? (numbers[1].match(/"[^"]*"|[^,\s"]+/g) || []).flatMap((item) => articleNumbers(item.replace(/^"|"$/g, ""), count)) : [] };
   }).filter((topic) => topic.title && topic.articles.length);
 }
