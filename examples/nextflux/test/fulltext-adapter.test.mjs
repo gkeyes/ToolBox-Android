@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { contentMetrics, testScraperRule, applyScraperRule, replayScraperRollbacks } from "../src/toolbox/fulltext-adapter/fulltext-server.mjs";
+import { contentMetrics, testScraperRule, applyScraperRule, replayScraperRollbacks, assertNoPendingRollback } from "../src/toolbox/fulltext-adapter/fulltext-server.mjs";
 import { createRollbackJournal } from "../src/toolbox/fulltext-adapter/rollback-journal.mjs";
 import { isMiniMaxProvider, parseScraperCandidate } from "../src/toolbox/fulltext-adapter/fulltext-ai.mjs";
 
@@ -148,7 +148,68 @@ test("a rollback that could not be replayed blocks a new test of that feed", asy
   const offline = { ...a, getFeed: async () => { throw new Error("offline"); } };
   assert.equal((await replayScraperRollbacks({ api: offline, journal })).length, 1);
   await assert.rejects(testScraperRule({ feedId: 1, entryId: 9, candidate: ".new", baselineRule: "article", api: a, journal }), { code: "ROLLBACK_PENDING" });
-  assert.deepEqual(await journal.list(), [{ feedId: 1, candidate: "article", baselineRule: ".old" }]);
+  assert.deepEqual(await journal.list(), [{ feedId: 1, candidate: "article", baselineRule: ".old", failure: "network" }]);
   assert.deepEqual(await replayScraperRollbacks({ api: a, journal }), []);
   assert.equal((await a.getFeed()).scraper_rules, ".old");
+});
+
+test("a refused rollback says so, and a network one says to check the network", async () => {
+  const storage = memoryStorage();
+  const journal = createRollbackJournal({ storage, account: "s#1" });
+  const a = api();
+  await a.updateFeed(1, { scraper_rules: "article" });
+  await journal.save({ feedId: 1, candidate: "article", baselineRule: ".old" });
+  const refusing = { ...a, updateFeed: async () => { throw Object.assign(new Error("400"), { response: { status: 400 } }); } };
+  const pending = await replayScraperRollbacks({ api: refusing, journal });
+  assert.equal(pending[0].failure, "server");
+  assert.throws(() => assertNoPendingRollback(pending, 1), (e) => e.code === "ROLLBACK_PENDING" && e.failure === "server" && /拒绝/.test(e.message));
+  assert.throws(() => assertNoPendingRollback([{ ...pending[0], failure: "network" }], 1), (e) => /网络/.test(e.message));
+  assert.doesNotThrow(() => assertNoPendingRollback(pending, 2));
+});
+
+test("apply keeps an owed rollback until its rule is saved", async () => {
+  const storage = memoryStorage();
+  const journal = createRollbackJournal({ storage, account: "s#1" });
+  const a = api();
+  await a.updateFeed(1, { scraper_rules: "article" });
+  await journal.save({ feedId: 1, candidate: "article", baselineRule: ".old" });
+  await assert.rejects(applyScraperRule({ feedId: 1, candidate: ".new", baselineRule: ".old", api: a, journal }), { code: "CONFLICT" });
+  assert.equal((await journal.list()).length, 1);
+});
+
+test("a candidate write whose reply was lost is still rolled back", async () => {
+  const storage = memoryStorage();
+  const journal = createRollbackJournal({ storage, account: "s#1" });
+  const a = api();
+  const update = a.updateFeed;
+  let dropped = false;
+  a.updateFeed = async (id, patch) => {
+    const result = await update(id, patch);
+    if (patch.scraper_rules === "article" && !dropped) { dropped = true; throw new Error("reply lost"); }
+    return result;
+  };
+  await assert.rejects(testScraperRule({ feedId: 1, entryId: 9, candidate: "article", baselineRule: ".old", api: a, journal }), /reply lost/);
+  assert.equal((await a.getFeed()).scraper_rules, ".old");
+  assert.deepEqual(await journal.list(), []);
+  // Offline right after the lost reply: the entry stays for the next start.
+  const b = api();
+  const updateB = b.updateFeed;
+  let offline = false;
+  b.updateFeed = async (id, patch) => { if (offline) throw new Error("offline"); const r = await updateB(id, patch); offline = true; throw new Error("reply lost"); };
+  b.getFeed = ((get) => async () => { const feed = await get(); if (offline && feed.scraper_rules === "article") throw new Error("offline"); return feed; })(b.getFeed);
+  await assert.rejects(testScraperRule({ feedId: 1, entryId: 9, candidate: "article", baselineRule: ".old", api: b, journal }));
+  assert.equal((await journal.list())[0]?.failure, "network");
+});
+
+test("apply drops an owed rollback only for a saved rule, and writes nothing if it cannot drop it", async () => {
+  const storage = memoryStorage();
+  const journal = createRollbackJournal({ storage, account: "s#1" });
+  const a = api();
+  await journal.save({ feedId: 1, candidate: "article", baselineRule: ".old" });
+  const failing = { ...journal, clear: async () => { throw new Error("storage"); } };
+  await assert.rejects(applyScraperRule({ feedId: 1, candidate: "article", baselineRule: ".old", api: a, journal: failing }), /storage/);
+  assert.equal(a.writes.length, 0);
+  await applyScraperRule({ feedId: 1, candidate: "article", baselineRule: ".old", api: a, journal });
+  assert.equal((await a.getFeed()).scraper_rules, "article");
+  assert.deepEqual(await journal.list(), []);
 });
