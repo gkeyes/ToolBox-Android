@@ -43,6 +43,7 @@ internal fun RetainedSecondaryPage(
     progress: Animatable<Float, AnimationVector1D>,
     coveredBy: Animatable<Float, AnimationVector1D>?,
     isTop: Boolean,
+    hiddenByRuntime: Boolean,
     modifier: Modifier = Modifier,
     onRemove: () -> Unit,
     content: @Composable (() -> Unit, () -> Unit) -> Unit,
@@ -88,9 +89,13 @@ internal fun RetainedSecondaryPage(
             throw cancelled
         }
     }
-    // Read the push progress only for its settled edge, so a running transition does not
-    // recompose the page on every frame.
-    val settled by remember(progress) { derivedStateOf { progress.value <= 0.001f } }
+    // The page's glass chrome stays live for as long as any of the page can be seen: while it
+    // slides in or out, follows predictive back, or sits under a page sliding over it. It pauses
+    // only off screen or fully covered, so the bars never swap material mid-slide. Derived, so a
+    // running transition recomposes only on those edges, not every frame.
+    val glassVisible by remember(progress, coveredBy) {
+        derivedStateOf { !pageOffScreen(progress.value) && !pageFullyCovered(coveredBy?.value) }
+    }
     Box(
         modifier = modifier
             .fillMaxSize()
@@ -116,7 +121,7 @@ internal fun RetainedSecondaryPage(
             .then(if (isTop) Modifier else Modifier.clearAndSetSemantics { }),
     ) {
         NavigationInputBlocker()
-        ToolBoxGlassActivity(active = isTop && !leaving && settled) {
+        ToolBoxGlassActivity(active = glassVisible && !hiddenByRuntime) {
             content(requestBack) { contentReady = true }
         }
     }
