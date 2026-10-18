@@ -110,6 +110,39 @@ test("touchcancel drops an active swipe and the next gesture starts cleanly", ()
   h.detach();
 });
 
+test("touchcancel with remaining touches cannot block the next single-finger swipe", () => {
+  for (const touches of [[point(80, 0)], [point(80, 0), point(100, 20, 1)]]) {
+    const h = harness();
+    h.start();
+    h.move(80, 0);
+    h.dispatch("touchcancel", touches, [point(80, 0)]);
+    assert.equal(h.gestureRef.current, null);
+    assert.equal(h.move(100, 0).defaultPrevented, false);
+    assert.equal(h.calls(), 0);
+    // A canceled stream need not deliver touchend before the next touchstart.
+    h.start();
+    assert.equal(h.move(80, 0).defaultPrevented, true);
+    h.end(80, 0);
+    assert.equal(h.calls(), 1);
+    h.detach();
+  }
+});
+
+test("a fresh single-finger start recovers after a multi-touch stream loses its end", () => {
+  const h = harness();
+  h.start();
+  h.move(60, 0);
+  h.dispatch("touchstart", [point(60, 0), point(80, 20, 1)]);
+  assert.equal(h.move(100, 0).defaultPrevented, false);
+  assert.equal(h.calls(), 0);
+  // Only one active contact at a new start proves the old contacts have left.
+  h.dispatch("touchstart", [point(20, 0, 2)]);
+  assert.equal(h.dispatch("touchmove", [point(100, 0, 2)]).defaultPrevented, true);
+  h.dispatch("touchend", [], [point(100, 0, 2)]);
+  assert.equal(h.calls(), 1);
+  h.detach();
+});
+
 test("a second finger cancels until all fingers lift, even when the first finger remains", () => {
   for (const type of ["touchstart", "touchmove"]) {
     const h = harness();

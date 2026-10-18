@@ -85,7 +85,8 @@ export function attachSwipeGesture(document, { gestureRef, getOptions, isBlocked
   const handleTouchStart = (event) => {
     // A second finger or an excluded new start invalidates the entire old gesture.
     cancel(event, "restart");
-    if (event.touches.length > 1) ignoreUntilEnd = true;
+    // A fresh single-contact start also recovers when the old stream lost its end.
+    ignoreUntilEnd = event.touches.length > 1;
     if (ignoreUntilEnd) return;
     if (event.touches.length !== 1 || blocked(event) || shouldExcludeSwipeTarget(event.target)) return;
     const touch = event.touches[0];
@@ -159,7 +160,8 @@ export function attachSwipeGesture(document, { gestureRef, getOptions, isBlocked
     if (touch.clientX - gesture.startX > threshold) onSwipeRight?.();
   };
   const handleTouchCancel = (event) => {
-    ignoreUntilEnd = Boolean(event.touches.length);
+    // Cancellation can leave reported contacts without a later touchend.
+    ignoreUntilEnd = false;
     cancel(event, "touchcancel");
   };
 
