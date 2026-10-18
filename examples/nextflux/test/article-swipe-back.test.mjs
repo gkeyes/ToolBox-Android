@@ -315,6 +315,46 @@ test("touchcancel and a second finger animate back without a navigation", () => 
   }
 });
 
+test("a canceled stream without touchend restores the shell and allows the next swipe back", () => {
+  withAnimationClock((clock) => {
+    const h = harness(clock);
+    h.start();
+    h.move(220, 100, { timeStamp: 20 });
+    h.dispatch("touchcancel", [point(220)], [point(220)], { timeStamp: 30 });
+    clock.settle();
+    assert.equal(h.offset(), 0);
+    assert.equal(h.backs(), 0);
+    assert.deepEqual(h.active, [true, false]);
+
+    h.start();
+    assert.equal(h.move(100).defaultPrevented, true);
+    assert.equal(h.offset(), 60);
+    h.end(100);
+    clock.settle();
+    assert.equal(h.offset(), 360);
+    assert.equal(h.backs(), 1);
+    assert.deepEqual(h.active, [true, false, true, false]);
+    h.detach();
+  });
+});
+
+test("stale WebView contacts do not block an interior drag or bypass the real system edge", () => {
+  for (const startX of [40, 5, 355]) {
+    withAnimationClock((clock) => {
+      const h = harness(clock);
+      const stale = [point(0, 200, 1), point(200, 220, 2)];
+      h.dispatch("touchstart", [...stale, point(startX)], [point(startX)]);
+      const move = h.dispatch("touchmove", [...stale, point(startX + 60)], [point(startX + 60)], { timeStamp: 20 });
+      assert.equal(move.defaultPrevented, startX === 40);
+      assert.equal(h.offset(), startX === 40 ? 60 : 0);
+      h.dispatch("touchend", stale, [point(startX + 60)], { timeStamp: 200 });
+      clock.settle();
+      assert.equal(h.backs(), startX === 40 ? 1 : 0);
+      h.detach();
+    });
+  }
+});
+
 test("selection/modal/gallery blockers at release and during settle cannot navigate", () => {
   for (const blocker of ["select", "block"]) {
     for (const afterRelease of [false, true]) {

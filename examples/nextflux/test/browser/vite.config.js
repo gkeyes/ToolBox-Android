@@ -30,6 +30,10 @@ const sidebarCatalogViews = new Set([
   "ArticlesGroup.jsx", "FeedsGroup.jsx", "SyncButton.jsx", "AddFeedButton.jsx", "ProfileButton.jsx",
   "SidebarFeedNotifications.jsx", "FeedNotifyPrompts.jsx",
 ].map((name) => path.join(sourceRoot, "components/FeedList/components", name)));
+const notificationComponent = path.join(sourceRoot, "components/FeedList/components/SidebarFeedNotifications.jsx");
+const notificationBoundaries = new Set([
+  "stores/feedsStore.js", "toolbox/background.js", "toolbox/feed-notifications.js",
+].map((name) => path.join(sourceRoot, name)));
 const controlBoundaries = new Set([
   "toolbox/actions.js", "handlers/articleHandlers.js",
   "stores/articlesStore", "stores/articlesStore.js",
@@ -56,7 +60,7 @@ export default defineConfig({
   root: fixture,
   // The navigation fixture uses a different account boundary at its importers.
   // Scan the original entries together; navigation imports resolve individually.
-  optimizeDeps: { entries: ["index.html", "controls.html", "controls-main.jsx", "controls-sidebar.jsx", "title-filter.html", "media-compat.html", "touch-press.html"] },
+  optimizeDeps: { entries: ["index.html", "controls.html", "controls-main.jsx", "controls-sidebar.jsx", "sidebar-notifications.html", "title-filter.html", "media-compat.html", "touch-press.html"] },
   plugins: [
     {
       name: "reading-test-boundaries",
@@ -65,6 +69,11 @@ export default defineConfig({
         // Vite's alias plugin may resolve @ before this hook. Recognize both
         // forms, and scope mocks to the real controls rather than all imports.
         const file = importer?.split("?")[0];
+        // Only the dedicated fixture's module instance receives notification state.
+        if (file === notificationComponent && new URLSearchParams(importer?.split("?")[1]).has("sidebarNotificationsFixture")) {
+          const resolved = source.startsWith("@/") ? path.join(sourceRoot, source.slice(2)) : source;
+          if (notificationBoundaries.has(resolved)) return path.join(fixture, "sidebar-notifications-state.js");
+        }
         if (sidebarComponents.has(file)) {
           const resolved = source.startsWith("@/") ? path.join(sourceRoot, source.slice(2)) : source;
           if (sidebarBoundaries.has(resolved)) return path.join(fixture, "controls-sidebar-state.js");

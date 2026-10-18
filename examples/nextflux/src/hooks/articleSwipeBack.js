@@ -161,7 +161,7 @@ export function attachArticleSwipeBack(page, { getOptions, isBlocked = () => fal
     isBlocked: (event) => {
       if (unavailable() || Boolean(event && !page.contains(event.target))) return true;
       if (event?.type !== "touchstart") return false;
-      const x = event.touches[0]?.clientX;
+      const x = (event.changedTouches?.[0] ?? event.touches[0])?.clientX;
       const viewportWidth = view?.innerWidth || page.clientWidth;
       return x < SYSTEM_EDGE_PX || x > viewportWidth - SYSTEM_EDGE_PX;
     },

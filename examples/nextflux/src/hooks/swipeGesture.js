@@ -40,6 +40,21 @@ export function shouldExcludeSwipeTarget(target) {
 export function attachSwipeGesture(document, { gestureRef, getOptions, isBlocked = () => false }) {
   let ignoreUntilEnd = false;
   let lastScrollAt = -Infinity;
+  const activeTouchIds = new Set();
+  // WebView can keep canceled contacts in touches indefinitely. Only contacts
+  // observed starting or changing in this stream participate in the gesture.
+  const activeTouches = (event, includeChanged = false) => {
+    const touches = Array.from(event.touches);
+    for (const identifier of activeTouchIds) {
+      if (!touches.some((touch) => touch.identifier === identifier)) activeTouchIds.delete(identifier);
+    }
+    if (includeChanged) {
+      for (const touch of event.changedTouches?.length ? event.changedTouches : touches) {
+        activeTouchIds.add(touch.identifier);
+      }
+    }
+    return touches.filter((touch) => activeTouchIds.has(touch.identifier));
+  };
   const enabled = (event) => {
     const value = getOptions().enabled;
     return typeof value === "function" ? value(event) : value !== false;
@@ -85,10 +100,15 @@ export function attachSwipeGesture(document, { gestureRef, getOptions, isBlocked
   const handleTouchStart = (event) => {
     // A second finger or an excluded new start invalidates the entire old gesture.
     cancel(event, "restart");
-    if (event.touches.length > 1) ignoreUntilEnd = true;
+    const starts = Array.from(event.changedTouches?.length ? event.changedTouches : event.touches);
+    // An active identifier cannot legitimately start again before ending.
+    if (event.touches.length === 1 || starts.some((touch) => activeTouchIds.has(touch.identifier))) activeTouchIds.clear();
+    const touches = activeTouches(event, true);
+    // A fresh single-contact start also recovers when the old stream lost its end.
+    ignoreUntilEnd = touches.length > 1;
     if (ignoreUntilEnd) return;
-    if (event.touches.length !== 1 || blocked(event) || shouldExcludeSwipeTarget(event.target)) return;
-    const touch = event.touches[0];
+    if (touches.length !== 1 || blocked(event) || shouldExcludeSwipeTarget(event.target)) return;
+    const touch = touches[0];
     gestureRef.current = {
       identifier: touch.identifier,
       startX: touch.clientX,
@@ -104,11 +124,12 @@ export function attachSwipeGesture(document, { gestureRef, getOptions, isBlocked
   };
 
   const handleTouchMove = (event) => {
+    const touches = activeTouches(event, true);
     const gesture = gestureRef.current;
     if (!gesture) return;
-    const touch = event.touches[0];
-    if (event.touches.length !== 1 || touch?.identifier !== gesture.identifier || blocked(event)) {
-      if (event.touches.length > 1) ignoreUntilEnd = true;
+    const touch = touches[0];
+    if (touches.length !== 1 || touch?.identifier !== gesture.identifier || blocked(event)) {
+      if (touches.length > 1) ignoreUntilEnd = true;
       cancel(event, "blocked");
       return;
     }
@@ -139,10 +160,12 @@ export function attachSwipeGesture(document, { gestureRef, getOptions, isBlocked
   };
 
   const handleTouchEnd = (event) => {
+    for (const touch of event.changedTouches) activeTouchIds.delete(touch.identifier);
+    const touches = activeTouches(event);
     const gesture = gestureRef.current;
-    if (!event.touches.length) ignoreUntilEnd = false;
+    if (!touches.length) ignoreUntilEnd = false;
     if (!gesture) return;
-    if (event.touches.length || blocked(event)) {
+    if (touches.length || blocked(event)) {
       cancel(event, "blocked");
       return;
     }
@@ -159,11 +182,24 @@ export function attachSwipeGesture(document, { gestureRef, getOptions, isBlocked
     if (touch.clientX - gesture.startX > threshold) onSwipeRight?.();
   };
   const handleTouchCancel = (event) => {
-    ignoreUntilEnd = Boolean(event.touches.length);
+    // Cancellation can leave reported contacts without a later touchend.
+    activeTouchIds.clear();
+    ignoreUntilEnd = false;
     cancel(event, "touchcancel");
   };
 
+  const interrupt = (event) => {
+    activeTouchIds.clear();
+    ignoreUntilEnd = false;
+    cancel(event, event.type);
+  };
+  const handleVisibility = (event) => {
+    if (document.visibilityState === "hidden") interrupt(event);
+  };
+
   const handleScroll = (event) => { lastScrollAt = Number(event.timeStamp) || 0; };
+  document.defaultView?.addEventListener("blur", interrupt);
+  document.addEventListener("visibilitychange", handleVisibility);
   document.addEventListener("scroll", handleScroll, { capture: true, passive: true });
   document.addEventListener("touchstart", handleTouchStart, { passive: true });
   document.addEventListener("touchmove", handleTouchMove, { passive: false });
@@ -172,6 +208,9 @@ export function attachSwipeGesture(document, { gestureRef, getOptions, isBlocked
 
   return () => {
     cancel(undefined, "detach");
+    activeTouchIds.clear();
+    document.defaultView?.removeEventListener("blur", interrupt);
+    document.removeEventListener("visibilitychange", handleVisibility);
     document.removeEventListener("scroll", handleScroll, { capture: true });
     document.removeEventListener("touchstart", handleTouchStart);
     document.removeEventListener("touchmove", handleTouchMove);

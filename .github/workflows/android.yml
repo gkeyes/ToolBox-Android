@@ -113,7 +113,7 @@ jobs:
     outputs:
       checks: ${{ steps.scope.outputs.checks }}
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
           # A pull request compares its head with the commit it branched from (full history). The depth is
@@ -148,7 +148,7 @@ jobs:
           fi
           echo "checks=$checks" >> "$GITHUB_OUTPUT"
           echo "Android emulator behavior checks: \`$checks\`" >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
           node-version: "22"
       - name: Verify API contract, embedded SDK, and security entry points
@@ -157,12 +157,12 @@ jobs:
         run: node --test scripts/tests/browser-picker.test.cjs scripts/tests/browser-media-layout.test.cjs scripts/tests/browser-media-layout-chromium.test.cjs
       - name: Verify CI and packaging scripts
         run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/tests -p 'test_*.py' -v
-      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6
         if: ${{ steps.pr.outputs.gradle != 'false' }}
         with:
           distribution: temurin
           java-version: "21"
-      - uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699
+      - uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd
         if: ${{ steps.pr.outputs.gradle != 'false' }}
         with:
           log-accepted-android-sdk-licenses: false
@@ -210,7 +210,7 @@ jobs:
             bash scripts/ci/run-android-behavior.sh
       - name: Retain unit test reports
         if: ${{ always() && steps.pr.outputs.gradle != 'false' }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: unit-tests-${{ github.sha }}
           path: |
@@ -221,7 +221,7 @@ jobs:
           retention-days: 14
       - name: Retain Android behavior evidence
         if: ${{ always() && steps.emulator.outcome != 'skipped' && steps.emulator.outcome != '' }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: android-behavior-${{ github.sha }}
           path: |
@@ -235,7 +235,7 @@ jobs:
             build/emulator-evidence/
           if-no-files-found: warn
           retention-days: 14
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: ${{ always() && steps.pr.outputs.gradle != 'false' }}
         with:
           name: apk-${{ github.sha }}
@@ -256,14 +256,14 @@ jobs:
       TOOLBOX_VERSION_NAME: ${{ needs.version.outputs.name }}
       TOOLBOX_VERSION_CODE: ${{ needs.version.outputs.code }}
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6
         with:
           distribution: temurin
           java-version: "21"
-      - uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699
+      - uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd
         with:
           log-accepted-android-sdk-licenses: false
           packages: platform-tools platforms;android-37.0 build-tools;37.0.0
@@ -329,7 +329,7 @@ jobs:
           "$tools/apksigner" verify --verbose --print-certs "$apk" > build/release-evidence/signature.txt
           "$tools/aapt" dump badging "$apk" > build/release-evidence/badging.txt
       - name: Hand the signed release to the publish job
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: release-candidate-${{ github.sha }}
           path: |
@@ -345,7 +345,7 @@ jobs:
         if: ${{ always() }}
         # Diagnostics only; a failed copy must not hold back publishing.
         continue-on-error: true
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: release-optimization-${{ github.sha }}
           path: |
@@ -359,7 +359,7 @@ jobs:
     name: Layout screenshots at 320dp and largest font
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
           fetch-depth: ${{ github.event_name == 'pull_request' && '0' || '1' }}
@@ -370,12 +370,12 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: python3 scripts/ci/pr_scope.py --base "$BASE_SHA" --head "$HEAD_SHA" | tee -a "$GITHUB_OUTPUT"
-      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6
         if: ${{ steps.pr.outputs.gradle != 'false' }}
         with:
           distribution: temurin
           java-version: "21"
-      - uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699
+      - uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd
         if: ${{ steps.pr.outputs.gradle != 'false' }}
         with:
           log-accepted-android-sdk-licenses: false
@@ -387,7 +387,7 @@ jobs:
         run: ./gradlew --no-daemon :app:testDebugUnitTest -Ptoolbox.screenshots=true
       - name: Upload screenshots
         if: ${{ !cancelled() && steps.pr.outputs.gradle != 'false' }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: layout-screenshots-${{ github.sha }}
           path: |
@@ -458,7 +458,7 @@ jobs:
       TOOLBOX_VERSION_BASE: ${{ needs.version.outputs.base }}
       TOOLBOX_CHANGES: ${{ needs.version.outputs.changes }}
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
           # Full history: the dev check below tells whether a newer published build contains this commit.
@@ -484,7 +484,7 @@ jobs:
           HOST_ANDROID_TEST_FILTER: ${{ inputs.android_test_filter || '' }}
         run: python3 scripts/ci/verify_release.py
       - name: Upload verified signed release
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: toolbox-v${{ env.TOOLBOX_VERSION }}-release-${{ github.sha }}
           path: build/ci-delivery/
