@@ -385,15 +385,20 @@ internal fun RunningToolCapsule(
             // Grows with large text so the two-line name and status are never cut off.
             .heightIn(min = 52.dp)
             .height(IntrinsicSize.Min)
-            .toolBoxClearGlass(capsule, tint = ToolBoxThemeTokens.materials.glassTint.compositeOver(colors.surface.copy(alpha = 0.7f)))
-            .padding(start = 6.dp),
+            .toolBoxClearGlass(
+                capsule,
+                tint = ToolBoxThemeTokens.materials.glassTint.compositeOver(colors.surface.copy(alpha = 0.7f)),
+                shadowEnabled = false,
+            )
+            .padding(start = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Row(
             Modifier.fillMaxHeight()
                 .toolBoxGlassPress(openInteraction, shape = capsule)
                 .clickable(interactionSource = openInteraction, indication = null, role = Role.Button, onClick = onOpen)
-                .semantics(mergeDescendants = true) { contentDescription = "打开${session.toolName}" },
+                .semantics(mergeDescendants = true) { contentDescription = "打开${session.toolName}" }
+                .padding(vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box {
@@ -401,10 +406,10 @@ internal fun RunningToolCapsule(
                     toolId = session.toolId,
                     versionCode = tool?.versionCode,
                     visual = visual,
-                    size = 40.dp,
+                    size = 32.dp,
                 )
                 Box(
-                    Modifier.align(Alignment.BottomEnd).offset(x = 2.dp, y = 2.dp).size(12.dp)
+                    Modifier.align(Alignment.BottomEnd).offset(x = 1.dp, y = 1.dp).size(10.dp)
                         .clip(CircleShape).background(colors.surface).padding(2.dp)
                         .clip(CircleShape).background(if (stopping) colors.textTertiary else Color(0xFF34C759)),
                 )
@@ -436,7 +441,7 @@ internal fun RunningToolCapsule(
             Box(
                 Modifier.size(32.dp)
                     .toolBoxGlassPress(stopInteraction, enabled = canStop)
-                    .toolBoxClearGlass(CircleShape),
+                    .toolBoxClearGlass(CircleShape, shadowEnabled = false),
                 contentAlignment = Alignment.Center,
             ) {
                 if (stopping) io.toolbox.core.ui.component.ToolBoxBusyIndicator()

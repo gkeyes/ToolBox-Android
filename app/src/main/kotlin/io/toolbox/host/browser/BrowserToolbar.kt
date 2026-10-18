@@ -16,12 +16,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
@@ -36,8 +33,6 @@ import androidx.compose.ui.unit.sp
 import io.toolbox.core.ui.component.ToolBoxIcon
 import io.toolbox.core.ui.component.ToolBoxIconKey
 import io.toolbox.core.ui.component.ToolBoxText
-import io.toolbox.core.ui.component.toolBoxPressFeedback
-import io.toolbox.core.ui.component.toolBoxSolidGlass
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 import io.toolbox.core.ui.component.toolBoxClearGlass
 import io.toolbox.core.ui.component.toolBoxGlassPress
@@ -47,7 +42,7 @@ import androidx.compose.runtime.getValue
 /** Round glass close button floating over the page's top-left corner, as in the iOS 27 design. */
 @Composable
 internal fun BrowserCloseButton(actions: BrowserScreenActions, modifier: Modifier = Modifier) {
-    BrowserGlassCircle(ToolBoxIconKey.Close, "关闭浏览器", modifier.testTag("browser_close"), size = 44.dp, lensRim = true, onClick = actions::close)
+    BrowserGlassCircle(ToolBoxIconKey.Close, "关闭浏览器", modifier.testTag("browser_close"), size = 44.dp, onClick = actions::close)
 }
 
 @Composable
@@ -267,7 +262,6 @@ private fun BrowserGlassCircle(
     modifier: Modifier = Modifier,
     size: androidx.compose.ui.unit.Dp = 52.dp,
     enabled: Boolean = true,
-    lensRim: Boolean = false,
     onClick: () -> Unit,
 ) {
     val tint = if (enabled) ToolBoxThemeTokens.colors.textPrimary else ToolBoxThemeTokens.disabledContent
@@ -276,48 +270,10 @@ private fun BrowserGlassCircle(
         modifier.size(size)
             .toolBoxGlassPress(interaction, enabled = enabled)
             .toolBoxClearGlass(CircleShape, tint = ToolBoxThemeTokens.materials.overlayFallback.copy(alpha = 0.88f))
-            .then(if (lensRim) Modifier.browserLensRim(light = ToolBoxThemeTokens.colors.surface.luminance() > 0.5f) else Modifier)
             .clickable(enabled = enabled, interactionSource = interaction, indication = null, role = Role.Button, onClick = onClick)
             .semantics { contentDescription = label },
         contentAlignment = Alignment.Center,
     ) {
         ToolBoxIcon(icon, contentDescription = null, modifier = Modifier.size(22.dp), tint = tint)
-    }
-}
-
-/**
- * Static lens edge for a glass circle over the live page, which it must never sample: a thin inner
- * ring lit at the top left and shaded at the bottom right. On a light fill the highlight barely
- * shows, so the shade is deeper, a fine neutral hairline closes the whole outline (on a white page
- * the white line alone vanishes) and a fine white line just inside the ring carries it on dark pages.
- */
-private fun Modifier.browserLensRim(light: Boolean): Modifier = drawWithContent {
-    drawContent()
-    val stroke = 1.75.dp.toPx()
-    val radius = size.minDimension / 2f - stroke / 2f
-    drawCircle(
-        brush = androidx.compose.ui.graphics.Brush.linearGradient(
-            0f to androidx.compose.ui.graphics.Color.White.copy(alpha = 0.10f),
-            0.5f to androidx.compose.ui.graphics.Color.Transparent,
-            1f to androidx.compose.ui.graphics.Color.Black.copy(alpha = if (light) 0.13f else 0.08f),
-            start = androidx.compose.ui.geometry.Offset.Zero,
-            end = androidx.compose.ui.geometry.Offset(size.width, size.height),
-        ),
-        radius = radius,
-        style = androidx.compose.ui.graphics.drawscope.Stroke(stroke),
-    )
-    if (light) {
-        val hairline = 0.5.dp.toPx()
-        drawCircle(
-            color = androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.07f),
-            radius = size.minDimension / 2f - hairline / 2f,
-            style = androidx.compose.ui.graphics.drawscope.Stroke(hairline),
-        )
-        val line = 0.75.dp.toPx()
-        drawCircle(
-            color = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.5f),
-            radius = radius - stroke / 2f - line / 2f,
-            style = androidx.compose.ui.graphics.drawscope.Stroke(line),
-        )
     }
 }

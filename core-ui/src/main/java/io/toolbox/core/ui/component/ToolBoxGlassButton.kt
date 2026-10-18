@@ -36,6 +36,7 @@ import androidx.compose.ui.graphics.Shape
 import com.kyant.backdrop.drawBackdrop
 import com.kyant.backdrop.effects.vibrancy
 import com.kyant.backdrop.effects.blur
+import com.kyant.backdrop.shadow.Shadow
 
 /**
  * Round iOS 27 glass button. Uses the vendored Kyant [LiquidButton], so it refracts what is behind
@@ -156,12 +157,14 @@ fun toolBoxClearGlassFill(): Color {
  * Glass body for a custom control (a disc, a capsule bar): Kyant's rim highlight and soft shadow
  * over [LocalToolBoxButtonBackdrop] (clear glass when there is none), under [tint]. Pair it with
  * [toolBoxGlassPress]. With reduced transparency it is an opaque [solid] fill in [shape].
+ * Disable [shadowEnabled] for inset content whose parent clips an external drop shadow.
  */
 @Composable
 fun Modifier.toolBoxClearGlass(
     shape: Shape,
     tint: Color = toolBoxClearGlassFill(),
     solid: Color = tint.compositeOver(ToolBoxThemeTokens.colors.surface),
+    shadowEnabled: Boolean = true,
 ): Modifier {
     val live = ToolBoxThemeTokens.materials.realBlurEnabled && LocalView.current.isHardwareAccelerated
     if (!live) return clip(shape).background(solid)
@@ -174,6 +177,7 @@ fun Modifier.toolBoxClearGlass(
             vibrancy()
             blur(blurRadius.toPx())
         },
+        shadow = if (shadowEnabled) ({ Shadow.Default }) else null,
         onDrawSurface = { drawRect(tint) },
     )
 }
