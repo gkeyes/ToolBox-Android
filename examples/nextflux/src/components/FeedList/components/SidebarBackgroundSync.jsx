@@ -51,9 +51,7 @@ export default function SidebarBackgroundSync() {
   return (
     <div className="sidebar-pref-wrap">
       <div className="sidebar-pref ds-row">
-        <span className={`ds-icon-badge ${health.state === "error" ? "ds-tone-danger" : active ? "ds-tone-success" : "ds-tone-neutral"}`}>
-          <RefreshCw className={health.state === "syncing" ? "animate-spin" : ""} />
-        </span>
+        <RefreshCw aria-hidden="true" className={"sidebar-pref-icon" + (health.state === "syncing" ? " animate-spin" : "")} />
         <div className="min-w-0 flex-1">
           <div className="truncate ds-body font-medium">{t("sidebar.backgroundSync.title")}</div>
           <div className="truncate ds-caption ds-tnum">{status}</div>

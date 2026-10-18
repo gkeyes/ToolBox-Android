@@ -25,22 +25,20 @@ export default function SidebarHiddenFeeds() {
   };
 
   return (
-    <div className="sidebar-pref-wrap">
-      <div className="sidebar-pref ds-row">
-        <span className="ds-icon-badge ds-tone-neutral"><Eye /></span>
-        <div className="min-w-0 flex-1 truncate ds-body font-medium">{title}</div>
-        <Switch
-          aria-label={title}
-          size="sm"
-          isSelected={showHiddenFeeds}
-          isDisabled={changing}
-          onChange={change}
-        >
-          <Switch.Control className="rounded-full">
-            <Switch.Thumb className="rounded-full" />
-          </Switch.Control>
-        </Switch>
-      </div>
+    <div className="sidebar-feed-visibility">
+      <Eye className="sidebar-pref-icon" aria-hidden="true" />
+      <span className="min-w-0 flex-1 ds-caption font-medium">{title}</span>
+      <Switch
+        aria-label={title}
+        size="sm"
+        isSelected={showHiddenFeeds}
+        isDisabled={changing}
+        onChange={change}
+      >
+        <Switch.Control className="rounded-full">
+          <Switch.Thumb className="rounded-full" />
+        </Switch.Control>
+      </Switch>
     </div>
   );
 }
