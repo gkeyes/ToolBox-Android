@@ -148,7 +148,7 @@ jobs:
           fi
           echo "checks=$checks" >> "$GITHUB_OUTPUT"
           echo "Android emulator behavior checks: \`$checks\`" >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
           node-version: "22"
       - name: Verify API contract, embedded SDK, and security entry points
