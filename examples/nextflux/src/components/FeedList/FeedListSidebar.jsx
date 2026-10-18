@@ -109,12 +109,16 @@ const FeedListSidebar = () => {
         <ScrollShadow className="h-full overscroll-contain" size={10}>
           <ArticlesGroup />
           <FeedsGroup />
+          <div className="sidebar-feed-options">
+            <SidebarHiddenFeeds />
+          </div>
         </ScrollShadow>
       </SidebarContent>
       <SidebarFooter>
-        <SidebarBackgroundSync />
-        <SidebarFeedNotifications />
-        <SidebarHiddenFeeds />
+        <div className="sidebar-sync-card">
+          <SidebarBackgroundSync />
+          <SidebarFeedNotifications />
+        </div>
         <ProfileButton />
       </SidebarFooter>
     </Sidebar>
