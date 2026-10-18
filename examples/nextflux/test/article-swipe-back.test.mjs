@@ -338,6 +338,23 @@ test("a canceled stream without touchend restores the shell and allows the next 
   });
 });
 
+test("stale WebView contacts do not block an interior drag or bypass the real system edge", () => {
+  for (const startX of [40, 5, 355]) {
+    withAnimationClock((clock) => {
+      const h = harness(clock);
+      const stale = [point(0, 200, 1), point(200, 220, 2)];
+      h.dispatch("touchstart", [...stale, point(startX)], [point(startX)]);
+      const move = h.dispatch("touchmove", [...stale, point(startX + 60)], [point(startX + 60)], { timeStamp: 20 });
+      assert.equal(move.defaultPrevented, startX === 40);
+      assert.equal(h.offset(), startX === 40 ? 60 : 0);
+      h.dispatch("touchend", stale, [point(startX + 60)], { timeStamp: 200 });
+      clock.settle();
+      assert.equal(h.backs(), startX === 40 ? 1 : 0);
+      h.detach();
+    });
+  }
+});
+
 test("selection/modal/gallery blockers at release and during settle cannot navigate", () => {
   for (const blocker of ["select", "block"]) {
     for (const afterRelease of [false, true]) {

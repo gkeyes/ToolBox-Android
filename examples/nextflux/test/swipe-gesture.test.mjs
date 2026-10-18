@@ -6,6 +6,8 @@ const point = (clientX, clientY, identifier = 0) => ({ clientX, clientY, identif
 
 function harness() {
   const document = new EventTarget();
+  document.defaultView = new EventTarget();
+  document.visibilityState = "visible";
   const gestureRef = { current: null };
   let selected = false;
   let blocked = false;
@@ -28,7 +30,7 @@ function harness() {
     return event;
   };
   return {
-    gestureRef, detach, dispatch,
+    document, gestureRef, detach, dispatch,
     start: (x = 0, y = 0, extra) => dispatch("touchstart", [point(x, y)], [], extra),
     move: (x, y, extra) => dispatch("touchmove", [point(x, y)], [], extra),
     end: (x, y, extra) => dispatch("touchend", [], [point(x, y)], extra),
@@ -141,6 +143,65 @@ test("a fresh single-finger start recovers after a multi-touch stream loses its 
   h.dispatch("touchend", [], [point(100, 0, 2)]);
   assert.equal(h.calls(), 1);
   h.detach();
+});
+
+test("stale contacts absent from changedTouches do not block new swipes or their release", () => {
+  const h = harness();
+  const stale = [point(0, 200, 1), point(200, 220, 2)];
+  for (let index = 0; index < 2; index += 1) {
+    h.dispatch("touchstart", [...stale, point(20, 0)], [point(20, 0)]);
+    const move = h.dispatch("touchmove", [...stale, point(100, 0)], [point(100, 0)]);
+    assert.equal(move.defaultPrevented, true);
+    h.dispatch("touchend", stale, [point(100, 0)]);
+    assert.equal(h.calls(), index + 1);
+    assert.equal(h.gestureRef.current, null);
+  }
+  h.detach();
+});
+
+test("a real second contact still cancels a swipe among stale WebView contacts", () => {
+  const h = harness();
+  const stale = [point(0, 200, 1), point(200, 220, 2)];
+  h.dispatch("touchstart", [...stale, point(20, 0)], [point(20, 0)]);
+  assert.equal(h.dispatch("touchmove", [...stale, point(100, 0)], [point(100, 0)]).defaultPrevented, true);
+  h.dispatch("touchstart", [...stale, point(100, 0), point(120, 20, 3)], [point(120, 20, 3)]);
+  assert.equal(h.gestureRef.current, null);
+  h.dispatch("touchend", [...stale, point(100, 0)], [point(120, 20, 3)]);
+  assert.equal(h.dispatch("touchmove", [...stale, point(150, 0)], [point(150, 0)]).defaultPrevented, false);
+  h.dispatch("touchend", stale, [point(150, 0)]);
+  assert.equal(h.calls(), 0);
+  h.dispatch("touchstart", [...stale, point(20, 0)], [point(20, 0)]);
+  h.dispatch("touchmove", [...stale, point(100, 0)], [point(100, 0)]);
+  h.dispatch("touchend", stale, [point(100, 0)]);
+  assert.equal(h.calls(), 1);
+  h.detach();
+});
+
+test("blur and hiding cancel an owned swipe once and discard contacts from the old stream", () => {
+  for (const type of ["blur", "visibilitychange"]) {
+    const h = harness();
+    const cancellations = [];
+    let backs = 0;
+    h.setOptions({ onSwipeRight: () => { backs += 1; }, onCancel: ({ reason }) => cancellations.push(reason) });
+    h.start();
+    h.move(80, 0);
+    if (type === "blur") h.document.defaultView.dispatchEvent(new Event(type));
+    else {
+      h.document.visibilityState = "hidden";
+      h.document.dispatchEvent(new Event(type));
+      h.document.visibilityState = "visible";
+    }
+    assert.equal(h.gestureRef.current, null);
+    assert.deepEqual(cancellations, [type]);
+    // The old contact remains in WebView's list, but a different new one works.
+    const stale = point(80, 0);
+    h.dispatch("touchstart", [stale, point(20, 20, 1)], [point(20, 20, 1)]);
+    assert.equal(h.dispatch("touchmove", [stale, point(100, 20, 1)], [point(100, 20, 1)]).defaultPrevented, true);
+    h.dispatch("touchend", [stale], [point(100, 20, 1)]);
+    assert.equal(backs, 1);
+    assert.deepEqual(cancellations, [type]);
+    h.detach();
+  }
 });
 
 test("a second finger cancels until all fingers lift, even when the first finger remains", () => {
