@@ -306,19 +306,16 @@ async function openSidebarPreferences(page, width = 1280) {
   await expect(page.getByRole("switch", { name: "显示隐藏订阅", exact: true })).toBeVisible();
 }
 
-test("sidebar hidden feeds is a first-level peer of background sync and leaves General", async ({ page }) => {
+test("sidebar keeps feed visibility in the feed list and groups sync notifications", async ({ page }) => {
   await openSidebarPreferences(page);
   const hidden = page.getByRole("switch", { name: "显示隐藏订阅", exact: true });
   const background = page.getByRole("switch", { name: "后台同步", exact: true });
   await expect(background).toBeVisible();
   await expect(hidden).not.toBeChecked();
-  const positions = await hidden.evaluate((element) => {
-    const footer = element.closest('[data-sidebar="footer"]');
-    const peer = [...footer?.querySelectorAll('[role="switch"]') || []].find((node) => node.getAttribute("aria-label") === "后台同步");
-    const row = (node) => [...footer?.children || []].find((child) => child.contains(node));
-    return { hasFooter: Boolean(footer), sameLevel: Boolean(peer && row(element)?.parentElement === row(peer)?.parentElement), distinctRows: row(element) !== row(peer) };
-  });
-  expect(positions).toEqual({ hasFooter: true, sameLevel: true, distinctRows: true });
+  expect(await hidden.evaluate((node) => Boolean(node.closest(".sidebar-feed-options")))).toBe(true);
+  expect(await hidden.evaluate((node) => Boolean(node.closest('[data-sidebar="footer"]')))).toBe(false);
+  await expect(page.locator(".sidebar-sync-card").getByRole("switch", { name: "后台同步" })).toBeVisible();
+  await expect(page.locator('[data-sidebar="footer"] [role="switch"]')).toHaveCount(1);
   await expect(page.getByTestId("sidebar-general").getByText("显示隐藏订阅", { exact: true })).toHaveCount(0);
   await expect(page.getByTestId("sidebar-general").getByText("默认展开分类", { exact: true })).toBeVisible();
   await hidden.locator('xpath=ancestor::*[@data-slot="switch"][1]').click();
