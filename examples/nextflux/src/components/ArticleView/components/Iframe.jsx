@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import { safeContentUrl } from "@/toolbox/content.js";
-import { approvedImageSource, loadProxyMedia } from "@/toolbox/media.js";
-import { isHlsPlaylist, isMediaPlaylist, mediaSourceCandidates } from "@/reading/media-sources.mjs";
+import { Link2, LoaderCircle, Play, Share2, Video, X } from "lucide-react";
+import { imageSourceCandidates, safeContentUrl } from "@/toolbox/content.js";
+import { approvedImageSource, loadProxyMedia, useSafeImage } from "@/toolbox/media.js";
+import { isHlsPlaylist, isMediaPlaylist, mediaPosterSources, mediaSourceCandidates } from "@/reading/media-sources.mjs";
 import StreamingMedia, { keepMediaInline } from "./StreamingMedia.jsx";
+import "./Iframe.css";
 
-export default function Iframe({ domNode, sources }) {
+export default function Iframe({ domNode, sources, posterSources }) {
   const [status, setStatus] = useState("");
   const [media, setMedia] = useState(null);
   const [stream, setStream] = useState(null);
@@ -19,6 +21,10 @@ export default function Iframe({ domNode, sources }) {
   const directSources = candidates.filter((item) => !isMediaPlaylist(item) && approvedImageSource(item.url)?.kind === "proxy" && (!item.type || item.type.toLowerCase().startsWith(`${kind}/`) || /^(?:application\/octet-stream|binary\/octet-stream)$/i.test(item.type)));
   const sourceKey = JSON.stringify(candidates);
   const canLoad = ["audio", "video"].includes(kind) && (directSources.length > 0 || hlsSources.length > 0);
+  const posters = kind === "audio" ? [] : posterSources?.length
+    ? imageSourceCandidates({ "data-image-candidates": JSON.stringify(posterSources) }, url)
+    : mediaPosterSources(domNode?.attribs, url);
+  const { containerRef: posterRef, url: posterUrl, onError: posterError } = useSafeImage(posters, false, Boolean(media || stream));
   const handleRef = useRef(null);
   const controllerRef = useRef(null);
   const loadingRef = useRef(false);
@@ -111,6 +117,34 @@ export default function Iframe({ domNode, sources }) {
       }
     } catch { setStatus(action === "copy" ? "无法复制链接，请检查剪贴板写入权限后重试。" : "无法分享链接，请检查分享权限后重试。"); }
   };
+  if (kind !== "audio") return (
+    <div ref={posterRef} className="article-video-card not-prose">
+      <div className="article-video-stage">
+        {posterUrl && <img className="article-video-poster" src={posterUrl} alt="" decoding="async" onError={() => posterError(posterUrl)} />}
+        {stream ? (
+          <div className="article-video-player"><StreamingMedia source={stream.source} kind={kind} poster={posterUrl || undefined} autoPlay onReady={() => { if (stream.generation === generation.current) { loadingRef.current = false; setLoading(false); } }} onFailure={streamFailure} /></div>
+        ) : media ? (
+          <video controls playsInline autoPlay preload="metadata" className="article-video-player" poster={posterUrl || undefined} src={media.url} onError={playbackError} ref={keepMediaInline} />
+        ) : (
+          <>
+            <span className="article-video-shade" aria-hidden="true" />
+            <span className="article-video-badge"><Video aria-hidden="true" />视频</span>
+            {canLoad ? <button type="button" className="article-video-launch" disabled={loading} onClick={start} aria-label={loading ? "正在加载视频" : "播放视频"}>
+              <span className="article-video-play">{loading ? <LoaderCircle className="article-video-spinner" aria-hidden="true" /> : <Play fill="currentColor" aria-hidden="true" />}</span>
+              <span className="article-video-caption">{loading ? "正在加载…" : "播放视频"}</span>
+            </button> : <div className="article-video-unavailable"><Video aria-hidden="true" /><span>{url ? "在浏览器中播放" : "暂无可用视频"}</span></div>}
+          </>
+        )}
+      </div>
+      {url && <div className="article-video-actions">
+        {(loading || media || stream) && <button type="button" className="article-video-close" onClick={close} aria-label={loading ? "取消加载" : "关闭媒体"}><X aria-hidden="true" />{loading ? "取消" : "收起"}</button>}
+        <button type="button" onClick={() => act("copy")}><Link2 aria-hidden="true" />复制链接</button>
+        <button type="button" onClick={() => act("share")}><Share2 aria-hidden="true" />分享链接</button>
+      </div>}
+      {loading && progress && <p role="status" className="article-video-status">已下载 {(progress.receivedBytes / 1048576).toFixed(1)} MB{progress.totalBytes ? ` / ${(progress.totalBytes / 1048576).toFixed(1)} MB` : ""}</p>}
+      {status && <p role="status" className="article-video-status">{status}</p>}
+    </div>
+  );
   return (
     <div className="my-4 rounded-xl bg-default p-4 text-sm not-prose">
       {stream ? <><StreamingMedia source={stream.source} kind={kind} onReady={() => { if (stream.generation === generation.current) { loadingRef.current = false; setLoading(false); } }} onFailure={streamFailure} /><button type="button" className="text-accent min-h-12" onClick={close}>关闭媒体</button></> : media ? <>{kind === "audio" ? <audio controls preload="metadata" className="w-full" src={media.url} onError={playbackError} ref={keepMediaInline} /> : <video controls playsInline preload="metadata" className="w-full" src={media.url} onError={playbackError} ref={keepMediaInline} />}<button type="button" className="text-accent min-h-12" onClick={close}>关闭媒体</button></> : <p>{canLoad ? `${label}可按需加载${hlsSources.length || window.ToolBox?.network?.openMedia ? "，支持流式播放" : "，下载完成后可播放"}。` : `${label}需要在浏览器中播放。`}{url ? "也可复制或分享链接。" : "没有可用的媒体链接。"}</p>}

@@ -45,7 +45,7 @@ function ArticleDocument({ html, baseUrl }) {
   }, [html, baseUrl]);
   return <>
     <section ref={root} data-testid="article-body" data-font-reading-root="" />
-    {images.map(({ type, id, target, attrs, kind, url, sources }) => createPortal(type === "image" ? <ArticleImage imgNode={{ attribs: attrs }} /> : <Iframe sources={sources} domNode={{ name: kind, attribs: { "data-media-kind": kind, "data-media-url": url } }} />, target, String(id)))}
+    {images.map(({ type, id, target, attrs, kind, url, sources, posterSources }) => createPortal(type === "image" ? <ArticleImage imgNode={{ attribs: attrs }} /> : <Iframe sources={sources} posterSources={posterSources} domNode={{ name: kind, attribs: { "data-media-kind": kind, "data-media-url": url } }} />, target, String(id)))}
   </>;
 }
 

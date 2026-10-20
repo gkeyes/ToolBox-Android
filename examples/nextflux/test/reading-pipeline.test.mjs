@@ -59,6 +59,18 @@ test("video parser keeps multiple safe direct sources and excludes credentials o
   assert.deepEqual(media.sources,[{url:"https://example.test/first.mp4",type:""},{url:"https://example.test/backup.webm",type:"video/webm"}]);
 });
 
+test("video posters retain safe relative and lazy alternatives without treating them as video sources",()=>{
+  const parsed=operationsFor('<video src="/movie.mp4" poster="/cover.jpg" data-poster="/backup.jpg" data-lazy-poster="https://images.example.test/large.webp"></video>');
+  const media=parsed.operations.find(op=>op.type==="media");
+  assert.deepEqual(media.posterSources,["https://example.test/cover.jpg","https://example.test/backup.jpg","https://images.example.test/large.webp"]);
+  assert.deepEqual(media.sources,[{url:"https://example.test/movie.mp4",type:""}]);
+});
+
+test("video posters exclude executable, credential-bearing and insecure addresses",()=>{
+  const parsed=operationsFor('<video src="/movie.mp4" poster="javascript:alert(1)" data-poster="https://u:p@bad.invalid/cover.jpg" data-lazy-poster="http://bad.invalid/cover.jpg"></video>');
+  assert.deepEqual(parsed.operations.find(op=>op.type==="media").posterSources,[]);
+});
+
 test("audio parser retains lazy HLS and direct audio sources for the same playback path",()=>{
   const parsed=operationsFor('<audio data-src="/radio.m3u8"><source src="/backup.mp3" type="audio/mpeg"></audio>');
   const media=parsed.operations.find(op=>op.type==="media");

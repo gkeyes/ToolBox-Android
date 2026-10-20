@@ -13,7 +13,7 @@ export function keepMediaInline(element) {
   element.setAttribute("disableremoteplayback", "");
 }
 
-export default function StreamingMedia({ source, kind, onReady, onFailure }) {
+export default function StreamingMedia({ source, kind, poster, autoPlay = false, onReady, onFailure }) {
   const elementRef = useRef(null);
   const callbacks = useRef({ onReady, onFailure });
   callbacks.current = { onReady, onFailure };
@@ -31,5 +31,5 @@ export default function StreamingMedia({ source, kind, onReady, onFailure }) {
   }, [source, kind]);
   return kind === "audio"
     ? <audio ref={elementRef} controls preload="none" className="w-full" />
-    : <video ref={elementRef} controls playsInline preload="none" className="w-full" />;
+    : <video ref={elementRef} controls playsInline autoPlay={autoPlay} poster={poster} preload="none" className="w-full" />;
 }
