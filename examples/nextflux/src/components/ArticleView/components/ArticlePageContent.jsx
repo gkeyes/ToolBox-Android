@@ -67,6 +67,7 @@ const ArticlePageContent = forwardRef(function ArticlePageContent(
             attribs: { src: enclosure.url },
           }}
           sources={[{ url: enclosure.url, type: enclosure.mime_type }]}
+          posterSources={article.coverSources?.length ? article.coverSources : [article.coverUrl].filter(Boolean)}
         />
       ))}
 

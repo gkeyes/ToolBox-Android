@@ -2,7 +2,7 @@ import { Parser } from "htmlparser2";
 import { cleanAttributes, safeContentUrl } from "../toolbox/content.js";
 import { ALLOWED_TAGS, BLOCK_TAGS, DROP_CONTENT } from "./schema.mjs";
 import { analyzeArticle } from "./analyze.mjs";
-import { mediaSourceCandidates } from "./media-sources.mjs";
+import { mediaPosterSources, mediaSourceCandidates } from "./media-sources.mjs";
 import { createNormalizationPlan, hasSentenceTerminal, normalizeParagraphLeadingText, paragraphPresentation, semanticizeElement, shouldPreserveTextBreaks, shouldRemoveStandaloneNoise } from "./normalize.mjs";
 import { SERVER_BASE } from "../toolbox/server.mjs";
 
@@ -198,6 +198,7 @@ export function createReadingParser(html, baseUrl) {
       if (entry.code && !entry.ownsCode && /^(p|div|h[1-6])$/.test(entry.tag) && !entry.blocked) appendCode(entry.code, "\n");
       if (entry.ownsMedia) {
         const { attributes, rawSources, ...media } = entry.media;
+        if (media.kind !== "audio") media.posterSources = mediaPosterSources(attributes, baseUrl);
         if (["audio", "video"].includes(media.kind)) {
           media.sources = mediaSourceCandidates(attributes, rawSources, baseUrl);
           media.url = media.sources[0]?.url || null;

@@ -297,9 +297,77 @@ test("DW lazy image templates survive real extraction and keep image alt and cap
   expect((await snapshot(page)).requests.map(({ source }) => source)).toEqual([source]);
 });
 
+test("a video loads its poster before playback and keeps the same stage on play and close", async ({ page }) => {
+  await openArticle(page, `<p>视频前的正文。</p><video src="${MP4}" poster="${PRIMARY}"></video><p>视频后的正文。</p>`);
+  await respond(page, PRIMARY);
+  const poster = page.locator(".article-video-poster");
+  await expect.poll(() => poster.evaluate((image) => [image.complete, image.naturalWidth])).toEqual([true, 8]);
+  await expect(page.getByRole("button", { name: "播放视频", exact: true })).toBeVisible();
+  expect((await snapshot(page)).requests.map(({ source }) => source)).toEqual([PRIMARY]);
+  const before = await page.locator(".article-video-stage").boundingBox();
+  const play = page.getByRole("button", { name: "播放视频", exact: true });
+  await play.focus();
+  await page.keyboard.press("Enter");
+  await respond(page, MP4, { type: "video/mp4", base64: streamingFixture.mp4 });
+  const video = page.locator("video");
+  await expect.poll(() => video.evaluate((element) => element.currentTime)).toBeGreaterThan(.1);
+  await expect(video).toHaveAttribute("poster", /^blob:/);
+  expect((await page.locator(".article-video-stage").boundingBox()).height).toBeCloseTo(before.height, 1);
+  await page.getByRole("button", { name: "关闭媒体", exact: true }).click();
+  await expect(video).toHaveCount(0);
+  await expect(play).toBeVisible();
+  expect((await page.locator(".article-video-stage").boundingBox()).height).toBeCloseTo(before.height, 1);
+  expect((await snapshot(page)).activeObjectUrls).toHaveLength(1);
+});
+
+test("a failed video poster advances to a lazy poster without fetching the movie", async ({ page }) => {
+  await openArticle(page, `<video src="${MP4}" poster="${PRIMARY}" data-poster="${FALLBACK}"></video>`);
+  await respond(page, PRIMARY, { type: "text/html", body: "html" });
+  await respond(page, FALLBACK);
+  await expect.poll(() => page.locator(".article-video-poster").evaluate((image) => image.naturalWidth)).toBe(8);
+  expect((await snapshot(page)).requests.map(({ source }) => source)).toEqual([PRIMARY, FALLBACK]);
+  await expect(page.getByRole("button", { name: "播放视频", exact: true })).toBeEnabled();
+});
+
+test("an undecodable video poster keeps the play control and still plays the movie", async ({ page }) => {
+  await openArticle(page, `<video src="${MP4}" poster="${PRIMARY}"></video>`);
+  await respond(page, PRIMARY, { body: "decode" });
+  await expect(page.locator(".article-video-poster")).toHaveCount(0);
+  await page.getByRole("button", { name: "播放视频", exact: true }).click();
+  await respond(page, MP4, { type: "video/mp4", base64: streamingFixture.mp4 });
+  await expect.poll(() => page.locator("video").evaluate((element) => element.videoWidth)).toBe(64);
+});
+
+test("video links can be copied or shared without starting a media download", async ({ page }) => {
+  await openArticle(page, `<video src="${MP4}"></video>`);
+  await page.evaluate(() => {
+    window.mediaActions = [];
+    window.ToolBox.clipboard = { async writeText(link) { window.mediaActions.push(["copy", link]); } };
+    window.ToolBox.share = { async text(link) { window.mediaActions.push(["share", link]); } };
+  });
+  await page.getByRole("button", { name: "复制链接", exact: true }).click();
+  await expect(page.getByRole("status")).toHaveText("链接已复制。");
+  await page.getByRole("button", { name: "分享链接", exact: true }).click();
+  expect(await page.evaluate(() => window.mediaActions)).toEqual([["copy", MP4], ["share", MP4]]);
+  expect((await snapshot(page)).requests).toHaveLength(0);
+  await expect(page.locator("video")).toHaveCount(0);
+});
+
+for (const width of [320, 900]) test(`the video card fits a ${width}px reader without a poster`, async ({ page }) => {
+  await page.setViewportSize({ width, height: 900 });
+  await openArticle(page, `<video src="${MP4}"></video>`);
+  const play = page.getByRole("button", { name: "播放视频", exact: true });
+  await expect(play).toBeVisible();
+  const stage = await page.locator(".article-video-stage").boundingBox();
+  expect(stage.width / stage.height).toBeCloseTo(16 / 9, 1);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(width);
+  await expect(page.getByRole("button", { name: "复制链接", exact: true })).toBeInViewport();
+  await expect(page.getByRole("button", { name: "分享链接", exact: true })).toBeInViewport();
+});
+
 test("HLS video starts from the first segment while later segments remain undownloaded", async ({ page }) => {
   await openArticle(page, `<video controls><source src="${HLS}" type="application/x-mpegurl"><source src="${MP4}" type="video/mp4"></video>`);
-  await page.getByRole("button", { name: "加载视频", exact: true }).click();
+  await page.getByRole("button", { name: "播放视频", exact: true }).click();
   await respond(page, HLS, { type: "application/x-mpegurl", text: streamingFixture.playlist });
   const first = new URL("part0.ts", HLS).href;
   await respond(page, first, { type: "video/mp2t", base64: streamingFixture.segments["part0.ts"] });
@@ -316,7 +384,7 @@ test("HLS video starts from the first segment while later segments remain undown
 
 test("closing an HLS player aborts its pending manifest without starting MP4 fallback", async ({ page }) => {
   await openArticle(page, `<video><source src="${HLS}" type="application/vnd.apple.mpegurl"><source src="${MP4}" type="video/mp4"></video>`);
-  await page.getByRole("button", { name: "加载视频", exact: true }).click();
+  await page.getByRole("button", { name: "播放视频", exact: true }).click();
   await pending(page, HLS);
   await page.getByRole("button", { name: "取消加载", exact: true }).click();
   await expect.poll(async () => (await snapshot(page)).activeStreams).toBe(0);
@@ -326,7 +394,7 @@ test("closing an HLS player aborts its pending manifest without starting MP4 fal
 
 test("a rejected HLS playlist falls back to a decoded MP4 source", async ({ page }) => {
   await openArticle(page, `<video><source src="${HLS}" type="application/x-mpegurl"><source src="${MP4}" type="video/mp4"></video>`);
-  await page.getByRole("button", { name: "加载视频", exact: true }).click();
+  await page.getByRole("button", { name: "播放视频", exact: true }).click();
   await respond(page, HLS, { type: "text/html", body: "html" });
   await respond(page, MP4, { type: "video/mp4", base64: streamingFixture.mp4 });
   const video = page.getByTestId("article-body").locator("video");
@@ -336,7 +404,7 @@ test("a rejected HLS playlist falls back to a decoded MP4 source", async ({ page
 
 test("direct video decode errors advance to the next MP4 candidate and release the failed Blob", async ({ page }) => {
   await openArticle(page, `<video><source src="${PRIMARY}" type="video/mp4"><source src="${MP4}" type="video/mp4"></video>`);
-  await page.getByRole("button", { name: "加载视频", exact: true }).click();
+  await page.getByRole("button", { name: "播放视频", exact: true }).click();
   await respond(page, PRIMARY, { type: "video/mp4", body: "invalid" });
   await respond(page, MP4, { type: "video/mp4", base64: streamingFixture.mp4 });
   const video = page.getByTestId("article-body").locator("video");
@@ -348,7 +416,7 @@ test("direct video decode errors advance to the next MP4 candidate and release t
 
 test("cancelling a direct media download releases its native stream before body completion", async ({ page }) => {
   await openArticle(page, `<video src="${MP4}"></video>`);
-  await page.getByRole("button", { name: "加载视频", exact: true }).click();
+  await page.getByRole("button", { name: "播放视频", exact: true }).click();
   await respond(page, MP4, { type: "video/mp4", base64: streamingFixture.mp4, holdAfterFirst: true });
   await expect(page.getByRole("status")).toContainText("已下载");
   await page.getByRole("button", { name: "取消加载", exact: true }).click();
@@ -382,7 +450,7 @@ for (const { kind, type, bytes } of [
   });
   await openArticle(page, `<${kind} src="${MP4}"></${kind}>`);
   await page.evaluate(() => window.mediaCompatFixture.enableNativeMediaSessions());
-  await page.getByRole("button", { name: kind === "audio" ? "加载音频" : "加载视频", exact: true }).click();
+  await page.getByRole("button", { name: kind === "audio" ? "加载音频" : "播放视频", exact: true }).click();
   const element = page.getByTestId("article-body").locator(kind);
   await expect.poll(() => element.evaluate((media) => media.readyState)).toBeGreaterThanOrEqual(2);
   await expect(element).toHaveAttribute("src", /\/\.toolbox\/media\/fixture-media-1$/);
@@ -399,7 +467,7 @@ test("account media teardown closes an active native media session", async ({ pa
   await page.route("**/.toolbox/media/*", (route) => route.fulfill({ status: 200, contentType: "video/mp4", body: Buffer.from(streamingFixture.mp4, "base64") }));
   await openArticle(page, `<video src="${MP4}"></video>`);
   await page.evaluate(() => window.mediaCompatFixture.enableNativeMediaSessions());
-  await page.getByRole("button", { name: "加载视频", exact: true }).click();
+  await page.getByRole("button", { name: "播放视频", exact: true }).click();
   await expect.poll(async () => (await snapshot(page)).mediaSessions.length).toBe(1);
   await page.evaluate(() => window.mediaCompatFixture.clearSessionMedia());
   await expect.poll(async () => (await snapshot(page)).mediaSessions.filter((value) => !value.closed).length).toBe(0);
@@ -410,7 +478,7 @@ test("account media teardown closes an active native media session", async ({ pa
 // fullscreen entered anyway is left at once, leaving the page interactive.
 test("article video stays inline: no fullscreen entry, and a forced fullscreen is left", async ({ page }) => {
   await openArticle(page, `<video src="${MP4}"></video>`);
-  await page.getByRole("button", { name: "加载视频", exact: true }).click();
+  await page.getByRole("button", { name: "播放视频", exact: true }).click();
   await respond(page, MP4, { type: "video/mp4", base64: streamingFixture.mp4 });
   const video = page.getByTestId("article-body").locator("video");
   await expect.poll(() => video.evaluate((element) => element.videoWidth)).toBe(64);

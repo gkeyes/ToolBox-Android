@@ -1,4 +1,4 @@
-import { safeContentUrl } from "../toolbox/content.js";
+import { imageSourceCandidates, safeContentUrl } from "../toolbox/content.js";
 import { SERVER_BASE } from "../toolbox/server.mjs";
 
 export function isMediaPlaylist({ url, type = "" }) {
@@ -7,6 +7,14 @@ export function isMediaPlaylist({ url, type = "" }) {
 
 export function isHlsPlaylist({ url, type = "" }) {
   return /mpegurl/i.test(type) || /\.m3u8(?:[?#]|$)/i.test(url || "");
+}
+
+export function mediaPosterSources(attributes = {}, baseUrl) {
+  return imageSourceCandidates({
+    "data-image-candidates": JSON.stringify([
+      attributes.poster, attributes["data-poster"], attributes["data-lazy-poster"],
+    ].filter(Boolean)),
+  }, baseUrl);
 }
 
 export function mediaSourceCandidates(attributes = {}, sources = [], baseUrl) {
