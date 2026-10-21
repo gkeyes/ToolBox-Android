@@ -30,7 +30,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.unit.LayoutDirection
@@ -319,10 +318,6 @@ internal fun MutableList<NavKey>.pushSecondary(route: ToolBoxRoute): Boolean {
 internal fun retainedSecondaryRoutes(routes: List<ToolBoxRoute>): List<ToolBoxRoute> =
     routes.filterNot { it is RuntimeRoute }
 
-/** Shared-axis travel, read inside graphics layers (Density receiver). */
-private val androidx.compose.ui.graphics.GraphicsLayerScope.PageShiftPx: Float
-    get() = ToolBoxMotion.PageShift.toPx()
-
 @Composable
 internal fun ToolBoxNavigation(
     dependencies: HostDependencies,
@@ -378,10 +373,8 @@ internal fun ToolBoxNavigation(
     val firstRetainedProgress = retainedRoutes.firstOrNull()?.let(::progressFor)
     val navigator = rememberRuntimeNavigator(secondaryBackStack, runtimeRoute)
     val transition = navigator.transition
-    val entryProgress = transition.entryProgress
-    var entryCoverVisible by transition::entryCoverVisible
-    var sourceAboveRuntime by transition::sourceAboveRuntime
-    var entryCoverMeasured by transition::entryCoverMeasured
+    val entryCoverVisible by transition::entryCoverVisible
+    val sourceAboveRuntime by transition::sourceAboveRuntime
     val layoutDirection = LocalLayoutDirection.current
     val trailingDirection = if (layoutDirection == LayoutDirection.Rtl) -1f else 1f
 
@@ -418,22 +411,10 @@ internal fun ToolBoxNavigation(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .zIndex(if (runtimeRoute == null || sourceAboveRuntime) 2f else 0f)
-                .graphicsLayer {
-                    // This layer also hosts the retained secondary pages, so only the runtime
-                    // transition may fade it. Covering by a secondary page fades the primary
-                    // screen alone (inner box below), never the pages stacked above it.
-                    val runtimeDepth = transition.sourceDepth()
-                    translationX = -trailingDirection * runtimeDepth * PageShiftPx
-                    alpha = 1f - runtimeDepth
-                }
-                .then(
-                    if (transition.sourceSemanticsHidden) {
-                        Modifier.clearAndSetSemantics { }
-                    } else {
-                        Modifier
-                    },
-                ),
+                // This layer also hosts the retained secondary pages, so only the runtime
+                // transition may fade it. Covering by a secondary page fades the primary
+                // screen alone (inner box below), never the pages stacked above it.
+                .runtimeSourceLayer(transition, trailingDirection),
         ) {
             ToolBoxGlassActivity(active = primaryGlassLive) {
                 Box(
@@ -555,54 +536,12 @@ internal fun ToolBoxNavigation(
             transition = transition,
             viewModelFactory = { route -> RuntimeViewModelFactory(route.toolId, dependencies) },
             toolName = runtimeTitle,
-            modifier = Modifier
-                .fillMaxSize()
-                .zIndex(1f)
-                .then(
-                    if (entryCoverVisible || sourceAboveRuntime) {
-                        Modifier.clearAndSetSemantics { }
-                    } else {
-                        Modifier
-                    },
-                ),
+            modifier = Modifier.fillMaxSize().runtimeToolLayer(transition),
         )
 
-        if (runtimeRoute != null && entryCoverVisible) {
-            // Keyed per transition: a tool switch (or the same tool pushed again) gives the new
-            // cover a fresh node, so its first placement reports entryCoverMeasured.
-            key(transition) {
-                // After a switch during a return the source is still half-transparent; the new
-                // cover fills in opaque beneath it (where the replaced tool was) until the
-                // source has faded out, instead of leaving the bare background showing through.
-                val coverBeneath = transition.coverBeneathSource && !sourceHiddenByRuntime
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .zIndex(if (coverBeneath) -1f else 3f)
-                        .onGloballyPositioned { coordinates ->
-                            if (coordinates.size.width > 0 && coordinates.size.height > 0) {
-                                entryCoverMeasured = true
-                            }
-                        }
-                        .graphicsLayer {
-                            val motion = entryProgress.value.coerceIn(0f, 1f)
-                            if (transition.coverBeneathSource) {
-                                // Stands in for the replaced tool, which sat settled: no slide.
-                                translationX = 0f
-                                alpha = 1f
-                            } else {
-                                translationX = trailingDirection * motion * PageShiftPx
-                                alpha = ToolBoxMotion.fadeThroughIncomingAlpha(1f - motion)
-                            }
-                        },
-                ) {
-                    RuntimeShellPreviewContent(toolName = runtimeTitle)
-                }
-            }
+        RuntimeEntryCover(transition, sourceHidden = sourceHiddenByRuntime, trailingDirection = trailingDirection) {
+            RuntimeShellPreviewContent(toolName = runtimeTitle)
         }
-
-        if (runtimeRoute != null && (entryCoverVisible || sourceAboveRuntime)) {
-            NavigationInputBlocker(Modifier.zIndex(4f))
-        }
+        RuntimeInputBlocker(transition)
     }
 }
