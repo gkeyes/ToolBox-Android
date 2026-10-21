@@ -379,7 +379,8 @@
   block-size: .75rem;
   margin-block-start: -.75rem;
   pointer-events: none;
-  background: linear-gradient(transparent, color-mix(in srgb, currentColor 18%, transparent));
+  /* A dark shade in both themes; the text colour read as a light band in dark mode. */
+  background: linear-gradient(transparent, rgb(0 0 0 / .22));
   opacity: 0;
   animation: nextflux-alert-more linear both;
   animation-timeline: scroll(nearest block);
@@ -390,9 +391,6 @@
 }
 .nextflux-modal-footer {
   flex-shrink: 0;
-  /* At large text sizes the buttons stack, one per row, instead of squeezing a label into a
-     column of single characters. */
-  flex-wrap: wrap;
   gap: var(--ds-space-xs, .5rem);
   background: transparent;
   padding-bottom: max(1rem, env(safe-area-inset-bottom));
@@ -400,14 +398,24 @@
 .nextflux-modal-footer button {
   min-block-size: 48px;
   min-inline-size: 0;
-  flex: 1 1 7em;
-  padding-inline: .75em;
+  flex: 1 1 0;
   /* A long label at large text sizes wraps inside the pill instead of running past it. */
   block-size: auto;
   white-space: normal;
   text-wrap: balance;
   line-height: 1.2;
   padding-block: .5rem;
+}
+/* Alerts only: each button starts at its label's one-line width, so the pair stays side by
+   side while both labels fit and stacks, one per row, only when they don't (开启并通知 at
+   large text sizes) instead of squeezing a label into single characters. */
+.nextflux-alert-footer {
+  flex-wrap: wrap;
+}
+.nextflux-alert-footer button {
+  flex: 1 1 auto;
+  white-space: nowrap;
+  padding-inline: .75em;
 }
 .nextflux-dialog-error {
   margin-block-start: .75rem;

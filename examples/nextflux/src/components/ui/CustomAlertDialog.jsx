@@ -62,7 +62,7 @@ export default function CustomAlertDialog({
               <p>{content}</p>
               {error && <p className="nextflux-dialog-error" role="alert">{error}</p>}
             </AlertDialog.Body>
-            <AlertDialog.Footer className="nextflux-modal-footer p-4">
+            <AlertDialog.Footer className="nextflux-modal-footer nextflux-alert-footer p-4">
               {onConfirm ? (
                 <>
                   <Button variant="tertiary" onPress={handleClose} isDisabled={loading}>
