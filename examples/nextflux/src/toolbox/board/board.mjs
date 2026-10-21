@@ -197,12 +197,15 @@ export function salvageTopics(raw, count = Infinity) {
   }).filter((topic) => topic?.title && topic.articles.length);
 }
 
-// Ranges that together reach (nearly) every article of a board over 3 —
-// "1-12", "1-11", "1-6,7-12" of 12 — lump the board into one topic and leave
-// none for the rest: when another topic claims some of them, those numbers
-// are not this topic's. A topic that lists the articles one by one keeps them, and
-// so does a reply whose only topic is the whole board.
-const catchAll = (ranged, count) => count > 3 && new Set(ranged).size >= count - Math.floor(count / 10);
+// A topic whose ranges help it reach (nearly) every article of a board over
+// 3 — "1-12", "1-11", "1-10,11,12" of 12 — lumps the board into one topic.
+// When another topic claims some of them: one that reaches every article is
+// no grouping and gives up what its ranges named (a number also written on
+// its own stays); one that reaches nearly every article only gives up the
+// numbers the other topic claims. A topic that lists the articles one by
+// one keeps them, and so does a reply whose only topic is the whole board.
+const coverage = (numbers, ranged, count) => ranged.length && count > 3 ? new Set(numbers.filter((n) => Number.isInteger(n) && n >= 1 && n <= count)).size : 0;
+const catchAll = (covered, count) => covered > 0 && covered >= count - Math.floor(count / 10);
 
 // Reads the AI's topics. Article numbers must name a real article; each
 // article belongs to at most one topic (the higher ranked); a topic left
@@ -239,19 +242,21 @@ export function readTopics(text, count) {
     // Salvaged topics come with their numbers already read.
     const ranged = salvaged ? item.ranged : [];
     const numbers = listed.flatMap((n) => articleNumbers(n, count, salvaged ? null : ranged));
-    return { item, numbers, ranged, lumps: catchAll(ranged, count) };
+    const covered = coverage(numbers, ranged, count);
+    return { item, numbers, ranged, lumps: catchAll(covered, count), full: covered === count };
   });
   const real = (n) => Number.isInteger(n) && n >= 1 && n <= count;
-  // A catch-all range gives way only to a topic that groups real articles
-  // itself and claims some of the catch-all's: "1-12" beside [4,5] is no
-  // grouping, while "1-11" beside [12] splits the board in two and stays.
+  // A catch-all gives way only to a topic that groups real articles itself
+  // and claims some of the catch-all's: "1-12" beside [4,5] is no grouping,
+  // "1-11" beside [11,12] keeps 1-10, and "1-11" beside [12] splits the
+  // board in two and stays whole.
   const rivals = read.filter(({ item, numbers, lumps }) => !lumps && clean(item?.title, 40) && numbers.some(real));
-  for (const { item, ranged, lumps, numbers: all } of read) {
+  for (const { item, ranged, lumps, full, numbers: all } of read) {
     if (topics.length >= MAX_TOPICS) break;
     const title = clean(item?.title, 40);
     let numbers = all;
-    const lumpSet = lumps ? new Set(ranged) : null;
-    if (lumps && rivals.some((rival) => rival.numbers.some((n) => lumpSet.has(n)))) {
+    const claimed = lumps ? new Set(rivals.flatMap((rival) => rival.numbers).filter((n) => numbers.includes(n))) : null;
+    if (claimed?.size && full) {
       // Only what the ranges named goes; a number also written on its own stays.
       const lumped = new Map();
       ranged.forEach((n) => lumped.set(n, (lumped.get(n) || 0) + 1));
@@ -260,7 +265,7 @@ export function readTopics(text, count) {
         if (left) lumped.set(n, left - 1);
         return !left;
       });
-    }
+    } else if (claimed?.size) numbers = numbers.filter((n) => !claimed.has(n));
     numbers = numbers.filter((n) => real(n) && !taken.has(n));
     if (!title || !numbers.length) continue;
     const unique = [...new Set(numbers)];

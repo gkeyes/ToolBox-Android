@@ -172,7 +172,7 @@ function RawOutput({ raw }) {
 
 function caption(state, stream) {
   if (state.status === "loading" || state.updating) {
-    const phase = !stream ? "正在读取未读文章" : stream.text ? `${stream.first ? "第二次，" : ""}AI 正在输出 · ${stream.text.length} 字` : stream.first ? "第一次的回答被截断，正在请 AI 回答得短一点" : stream.thinking ? "AI 正在思考" : `已发送 ${stream.sent.length} 篇，等待 AI`;
+    const phase = !stream ? "正在读取未读文章" : stream.text ? `${stream.text.length} 字 · ${stream.first ? "第二次，" : ""}AI 正在输出` : stream.first ? "第一次的回答被截断，正在请 AI 回答得短一点" : stream.thinking ? "AI 正在思考" : `已发送 ${stream.sent.length} 篇，等待 AI`;
     return state.updating && state.at ? `${phase}，下面是 ${clock(state.at)} 的版本，进度在卡片下方` : phase;
   }
   if (state.status === "done") return `${state.total} 篇未读 · ${clock(state.at)} 更新`;
