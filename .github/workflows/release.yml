@@ -47,7 +47,7 @@ jobs:
     steps:
       # The release scripts come from this workflow's commit; the released commit's manifests are read from
       # history, so a run of an older commit is checked with the current rules.
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
           fetch-depth: 0
