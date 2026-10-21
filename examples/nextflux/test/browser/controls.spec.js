@@ -251,6 +251,25 @@ test("alert buttons stack at 2x text on a 320 px phone instead of breaking label
   await info.attach("alert-320-z2.png", { body: await page.screenshot(), contentType: "image/png" });
 });
 
+test("alert buttons with short labels stay side by side at 2x text", async ({ page }) => {
+  await open(page, 390, "light", 2);
+  await page.getByRole("button", { name: "Open alert", exact: true }).click();
+  const alert = page.getByRole("alertdialog");
+  await alert.getByRole("button", { name: "Cancel", exact: true }).evaluate((node) => { node.lastChild.textContent = "取消"; });
+  await alert.getByRole("button", { name: "Confirm", exact: true }).evaluate((node) => { node.lastChild.textContent = "退出"; });
+  const tops = await alert.locator(".nextflux-modal-footer button").evaluateAll((nodes) => nodes.map((node) => Math.round(node.getBoundingClientRect().top)));
+  expect(tops[0], "both buttons share one row").toBe(tops[1]);
+});
+
+test("the alert's more-below shade is dark in dark mode", async ({ page }) => {
+  await open(page, 320, "dark", 2);
+  await page.getByRole("button", { name: "Open alert", exact: true }).click();
+  const body = page.getByRole("alertdialog").locator(".nextflux-alert-body");
+  const image = await body.evaluate((node) => getComputedStyle(node, "::after").backgroundImage);
+  // The end stop, not the transparent start (which is rgba(0, 0, 0, 0) too).
+  expect(image).toMatch(/rgba\(0, 0, 0, 0\.2\d*\)\)$/);
+});
+
 test("keyboard focus remains visible and Escape still dismisses a modal", async ({ page }) => {
   await open(page);
   const close = page.locator(".action-buttons .nextflux-close-button");
