@@ -116,6 +116,34 @@ const listComponents = { Header: ListHeader, Footer: ListFooter, EmptyPlaceholde
 const EMPTY = [];
 const computeArticleKey = (_index, article) => article.id;
 
+// Marks the list data-narrow when a card's content would be 10rem or less
+// (the list less about 64px of row and card padding), so ios27.css can stack
+// the meta row at large text. A size container on the list did the same in
+// CSS but made every list layout 40-100% slower (recheck-127 P3-3); this
+// reads the width only when it changes.
+function useNarrowCards() {
+  const ref = useRef(null);
+  useLayoutEffect(() => {
+    const element = ref.current;
+    if (!element || typeof ResizeObserver !== "function") return undefined;
+    // A hidden 10rem probe follows the text size, which changes no width.
+    const probe = document.createElement("span");
+    probe.setAttribute("aria-hidden", "true");
+    probe.style.cssText = "position:absolute;visibility:hidden;pointer-events:none;inline-size:10rem;block-size:0;inset-block-start:0;inset-inline-start:0";
+    element.append(probe);
+    const apply = () => {
+      const narrow = element.clientWidth <= probe.offsetWidth + 64;
+      if ((element.dataset.narrow === "true") !== narrow) element.dataset.narrow = narrow ? "true" : "false";
+    };
+    apply();
+    const observer = new ResizeObserver(apply);
+    observer.observe(element);
+    observer.observe(probe);
+    return () => { observer.disconnect(); probe.remove(); };
+  }, []);
+  return ref;
+}
+
 export default function ArticleListContent({
   articles,
   setVisibleRange,
@@ -281,9 +309,10 @@ export default function ArticleListContent({
     if (atBottom && listScroller.current?.scrollTop > 0) void handleEndReached();
   }, [handleEndReached]);
 
+  const narrowRef = useNarrowCards();
   return (
     <div className="article-list-body min-h-0 flex-1">
-        <div className="article-list-content h-full">
+        <div ref={narrowRef} className="article-list-content h-full">
           <Virtuoso
             ref={virtuosoRef}
             scrollerRef={setListScroller}

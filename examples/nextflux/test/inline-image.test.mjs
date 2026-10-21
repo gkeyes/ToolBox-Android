@@ -76,7 +76,7 @@ test("text beyond an inline wrapper still counts, an SVG alone is no icon", () =
 
 test("a line with nothing after the image yet stays open", () => {
   const last = image();
-  const paragraph = element("P", [text("text "), last]);
+  const paragraph = element("P", [text("前面一段话。"), last]);
   assert.equal(imageLineOpen(last), true);
   assert.equal(imageIsInline(last, {}), false);
   const more = text(" more");
@@ -85,7 +85,7 @@ test("a line with nothing after the image yet stays open", () => {
   assert.equal(imageLineOpen(last), false);
   assert.equal(imageIsInline(last, {}), true);
   const tail = image();
-  const article = element("DIV", [element("P", [text("text "), tail])]);
+  const article = element("DIV", [element("P", [text("前面一段话。"), tail])]);
   assert.equal(imageLineOpen(tail), true);
   const next = element("P", [text("next paragraph")]);
   next.parentElement = article;
@@ -99,7 +99,7 @@ test("a line with nothing after the image yet stays open", () => {
 
 test("a nested break ends the line, the root bounds the article, an icon class survives cleaning", async () => {
   const photo = image();
-  element("P", [text("caption "), photo, element("SPAN", [element("BR"), text("next line")])]);
+  element("P", [text("如下图："), photo, element("SPAN", [element("BR"), text("next line")])]);
   assert.equal(imageIsInline(photo, {}), false);
   const tail = image();
   const root = element("DIV", [element("P", [text("text "), tail])]);
@@ -113,4 +113,28 @@ test("a nested break ends the line, the root bounds the article, an icon class s
   const icon = image();
   element("P", [element("STRONG", [text("标签")]), icon]);
   assert.equal(imageIsInline(icon, attrs), true);
+});
+
+test("emoji, stickers and badges stay inline with text on one side (recheck-127)", () => {
+  const cases = [
+    [(img) => element("P", [text("今天很开心"), img]), { "data-image-source": "https://twemoji.example/v/72x72/1f600.png", alt: "😀" }],
+    [(img) => element("P", [img, text("今天很开心")]), { "data-image-source": "https://cdn.example/1f600.png" }],
+    [(img) => element("P", [text("哈哈"), img]), { "data-image-source": "https://img.example/expression/xiaoku.png", alt: "[笑cry]" }],
+    [(img) => element("P", [element("STRONG", [text("标签")]), img]), { "data-image-source": "https://example.com/uploads/build.png" }],
+    [(img) => element("P", [element("A", [img])]), { "data-image-source": "https://img.shields.io/badge/build-passing-green" }],
+  ];
+  for (const [build, attrs] of cases) { const img = image(); build(img); assert.equal(imageIsInline(img, attrs), true, JSON.stringify(attrs)); }
+});
+
+test("photos with a lead-in, credit or caption on one side keep the reserve", () => {
+  const cases = [
+    (img) => element("P", [element("SPAN", [text("来源")]), img]),
+    (img) => element("P", [text("如下图"), img]),
+    (img) => element("P", [text("这是前面的一段话。"), img]),
+    (img) => element("P", [img, text("图1：说明")]),
+    (img) => element("P", [img, text("▲ 现场")]),
+  ];
+  const hashed = image(); element("P", [element("SPAN", [text("来源")]), hashed]);
+  assert.equal(imageIsInline(hashed, { "data-image-source": "https://example.com/ab12cd.png" }), false);
+  for (const build of cases) { const img = image(); build(img); assert.equal(imageIsInline(img, { "data-image-source": "https://example.com/2026/10/photo.jpg" }), false); }
 });

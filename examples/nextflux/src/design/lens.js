@@ -234,11 +234,13 @@ export function installLens({ doc = document, win = window } = {}) {
     for (const { node, lens } of filters.values()) node.replaceChildren(...(value ? [passThrough()] : lens));
   };
   // A touchend the document never sees (a host gesture took the touch) would
-  // leave the bending off until the next touch; after 2 s without a touch
-  // event and without scrolling, the count is treated as stale.
+  // leave the bending off until the next touch; after 10 s without a touch
+  // event and without scrolling, the count is treated as stale. A finger held
+  // still for a few seconds is far more common than a lost touchend, so the
+  // wait is long (recheck-127 P3-2: at 2 s the bending came back under it).
   const settle = () => {
     still = 0;
-    if (touches && Date.now() - touchedAt < 2000) { still = win.setTimeout(settle, 500); return; }
+    if (touches && Date.now() - touchedAt < 10000) { still = win.setTimeout(settle, 500); return; }
     touches = 0;
     setPaused(false);
   };
@@ -250,7 +252,11 @@ export function installLens({ doc = document, win = window } = {}) {
   const onTouch = (event) => {
     touches = event.touches?.length ?? 0;
     touchedAt = Date.now();
-    if (!touches && paused && !still) still = win.setTimeout(settle, 180);
+    // On release, restore 180 ms later even if a stale-touch check is waiting.
+    if (!touches && paused) {
+      if (still) win.clearTimeout(still);
+      still = win.setTimeout(settle, 180);
+    }
   };
   // touchmove only refreshes the activity time, so a long drag is not taken
   // for a lost touchend.
