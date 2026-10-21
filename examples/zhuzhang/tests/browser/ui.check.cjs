@@ -41,7 +41,7 @@ const check = (name, ok, got) => { results.push({ name, ok: !!ok, got }); consol
         if (op < .99) out.push('faded ' + op.toFixed(2));
         const s = getComputedStyle(el), c = rgba(s.color); if (c.a < .9) out.push('text alpha ' + c.a);
         bg = bg || { r: 255, g: 255, b: 255 }; const L1 = lum(c), L2 = lum(bg), ratio = (Math.max(L1, L2) + .05) / (Math.min(L1, L2) + .05); if (ratio < 3) out.push('contrast ' + ratio.toFixed(2));
-        const hit = document.elementFromPoint(Math.min(innerWidth - 1, r.left + Math.min(6, r.width / 2)), r.top + r.height / 2); if (!hit || !(el.contains(hit) || hit.contains(el))) out.push('covered by ' + (hit && (hit.className || hit.tagName)));
+        const hit = document.elementFromPoint(Math.min(innerWidth - 1, r.left + Math.min(6, r.width / 2)), r.top + r.height / 2); if (!hit || !el.contains(hit)) out.push('covered by ' + (hit && (hit.className || hit.tagName)));
         return out; };
     });
     const p = await ctx.newPage(); await p.goto(base + hash); await W(1200);
@@ -58,12 +58,17 @@ const check = (name, ok, got) => { results.push({ name, ok: !!ok, got }); consol
   for (const [name, z, end, start] of [['滨江花园三期12栋1202', 2, '12栋1202', '滨江'], ['阳光城·翡丽湾二期 B区 7栋2单元 1803室', 1, '7栋2单元 1803室', '阳光城·翡丽湾二期'],
     ['阳光城·翡丽湾二期 B区 7栋2单元 1803室', 1.3, '7栋2单元 1803室', '阳光城'], ['阳光城·翡丽湾二期 B区 7栋2单元 1803室', 2, '7栋2单元 1803室', '阳光城'],
     ['Riverside Garden Phase 3 Bldg 12-1202', 1, '12-1202', 'Riverside Garden'], ['Riverside Garden Phase 3 Bldg 12-1202', 2, '12-1202', 'Riverside…'],
-    ['北京市朝阳区望京街道花家地西里三区 2号楼 1单元 501', 1, '1单元 501', '北京市朝阳区'], ['我的新家', 2, '我的新家', '我的新家']]) {
+    ['北京市朝阳区望京街道花家地西里三区 2号楼 1单元 501', 1, '1单元 501', '北京市朝阳区'], ['我的新家', 2, '我的新家', '我的新家'],
+    // Same estate, different buildings: at ×2 every one keeps its own building number.
+    ...[6, 8, 9, 10, 11, 18].map((b) => [`阳光城·翡丽湾二期 B区 ${b}栋2单元 1803室`, 2, `${b}栋2单元 1803室`, '阳'])]) {
     const { ctx, p, zoom } = await open(320, ledger(name)); await zoom(z);
     const m = await p.evaluate(() => { const n = document.querySelector('.mobile-project .project-name'), bar = document.querySelector('.topbar'), small = document.querySelector('.mobile-project .project-meta');
-      return { text: n.textContent, fits: n.scrollHeight <= n.clientHeight + 1, name: __seen(n), top: n.getBoundingClientRect().top - bar.getBoundingClientRect().top, sw: document.documentElement.scrollWidth,
+      return { text: n.textContent, size: parseFloat(getComputedStyle(n).fontSize), fits: n.scrollHeight <= n.clientHeight + 1, name: __seen(n), top: n.getBoundingClientRect().top - bar.getBoundingClientRect().top, sw: document.documentElement.scrollWidth,
         meta: [...small.querySelectorAll('span')].map((x) => ({ t: x.textContent, seen: __seen(x) })) }; });
-    check(`top bar ${name} ×${z}: keeps 「${start}」 and 「${end}」, and what shows fits its box`, m.text.startsWith(start) && m.text.endsWith(end) && m.fits && !m.name.length, m);
+    check(`top bar ${name} ×${z}: keeps 「${start}」 and 「${end}」, and what shows fits its box`, m.text.startsWith(start) && m.text.endsWith(end) && m.fits && !m.name.length && m.size >= 14 * z, m);
+    // Neither side of … stops inside a word, a number, or between a number and its 栋/单元/号楼/室.
+    const [hd, tl = ''] = m.text.split('…'), at = name.length - tl.length, hEnd = hd.length, glued = (a, b) => /[A-Za-z0-9]/.test(a || '') && /[A-Za-z0-9]/.test(b || '') || /[0-9]/.test(a || '') && /[栋幢座号楼单元室层户]/.test(b || '');
+    check(`top bar ${name} ×${z}: cut only between words`, !m.text.includes('…') || (name.endsWith(tl) && !glued(name[at - 1], name[at]) && name.startsWith(hd) && !glued(name[hEnd - 1], name[hEnd])), { text: m.text });
     check(`top bar ${name} ×${z}: page stays 320 wide, name clears the top, every meta piece readable in full`, m.sw === 320 && m.top >= 6 && m.meta.length === 2 && m.meta.every((x) => !x.seen.length), m);
     await ctx.close();
   }

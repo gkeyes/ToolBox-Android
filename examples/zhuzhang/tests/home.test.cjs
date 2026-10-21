@@ -706,6 +706,15 @@ test('1.12.4 · a long project name keeps as much of its end as fits; no style r
     const e = app.fitText(box(per, lines), 'Riverside Garden Phase 3 Bldg 12-1202'), [head, tail] = e.split('…');
     assert.ok(tail.endsWith('12-1202') && /(^|\s)\S+$/.test(head) && !/[A-Za-z0-9]$/.test(head) === false && 'Riverside Garden Phase 3 Bldg 12-1202'.startsWith(head + ' ') && ('Riverside Garden Phase 3 Bldg 12-1202').endsWith(' ' + tail), per + '×' + lines + ': whole words, ' + e);
   }
+  // 1.12.6: the estate's first word never costs the tail its building number.
+  for (const n of [6, 7, 8, 9, 10, 11, 18]) {
+    const e = app.fitText(box(5, 3), `阳光城·翡丽湾二期 B区 ${n}栋2单元 1803室`);
+    assert.ok(e.endsWith(`…${n}栋2单元 1803室`), n + '栋: ' + e);
+  }
+  for (const [per, lines] of [[4, 3], [5, 2], [6, 2]]) {
+    const e = app.fitText(box(per, lines), '阳光城·翡丽湾二期 B区 11栋2单元 1803室'), tail = e.split('…')[1];
+    assert.ok(!/^[栋单元号楼室]/.test(tail) && !(/^\d/.test(tail) && !/^(11栋|2单元|1803室)/.test(tail)), per + '×' + lines + ': never starts inside 11栋, ' + e);
+  }
   const b = app.fitText(box(5, 2), '滨江花园三期12栋1202');
   assert.ok(b.endsWith('12栋1202') && [...b].length <= 10, b);
   const c = app.fitText(box(4, 2), '滨江花园三期12栋0805');
@@ -729,10 +738,14 @@ test('1.12.5 · the ledger fuzz itself works: it makes every kind of entry and c
     fault(L.payments.filter((p) => p.itemId === i.id), rows, cash); return { rows, cash }; } });
   const leak = broken((ps, rows, cash) => { const p = ps.find((q) => q.part); if (!p) return; const r = rows.get(p.id), k = +p.part.slice(1), j = k ? 0 : 1; if (r[k] < 1) return; r[k]--; r[j]++; cash[k]++; cash[j]--; });
   const below = broken((ps, rows, cash) => { const p = ps.find((q) => q.kind === 'payment'); if (!p) return; const r = rows.get(p.id), d = r[0] + 100; r[0] -= d; r[1] += d; cash[0] -= d; cash[1] += d; });
+  const below1 = broken((ps, rows, cash) => { const p = ps.find((q) => q.kind === 'payment' && q.amount > 0); if (!p) return; const r = rows.get(p.id), d = r[0] + 1; r[0] -= d; r[1] += d; cash[0] -= d; cash[1] += d; });
+  const negCash = broken((ps, rows, cash) => { if (cash[0] >= 0) cash[0] = -1; });
   const drift = broken((ps, rows, cash) => { cash[0]++; cash[1]--; });
   const sum = broken((ps, rows) => { if (ps[0]) rows.get(ps[0].id)[0]++; });
   assert.ok(run(leak, { n: 200, seed: 5 }).leak > 0, 'an aimed refund that leaks one cent is caught');
   assert.ok(run(below, { n: 200, seed: 5 }).rowSign > 0, 'a row below zero is caught');
+  assert.ok(run(below1, { n: 200, seed: 5 }).rowSign > 0, 'a row one fen below zero is caught');
+  assert.ok(run(negCash, { n: 200, seed: 5 }).negCash > 0, 'a piece left with negative cash is caught');
   assert.ok(run(drift, { n: 200, seed: 5 }).cashSum > 0, 'cash that drifts from its rows is caught');
   assert.ok(run(sum, { n: 200, seed: 5 }).rowSum > 0, 'a row that no longer adds up to its amount is caught');
 });
