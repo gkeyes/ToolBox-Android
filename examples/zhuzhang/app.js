@@ -4,7 +4,7 @@
   // Ledger money is integer cents. DOM content originating from users is escaped.
   const KEY = 'ledger.v1';
   const runtime = window.ZZRuntime;
-  const VERSION = '1.12.5';
+  const VERSION = '1.12.6';
   const MAX_CENTS = 100000000000;
   const $ = s => document.querySelector(s);
   const $$ = s => [...document.querySelectorAll(s)];
@@ -474,19 +474,25 @@
   // 1.12.3: a name too long for the phone's top bar keeps its end and loses the middle. 1.12.4: the end is as long as
   // fits. 1.12.5: the start keeps the first word too when there is room (the estate: 「阳光城…7栋2单元 1803室」), then
   // whatever else fits (with no short first word and room for 18+ characters, the start keeps about 40%); neither side stops inside a Latin word or
-  // number when it can stop at a space.
+  // number when it can stop at a space. 1.12.6: the first word is dropped when keeping it would cut the end inside a
+  // number the shorter start keeps whole (8栋 stays 8栋), and neither side splits a number from its 栋/单元/号楼/室.
   function fitText(el,full){
     const ch=[...full],fits=()=>el.scrollHeight<=el.clientHeight+1,put=(h,t)=>{el.textContent=ch.slice(0,h).join('').replace(/[\s·・,，、]+$/,'')+'…'+ch.slice(ch.length-t).join('').trimStart();};
     el.textContent=full;if(fits()||ch.length<4)return full;
     const most=H=>{let lo=0,hi=ch.length-H-1;while(lo<hi){const m=(lo+hi+1)>>1;put(H,m);if(fits())lo=m;else hi=m-1;}return lo;};
     const word=ch.findIndex((c,k)=>k>0&&/[\s·・,，、]/.test(c)),first=word>0&&word<=12?word:0;
-    let h=Math.min(2,ch.length-2),t=most(h);
-    if(first>h){const t1=most(first);if(t1>=Math.min(6,t))h=first,t=t1;}
+    const n=ch.length,dig=c=>/[0-9]/.test(c||''),unit=c=>/[栋幢座号楼单元室层户]/.test(c||'');
+    const midNum=T=>dig(ch[n-T-1])&&(dig(ch[n-T])||unit(ch[n-T])),numAt=T=>{let s=n-T;while(s>0&&dig(ch[s-1]))s--;return n-s;};
+    let h=Math.min(2,n-2),t=most(h);
+    if(first>h){const t1=most(first);if(t1>=Math.min(6,t)&&!(midNum(t1)&&t>=numAt(t1)))h=first,t=t1;}
     else if(h+t>=18)for(let c=h+t;c>=h+t-3;c--){const h2=Math.floor(c*.4);if(h2<=h)break;put(h2,c-h2);if(fits()){h=h2;t=c-h2;break;}}
     while(h+t<ch.length-1){put(h+1,t);if(!fits())break;h++;}
     const al=c=>/[A-Za-z0-9]/.test(c||'');
+    if(dig(ch[h-1])&&unit(ch[h])){let k=h;while(k>0&&dig(ch[k-1]))k--;if(k>=2)h=k;}
     if(al(ch[h-1])&&al(ch[h])){const sp=ch.slice(0,h).lastIndexOf(' ');if(sp>=2)h=sp;}
-    const st=ch.length-t;if(al(ch[st-1])&&al(ch[st])){const sp=ch.slice(st).indexOf(' ');if(sp>=0&&t-sp-1>=4)t=t-sp-1;}
+    let st=n-t;
+    if(midNum(t)){let s=st;while(s<n&&dig(ch[s]))s++;if(s===st||unit(ch[s])){while(s<n&&unit(ch[s]))s++;if(n-s>=4)st=s,t=n-s;}}
+    if(al(ch[st-1])&&al(ch[st])){const sp=ch.slice(st).indexOf(' ');if(sp>=0&&t-sp-1>=4)t=t-sp-1;}
     put(h,t);return el.textContent;
   }
   function fitNames(){for(const el of $$('.mobile-project .project-name')){el.title=data.project.name;fitText(el,data.project.name);}}
