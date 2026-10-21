@@ -221,8 +221,9 @@ test("a first reply that only thought keeps its thinking on the first card", asy
   assert.equal(board.get().status, "done");
   const page = readFileSync(new URL("../src/components/Board/BoardPage.jsx", import.meta.url), "utf8");
   assert.match(page, /stream\.first\.thinking && <LiveText/);
-  // While the second reply streams, the caption still says it is the second.
-  assert.match(page, /stream\.text \? `\$\{stream\.first \? "第二次，" : ""\}AI 正在输出/);
+  // While the second reply streams, the caption still says it is the second,
+  // after the count, so a large text size that cuts the line keeps the count.
+  assert.match(page, /stream\.text \? `\$\{stream\.text\.length\} 字 · \$\{stream\.first \? "第二次，" : ""\}AI 正在输出`/);
   assert.match(page, /raw\.first && \["第一次", raw\.first\]/);
 });
 

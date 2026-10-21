@@ -126,11 +126,25 @@ test("article references keep their numbers: lists, ranges and 2.0 are not glued
   assert.deepEqual(articleNumbers("1-13", 12).length, 12);
   assert.deepEqual(articleNumbers("12-1", 12).length, 12);
   assert.deepEqual(articleNumbers("1-3", 3), [1, 2, 3]);
-  // Ranges over (nearly) the whole board are no grouping when other topics
-  // follow; whole, near-whole and split ranges alike.
-  for (const range of ['"1-12"', '"12-1"', '"1-13"', '"1-11"', '"1-6","7-12"', '"1-6,7-12"', '"2-12"']) {
+  // Ranges over the whole board are no grouping when other topics follow.
+  for (const range of ['"1-12"', '"12-1"', '"1-13"', '"1-6","7-12"', '"1-6,7-12"']) {
     const whole = parseTopics(`{"topics":[{"title":"全部","articles":[${range}]},{"title":"台风","articles":[4,5]}]}`, 12);
     assert.deepEqual(whole.map((topic) => [topic.title, topic.articles]), [["台风", [4, 5]]], range);
+  }
+  // Ranges over nearly the whole board only give up what another topic claims, whichever comes first.
+  for (const [reply, count, expected] of [
+    ['{"topics":[{"title":"全部","articles":["1-11"]},{"title":"台风","articles":[4,5]}]}', 12, [["全部", [1, 2, 3, 6, 7, 8, 9, 10, 11]], ["台风", [4, 5]]]],
+    ['{"topics":[{"title":"全部","articles":["2-12"]},{"title":"台风","articles":[4,5]}]}', 12, [["全部", [2, 3, 6, 7, 8, 9, 10, 11, 12]], ["台风", [4, 5]]]],
+    ['{"topics":[{"title":"大","articles":["1-11"]},{"title":"小","articles":[11,12]}]}', 12, [["大", [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]], ["小", [11, 12]]]],
+    ['{"topics":[{"title":"小","articles":[11]},{"title":"大","articles":["1-11"]}]}', 12, [["小", [11]], ["大", [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]]]],
+    ['{"topics":[{"title":"大","articles":["1-11"]},{"title":"小","articles":[12]},{"title":"丙","articles":[3]}]}', 12, [["大", [1, 2, 4, 5, 6, 7, 8, 9, 10, 11]], ["小", [12]], ["丙", [3]]]],
+    ['{"topics":[{"title":"大","articles":["1-18"]},{"title":"小","articles":["18-20"]}]}', 20, [["大", Array.from({ length: 17 }, (_, i) => i + 1)], ["小", [18, 19, 20]]]],
+    ['{"topics":[{"title":"大","articles":["1-9"]},{"title":"小","articles":[9,10]}]}', 10, [["大", [1, 2, 3, 4, 5, 6, 7, 8]], ["小", [9, 10]]]],
+  ]) assert.deepEqual(parseTopics(reply, count).map((topic) => [topic.title, topic.articles]), expected, reply);
+  // A range plus single numbers that together reach the whole board is a whole-board range too.
+  for (const [range, kept] of [['"1-11",12', [12]], ['"1-10",11,12', [11, 12]], ['"1-10,11,12"', [11, 12]]]) {
+    const whole = parseTopics(`{"topics":[{"title":"全部","articles":[${range}]},{"title":"乙","articles":[4]}]}`, 12);
+    assert.deepEqual(whole.map((topic) => [topic.title, topic.articles]), [["全部", kept], ["乙", [4]]], range);
   }
   // Salvaged from broken JSON, the same.
   const broken = parseTopics('{"topics":[{"title":"全部","summary":"有"引号"","articles":["1-12"]},{"title":"台风","summary":"s","articles":[4,5]}]}', 12);
