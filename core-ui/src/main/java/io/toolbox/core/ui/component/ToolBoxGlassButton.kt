@@ -1,6 +1,7 @@
 package io.toolbox.core.ui.component
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
@@ -153,10 +154,16 @@ fun toolBoxClearGlassFill(): Color {
     return ToolBoxNeutralFill.copy(alpha = if (dark) 0.24f else 0.12f).compositeOver(ToolBoxThemeTokens.materials.glassTint)
 }
 
+// Shared, so the backdrop modifier compares equal across recompositions.
+private val GlassDropShadow: () -> Shadow = { Shadow.Default }
+
+private val SolidGlassEdgeWidth = 1.dp
+
 /**
  * Glass body for a custom control (a disc, a capsule bar): Kyant's rim highlight and soft shadow
  * over [LocalToolBoxButtonBackdrop] (clear glass when there is none), under [tint]. Pair it with
- * [toolBoxGlassPress]. With reduced transparency it is an opaque [solid] fill in [shape].
+ * [toolBoxGlassPress]. With reduced transparency it is an opaque [solid] fill in [shape], outlined
+ * by [solidEdge] when given (a control over content of its own colour has no other edge then).
  * Disable [shadowEnabled] for inset content whose parent clips an external drop shadow.
  */
 @Composable
@@ -165,9 +172,13 @@ fun Modifier.toolBoxClearGlass(
     tint: Color = toolBoxClearGlassFill(),
     solid: Color = tint.compositeOver(ToolBoxThemeTokens.colors.surface),
     shadowEnabled: Boolean = true,
+    solidEdge: Color? = null,
 ): Modifier {
     val live = ToolBoxThemeTokens.materials.realBlurEnabled && LocalView.current.isHardwareAccelerated
-    if (!live) return clip(shape).background(solid)
+    if (!live) {
+        val fill = clip(shape).background(solid)
+        return if (solidEdge == null) fill else fill.border(SolidGlassEdgeWidth, solidEdge, shape)
+    }
     val backdrop = LocalToolBoxButtonBackdrop.current ?: emptyBackdrop()
     val blurRadius = LocalToolBoxButtonBlur.current
     return drawBackdrop(
@@ -177,7 +188,7 @@ fun Modifier.toolBoxClearGlass(
             vibrancy()
             blur(blurRadius.toPx())
         },
-        shadow = if (shadowEnabled) ({ Shadow.Default }) else null,
+        shadow = if (shadowEnabled) GlassDropShadow else null,
         onDrawSurface = { drawRect(tint) },
     )
 }

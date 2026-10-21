@@ -42,7 +42,9 @@ import androidx.compose.runtime.getValue
 /** Round glass close button floating over the page's top-left corner, as in the iOS 27 design. */
 @Composable
 internal fun BrowserCloseButton(actions: BrowserScreenActions, modifier: Modifier = Modifier) {
-    BrowserGlassCircle(ToolBoxIconKey.Close, "关闭浏览器", modifier.testTag("browser_close"), size = 44.dp, onClick = actions::close)
+    // Floats over the page itself, so without live glass (reduced transparency) a hairline is
+    // its only edge on a page the colour of its fill.
+    BrowserGlassCircle(ToolBoxIconKey.Close, "关闭浏览器", modifier.testTag("browser_close"), size = 44.dp, outlined = true, onClick = actions::close)
 }
 
 @Composable
@@ -262,6 +264,7 @@ private fun BrowserGlassCircle(
     modifier: Modifier = Modifier,
     size: androidx.compose.ui.unit.Dp = 52.dp,
     enabled: Boolean = true,
+    outlined: Boolean = false,
     onClick: () -> Unit,
 ) {
     val tint = if (enabled) ToolBoxThemeTokens.colors.textPrimary else ToolBoxThemeTokens.disabledContent
@@ -269,7 +272,11 @@ private fun BrowserGlassCircle(
     Box(
         modifier.size(size)
             .toolBoxGlassPress(interaction, enabled = enabled)
-            .toolBoxClearGlass(CircleShape, tint = ToolBoxThemeTokens.materials.overlayFallback.copy(alpha = 0.88f))
+            .toolBoxClearGlass(
+                CircleShape,
+                tint = ToolBoxThemeTokens.materials.overlayFallback.copy(alpha = 0.88f),
+                solidEdge = if (outlined) ToolBoxThemeTokens.colors.textPrimary.copy(alpha = 0.14f) else null,
+            )
             .clickable(enabled = enabled, interactionSource = interaction, indication = null, role = Role.Button, onClick = onClick)
             .semantics { contentDescription = label },
         contentAlignment = Alignment.Center,
