@@ -1,5 +1,6 @@
 package io.toolbox.host.screenshots
 
+import androidx.compose.foundation.background
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -46,6 +47,7 @@ import io.toolbox.core.ui.component.ToolBoxModalDialog
 import io.toolbox.core.ui.component.toolBoxOpenDesignCanvas
 import io.toolbox.core.ui.theme.ToolBoxTheme
 import io.toolbox.core.ui.theme.ToolBoxThemeMode
+import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 import io.toolbox.host.background.BackgroundSafeguardsContent
 import io.toolbox.host.background.BackgroundSystemState
 import io.toolbox.host.background.BackgroundTasksContent
@@ -461,7 +463,25 @@ class LayoutScreenshotTest(private val fontScale: Float) {
 
     @Test fun runtimePage() = render("runtime") { RuntimeShellPreviewContent("健康记录与用药提醒") }
 
-    @Test fun browserBars() = render("browser", interact = ::assertWholeDomainShown) {
+    @Test fun browserBars() = render("browser", interact = ::assertWholeDomainShown) { BrowserBars() }
+
+    /**
+     * Without live glass, over a page the colour of the controls' fill (the hard case): the solid
+     * controls and the close button's hairline.
+     */
+    @Test fun browserBarsOpaque() = render("browser_opaque") {
+        ToolBoxTheme(reduceTransparency = true) { OpaqueBrowserBars() }
+    }
+
+    @Test fun browserBarsOpaqueDark() = render("browser_opaque_dark") {
+        ToolBoxTheme(mode = ToolBoxThemeMode.Dark, reduceTransparency = true) { OpaqueBrowserBars() }
+    }
+
+    @Composable private fun OpaqueBrowserBars() {
+        Box(Modifier.fillMaxSize().background(ToolBoxThemeTokens.colors.surface)) { BrowserBars() }
+    }
+
+    @Composable private fun BrowserBars() {
         val context = LocalContext.current
         val scope = rememberCoroutineScope()
         val state = androidx.compose.runtime.remember {

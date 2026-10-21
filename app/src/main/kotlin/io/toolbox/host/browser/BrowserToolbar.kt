@@ -39,6 +39,12 @@ import io.toolbox.core.ui.component.toolBoxGlassPress
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.runtime.getValue
 
+/**
+ * Without live glass the close button's hairline is textPrimary at this alpha: at least 3:1 (a
+ * control boundary) against a page the colour of its fill, in both themes.
+ */
+internal const val CloseButtonEdgeAlpha = 0.5f
+
 /** Round glass close button floating over the page's top-left corner, as in the iOS 27 design. */
 @Composable
 internal fun BrowserCloseButton(actions: BrowserScreenActions, modifier: Modifier = Modifier) {
@@ -275,7 +281,7 @@ private fun BrowserGlassCircle(
             .toolBoxClearGlass(
                 CircleShape,
                 tint = ToolBoxThemeTokens.materials.overlayFallback.copy(alpha = 0.88f),
-                solidEdge = if (outlined) ToolBoxThemeTokens.colors.textPrimary.copy(alpha = 0.14f) else null,
+                solidEdge = if (outlined) ToolBoxThemeTokens.colors.textPrimary.copy(alpha = CloseButtonEdgeAlpha) else null,
             )
             .clickable(enabled = enabled, interactionSource = interaction, indication = null, role = Role.Button, onClick = onClick)
             .semantics { contentDescription = label },

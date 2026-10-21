@@ -42,20 +42,25 @@ class RuntimeLayersTest {
     private val taps = mutableListOf<String>()
     private val sourceHidden = mutableStateOf(false)
 
+    private val current = mutableStateOf<RuntimeTransition?>(null)
+
     private fun stack(transition: RuntimeTransition) {
+        current.value = transition
         compose.setContent {
-            Box(Modifier.size(100.dp)) {
-                Box(Modifier.fillMaxSize().runtimeSourceLayer(transition, trailingDirection = 1f)) {
+            val shown = checkNotNull(current.value)
+            // Black where no layer draws, so a faded or shifted layer shows as a partial colour.
+            Box(Modifier.size(100.dp).background(Color.Black)) {
+                Box(Modifier.fillMaxSize().runtimeSourceLayer(shown, trailingDirection = 1f)) {
                     Page("source", Color.Red)
                 }
                 // The tool layer draws only once the entry enabled it, as NavigatorRuntimeLayer does.
-                if (transition.runtimeLayerEnabled) {
-                    Box(Modifier.fillMaxSize().runtimeToolLayer(transition)) { Page("tool", Color.Blue) }
+                if (shown.runtimeLayerEnabled) {
+                    Box(Modifier.fillMaxSize().runtimeToolLayer(shown)) { Page("tool", Color.Blue) }
                 }
-                RuntimeEntryCover(transition, sourceHidden = sourceHidden.value, trailingDirection = 1f) {
+                RuntimeEntryCover(shown, sourceHidden = sourceHidden.value, trailingDirection = 1f) {
                     Page("cover", Color.Green)
                 }
-                RuntimeInputBlocker(transition)
+                RuntimeInputBlocker(shown)
             }
         }
         compose.waitForIdle()
@@ -66,9 +71,12 @@ class RuntimeLayersTest {
         Box(Modifier.fillMaxSize().background(color).testTag(tag).clickable { taps += tag })
     }
 
-    private fun front(): Color {
+    private fun front(): Color = pixel(50)
+
+    /** The colour at [x] dp along the middle row (the stack is 100dp at mdpi, so 1px per dp). */
+    private fun pixel(x: Int): Color {
         val pixels = compose.onRoot().captureToImage().toPixelMap()
-        return pixels[pixels.width / 2, pixels.height / 2]
+        return pixels[x, pixels.height / 2]
     }
 
     private fun tap() = compose.onRoot().performTouchInput { click(center) }
@@ -144,7 +152,55 @@ class RuntimeLayersTest {
         assertEquals(Color.Green, front())
     }
 
+    @Test
+    fun theToolStaysOutOfTheTreeWhileItsCoverIsStillShowing() {
+        val t = transition()
+        // The entry finished, but the tool has not presented yet.
+        t.runtimeLayerEnabled = true
+        stack(t)
+        assertEquals(Color.Green, front())
+        assertFalse(inTree("tool"))
+        assertFalse(inTree("source"))
+        tap()
+        assertEquals(emptyList<String>(), taps)
+    }
+
+    @Test
+    fun earlyInTheEntryTheSourceFadesAndShiftsBackBeforeTheCoverShows() {
+        // Entry 0.8: the cover is 20% in, still inside the fade-through split.
+        stack(transition(initialEntry = 0.8f))
+        val middle = front()
+        assertTrue("source half faded: $middle", middle.red > 0f && middle.red < 1f)
+        assertEquals(0f, middle.green)
+        // Shifted 17dp back, so the trailing edge shows the black behind it.
+        assertEquals(0f, pixel(95).red)
+    }
+
+    @Test
+    fun laterInTheEntryTheCoverFadesInFromTheTrailingSide() {
+        // Entry 0.3: the source is gone; the cover is half in and still 9dp short of the start.
+        stack(transition(initialEntry = 0.3f))
+        val middle = front()
+        assertTrue("cover half in: $middle", middle.green > 0f && middle.green < 1f)
+        assertEquals(0f, middle.red)
+        assertEquals(0f, pixel(4).green)
+    }
+
+    @Test
+    fun aToolSwitchGivesTheNewCoverAFreshNodeThatReportsItsPlacement() {
+        val first = transition()
+        stack(first)
+        assertTrue(first.entryCoverMeasured)
+
+        val second = transition(route = B)
+        compose.runOnIdle { current.value = second }
+        compose.waitForIdle()
+        assertTrue(second.entryCoverMeasured)
+        assertEquals(Color.Green, front())
+    }
+
     private companion object {
         val A = RuntimeRoute("a")
+        val B = RuntimeRoute("b")
     }
 }
