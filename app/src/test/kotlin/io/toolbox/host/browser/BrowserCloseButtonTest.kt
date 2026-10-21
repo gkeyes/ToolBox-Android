@@ -13,6 +13,7 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.unit.dp
 import io.toolbox.core.ui.theme.ToolBoxTheme
+import io.toolbox.core.ui.theme.ToolBoxThemeMode
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -21,28 +22,38 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
-/** The close button floats over the page, so without live glass it still needs an edge. */
+/** The close button floats over the page, so without live glass its hairline is its edge. */
 @RunWith(RobolectricTestRunner::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 @Config(sdk = [36], qualifiers = "xxhdpi")
 class BrowserCloseButtonTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
 
-    @Test
-    fun withReducedTransparencyTheCloseButtonIsOutlinedOnAWhitePage() {
+    // Pages the colour of the button's solid fill are the hard case; a 1dp control edge needs 3:1.
+    @Test fun lightThemeOnAWhitePage() = assertEdgeContrast(dark = false, page = Color.White)
+
+    @Test fun lightThemeOnAGroupedPage() = assertEdgeContrast(dark = false, page = Color(0xFFF2F2F7))
+
+    @Test fun darkThemeOnAPageTheColourOfTheFill() = assertEdgeContrast(dark = true, page = Color(0xFF232327))
+
+    private fun assertEdgeContrast(dark: Boolean, page: Color) {
         compose.setContent {
-            ToolBoxTheme(reduceTransparency = true) {
-                Box(Modifier.background(Color.White).padding(16.dp)) {
+            ToolBoxTheme(mode = if (dark) ToolBoxThemeMode.Dark else ToolBoxThemeMode.Light, reduceTransparency = true) {
+                Box(Modifier.background(page).padding(16.dp)) {
                     BrowserCloseButton(NoActions)
                 }
             }
         }
         val pixels = compose.onNodeWithTag("browser_close").captureToImage().toPixelMap()
         val middle = pixels.height / 2
-        // The outline (1dp = 3px here) against the fill a quarter of the way in, clear of the icon.
-        val edge = (0..3).minOf { pixels[it, middle].luminance() }
-        val fill = pixels[pixels.width / 4, middle].luminance()
-        assertTrue("edge $edge vs fill $fill", fill - edge > 0.04f)
+        // The outline is 1dp = 3px here, drawn inside the circle's left edge.
+        val edge = (0..3).maxOf { contrast(pixels[it, middle], page) }
+        assertTrue("edge contrast $edge against the page", edge >= 3f)
+    }
+
+    private fun contrast(a: Color, b: Color): Float {
+        val (light, dark) = listOf(a.luminance(), b.luminance()).sortedDescending()
+        return (light + 0.05f) / (dark + 0.05f)
     }
 
     private object NoActions : BrowserScreenActions {
