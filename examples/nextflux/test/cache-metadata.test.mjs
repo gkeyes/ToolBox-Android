@@ -30,3 +30,26 @@ test("cover metadata preserves clean title and bounded preview without loading r
   assert.equal(result.coverUrl, null);
   assert.deepEqual(result.coverSources, []);
 });
+
+test("covers skip tracking pixels, icons and other tiny images (recheck-142 C)", () => {
+  for (const tiny of [
+    '<img src="https://t.invalid/pixel.gif">',
+    '<img src="https://t.invalid/open.gif" width="1" height="1">',
+    '<img src="https://t.invalid/stats/1x1.png">',
+    '<img src="https://t.invalid/a.png" class="wp-smiley">',
+    '<img src="https://t.invalid/b.png" width="48">',
+  ]) {
+    const result = deriveArticleMetadata({ url, content: `${tiny}<p>正文</p><img src="/photo.jpg">` });
+    assert.equal(result.coverUrl, "https://www.dw.com/photo.jpg", tiny);
+  }
+  // A large picture keeps its place even with a size.
+  assert.equal(deriveArticleMetadata({ url, content: '<img src="/big.jpg" width="800" height="450">' }).coverUrl, "https://www.dw.com/big.jpg");
+  // Rows derived before this rule are derived again.
+  assert.equal(deriveArticleMetadata({ url, content: "<p>x</p>" }).metadataVersion, 2);
+});
+
+test("only an article's first video shows the article's cover (recheck-142 C)", async () => {
+  const { readFileSync } = await import("node:fs");
+  const page = readFileSync(new URL("../src/components/ArticleView/components/ArticlePageContent.jsx", import.meta.url), "utf8");
+  assert.match(page, /posterSources=\{enclosure === mediaEnclosures\.find\(\(item\) => !item\.mime_type\?\.startsWith\("audio\/"\)\) \?/);
+});

@@ -1,7 +1,9 @@
 import { Parser } from "htmlparser2";
 import { imageSourceCandidates } from "./content.js";
+import { smallImage } from "../reading/inlineImage.mjs";
 
-export const ARTICLE_METADATA_VERSION = 1;
+// 2: the cover skips tracking pixels, icons and other tiny images.
+export const ARTICLE_METADATA_VERSION = 2;
 export const currentArticleMetadata = (row) => row?.metadataVersion === ARTICLE_METADATA_VERSION && Array.isArray(row.coverSources);
 
 // Keep the list's cleanTitle/extractTextFromHtml semantics without creating DOM nodes.
@@ -25,7 +27,7 @@ function parseMetadata(html, textLimit, findImage = false, baseUrl) {
       if (findImage && !omittedImageDepth && !imageSources.length) {
         if (name === "picture") pictures.push([]);
         if (name === "source" && pictures.length) pictures.at(-1).push(attributes);
-        if (name === "img") imageSources = imageSourceCandidates(attributes, baseUrl, pictures.at(-1));
+        if (name === "img" && !smallImage(attributes)) imageSources = imageSourceCandidates(attributes, baseUrl, pictures.at(-1));
       }
     },
     onclosetag(name) {

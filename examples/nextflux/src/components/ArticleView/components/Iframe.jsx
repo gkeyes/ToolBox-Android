@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link2, LoaderCircle, Play, Share2, Video, X } from "lucide-react";
 import { imageSourceCandidates, safeContentUrl } from "@/toolbox/content.js";
+import { openInBrowser } from "@/toolbox/actions.js";
 import { approvedImageSource, loadProxyMedia, useSafeImage } from "@/toolbox/media.js";
 import { isHlsPlaylist, isMediaPlaylist, mediaPosterSources, mediaSourceCandidates } from "@/reading/media-sources.mjs";
 import StreamingMedia, { keepMediaInline } from "./StreamingMedia.jsx";
@@ -132,7 +133,10 @@ export default function Iframe({ domNode, sources, posterSources }) {
             {canLoad ? <button type="button" className="article-video-launch" disabled={loading} onClick={start} aria-label={loading ? "正在加载视频" : "播放视频"}>
               <span className="article-video-play">{loading ? <LoaderCircle className="article-video-spinner" aria-hidden="true" /> : <Play fill="currentColor" aria-hidden="true" />}</span>
               <span className="article-video-caption">{loading ? "正在加载…" : "播放视频"}</span>
-            </button> : <div className="article-video-unavailable"><Video aria-hidden="true" /><span>{url ? "在浏览器中播放" : "暂无可用视频"}</span></div>}
+            </button> : url ? <button type="button" className="article-video-launch" onClick={() => openInBrowser(url)} aria-label="在浏览器中播放视频">
+              <span className="article-video-play"><Play fill="currentColor" aria-hidden="true" /></span>
+              <span className="article-video-caption">在浏览器中播放</span>
+            </button> : <div className="article-video-unavailable"><Video aria-hidden="true" /><span>暂无可用视频</span></div>}
           </>
         )}
       </div>
