@@ -87,14 +87,21 @@ const PHOTO_BEFORE = /[。.!！?？:：]\s*$|来源|图源|出处|摄影|图片|
 const PHOTO_AFTER = /^\s*(?:图\s*\d*\s*[：:]|[▲△↑]|来源|图源|出处|摄影|图片|source|credit|photo|via\b)/i;
 
 // Images too small to stand for the article: anything 64 px or less on a
-// side, icons, emoji, stickers and badges, and tracking pixels and spacers,
-// which often come without a size. The article's cover skips them.
-const TRACKER = /(?:^|[/_.\-])(?:pixel|spacer|blank|beacon|tracking|tracker|1x1)(?:$|[/_.\-?#])/i;
+// side, icons, emoji, badges, logos, and tracking pixels and spacers, which
+// often come without a size. The article's cover skips them. Only a whole
+// file name counts as a tracker or a logo ("/pixel.gif", "site-logo.png"),
+// so a photo named "google-pixel-10-pro.jpg" or "blank-canvas.jpg" stays.
+// A lazy image is judged by its real source, not the placeholder in src.
+const TRACKER = /(?:^|\/)(?:pixel|spacer|blank|beacon|tracker|tracking|1x1|clear|transparent|trans|empty|dot)\.(?:gif|png|jpe?g|webp|svg)(?:$|[?#])|(?:^|\/)(?:pixel|beacon|1x1)(?:$|[?#/])/i;
+const COVER_ICON = /(?:^|[/_\-])(?:logo|favicon|avatar|icon|badge)s?\.(?:png|gif|svg|ico|webp)(?:$|[?#])/i;
+const EMOJI_SOURCE = /twemoji|(?:^|\/)emoji(?:s)?\/|(?:^|\/)(?:16|20|24|32|36|48|64|72|96|128)x(?:16|20|24|32|36|48|64|72|96|128)\/|(?:^|\/)1f[0-9a-f]{3}(?:[-_][0-9a-f]{4,5})*\.(?:png|gif|svg|webp)(?:$|[?#])|(?:^|\/\/)(?:img\.shields\.io|badgen\.net|badge\.fury\.io)\//i;
+const LAZY_SOURCES = ["data-src", "data-original", "data-lazy-src", "data-srcset", "data-lazy-srcset", "srcset"];
 export function smallImage(attrs = {}) {
   const width = number(attrs.width), height = number(attrs.height);
   if ((width > 0 && width <= SMALL) || (height > 0 && height <= SMALL)) return true;
-  const source = String(attrs.src || "");
-  return namesIcon(attrs.class) || SMALL_SOURCE.test(source) || TRACKER.test(source) || SMALL_ALT.test(String(attrs.alt || ""));
+  const lazy = LAZY_SOURCES.map((name) => attrs[name]).find((value) => value && String(value).trim());
+  const source = String(lazy ? String(lazy).trim().split(/[\s,]/)[0] : attrs.src || "");
+  return namesIcon(attrs.class) || EMOJI_SOURCE.test(source) || TRACKER.test(source) || COVER_ICON.test(source) || SMALL_ALT.test(String(attrs.alt || ""));
 }
 
 export function imageIsInline(target, attrs = {}) {
