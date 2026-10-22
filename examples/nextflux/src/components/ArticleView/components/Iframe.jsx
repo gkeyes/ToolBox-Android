@@ -107,7 +107,10 @@ export default function Iframe({ domNode, sources, posterSources }) {
     try {
       const link = stream?.source || media?.source || url;
       if (!link) throw new Error("媒体地址无效。");
-      if (action === "copy") {
+      if (action === "open") {
+        if (!window.ToolBox?.browser?.open) throw new Error("browser unavailable");
+        await window.ToolBox.browser.open(link);
+      } else if (action === "copy") {
         if (!window.ToolBox?.clipboard?.writeText) throw new Error("clipboard unavailable");
         await window.ToolBox.clipboard.writeText(link);
         setStatus("链接已复制。");
@@ -115,7 +118,7 @@ export default function Iframe({ domNode, sources, posterSources }) {
         if (!window.ToolBox?.share?.text) throw new Error("share unavailable");
         await window.ToolBox.share.text(link);
       }
-    } catch { setStatus(action === "copy" ? "无法复制链接，请检查剪贴板写入权限后重试。" : "无法分享链接，请检查分享权限后重试。"); }
+    } catch { setStatus(action === "open" ? "无法在浏览器中打开，请复制链接后重试。" : action === "copy" ? "无法复制链接，请检查剪贴板写入权限后重试。" : "无法分享链接，请检查分享权限后重试。"); }
   };
   if (kind !== "audio") return (
     <div ref={posterRef} className="article-video-card not-prose">
@@ -132,7 +135,10 @@ export default function Iframe({ domNode, sources, posterSources }) {
             {canLoad ? <button type="button" className="article-video-launch" disabled={loading} onClick={start} aria-label={loading ? "正在加载视频" : "播放视频"}>
               <span className="article-video-play">{loading ? <LoaderCircle className="article-video-spinner" aria-hidden="true" /> : <Play fill="currentColor" aria-hidden="true" />}</span>
               <span className="article-video-caption">{loading ? "正在加载…" : "播放视频"}</span>
-            </button> : <div className="article-video-unavailable"><Video aria-hidden="true" /><span>{url ? "在浏览器中播放" : "暂无可用视频"}</span></div>}
+            </button> : url ? <button type="button" className="article-video-launch" onClick={() => act("open")} aria-label="在浏览器中播放视频">
+              <span className="article-video-play"><Play fill="currentColor" aria-hidden="true" /></span>
+              <span className="article-video-caption">在浏览器中播放</span>
+            </button> : <div className="article-video-unavailable"><Video aria-hidden="true" /><span>暂无可用视频</span></div>}
           </>
         )}
       </div>
