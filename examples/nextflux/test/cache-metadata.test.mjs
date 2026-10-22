@@ -49,7 +49,26 @@ test("covers skip tracking pixels, icons and other tiny images (recheck-142 C)",
 });
 
 test("only an article's first video shows the article's cover (recheck-142 C)", async () => {
-  const { readFileSync } = await import("node:fs");
-  const page = readFileSync(new URL("../src/components/ArticleView/components/ArticlePageContent.jsx", import.meta.url), "utf8");
-  assert.match(page, /posterSources=\{enclosure === mediaEnclosures\.find\(\(item\) => !item\.mime_type\?\.startsWith\("audio\/"\)\) \?/);
+  const { enclosurePosterSources } = await import("../src/reading/media-sources.mjs");
+  const audio = { mime_type: "audio/mpeg", url: "https://m.invalid/a.mp3" };
+  const first = { mime_type: "video/mp4", url: "https://m.invalid/1.mp4" };
+  const second = { mime_type: "video/mp4", url: "https://m.invalid/2.mp4" };
+  const article = { coverSources: ["https://m.invalid/cover.jpg"] };
+  const enclosures = [audio, first, second];
+  assert.deepEqual(enclosurePosterSources(first, enclosures, article), ["https://m.invalid/cover.jpg"]);
+  assert.deepEqual(enclosurePosterSources(second, enclosures, article), []);
+  assert.deepEqual(enclosurePosterSources(audio, enclosures, article), []);
+  assert.deepEqual(enclosurePosterSources(first, [first], { coverUrl: "https://m.invalid/old.jpg" }), ["https://m.invalid/old.jpg"]);
+});
+
+test("covers keep real photos whose names merely contain tracker or icon words (recheck-152 P2-1)", () => {
+  for (const photo of ["google-pixel-10-pro-hero.jpg", "pixel-art.png", "blank-canvas.jpg", "package-tracking.jpg", "facial-expression.jpg", "smile-campaign.jpg", "apple-logo-event-hero.jpg"]) {
+    assert.equal(deriveArticleMetadata({ url, content: `<img src="/${photo}">` }).coverUrl, `https://www.dw.com/${photo}`, photo);
+  }
+  // A lazy image whose src is a spacer or blank placeholder keeps its real picture.
+  for (const lazy of ['src="/spacer.gif" data-src="/real.jpg"', 'src="/blank.gif" data-original="/real.jpg"']) {
+    assert.equal(deriveArticleMetadata({ url, content: `<img ${lazy}>` }).coverUrl, "https://www.dw.com/real.jpg", lazy);
+  }
+  // A logo file with no size is skipped (P3-2).
+  assert.equal(deriveArticleMetadata({ url, content: '<img src="/wp-content/uploads/site-logo.png"><img src="/photo.jpg">' }).coverUrl, "https://www.dw.com/photo.jpg");
 });

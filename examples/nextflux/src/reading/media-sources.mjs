@@ -17,6 +17,14 @@ export function mediaPosterSources(attributes = {}, baseUrl) {
   }, baseUrl);
 }
 
+// The article's cover stands for its first video enclosure only; a second
+// video showing the same picture would look like a repeat. Audio has none.
+export function enclosurePosterSources(enclosure, enclosures = [], article = {}) {
+  const firstVideo = enclosures.find((item) => !String(item?.mime_type || "").startsWith("audio/"));
+  if (enclosure !== firstVideo) return [];
+  return article?.coverSources?.length ? article.coverSources : [article?.coverUrl].filter(Boolean);
+}
+
 export function mediaSourceCandidates(attributes = {}, sources = [], baseUrl) {
   const candidates = [];
   for (const source of [attributes, ...sources].slice(0, 33)) {

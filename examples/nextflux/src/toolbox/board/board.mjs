@@ -232,8 +232,6 @@ export function readTopics(text, count) {
   const salvaged = data ? null : salvageTopics(raw, count);
   const list = Array.isArray(data?.topics) ? data.topics : Array.isArray(data) ? data : salvaged?.length ? salvaged : null;
   if (!list) throw new Error("AI 返回的内容无法识别，请重新生成。");
-  const taken = new Set();
-  const topics = [];
   // Each topic's numbers, and the numbers its ranges named.
   const read = list.map((item) => {
     const listed = Array.isArray(item?.articles) ? item.articles : [];
@@ -246,22 +244,40 @@ export function readTopics(text, count) {
   const real = (n) => Number.isInteger(n) && n >= 1 && n <= count;
   // A catch-all gives way only to a topic that groups real articles itself,
   // and only the articles that topic claims: "1-12" beside [4,5] keeps the
-  // other ten, and "1-11" beside [12] splits the board in two.
-  const rivals = read.filter(({ item, numbers, lumps }) => !lumps && clean(item?.title, 40) && numbers.some(real));
-  for (const { item, lumps, numbers: all } of read) {
-    if (topics.length >= MAX_TOPICS) break;
-    const title = clean(item?.title, 40);
-    let numbers = all;
-    if (lumps) {
-      const claimed = new Set(rivals.flatMap((rival) => rival.numbers));
-      numbers = numbers.filter((n) => !claimed.has(n));
+  // other ten, and "1-11" beside [12] splits the board in two. A rival that
+  // the MAX_TOPICS cap then leaves out claims nothing, so its articles stay
+  // with the catch-all; the board is picked again without it.
+  const pick = (rivals) => {
+    const claimed = new Set(rivals.flatMap((rival) => rival.numbers));
+    const taken = new Set();
+    const picked = [];
+    for (const entry of read) {
+      if (picked.length >= MAX_TOPICS) break;
+      const { item, lumps, numbers: all } = entry;
+      const title = clean(item?.title, 40);
+      const numbers = (lumps ? all.filter((n) => !claimed.has(n)) : all).filter((n) => real(n) && !taken.has(n));
+      if (!title || !numbers.length) continue;
+      const unique = [...new Set(numbers)];
+      unique.forEach((n) => taken.add(n));
+      // A catch-all left with under half of what it named is the rest of the
+      // board, not all of it: its title and summary described every article.
+      const rest = lumps && unique.length * 2 < new Set(all.filter(real)).size;
+      picked.push({ entry, topic: rest
+        ? { title: "其他", gist: "", summary: "", articles: unique }
+        : { title, gist: clean(item?.gist, 80), summary: clean(item?.summary, 400), articles: unique } });
     }
-    numbers = numbers.filter((n) => real(n) && !taken.has(n));
-    if (!title || !numbers.length) continue;
-    const unique = [...new Set(numbers)];
-    unique.forEach((n) => taken.add(n));
-    topics.push({ title, gist: clean(item?.gist, 80), summary: clean(item?.summary, 400), articles: unique });
+    return picked;
+  };
+  let rivals = read.filter(({ item, numbers, lumps }) => !lumps && clean(item?.title, 40) && numbers.some(real));
+  let picked = pick(rivals);
+  for (;;) {
+    const kept = new Set(picked.map(({ entry }) => entry));
+    const shown = rivals.filter((rival) => kept.has(rival));
+    if (shown.length === rivals.length) break;
+    rivals = shown;
+    picked = pick(rivals);
   }
+  const topics = picked.map(({ topic }) => topic);
   if (!topics.length) throw new Error("AI 没有归出主题，请重新生成。");
   return { topics, whole: Boolean(data) };
 }

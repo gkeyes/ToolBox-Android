@@ -167,6 +167,15 @@ test("article references keep their numbers: lists, ranges and 2.0 are not glued
     ['{"topics":[{"title":"大","articles":["1-9"]},{"title":"小","articles":[10]}]}', 10, [9, 1]],
     ['{"topics":[{"title":"大","articles":["1-18"]},{"title":"小","articles":["19-20"]}]}', 20, [18, 2]],
   ]) assert.deepEqual(parseTopics(reply, count).map((topic) => topic.articles.length), sizes, reply);
+  // A rival the 7-topic cap leaves out claims nothing from the catch-all (recheck-154 N1).
+  const singles = Array.from({ length: 7 }, (_, i) => `{"title":"单${i + 1}","articles":[${i + 1}]}`).join(",");
+  const capped = parseTopics(`{"topics":[{"title":"全部","articles":["1-12"]},${singles}]}`, 12);
+  assert.equal(capped.length, 7);
+  assert.deepEqual(capped[0].articles, [7, 8, 9, 10, 11, 12]);
+  assert.equal(new Set(capped.flatMap((topic) => topic.articles)).size, 12);
+  // A catch-all left with under half of its articles is the rest, not 「全部」 (recheck-154 N2).
+  const rest = parseTopics('{"topics":[{"title":"全部","gist":"今天的全部新闻","summary":"全部","articles":["1-12"]},{"title":"乙","articles":[1,2,3,4,5,6,7,8,9,10,11]}]}', 12);
+  assert.deepEqual(rest.map((topic) => [topic.title, topic.gist, topic.articles]), [["其他", "", [12]], ["乙", "", [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]]]);
   // A small board may be one topic.
   assert.deepEqual(parseTopics('{"topics":[{"title":"全部","articles":["1-3"]},{"title":"乙","articles":[1]}]}', 3)[0].articles, [1, 2, 3]);
   assert.deepEqual(articleNumbers("1-14", 12), []);
