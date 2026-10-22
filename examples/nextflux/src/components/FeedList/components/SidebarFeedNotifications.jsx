@@ -35,7 +35,7 @@ export default function SidebarFeedNotifications() {
       >
         <Bell className="sidebar-pref-icon" aria-hidden="true" />
         <div className="min-w-0 flex-1">
-          <div className="truncate ds-body font-medium">{t("feedNotify.title")}</div>
+          <div className="line-clamp-2 break-words ds-body font-medium">{t("feedNotify.title")}</div>
           <div className="sidebar-pref-summary ds-caption ds-tnum">
             <span>{caption}</span>
             {count > 0 && !syncing && (
