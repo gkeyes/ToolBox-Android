@@ -45,7 +45,7 @@ test("covers skip tracking pixels, icons and other tiny images (recheck-142 C)",
   // A large picture keeps its place even with a size.
   assert.equal(deriveArticleMetadata({ url, content: '<img src="/big.jpg" width="800" height="450">' }).coverUrl, "https://www.dw.com/big.jpg");
   // Rows derived before this rule are derived again.
-  assert.equal(deriveArticleMetadata({ url, content: "<p>x</p>" }).metadataVersion, 2);
+  assert.equal(deriveArticleMetadata({ url, content: "<p>x</p>" }).metadataVersion, 3);
 });
 
 test("only an article's first video shows the article's cover (recheck-142 C)", async () => {

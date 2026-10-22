@@ -75,33 +75,50 @@ function scan(node, step) {
 }
 
 // Images that are small whatever surrounds them: emoji sets (twemoji, a
-// 1fxxx codepoint file name, a 72x72 size folder), stickers and expressions, and
-// badge services. Alt text that is only emoji or a bracketed sticker name
-// ([笑cry], Weibo/QQ style) says the same.
-const SMALL_SOURCE = /twemoji|emoji|emoticon|smil(?:e|ey|ies)|sticker|expression|(?:^|\/)(?:16|20|24|32|36|48|64|72|96|128)x(?:16|20|24|32|36|48|64|72|96|128)\/|(?:^|\/)1f[0-9a-f]{3}(?:[-_][0-9a-f]{4,5})*\.(?:png|gif|svg|webp)(?:$|[?#])|(?:^|\/\/)(?:img\.shields\.io|badgen\.net|badge\.fury\.io)\//i;
-const SMALL_ALT = /^\s*(?:(?:\p{Extended_Pictographic}|\p{Regional_Indicator}|\u200d|\ufe0f)+|\[[^\[\]]{1,12}\])\s*$/u;
+// 1fxxx codepoint file name, a 72x72 size folder), sticker and expression
+// folders, a smiley file name ("smile.gif") and badge services. Only a whole
+// folder or file name counts, so a photo named "smile-campaign.jpg" or
+// "facial-expression-study.jpg" keeps its reserve (recheck-148 P2-1). Alt text
+// that is only emoji or a bracketed sticker name ([笑cry], Weibo/QQ style)
+// says the same, but not a bracketed placeholder ([图片], [image]), which
+// feeds put on photos. The cover and the inline reserve share these rules.
+const SMALL_SOURCE = /twemoji|(?:^|\/)(?:emojis?|emoticons?|stickers?|expressions?|smileys?|smilies)\/|(?:^|\/)(?:smile|smiley|emoji|emoticon|sticker)(?:[-_]?\d{1,4})?\.(?:png|gif|svg|webp)(?:$|[?#])|(?:^|\/)(?:16|20|24|32|36|48|64|72|96|128)x(?:16|20|24|32|36|48|64|72|96|128)\/|(?:^|\/)1f[0-9a-f]{3}(?:[-_][0-9a-f]{4,5})*\.(?:png|gif|svg|webp)(?:$|[?#])|(?:^|\/\/)(?:img\.shields\.io|badgen\.net|badge\.fury\.io)\//i;
+const STICKER_ALT = /^\s*(?:(?:\p{Extended_Pictographic}|\p{Regional_Indicator}|\u200d|\ufe0f)+|\[[^\[\]]{1,12}\])\s*$/u;
+const PLACEHOLDER_ALT = /^\s*\[\s*(?:图片|圖片|照片|图像|圖像|配图|配圖|image|img|photo|picture|pic)\s*\]\s*$/i;
+const smallAlt = (alt) => STICKER_ALT.test(String(alt || "")) && !PLACEHOLDER_ALT.test(String(alt || ""));
 // Words around a photo on the same line: a lead-in that ends a sentence or
 // introduces it (。 ： 如下图) or holds a credit (来源：某某, Source) before
-// it; a caption marker (图：, ▲, 来源) after it.
+// it; a caption marker (图：, 图1, Figure 1, ▲, 来源) or a credit (张三 摄)
+// after it. A badge's label is a word or two, so longer text on one side
+// reads as the sentence around a photo (recheck-148 P2-2).
 const PHOTO_BEFORE = /[。.!！?？:：]\s*$|来源|图源|出处|摄影|图片|下图|如图|见图|如下|source|credit|photo|\bvia\b/i;
-const PHOTO_AFTER = /^\s*(?:图\s*\d*\s*[：:]|[▲△↑]|来源|图源|出处|摄影|图片|source|credit|photo|via\b)/i;
+const PHOTO_AFTER = /^\s*(?:图\s*\d|图\s*[：:]|[▲△↑]|来源|图源|出处|摄影|图片|source|credit|photo|via\b|fig(?:ure|\.)?\s*\d)|摄\s*$/i;
+const LABEL = 16;
 
 // Images too small to stand for the article: anything 64 px or less on a
-// side, icons, emoji, badges, logos, and tracking pixels and spacers, which
-// often come without a size. The article's cover skips them. Only a whole
-// file name counts as a tracker or a logo ("/pixel.gif", "site-logo.png"),
-// so a photo named "google-pixel-10-pro.jpg" or "blank-canvas.jpg" stays.
-// A lazy image is judged by its real source, not the placeholder in src.
-const TRACKER = /(?:^|\/)(?:pixel|spacer|blank|beacon|tracker|tracking|1x1|clear|transparent|trans|empty|dot)\.(?:gif|png|jpe?g|webp|svg)(?:$|[?#])|(?:^|\/)(?:pixel|beacon|1x1)(?:$|[?#/])/i;
+// side, icons, emoji, stickers, badges, logos, and tracking pixels and
+// spacers, which often come without a size. The article's cover skips them.
+// Only a whole file name counts as a tracker or a logo ("/pixel.gif",
+// "site-logo.png"), so a photo named "google-pixel-10-pro.jpg" or one in a
+// "/pixel/2026/" folder stays, and a logo declared larger than an icon is a
+// picture. The image is small only when every source it has (src, data-src,
+// each srcset entry) is, so a real src beside a lazy spacer still counts.
+const TRACKER = /(?:^|\/)(?:pixel|spacer|blank|beacon|tracker|tracking|1x1|clear|transparent|trans|empty|dot)\.(?:gif|png|jpe?g|webp|svg)(?:$|[?#])|(?:^|\/)(?:pixel|beacon|1x1)(?:$|[?#])/i;
 const COVER_ICON = /(?:^|[/_\-])(?:logo|favicon|avatar|icon|badge)s?\.(?:png|gif|svg|ico|webp)(?:$|[?#])/i;
-const EMOJI_SOURCE = /twemoji|(?:^|\/)emoji(?:s)?\/|(?:^|\/)(?:16|20|24|32|36|48|64|72|96|128)x(?:16|20|24|32|36|48|64|72|96|128)\/|(?:^|\/)1f[0-9a-f]{3}(?:[-_][0-9a-f]{4,5})*\.(?:png|gif|svg|webp)(?:$|[?#])|(?:^|\/\/)(?:img\.shields\.io|badgen\.net|badge\.fury\.io)\//i;
-const LAZY_SOURCES = ["data-src", "data-original", "data-lazy-src", "data-srcset", "data-lazy-srcset", "srcset"];
+const SOURCES = ["src", "data-src", "data-original", "data-lazy-src", "data-srcset", "data-lazy-srcset", "srcset"];
+const sourcesOf = (attrs) => SOURCES.flatMap((name) => {
+  const value = String(attrs[name] || "").trim();
+  if (!value) return [];
+  return name.endsWith("srcset") ? value.split(/,\s+/).map((entry) => entry.trim().split(/\s+/)[0]).filter(Boolean) : [value];
+});
 export function smallImage(attrs = {}) {
   const width = number(attrs.width), height = number(attrs.height);
   if ((width > 0 && width <= SMALL) || (height > 0 && height <= SMALL)) return true;
-  const lazy = LAZY_SOURCES.map((name) => attrs[name]).find((value) => value && String(value).trim());
-  const source = String(lazy ? String(lazy).trim().split(/[\s,]/)[0] : attrs.src || "");
-  return namesIcon(attrs.class) || EMOJI_SOURCE.test(source) || TRACKER.test(source) || COVER_ICON.test(source) || SMALL_ALT.test(String(attrs.alt || ""));
+  if (smallAlt(attrs.alt)) return true;
+  const declared = width > 0 || height > 0;
+  if (!declared && namesIcon(attrs.class)) return true;
+  const sources = sourcesOf(attrs);
+  return sources.length > 0 && sources.every((source) => SMALL_SOURCE.test(source) || TRACKER.test(source) || (!declared && COVER_ICON.test(source)));
 }
 
 export function imageIsInline(target, attrs = {}) {
@@ -110,15 +127,18 @@ export function imageIsInline(target, attrs = {}) {
   const parent = parentOf(target);
   if (!parent || tagOf(parent) === "FIGURE") return false;
   const source = String(attrs["data-image-source"] || attrs.src || "");
-  if (attrs["data-image-icon"] || SMALL_SOURCE.test(source) || SMALL_ALT.test(String(attrs.alt || ""))) return true;
+  if (attrs["data-image-icon"] || SMALL_SOURCE.test(source) || smallAlt(attrs.alt)) return true;
   const before = scan(target, -1).text;
   const after = scan(target, 1).text;
   if (before && after) return true;
   if (!before && !after) return false;
   if (ICON.test(`${source} ${attrs.alt || ""}`)) return true;
   // Text on one side only: a photo when the words read like a lead-in,
-  // credit or caption; otherwise the image sits in the line like a badge
-  // after its label (recheck-127: those reserved 16:9 and jumped 173 px).
+  // credit or caption or run longer than a label; otherwise the image sits
+  // in the line like a badge after its label (recheck-127: those reserved
+  // 16:9 and jumped 173 px).
+  const words = before || after;
+  if ([...words].length > LABEL) return false;
   return before ? !PHOTO_BEFORE.test(before) : !PHOTO_AFTER.test(after);
 }
 

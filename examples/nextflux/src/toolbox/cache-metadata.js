@@ -3,7 +3,8 @@ import { imageSourceCandidates } from "./content.js";
 import { smallImage } from "../reading/inlineImage.mjs";
 
 // 2: the cover skips tracking pixels, icons and other tiny images.
-export const ARTICLE_METADATA_VERSION = 2;
+// 3: those rules look at whole folder and file names and every source.
+export const ARTICLE_METADATA_VERSION = 3;
 export const currentArticleMetadata = (row) => row?.metadataVersion === ARTICLE_METADATA_VERSION && Array.isArray(row.coverSources);
 
 // Keep the list's cleanTitle/extractTextFromHtml semantics without creating DOM nodes.
