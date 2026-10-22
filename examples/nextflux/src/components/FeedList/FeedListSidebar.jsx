@@ -114,7 +114,7 @@ const FeedListSidebar = () => {
           </div>
         </ScrollShadow>
       </SidebarContent>
-      <SidebarFooter>
+      <SidebarFooter className="sidebar-footer">
         <div className="sidebar-sync-card">
           <SidebarBackgroundSync />
           <SidebarFeedNotifications />

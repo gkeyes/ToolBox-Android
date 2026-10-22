@@ -199,6 +199,28 @@ class RuntimeLayersTest {
         assertEquals(Color.Green, front())
     }
 
+    @Test
+    fun theSameToolPushedAgainGetsAFreshCoverNodeToo() {
+        // 0.30.11: the same route pushed right after its return popped it gets a new holder,
+        // so the cover must be keyed by the transition, not by the route.
+        val first = transition()
+        stack(first)
+        assertTrue(first.entryCoverMeasured)
+
+        val again = transition()
+        compose.runOnIdle { current.value = again }
+        compose.waitForIdle()
+        assertTrue(again.entryCoverMeasured)
+    }
+
+    @Test
+    fun aCoverStandingInBeneathTheSourceIsOpaqueAndUnshiftedMidEntry() {
+        // Halfway in, the source has faded out above it; the stand-in neither slides nor fades.
+        stack(transition(initialEntry = 0.5f, coverBeneathSource = true))
+        assertEquals(Color.Green, front())
+        assertEquals(Color.Green, pixel(4))
+    }
+
     private companion object {
         val A = RuntimeRoute("a")
         val B = RuntimeRoute("b")
