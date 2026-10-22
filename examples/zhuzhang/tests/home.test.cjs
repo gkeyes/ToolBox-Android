@@ -729,6 +729,32 @@ test('1.12.4 · a long project name keeps as much of its end as fits; no style r
   assert.deepEqual(bad, [], 'no rule hides the hint');
 });
 
+test('1.12.7 · a cut long name keeps each building apart and never cuts inside a word or a number', () => {
+  const box = (per, lines) => { const el = { textContent: '' }; Object.defineProperty(el, 'scrollHeight', { get: () => Math.ceil([...el.textContent].length / per) * 20 }); el.clientHeight = lines * 20; return el; };
+  // A two-character estate (no first word to keep) on a wider box: the 40% start used to eat 18幢.
+  for (const b of [10, 12, 13, 18, 19, 20]) {
+    assert.ok(app.fitText(box(6, 3), `中海·国际社区 三期 ${b}幢 2单元 1803`).endsWith(`…三期 ${b}幢 2单元 1803`), '中海 ' + b);
+    assert.ok(app.fitText(box(6, 3), `龙湖·春江郦城 ${b}座 2单元 1803室`).endsWith(` ${b}座 2单元 1803室`), '龙湖 ' + b);
+  }
+  // A Latin start is whole words: 「Sunshine…」, not 「Sun…」.
+  for (const [per, lines] of [[8, 3], [12, 2]]) assert.equal(app.fitText(box(per, lines), 'Sunshine Tower 18 Unit 1203 Phase 2 East'), 'Sunshine…Phase 2 East', per + '×' + lines);
+  // Every size: the start and end are the name's own, and neither cut splits a Latin word, a number (12-1202 is one)
+  // or a number from its 栋/单元/号楼/室 (head back-off and tail snap), unless nothing cleaner fits at all.
+  const glued = (s, k) => { const a = s[k - 1], b = s[k], l = (c) => /[A-Za-z0-9]/.test(c || ''); return l(a) && l(b) || l(a) && b === '-' || a === '-' && l(b) || /[0-9]/.test(a || '') && /[栋幢座号楼单元室层户]/.test(b || ''); };
+  const names = ['阳光城·翡丽湾二期 B区 8栋2单元 1803室', '中海·国际社区 三期 18幢 2单元 1803', '龙湖·春江郦城 12座 2单元 1803室', 'Riverside Garden Phase 3 Bldg 12-1202',
+    'Sunshine Tower 18 Unit 1203 Phase 2 East', '北京市朝阳区望京街道花家地西里三区 2号楼 1单元 501', '滨江花园三期12栋1202'];
+  let cuts = 0;
+  for (const name of names) for (let per = 4; per <= 12; per++) for (const lines of [2, 3]) {
+    const e = app.fitText(box(per, lines), name), ch = [...name];
+    if (!e.includes('…')) continue;
+    const [hd, tl] = e.split('…'), h = [...hd].length, at = ch.length - [...tl].length; cuts++;
+    assert.ok(name.startsWith(hd) && name.endsWith(tl), e);
+    assert.ok(!glued(ch, at) || [...tl].length <= 6, `${per}×${lines} end cut inside a word: ${e}`);
+    assert.ok(!glued(ch, h) || !/[\s·]/.test(hd), `${per}×${lines} start cut inside a word: ${e}`); // only when even the first word can't fit
+  }
+  assert.ok(cuts > 60, 'enough cut cases: ' + cuts);
+});
+
 test('1.12.5 · the ledger fuzz itself works: it makes every kind of entry and catches a broken split', () => {
   const { run } = require('./ledger-fuzz.cjs');
   const st = run(app, { n: 400, seed: 5, backdate: true });
