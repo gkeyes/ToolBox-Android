@@ -437,15 +437,28 @@ test("the background sync title wraps in the real sidebar column at 2x text", as
   const title = page.locator(".sidebar-sync-card .sidebar-pref .ds-body").first();
   await expect(title).toHaveText("后台同步");
   for (const text of ["Background sync", "Synchronisation en arrière-plan"]) {
-    await title.evaluate((node, value) => { node.textContent = value; }, text);
+    await title.evaluate((node, value) => { node.lang = "en"; node.textContent = value; }, text);
     const clipped = await title.evaluate((node) => node.scrollWidth > node.clientWidth + 1 || node.scrollHeight > node.clientHeight + 1);
     expect(clipped, `the whole title shows: ${text}`).toBe(false);
   }
   // The column between icon and switch is narrower than "Background" here, so the title
   // has to take its own line rather than break the word.
-  await title.evaluate((node) => { node.textContent = "Background sync"; });
+  await title.evaluate((node) => { node.lang = "en"; node.textContent = "Background sync"; });
   expect(await renderedLines(title)).toEqual(["Background ", "sync"]);
   await expect(page.getByRole("switch", { name: "后台同步", exact: true })).toBeVisible();
+});
+
+test("a Chinese sync title that fits keeps the one-row layout at 1.3x text", async ({ page }) => {
+  await openSidebarPreferences(page, 320);
+  await page.evaluate(() => { document.documentElement.style.fontSize = "20.8px"; });
+  const title = page.locator(".sidebar-sync-card .sidebar-pref-title").first();
+  await expect(title).toHaveText("后台同步");
+  const layout = () => title.evaluate((node) => getComputedStyle(node.parentElement).display);
+  expect(await layout(), "the title sits between icon and switch").not.toBe("contents");
+  expect(await renderedLines(title)).toEqual(["后台同步"]);
+  // The same width is too narrow for an English title, which takes its own line.
+  await title.evaluate((node) => { node.lang = "en"; node.textContent = "Background sync"; });
+  expect(await layout()).toBe("contents");
 });
 
 async function renderedLines(locator) {

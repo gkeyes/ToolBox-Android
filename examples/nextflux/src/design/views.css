@@ -151,13 +151,20 @@
   /* With large text in a narrow sidebar the title column (between icon and switch) gets
      narrower than one word, which then breaks mid-word ("Backg/round"). There the title
      takes the whole first line and the icon, caption and switch share the second. 140px is
-     the padding, icon, gaps and switch; 5.8rem fits "notifications" in the title font. */
+     the padding, icon, gaps and switch; 5.8rem fits "notifications" in the title font and
+     3.9rem the four characters of the Chinese titles. */
   .sidebar-sync-card .sidebar-pref-wrap { container: sidebar-pref / inline-size; }
   @container sidebar-pref (width < calc(140px + 5.8rem)) {
+    .sidebar-sync-card .sidebar-pref:not(:has(.sidebar-pref-title:lang(zh))) { flex-wrap: wrap; row-gap: 2px; }
+    .sidebar-sync-card .sidebar-pref:not(:has(.sidebar-pref-title:lang(zh))) .sidebar-pref-text { display: contents; }
+    .sidebar-sync-card .sidebar-pref:not(:has(.sidebar-pref-title:lang(zh))) .sidebar-pref-title { order: -1; flex: 1 0 100%; }
+    .sidebar-sync-card .sidebar-pref:not(:has(.sidebar-pref-title:lang(zh))) .sidebar-pref-text > :not(.sidebar-pref-title) { flex: 1 1 0; min-inline-size: 0; }
+  }
+  @container sidebar-pref (width < calc(140px + 3.9rem)) {
     .sidebar-sync-card .sidebar-pref { flex-wrap: wrap; row-gap: 2px; }
-    .sidebar-sync-card .sidebar-pref-text { display: contents; }
-    .sidebar-sync-card .sidebar-pref-title { order: -1; flex: 1 0 100%; }
-    .sidebar-sync-card .sidebar-pref-text > :not(.sidebar-pref-title) { flex: 1 1 0; min-inline-size: 0; }
+    .sidebar-sync-card .sidebar-pref .sidebar-pref-text { display: contents; }
+    .sidebar-sync-card .sidebar-pref .sidebar-pref-title { order: -1; flex: 1 0 100%; }
+    .sidebar-sync-card .sidebar-pref .sidebar-pref-text > :not(.sidebar-pref-title) { flex: 1 1 0; min-inline-size: 0; }
   }
   .sidebar-sync-card .sidebar-pref-wrap + .sidebar-pref-wrap {
     border-block-start: 1px solid var(--ds-hairline);
@@ -183,10 +190,9 @@
   }
   .sidebar-sync-card .sidebar-pref-summary > span:first-child {
     min-inline-size: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    overflow-wrap: anywhere;
   }
+  .sidebar-sync-card .sidebar-notify-paused.is-placeholder { visibility: hidden; }
   .sidebar-sync-card .sidebar-notify-paused {
     color: var(--ds-text-tertiary);
     white-space: nowrap;

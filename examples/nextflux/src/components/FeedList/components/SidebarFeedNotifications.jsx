@@ -8,7 +8,7 @@ import { watchedFeeds, feedNotificationsAvailable } from "@/toolbox/feed-notific
 
 // Notification settings share the background sync timer, not a separate service.
 export default function SidebarFeedNotifications() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const watched = useStore(watchedFeeds);
   const $feeds = useStore(feeds);
   const syncing = useStore(continuousSync);
@@ -35,11 +35,13 @@ export default function SidebarFeedNotifications() {
       >
         <Bell className="sidebar-pref-icon" aria-hidden="true" />
         <div className="sidebar-pref-text min-w-0 flex-1">
-          <div className="sidebar-pref-title line-clamp-3 break-words ds-body font-medium">{t("feedNotify.title")}</div>
+          <div lang={i18n.resolvedLanguage} className="sidebar-pref-title line-clamp-3 break-words ds-body font-medium">{t("feedNotify.title")}</div>
           <div className="sidebar-pref-summary ds-caption ds-tnum">
             <span>{caption}</span>
-            {count > 0 && !syncing && (
-              <span className="sidebar-notify-paused">
+            {/* Kept in place while syncing so the row, and the footer above it, don't jump
+                when sync is switched on; a quick second tap then still hits the switch. */}
+            {count > 0 && (
+              <span className={"sidebar-notify-paused" + (syncing ? " is-placeholder" : "")} aria-hidden={syncing || undefined}>
                 · {t("feedNotify.paused", { defaultValue: t("sidebar.backgroundSync.off") })}
               </span>
             )}
