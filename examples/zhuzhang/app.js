@@ -4,7 +4,7 @@
   // Ledger money is integer cents. DOM content originating from users is escaped.
   const KEY = 'ledger.v1';
   const runtime = window.ZZRuntime;
-  const VERSION = '1.12.8';
+  const VERSION = '1.12.9';
   const MAX_CENTS = 100000000000;
   const $ = s => document.querySelector(s);
   const $$ = s => [...document.querySelectorAll(s)];
@@ -485,7 +485,7 @@
     const show=x=>{if(!G||!el.replaceChildren||!document.createElement){el.textContent=x;return;}const out=[];let i=0;
       for(const m of x.matchAll(/[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*[栋幢座号楼单元室层户弄区期院]*/g)){if(m[0].length<2)continue;out.push(x.slice(i,m.index));const sp=document.createElement('span');sp.className='nb';sp.textContent=m[0];out.push(sp);i=m.index+m[0].length;}
       out.push(x.slice(i));el.replaceChildren(...out.filter(o=>o!==''));};
-    const ch=[...full],n=ch.length,fits=()=>el.scrollHeight<=el.clientHeight+1&&(el.scrollWidth||0)<=(el.clientWidth||0)+1,put=(h,t)=>show(ch.slice(0,h).join('').replace(/[\s·・,，、]+$/,'')+'…'+ch.slice(n-t).join('').trimStart());
+    const ch=[...full],n=ch.length,fits=()=>el.scrollHeight<=el.clientHeight+1&&(el.scrollWidth||0)<=(el.clientWidth||0),put=(h,t)=>show(ch.slice(0,h).join('').replace(/[\s·・,，、]+$/,'')+'…'+ch.slice(n-t).join('').trimStart());
     show(full);if(fits()||n<4)return full;
     G=false;show(full);if(fits())return full;
     const most=H=>{let lo=0,hi=n-H-1;while(lo<hi){const m=(lo+hi+1)>>1;put(H,m);if(fits())lo=m;else hi=m-1;}return lo;};
