@@ -172,7 +172,7 @@ test("a photo with a sentence or a credit on one side keeps its reserve (recheck
   ];
   for (const build of cases) { const img = image(); build(img); assert.equal(imageIsInline(img, photo), false); }
   const badge = image(); element("P", [element("STRONG", [text("下载")]), badge]);
-  assert.equal(imageIsInline(badge, photo), true);
+  assert.equal(imageIsInline(badge, { "data-image-source": "https://example.com/2026/10/download.png" }), true);
 });
 
 test("covers: folders, declared logos, every source, stickers and placeholder alts (recheck-156 N1-N5)", () => {
@@ -187,6 +187,56 @@ test("covers: folders, declared logos, every source, stickers and placeholder al
   assert.equal(smallImage({ src: "https://cdn.example/stickers/cat.gif" }), true);
   assert.equal(smallImage({ src: "https://face.t.sinajs.cn/t4/appstyle/expression/ext/normal/xiaoku.png" }), true);
   assert.equal(smallImage({ src: "https://cdn.example/a.jpg", alt: "[图片]" }), false);
-  assert.equal(smallImage({ src: "https://cdn.example/a.jpg", alt: "[笑cry]" }), true);
+  assert.equal(smallImage({ src: "https://cdn.example/a.png", alt: "[笑cry]" }), true);
   assert.equal(smallImage({ src: "https://cdn.example/2026/smile-campaign.jpg" }), false);
+});
+
+test("a JPEG with any words on one side, cues before the photo, and short captions keep the reserve (recheck-159)", () => {
+  const photo = { "data-image-source": "https://example.com/2026/10/photo.jpg" };
+  const cases = [
+    (img) => element("P", [img, text("救援人员正在废墟中搜寻幸存者")]),
+    (img) => element("P", [text("救援现场"), img]),
+    (img) => element("P", [img, text("Rescue workers")]),
+  ];
+  for (const build of cases) { const img = image(); build(img); assert.equal(imageIsInline(img, photo), false); }
+  const logo = image(); element("P", [text("来源：新华社"), logo]);
+  assert.equal(imageIsInline(logo, { "data-image-source": "https://example.com/logo-ceremony.jpg" }), false);
+  const unknown = { "data-image-source": "https://cdn.example.com/a8f3c2" };
+  for (const build of [
+    (img) => element("P", [element("STRONG", [text("Figure 1")]), text(" "), img]),
+    (img) => element("P", [text("张三 摄"), img]),
+    (img) => element("P", [text("图2"), img]),
+  ]) { const img = image(); build(img); assert.equal(imageIsInline(img, unknown), false); }
+});
+
+test("an emoji or badge file after a sentence stays inline, bracketed photo alts do not mark stickers (recheck-159)", () => {
+  for (const [words, src] of [
+    ["今天下午我们一起去了公园散步，心情非常好", "https://cdn.example.com/e/smile-face.png"],
+    ["The build for this release is passing on every platform", "https://ci.example.com/build/status.svg"],
+    ["这是一个刚好十七个字长度的标签文字啊", "https://ci.example.com/badge-a.svg"],
+  ]) {
+    const img = image(); element("P", [text(words), img]);
+    assert.equal(imageIsInline(img, { "data-image-source": src }), true, words);
+  }
+  const long = image(); element("P", [text("今天下午我们一起去了公园散步，心情非常好"), long]);
+  assert.equal(imageIsInline(long, { "data-image-source": "https://cdn.example.com/a8f3c2" }), false);
+  for (const alt of ["[新闻现场]", "[IMG_1234]"]) {
+    const lone = image(); element("DIV", [element("P", [lone]), element("P", [text("next")])]);
+    assert.equal(imageIsInline(lone, { "data-image-source": "https://cdn.example.com/2026/a.png", alt }), false, alt);
+    assert.equal(smallImage({ src: "https://cdn.example.com/2026/a.jpg", alt }), false, alt);
+  }
+  assert.equal(smallImage({ src: "https://cdn.example.com/2026/a.png", alt: "[IMG_1234]" }), false);
+  const sticker = image(); element("P", [text("哈哈"), sticker]);
+  assert.equal(imageIsInline(sticker, { "data-image-source": "https://cdn.example.com/a.gif", alt: "[笑cry]" }), true);
+});
+
+test("a Miniflux proxy address is judged by the origin it carries (recheck-159)", () => {
+  const encode = (value) => Buffer.from(value).toString("base64url");
+  const words = "今天下午我们一起去了公园散步，心情非常好";
+  const emoji = image(); element("P", [text(words), emoji]);
+  assert.equal(imageIsInline(emoji, { "data-image-source": `https://rss.example/proxy/sig/${encode("https://cdn.example/e/face.png")}` }), true);
+  const photo = image(); element("P", [text("救援现场"), photo]);
+  assert.equal(imageIsInline(photo, { "data-image-source": `https://rss.example/proxy/sig/${encode("https://cdn.example/2026/rescue.jpg")}` }), false);
+  const twemoji = image(); element("P", [text("好"), twemoji]);
+  assert.equal(imageIsInline(twemoji, { "data-image-candidates": JSON.stringify([`https://rss.example/proxy/sig/${encode("https://twemoji.example/v/72x72/1f600.png")}`]) }), true);
 });

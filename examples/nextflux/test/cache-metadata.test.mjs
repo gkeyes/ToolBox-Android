@@ -72,3 +72,9 @@ test("covers keep real photos whose names merely contain tracker or icon words (
   // A logo file with no size is skipped (P3-2).
   assert.equal(deriveArticleMetadata({ url, content: '<img src="/wp-content/uploads/site-logo.png"><img src="/photo.jpg">' }).coverUrl, "https://www.dw.com/photo.jpg");
 });
+
+test("a tracker in data-src never becomes the cover beside a real src (recheck-159 P3-2)", () => {
+  const result = deriveArticleMetadata({ url, content: '<img src="/2026/real.jpg" data-src="https://t.example.com/pixel.gif">' });
+  assert.equal(result.coverUrl, "https://www.dw.com/2026/real.jpg");
+  assert.ok(!result.coverSources.some((source) => source.includes("pixel.gif")));
+});
