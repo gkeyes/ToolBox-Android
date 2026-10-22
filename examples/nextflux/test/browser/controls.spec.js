@@ -240,6 +240,9 @@ test("alert buttons stack at 2x text on a 320 px phone instead of breaking label
     expect(box.height, `${box.text} stays on one line`).toBeLessThan(box.line * 1.5 + 24);
     expect(box.width, `${box.text} fits the dialog`).toBeLessThanOrEqual(dialog.width);
   }
+  const clipped = await alert.locator(".nextflux-modal-footer button").evaluateAll((nodes) => nodes
+    .filter((node) => node.scrollWidth > node.clientWidth).map((node) => node.textContent));
+  expect(clipped, "no label overflows its button").toEqual([]);
   // A body taller than the dialog shows the "more below" shade until it is scrolled to the end.
   const body = alert.locator(".nextflux-alert-body");
   const shade = () => body.evaluate((node) => Number(getComputedStyle(node, "::after").opacity));
@@ -249,6 +252,20 @@ test("alert buttons stack at 2x text on a 320 px phone instead of breaking label
   await body.evaluate((node) => { node.scrollTop = node.scrollHeight; });
   await expect.poll(shade).toBe(0);
   await info.attach("alert-320-z2.png", { body: await page.screenshot(), contentType: "image/png" });
+});
+
+test("sheet footers keep 取消 and 保存 in one row of equal buttons at 2x text", async ({ page }) => {
+  await open(page, 390, "light", 2);
+  await page.getByRole("button", { name: "Open sheet with footer", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByRole("button", { name: "保存", exact: true })).toBeVisible();
+  const boxes = await dialog.locator(".nextflux-modal-footer button").evaluateAll((nodes) => nodes.map((node) => {
+    const rect = node.getBoundingClientRect();
+    return { top: Math.round(rect.top), width: Math.round(rect.width) };
+  }));
+  expect(boxes).toHaveLength(2);
+  expect(boxes[0].top, "one row").toBe(boxes[1].top);
+  expect(Math.abs(boxes[0].width - boxes[1].width), "equal widths").toBeLessThanOrEqual(1);
 });
 
 test("alert buttons with short labels stay side by side at 2x text", async ({ page }) => {
@@ -346,6 +363,27 @@ test("sidebar keeps feed visibility in the feed list and groups sync notificatio
   await expect(page.getByRole("switch", { name: "显示隐藏订阅", exact: true })).toBeChecked();
   await page.getByRole("switch", { name: "显示隐藏订阅", exact: true }).locator('xpath=ancestor::*[@data-slot="switch"][1]').click();
   await expect.poll(() => page.evaluate(() => window.controlsSidebarFixture.persistedHidden())).toBe(false);
+});
+
+test("a footer taller than the sidebar scrolls so its last row stays reachable", async ({ page }) => {
+  await openSidebarPreferences(page, 390);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.evaluate(() => { document.documentElement.style.fontSize = "32px"; });
+  // Stand-in for an expanded notification list at 2x text; the marker plays the account row.
+  await page.evaluate(() => {
+    const footer = document.querySelector('[data-sidebar="footer"]');
+    const tall = Object.assign(document.createElement("div"), { style: "block-size: 900px; flex-shrink: 0" });
+    footer.querySelector(".sidebar-sync-card").append(tall);
+    footer.append(Object.assign(document.createElement("div"), { id: "footer-end", textContent: "end", style: "flex-shrink: 0" }));
+  });
+  const footer = page.locator('[data-sidebar="footer"]');
+  const viewport = page.viewportSize().height;
+  const box = await footer.boundingBox();
+  expect(box.y + box.height, "the footer ends on screen").toBeLessThanOrEqual(viewport + 1);
+  expect(await footer.evaluate((node) => node.scrollHeight > node.clientHeight), "the footer scrolls").toBe(true);
+  await footer.evaluate((node) => { node.scrollTop = node.scrollHeight; });
+  const end = await page.locator("#footer-end").boundingBox();
+  expect(end.y + end.height, "the last row is reachable").toBeLessThanOrEqual(viewport + 1);
 });
 
 test("sidebar hidden feeds disables its mobile switch until the native preference write completes", async ({ page }) => {
