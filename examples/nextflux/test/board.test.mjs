@@ -180,6 +180,20 @@ test("article references keep their numbers: lists, ranges and 2.0 are not glued
   assert.deepEqual(parseTopics('{"topics":[{"title":"全部","articles":["1-12"]},{"title":"乙","articles":[1,2,3,4,5,6,7,8,9,10,11]}]}', 12).map((topic) => topic.title), ["乙", "其他"]);
   const two = parseTopics('{"topics":[{"title":"甲","articles":["1-11"]},{"title":"乙","articles":["2-12"]},{"title":"丙","articles":[1,2,3,4,5,6,7,8]}]}', 12);
   assert.deepEqual(two.map((topic) => [topic.title, topic.articles]), [["丙", [1, 2, 3, 4, 5, 6, 7, 8]], ["其他", [9, 10, 11, 12]]]);
+  // The AI's own 「其他」 joins the rest, or goes last alone (recheck-160 O1).
+  const own = parseTopics('{"topics":[{"title":"今日全部新闻","articles":["1-12"]},{"title":"A","articles":["1-5"]},{"title":"其他","gist":"零散新闻","articles":[6,7]}]}', 12);
+  assert.deepEqual(own.map((topic) => [topic.title, topic.articles]), [["A", [1, 2, 3, 4, 5]], ["其他", [6, 7, 8, 9, 10, 11, 12]]]);
+  const first = parseTopics('{"topics":[{"title":"其他","gist":"零散新闻","articles":[6,7]},{"title":"A","articles":[1,2,3]}]}', 12);
+  assert.deepEqual(first.map((topic) => [topic.title, topic.gist]), [["A", ""], ["其他", "零散新闻"]]);
+  // The merged rest is in article order (recheck-160 O2).
+  const order = parseTopics('{"topics":[{"title":"甲","articles":["2-12"]},{"title":"乙","articles":["1-11"]},{"title":"丙","articles":[2,3,4,5,6,7,8,9]}]}', 12);
+  assert.deepEqual(order.at(-1).articles, [1, 10, 11, 12]);
+  // Two rests take one place under the cap (recheck-160 O3).
+  const pairs = Array.from({ length: 7 }, (_, i) => `{"title":"对${i + 1}","articles":[${2 * i + 3},${2 * i + 4}]}`).join(",");
+  const full = parseTopics(`{"topics":[{"title":"a","articles":["1-19"]},{"title":"b","articles":["2-20"]},${pairs}]}`, 20);
+  assert.equal(full.length, 7);
+  assert.deepEqual(full.map((topic) => topic.title), ["对1", "对2", "对3", "对4", "对5", "对6", "其他"]);
+  assert.equal(new Set(full.flatMap((topic) => topic.articles)).size, 20);
   // A small board may be one topic.
   assert.deepEqual(parseTopics('{"topics":[{"title":"全部","articles":["1-3"]},{"title":"乙","articles":[1]}]}', 3)[0].articles, [1, 2, 3]);
   assert.deepEqual(articleNumbers("1-14", 12), []);
