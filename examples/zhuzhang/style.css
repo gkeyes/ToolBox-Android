@@ -645,6 +645,7 @@ body[data-page="home"] #toast.has-action{top:calc(var(--home-top,64px) + 78px);b
 .project-meta>span+span::before{content:'·';margin:0 .4em}
 /* 1.12.8: a number and its 栋/单元/弄, or a Latin word, never splits across lines in the name. */
 .mobile-project .project-name .nb{white-space:nowrap}
+@media(max-width:700px){.mobile-project .project-name{text-overflow:clip}}
 /* 1.12.3: a date that wraps at large text makes its box taller instead of spilling over the label. */
 .date-button{height:auto}
 /* 1.12.4: when the text is large for the width (the top bar under ~17em), the house mark gives its room to the name. */
