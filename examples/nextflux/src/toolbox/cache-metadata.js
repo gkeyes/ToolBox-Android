@@ -3,8 +3,7 @@ import { imageSourceCandidates } from "./content.js";
 import { smallImage } from "../reading/inlineImage.mjs";
 
 // 2: the cover skips tracking pixels, icons and other tiny images.
-// 3: it keeps real photos named like trackers and judges lazy images by their real source.
-export const ARTICLE_METADATA_VERSION = 3;
+export const ARTICLE_METADATA_VERSION = 2;
 export const currentArticleMetadata = (row) => row?.metadataVersion === ARTICLE_METADATA_VERSION && Array.isArray(row.coverSources);
 
 // Keep the list's cleanTitle/extractTextFromHtml semantics without creating DOM nodes.
