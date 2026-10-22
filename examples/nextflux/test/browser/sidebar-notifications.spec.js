@@ -61,7 +61,11 @@ test("the notification row title wraps instead of truncating at 2x text on a 320
   await page.setViewportSize({ width: 320, height: 640 });
   await page.goto("/sidebar-notifications.html");
   await page.waitForFunction(() => Boolean(window.sidebarNotificationsFixture));
-  await page.evaluate(() => { document.documentElement.style.fontSize = "32px"; });
+  // The real sidebar card at 320 px is 232 px wide, narrower than this fixture's default.
+  await page.evaluate(() => {
+    document.documentElement.style.fontSize = "32px";
+    document.querySelector("main").style.width = "248px";
+  });
   // Located by class: renaming the title also renames the button.
   const title = page.locator(".sidebar-pref .ds-body").first();
   await expect(title).toHaveText("更新通知");
@@ -72,4 +76,14 @@ test("the notification row title wraps instead of truncating at 2x text on a 320
   }));
   expect(metrics.clipped, "the whole title shows").toBe(false);
   expect(metrics.lines, "it takes a second line").toBe(2);
+  // Its own line above the caption, so "notifications" is not split mid-word.
+  expect(await title.evaluate((node) => {
+    const range = document.createRange();
+    range.setStart(node.firstChild, 7);
+    range.setEnd(node.firstChild, 20);
+    return new Set([...range.getClientRects()].map((rect) => Math.round(rect.top))).size;
+  }), "\"notifications\" stays on one line").toBe(1);
+  // A longer title still shows whole over three lines.
+  await title.evaluate((node) => { node.textContent = "Notifications de mise à jour"; });
+  expect(await title.evaluate((node) => node.scrollHeight > node.clientHeight + 1), "a three-line title is not cut").toBe(false);
 });

@@ -365,7 +365,7 @@ test("sidebar keeps feed visibility in the feed list and groups sync notificatio
   await expect.poll(() => page.evaluate(() => window.controlsSidebarFixture.persistedHidden())).toBe(false);
 });
 
-test("a drag that reaches the end of the notification list carries on into the footer", async ({ page }) => {
+async function openTallFooter(page) {
   await openSidebarPreferences(page, 320);
   await page.setViewportSize({ width: 320, height: 640 });
   await page.evaluate(() => { document.documentElement.style.fontSize = "32px"; });
@@ -384,6 +384,11 @@ test("a drag that reaches the end of the notification list carries on into the f
   const viewport = page.viewportSize().height;
   const footerBox = await footer.boundingBox();
   expect(footerBox.y + footerBox.height, "the footer ends on screen").toBeLessThanOrEqual(viewport + 1);
+}
+
+test("a drag that reaches the end of the notification list carries on into the footer", async ({ page }) => {
+  await openTallFooter(page);
+  const viewport = page.viewportSize().height;
   // Bring the list into view, then wheel over it only: once it is at its end the wheel must
   // move the footer on, not stop at the list.
   await page.locator("#notify-list").scrollIntoViewIfNeeded();
@@ -396,16 +401,69 @@ test("a drag that reaches the end of the notification list carries on into the f
   }, { message: "the account row is reachable by scrolling over the list" }).toBe(true);
 });
 
+test("a finger drag over the notification list also carries on into the footer", async ({ page }) => {
+  await openTallFooter(page);
+  const viewport = page.viewportSize().height;
+  // The wheel test cannot see touch-only breaks (touch-action, a touchmove handler that
+  // cancels), so drag with real touch input, always starting on the list while it shows:
+  // if the list kept its drags the footer would never move.
+  await page.locator("#notify-list").scrollIntoViewIfNeeded();
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 1 });
+  const touch = (type, x, y) => cdp.send("Input.dispatchTouchEvent", { type, touchPoints: type === "touchEnd" ? [] : [{ x, y }] });
+  const reached = async () => {
+    const end = await page.locator("#footer-end").boundingBox();
+    return end.y + end.height <= viewport + 1;
+  };
+  for (let drag = 0; drag < 16 && !(await reached()); drag += 1) {
+    const box = await page.locator("#notify-list").boundingBox();
+    const clip = await page.locator('[data-sidebar="footer"]').boundingBox();
+    const top = Math.max(box.y, clip.y), bottom = Math.min(box.y + box.height, clip.y + clip.height);
+    // Once the list has scrolled away, the rest of the footer is dragged as a whole.
+    const onList = bottom - top >= 20;
+    const x = box.x + box.width / 2, y = onList ? Math.min(bottom - 10, top + 160) : clip.y + clip.height - 10;
+    await touch("touchStart", x, y);
+    for (let step = 1; step <= 8; step += 1) await touch("touchMove", x, y - step * 18);
+    await touch("touchEnd");
+    await page.waitForTimeout(150);
+  }
+  await expect.poll(reached, { message: "the account row is reachable by dragging over the list" }).toBe(true);
+});
+
 test("the background sync title wraps in the real sidebar column at 2x text", async ({ page }) => {
   await openSidebarPreferences(page, 320);
   await page.setViewportSize({ width: 320, height: 640 });
   await page.evaluate(() => { document.documentElement.style.fontSize = "32px"; });
   const title = page.locator(".sidebar-sync-card .sidebar-pref .ds-body").first();
   await expect(title).toHaveText("后台同步");
+  for (const text of ["Background sync", "Synchronisation en arrière-plan"]) {
+    await title.evaluate((node, value) => { node.textContent = value; }, text);
+    const clipped = await title.evaluate((node) => node.scrollWidth > node.clientWidth + 1 || node.scrollHeight > node.clientHeight + 1);
+    expect(clipped, `the whole title shows: ${text}`).toBe(false);
+  }
+  // The column between icon and switch is narrower than "Background" here, so the title
+  // has to take its own line rather than break the word.
   await title.evaluate((node) => { node.textContent = "Background sync"; });
-  const clipped = await title.evaluate((node) => node.scrollWidth > node.clientWidth + 1 || node.scrollHeight > node.clientHeight + 1);
-  expect(clipped, "the whole title shows").toBe(false);
+  expect(await renderedLines(title)).toEqual(["Background ", "sync"]);
+  await expect(page.getByRole("switch", { name: "后台同步", exact: true })).toBeVisible();
 });
+
+async function renderedLines(locator) {
+  return locator.evaluate((node) => {
+    const text = node.firstChild, lines = [];
+    let top = null;
+    for (let index = 0; index < text.length; index += 1) {
+      const range = document.createRange();
+      range.setStart(text, index);
+      range.setEnd(text, index + 1);
+      const rect = range.getClientRects()[0];
+      if (top === null || Math.abs(rect.top - top) > 4) lines.push("");
+      top = rect.top;
+      lines[lines.length - 1] += text.data[index];
+    }
+    return lines;
+  });
+}
 
 test("sidebar hidden feeds disables its mobile switch until the native preference write completes", async ({ page }) => {
   await openSidebarPreferences(page, 393);

@@ -34,8 +34,8 @@ export default function SidebarFeedNotifications() {
         onClick={() => setOpen((value) => !value)}
       >
         <Bell className="sidebar-pref-icon" aria-hidden="true" />
-        <div className="min-w-0 flex-1">
-          <div className="line-clamp-3 break-words ds-body font-medium">{t("feedNotify.title")}</div>
+        <div className="sidebar-pref-text min-w-0 flex-1">
+          <div className="sidebar-pref-title line-clamp-3 break-words ds-body font-medium">{t("feedNotify.title")}</div>
           <div className="sidebar-pref-summary ds-caption ds-tnum">
             <span>{caption}</span>
             {count > 0 && !syncing && (
