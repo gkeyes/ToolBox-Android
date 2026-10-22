@@ -234,9 +234,46 @@ test("a Miniflux proxy address is judged by the origin it carries (recheck-159)"
   const encode = (value) => Buffer.from(value).toString("base64url");
   const words = "今天下午我们一起去了公园散步，心情非常好";
   const emoji = image(); element("P", [text(words), emoji]);
-  assert.equal(imageIsInline(emoji, { "data-image-source": `https://rss.example/proxy/sig/${encode("https://cdn.example/e/face.png")}` }), true);
+  assert.equal(imageIsInline(emoji, { "data-image-source": `https://rss.example/proxy/sig/${encode("https://cdn.example/e/face.gif")}` }), true);
   const photo = image(); element("P", [text("救援现场"), photo]);
   assert.equal(imageIsInline(photo, { "data-image-source": `https://rss.example/proxy/sig/${encode("https://cdn.example/2026/rescue.jpg")}` }), false);
   const twemoji = image(); element("P", [text("好"), twemoji]);
   assert.equal(imageIsInline(twemoji, { "data-image-candidates": JSON.stringify([`https://rss.example/proxy/sig/${encode("https://twemoji.example/v/72x72/1f600.png")}`]) }), true);
+});
+
+test("a PNG or WebP photo after an unpunctuated sentence keeps the reserve; badge hints stay inline (recheck-164)", () => {
+  const words = "今天下午记者在现场看到大批市民排队等候入场";
+  for (const src of [
+    "https://cdn.example.com/n/24.webp",
+    "https://cdn.example.com/s/settings.png",
+    "https://mmbiz.qpic.cn/mmbiz_png/abc/640?wx_fmt=png",
+    "https://cdn.example.com/2026/10/x.jpg.webp",
+    "https://cdn.example.com/a8f3c2?format=webp",
+  ]) {
+    const img = image(); element("P", [text(words), img]);
+    assert.equal(imageIsInline(img, { "data-image-source": src }), false, src);
+  }
+  for (const src of [
+    "https://mmbiz.qpic.cn/sz_mmbiz_jpg/abc/640",
+    "https://pic1.zhimg.com/v2-abc",
+    "https://lh3.googleusercontent.com/abcDEF123",
+  ]) {
+    const img = image(); element("P", [text("救援现场"), img]);
+    assert.equal(imageIsInline(img, { "data-image-source": src }), false, src);
+  }
+  for (const src of [
+    "https://img.example.com/e/a.png?k=icon",
+    "https://img.example.com/c/build.png?k=icon",
+    "https://camo.githubusercontent.com/0a1b2c/3d4e5f",
+    "https://cdn.example.com/e/wave.gif",
+  ]) {
+    const img = image(); element("P", [text(words), img]);
+    assert.equal(imageIsInline(img, { "data-image-source": src }), true, src);
+  }
+});
+
+test("covers read proxy origins (recheck-164 P3-3)", () => {
+  const encode = (value) => Buffer.from(value).toString("base64url");
+  assert.equal(smallImage({ src: `https://rss.example/proxy/sig/${encode("https://twemoji.example/v/72x72/1f600.png")}` }), true);
+  assert.equal(smallImage({ src: `https://rss.example/proxy/sig/${encode("https://cdn.example/2026/hero.jpg")}` }), false);
 });

@@ -88,10 +88,15 @@ const EMOJI_ALT = /^\s*(?:\p{Extended_Pictographic}|\p{Regional_Indicator}|\u200
 const STICKER_ALT = /^\s*\[[^\[\]\d_]{1,8}\]\s*$/u;
 const PLACEHOLDER_ALT = /^\s*\[\s*(?:图片|圖片|照片|图像|圖像|配图|配圖|image|img|photo|picture|pic)\s*\]\s*$/i;
 const stickerAlt = (alt) => STICKER_ALT.test(String(alt || "")) && !PLACEHOLDER_ALT.test(String(alt || ""));
-// A photo's file type (JPEG, AVIF, HEIC, also as a CDN format parameter);
-// emoji, stickers and badges come as PNG, GIF, SVG or WebP.
-const PHOTO_FORMAT = /\.(?:jpe?g|jfif|avif|hei[cf])(?:$|[?#])|[?&](?:wx_fmt|format|fm)=(?:jpe?g|avif|hei[cf])\b/i;
-const SMALL_FORMAT = /\.(?:png|a?png|gif|svg|webp|ico|bmp)(?:$|[?#])|[?&](?:wx_fmt|format|fm)=(?:png|gif|svg|webp)\b/i;
+// A photo's file type (JPEG, AVIF, HEIC, also as a CDN format parameter or a
+// WordPress ".jpg.webp" copy) or a photo CDN (WeChat article images, Zhihu,
+// Google/Blogger, Weibo uploads); GIF, SVG, icon files and GitHub's camo badge
+// proxy are emoji, stickers or badges. PNG and WebP are both, so the words
+// decide for them.
+const PHOTO_FORMAT = /\.(?:jpe?g|jfif|avif|hei[cf])(?:\.webp)?(?:$|[?#])|[?&](?:wx_fmt|format|fm)=(?:jpe?g|avif|hei[cf])\b|^https?:\/\/(?:mmbiz\.qpic\.cn|pic\d*\.zhimg\.com|(?:lh\d+|blogger)\.googleusercontent\.com|(?:wx|tva)\d\.sinaimg\.cn)\//i;
+const SMALL_FORMAT = /\.(?:gif|svg|ico|bmp)(?:$|[?#])|[?&](?:wx_fmt|format|fm)=(?:gif|svg)\b|^https?:\/\/camo\.githubusercontent\.com\//i;
+// An icon word anywhere in the address, query included ("a.png?k=icon").
+const SOURCE_ICON = /(?:^|[/_.\-\s?&=])(?:icons?|emoji|emoticons?|emotions?|smil(?:e|ey|ies)|badges?|logos?|avatars?|favicon|stickers?)(?:$|[/_.\-\s\d?&=#])/i;
 // Words around a photo on the same line: a lead-in that ends a sentence or
 // introduces it (。 ： 如下图) or holds a credit (来源：某某, Source) before
 // it; a caption marker (图：, 图1, Figure 1, ▲, 来源) or a credit (张三 摄)
@@ -118,22 +123,9 @@ const sourcesOf = (attrs) => SOURCES.flatMap((name) => {
   if (!value) return [];
   return name.endsWith("srcset") ? value.split(/,\s+/).map((entry) => entry.trim().split(/\s+/)[0]).filter(Boolean) : [value];
 });
-// One source that cannot be the cover: a tracker, an emoji or sticker set or a
-// badge service. The cover is then taken from the image's other sources.
-export const smallSource = (source) => SMALL_SOURCE.test(String(source || "")) || TRACKER.test(String(source || ""));
-export function smallImage(attrs = {}) {
-  const width = number(attrs.width), height = number(attrs.height);
-  if ((width > 0 && width <= SMALL) || (height > 0 && height <= SMALL)) return true;
-  const sources = sourcesOf(attrs);
-  if (EMOJI_ALT.test(String(attrs.alt || "")) || (stickerAlt(attrs.alt) && !sources.some((source) => PHOTO_FORMAT.test(source)))) return true;
-  const declared = width > 0 || height > 0;
-  if (!declared && namesIcon(attrs.class)) return true;
-  return sources.length > 0 && sources.every((source) => smallSource(source) || (!declared && COVER_ICON.test(source)));
-}
-
-// Every address the image may load from, with the origin a Miniflux /proxy/
-// or /media/v1/ address carries base64url-encoded, so file names and types
-// still read through the server's cache.
+// An address together with the origin a Miniflux /proxy/ or /media/v1/
+// address carries base64url-encoded, so file names and types still read
+// through the server's cache. The cover and the inline reserve both use it.
 const ORIGIN = /^[A-Za-z0-9_-]{12,}={0,2}$/;
 function decoded(segment) {
   try {
@@ -141,14 +133,30 @@ function decoded(segment) {
     return /^https?:\/\//i.test(text) ? text : "";
   } catch { return ""; }
 }
+function withOrigin(address) {
+  const value = String(address || "");
+  if (!/\/(?:proxy|media\/v1)\//.test(value)) return [value];
+  return [value, ...value.split(/[/?#]/).filter((segment) => ORIGIN.test(segment)).map(decoded).filter(Boolean)];
+}
+
+// One source that cannot be the cover: a tracker, an emoji or sticker set or a
+// badge service. The cover is then taken from the image's other sources.
+export const smallSource = (source) => withOrigin(source).some((address) => SMALL_SOURCE.test(address) || TRACKER.test(address));
+export function smallImage(attrs = {}) {
+  const width = number(attrs.width), height = number(attrs.height);
+  if ((width > 0 && width <= SMALL) || (height > 0 && height <= SMALL)) return true;
+  const sources = sourcesOf(attrs);
+  if (EMOJI_ALT.test(String(attrs.alt || "")) || (stickerAlt(attrs.alt) && !sources.flatMap(withOrigin).some((source) => PHOTO_FORMAT.test(source)))) return true;
+  const declared = width > 0 || height > 0;
+  if (!declared && namesIcon(attrs.class)) return true;
+  return sources.length > 0 && sources.every((source) => smallSource(source) || (!declared && withOrigin(source).some((address) => COVER_ICON.test(address))));
+}
+
+// Every address the image may load from, with proxy origins.
 function addressesOf(attrs) {
   let candidates = [];
   try { candidates = JSON.parse(attrs["data-image-candidates"] || "[]"); } catch { /* no NextFlux metadata */ }
-  const addresses = [attrs["data-image-source"], ...(Array.isArray(candidates) ? candidates : []), attrs.src].map((value) => String(value || "")).filter(Boolean);
-  for (const address of [...addresses]) {
-    if (!/\/(?:proxy|media\/v1)\//.test(address)) continue;
-    for (const segment of address.split(/[/?#]/)) if (ORIGIN.test(segment)) { const origin = decoded(segment); if (origin) addresses.push(origin); }
-  }
+  const addresses = [attrs["data-image-source"], ...(Array.isArray(candidates) ? candidates : []), attrs.src].filter(Boolean).flatMap(withOrigin);
   // A lazy image's spacer placeholder says nothing about the picture.
   return addresses.filter((address) => !TRACKER.test(address));
 }
@@ -166,14 +174,16 @@ export function imageIsInline(target, attrs = {}) {
   if (before && after) return true;
   // A photo alone on its line keeps the reserve whatever its alt says.
   if (!before && !after) return false;
-  // Text on one side only. A JPEG is a photo whatever the words; a sticker
-  // name or an icon word marks the rest as inline. Otherwise a photo when
-  // the words read like a lead-in, credit or caption, or, for an image of
-  // unknown type, run longer than a label; a PNG, GIF, SVG or WebP after a
-  // sentence is an emoji or badge (recheck-159: those reserved 16:9 and
-  // pulled the text up 173 px, as labelled badges did in recheck-127).
+  // Text on one side only. A JPEG or a photo CDN is a photo whatever the
+  // words; a sticker name or an icon word marks the rest as inline. Otherwise
+  // a photo when the words read like a lead-in, credit or caption. A GIF, SVG
+  // or camo badge after a sentence is an emoji or badge (recheck-159: those
+  // reserved 16:9 and pulled the text up 173 px, as labelled badges did in
+  // recheck-127); a PNG, WebP or unknown type is a photo after more than a
+  // label's words (recheck-164: PNG screenshots and WeChat PNG pictures after
+  // an unpunctuated sentence jumped 173 px down).
   if (addresses.some((address) => PHOTO_FORMAT.test(address))) return false;
-  if (stickerAlt(attrs.alt) || ICON.test(`${source} ${attrs.alt || ""}`)) return true;
+  if (stickerAlt(attrs.alt) || SOURCE_ICON.test(source) || ICON.test(String(attrs.alt || ""))) return true;
   if (before ? PHOTO_BEFORE.test(before) : PHOTO_AFTER.test(after)) return false;
   return addresses.some((address) => SMALL_FORMAT.test(address)) || [...(before || after)].length <= LABEL;
 }
