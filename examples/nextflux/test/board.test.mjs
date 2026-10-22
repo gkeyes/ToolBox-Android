@@ -207,6 +207,13 @@ test("article references keep their numbers: lists, ranges and 2.0 are not glued
   // A catch-all after seven topics fills the last place with the seventh topic's articles (recheck-165 W1).
   const tail = parseTopics(`{"topics":[${Array.from({ length: 7 }, (_, i) => `{"title":"单${i + 1}","articles":[${i + 1}]}`).join(",")},{"title":"全部","articles":["1-12"]}]}`, 12);
   assert.deepEqual(tail.map((topic) => [topic.title, topic.articles]), [["单1", [1]], ["单2", [2]], ["单3", [3]], ["单4", [4]], ["单5", [5]], ["单6", [6]], ["其他", [7, 8, 9, 10, 11, 12]]]);
+  // The smaller of the last topics joins a late rest, which keeps the AI's gist (recheck-167 Y1).
+  const big = parseTopics(`{"topics":[${Array.from({ length: 6 }, (_, i) => `{"title":"单${i + 1}","articles":[${i + 1}]}`).join(",")},{"title":"台风登陆","articles":[7,8,9,10,11]},{"title":"其他","gist":"零散","articles":[12]}]}`, 12);
+  assert.deepEqual(big.slice(-2).map((topic) => [topic.title, topic.gist, topic.articles]), [["台风登陆", "", [7, 8, 9, 10, 11]], ["其他", "零散", [6, 12]]]);
+  // A catch-all the cap cuts becomes the rest (recheck-167 Y2).
+  const most = parseTopics(`{"topics":[${Array.from({ length: 7 }, (_, i) => `{"title":"单${i + 1}","articles":[${i + 1}]}`).join(",")},{"title":"全部","articles":["1-20"]}]}`, 20);
+  assert.equal(most.length, 7);
+  assert.equal(new Set(most.flatMap((topic) => topic.articles)).size, 20);
   // A small board may be one topic.
   assert.deepEqual(parseTopics('{"topics":[{"title":"全部","articles":["1-3"]},{"title":"乙","articles":[1]}]}', 3)[0].articles, [1, 2, 3]);
   assert.deepEqual(articleNumbers("1-14", 12), []);

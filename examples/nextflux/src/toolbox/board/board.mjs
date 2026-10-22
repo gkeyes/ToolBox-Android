@@ -263,12 +263,14 @@ export function readTopics(text, count) {
       // board, not all of it: its title and summary described every article.
       // A topic the AI itself calls 其他, 其它, 其他新闻 and the like is the
       // rest too.
-      const leftover = lumps && unique.length * 2 < new Set(all.filter(real)).size;
-      const rest = leftover || REST_TITLE.test(title);
       // All of the rest shares one place under the MAX_TOPICS cap and is
-      // never cut; the other topics stop where the cap is reached.
+      // never cut; the other topics stop where the cap is reached, except a
+      // catch-all, whose articles then become the rest.
       const shared = picked.some((pick) => pick.rest) ? 1 : 0;
-      if (!rest && picked.filter((pick) => !pick.rest).length + shared >= MAX_TOPICS) continue;
+      const full = picked.filter((pick) => !pick.rest).length + shared >= MAX_TOPICS;
+      const leftover = lumps && (full || unique.length * 2 < new Set(all.filter(real)).size);
+      const rest = leftover || REST_TITLE.test(title);
+      if (!rest && full) continue;
       unique.forEach((n) => taken.add(n));
       picked.push({ entry, rest, topic: leftover
         ? { title: "其他", gist: "", summary: "", articles: unique }
@@ -294,10 +296,16 @@ export function readTopics(text, count) {
   // Either way its articles are in article order.
   const topics = picked.filter(({ rest }) => !rest).map(({ topic }) => topic);
   const rest = picked.filter(({ rest }) => rest).map(({ topic }) => topic);
-  // A rest the AI put after the cap was reached takes the last place, and
-  // the topic that held it joins the rest.
-  if (rest.length && topics.length >= MAX_TOPICS) rest.push(...topics.splice(MAX_TOPICS - 1));
-  const articles = rest.flatMap((topic) => topic.articles).sort((a, b) => a - b);
+  // A rest the AI put after the cap was reached takes the last place. The
+  // smaller of the last topics joins it, so a big story keeps its title, and
+  // the rest keeps what the AI wrote for it.
+  const absorbed = [];
+  for (let excess = rest.length ? topics.length - MAX_TOPICS + 1 : 0; excess > 0; excess--) {
+    let smallest = MAX_TOPICS - 2;
+    for (let i = smallest + 1; i < topics.length; i++) if (topics[i].articles.length <= topics[smallest].articles.length) smallest = i;
+    absorbed.push(...topics.splice(smallest, 1));
+  }
+  const articles = [...rest, ...absorbed].flatMap((topic) => topic.articles).sort((a, b) => a - b);
   if (rest.length === 1) topics.push({ ...rest[0], articles });
   if (rest.length > 1) topics.push({ title: "其他", gist: "", summary: "", articles });
   if (!topics.length) throw new Error("AI 没有归出主题，请重新生成。");
