@@ -1,6 +1,6 @@
 import { Parser } from "htmlparser2";
 import { imageSourceCandidates } from "./content.js";
-import { smallImage } from "../reading/inlineImage.mjs";
+import { smallImage, smallSource } from "../reading/inlineImage.mjs";
 
 // 2: the cover skips tracking pixels, icons and other tiny images.
 // 3: those rules look at whole folder and file names and every source.
@@ -28,7 +28,7 @@ function parseMetadata(html, textLimit, findImage = false, baseUrl) {
       if (findImage && !omittedImageDepth && !imageSources.length) {
         if (name === "picture") pictures.push([]);
         if (name === "source" && pictures.length) pictures.at(-1).push(attributes);
-        if (name === "img" && !smallImage(attributes)) imageSources = imageSourceCandidates(attributes, baseUrl, pictures.at(-1));
+        if (name === "img" && !smallImage(attributes)) imageSources = imageSourceCandidates(attributes, baseUrl, pictures.at(-1)).filter((source) => !smallSource(source));
       }
     },
     onclosetag(name) {
