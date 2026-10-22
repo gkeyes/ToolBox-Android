@@ -184,7 +184,9 @@
     max-block-size: min(34vh, 240px);
     overflow-y: auto;
     padding: 0 var(--ds-space-md) var(--ds-space-md) calc(var(--ds-space-md) + 18px + var(--ds-space-sm));
-    overscroll-behavior: contain;
+    /* Hands a drag at the list's end on to the footer, which scrolls too when it is taller
+       than the screen; with contain the list could fill the view and trap every drag. */
+    overscroll-behavior: auto;
   }
   .sidebar-sync-card .sidebar-notify-list {
     display: flex;
