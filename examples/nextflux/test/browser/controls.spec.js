@@ -254,11 +254,11 @@ test("alert buttons stack at 2x text on a 320 px phone instead of breaking label
   await info.attach("alert-320-z2.png", { body: await page.screenshot(), contentType: "image/png" });
 });
 
-test("sheet footers keep 取消 and 保存 in one row of equal buttons at 2x text", async ({ page }) => {
+test("sheet footers keep 取消 and 保存更改 in one row of equal buttons at 2x text", async ({ page }) => {
   await open(page, 390, "light", 2);
   await page.getByRole("button", { name: "Open sheet with footer", exact: true }).click();
   const dialog = page.getByRole("dialog");
-  await expect(dialog.getByRole("button", { name: "保存", exact: true })).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "保存更改", exact: true })).toBeVisible();
   const boxes = await dialog.locator(".nextflux-modal-footer button").evaluateAll((nodes) => nodes.map((node) => {
     const rect = node.getBoundingClientRect();
     return { top: Math.round(rect.top), width: Math.round(rect.width) };
@@ -365,25 +365,46 @@ test("sidebar keeps feed visibility in the feed list and groups sync notificatio
   await expect.poll(() => page.evaluate(() => window.controlsSidebarFixture.persistedHidden())).toBe(false);
 });
 
-test("a footer taller than the sidebar scrolls so its last row stays reachable", async ({ page }) => {
-  await openSidebarPreferences(page, 390);
-  await page.setViewportSize({ width: 390, height: 844 });
+test("a drag that reaches the end of the notification list carries on into the footer", async ({ page }) => {
+  await openSidebarPreferences(page, 320);
+  await page.setViewportSize({ width: 320, height: 640 });
   await page.evaluate(() => { document.documentElement.style.fontSize = "32px"; });
-  // Stand-in for an expanded notification list at 2x text; the marker plays the account row.
+  // The expanded list with its real class (and its height cap and overscroll rule), plus
+  // enough under it that the footer has to scroll; the marker plays the account row.
   await page.evaluate(() => {
-    const footer = document.querySelector('[data-sidebar="footer"]');
-    const tall = Object.assign(document.createElement("div"), { style: "block-size: 900px; flex-shrink: 0" });
-    footer.querySelector(".sidebar-sync-card").append(tall);
-    footer.append(Object.assign(document.createElement("div"), { id: "footer-end", textContent: "end", style: "flex-shrink: 0" }));
+    const card = document.querySelector('[data-sidebar="footer"] .sidebar-sync-card');
+    const details = Object.assign(document.createElement("div"), { className: "sidebar-notify-details", id: "notify-list" });
+    const list = Object.assign(document.createElement("ul"), { className: "sidebar-notify-list" });
+    for (let index = 0; index < 30; index += 1) list.append(Object.assign(document.createElement("li"), { textContent: `订阅 ${index}` }));
+    details.append(list);
+    card.append(details, Object.assign(document.createElement("div"), { style: "block-size: 400px" }));
+    document.querySelector('[data-sidebar="footer"]').append(Object.assign(document.createElement("div"), { id: "footer-end", textContent: "end", style: "flex-shrink: 0" }));
   });
   const footer = page.locator('[data-sidebar="footer"]');
   const viewport = page.viewportSize().height;
-  const box = await footer.boundingBox();
-  expect(box.y + box.height, "the footer ends on screen").toBeLessThanOrEqual(viewport + 1);
-  expect(await footer.evaluate((node) => node.scrollHeight > node.clientHeight), "the footer scrolls").toBe(true);
-  await footer.evaluate((node) => { node.scrollTop = node.scrollHeight; });
-  const end = await page.locator("#footer-end").boundingBox();
-  expect(end.y + end.height, "the last row is reachable").toBeLessThanOrEqual(viewport + 1);
+  const footerBox = await footer.boundingBox();
+  expect(footerBox.y + footerBox.height, "the footer ends on screen").toBeLessThanOrEqual(viewport + 1);
+  // Bring the list into view, then wheel over it only: once it is at its end the wheel must
+  // move the footer on, not stop at the list.
+  await page.locator("#notify-list").scrollIntoViewIfNeeded();
+  const box = await page.locator("#notify-list").boundingBox();
+  await page.mouse.move(box.x + box.width / 2, Math.max(box.y + 10, Math.min(box.y + box.height / 2, viewport - 10)));
+  for (let step = 0; step < 40; step += 1) await page.mouse.wheel(0, 300);
+  await expect.poll(async () => {
+    const end = await page.locator("#footer-end").boundingBox();
+    return end.y + end.height <= viewport + 1;
+  }, { message: "the account row is reachable by scrolling over the list" }).toBe(true);
+});
+
+test("the background sync title wraps in the real sidebar column at 2x text", async ({ page }) => {
+  await openSidebarPreferences(page, 320);
+  await page.setViewportSize({ width: 320, height: 640 });
+  await page.evaluate(() => { document.documentElement.style.fontSize = "32px"; });
+  const title = page.locator(".sidebar-sync-card .sidebar-pref .ds-body").first();
+  await expect(title).toHaveText("后台同步");
+  await title.evaluate((node) => { node.textContent = "Background sync"; });
+  const clipped = await title.evaluate((node) => node.scrollWidth > node.clientWidth + 1 || node.scrollHeight > node.clientHeight + 1);
+  expect(clipped, "the whole title shows").toBe(false);
 });
 
 test("sidebar hidden feeds disables its mobile switch until the native preference write completes", async ({ page }) => {

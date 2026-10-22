@@ -75,9 +75,10 @@ function ControlsFixture() {
     <CustomModal open={modal} onOpenChange={setModal} title="Modal heading with enough text to wrap on a narrow display">
       <p style={{ padding: 16 }}>Modal body fixture</p>
     </CustomModal>
-    {/* The rename / add-category / edit-feed shape: a sheet with a 取消 + 保存 footer. */}
+    {/* The rename / add-category / edit-feed shape. Labels of unequal length, so alert-only
+        sizing (content-width buttons) leaking onto sheets would show as unequal widths. */}
     <CustomModal open={footerSheet} onOpenChange={setFooterSheet} title="Rename"
-      footer={<><Button variant="tertiary" onPress={() => setFooterSheet(false)}>取消</Button><Button onPress={() => setFooterSheet(false)}>保存</Button></>}>
+      footer={<><Button variant="tertiary" onPress={() => setFooterSheet(false)}>取消</Button><Button onPress={() => setFooterSheet(false)}>保存更改</Button></>}>
       <p style={{ padding: 16 }}>Sheet body fixture</p>
     </CustomModal>
     <Settings />
