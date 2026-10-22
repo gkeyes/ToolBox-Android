@@ -40,17 +40,19 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.runtime.getValue
 
 /**
- * Without live glass the close button's hairline is textPrimary at this alpha: at least 3:1 (a
- * control boundary) against a page the colour of its fill, in both themes.
+ * Without live glass (reduced transparency) the browser's controls float over the page as
+ * solid fills, so a hairline in textPrimary at this alpha is their edge: at least 3:1 (a control
+ * boundary) against a page the colour of their fill, in both themes.
  */
-internal const val CloseButtonEdgeAlpha = 0.5f
+internal const val BrowserControlEdgeAlpha = 0.5f
+
+@Composable
+private fun browserControlEdge(): Color = ToolBoxThemeTokens.colors.textPrimary.copy(alpha = BrowserControlEdgeAlpha)
 
 /** Round glass close button floating over the page's top-left corner, as in the iOS 27 design. */
 @Composable
 internal fun BrowserCloseButton(actions: BrowserScreenActions, modifier: Modifier = Modifier) {
-    // Floats over the page itself, so without live glass (reduced transparency) a hairline is
-    // its only edge on a page the colour of its fill.
-    BrowserGlassCircle(ToolBoxIconKey.Close, "关闭浏览器", modifier.testTag("browser_close"), size = 44.dp, outlined = true, onClick = actions::close)
+    BrowserGlassCircle(ToolBoxIconKey.Close, "关闭浏览器", modifier.testTag("browser_close"), size = 44.dp, onClick = actions::close)
 }
 
 @Composable
@@ -146,9 +148,13 @@ private fun BrowserAddressCapsule(
         // Glass rim and soft shadow; the fill stays nearly opaque because the bar can't blur the
         // live web page under it, and the address must stay readable over any page.
         modifier.fillMaxHeight()
-            .toolBoxClearGlass(RoundedCornerShape(26.dp), tint = ToolBoxThemeTokens.materials.overlayFallback.copy(alpha = 0.88f))
-            .padding(horizontal = 4.dp)
-            .testTag("browser_address"),
+            .testTag("browser_address")
+            .toolBoxClearGlass(
+                RoundedCornerShape(26.dp),
+                tint = ToolBoxThemeTokens.materials.overlayFallback.copy(alpha = 0.88f),
+                solidEdge = browserControlEdge(),
+            )
+            .padding(horizontal = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         val shieldInteraction = remember { MutableInteractionSource() }
@@ -270,7 +276,6 @@ private fun BrowserGlassCircle(
     modifier: Modifier = Modifier,
     size: androidx.compose.ui.unit.Dp = 52.dp,
     enabled: Boolean = true,
-    outlined: Boolean = false,
     onClick: () -> Unit,
 ) {
     val tint = if (enabled) ToolBoxThemeTokens.colors.textPrimary else ToolBoxThemeTokens.disabledContent
@@ -281,7 +286,7 @@ private fun BrowserGlassCircle(
             .toolBoxClearGlass(
                 CircleShape,
                 tint = ToolBoxThemeTokens.materials.overlayFallback.copy(alpha = 0.88f),
-                solidEdge = if (outlined) ToolBoxThemeTokens.colors.textPrimary.copy(alpha = CloseButtonEdgeAlpha) else null,
+                solidEdge = browserControlEdge(),
             )
             .clickable(enabled = enabled, interactionSource = interaction, indication = null, role = Role.Button, onClick = onClick)
             .semantics { contentDescription = label },
