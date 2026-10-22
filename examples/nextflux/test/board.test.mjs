@@ -214,6 +214,12 @@ test("article references keep their numbers: lists, ranges and 2.0 are not glued
   const most = parseTopics(`{"topics":[${Array.from({ length: 7 }, (_, i) => `{"title":"单${i + 1}","articles":[${i + 1}]}`).join(",")},{"title":"全部","articles":["1-20"]}]}`, 20);
   assert.equal(most.length, 7);
   assert.equal(new Set(most.flatMap((topic) => topic.articles)).size, 20);
+  // A 其他 that took in more articles than its own drops what the AI wrote (recheck-169 Z1).
+  const grown = parseTopics(`{"topics":[${Array.from({ length: 5 }, (_, i) => `{"title":"单${i + 1}","articles":[${i + 1}]}`).join(",")},{"title":"双","articles":[6,7]},{"title":"台风登陆","articles":[8,9,10,11]},{"title":"其他","gist":"零散","summary":"零散消息","articles":[12]}]}`, 12);
+  assert.deepEqual(grown.at(-1), { title: "其他", gist: "", summary: "", articles: [6, 7, 12] });
+  // A range from the first article may cover a board of more than 100 (recheck-169 Z2).
+  const long = parseTopics(`{"topics":[{"title":"甲","articles":["1-150"]}]}`, 150);
+  assert.equal(long.flatMap((topic) => topic.articles).length, 150);
   // A small board may be one topic.
   assert.deepEqual(parseTopics('{"topics":[{"title":"全部","articles":["1-3"]},{"title":"乙","articles":[1]}]}', 3)[0].articles, [1, 2, 3]);
   assert.deepEqual(articleNumbers("1-14", 12), []);

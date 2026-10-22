@@ -147,7 +147,9 @@ export function articleNumbers(value, count, ranged = null) {
     const range = part.match(RANGE);
     if (range) {
       const [a, b] = [Number(range[1]), Number(range[2])];
-      if (Math.abs(a - b) + 1 > (Number.isFinite(count) ? Math.min(MAX_RANGE, count + 1) : MAX_RANGE)) return [];
+      // A range from the first article may name the whole board, however big.
+      const limit = Number.isFinite(count) ? (Math.min(a, b) === 1 ? count + 1 : Math.min(MAX_RANGE, count + 1)) : MAX_RANGE;
+      if (Math.abs(a - b) + 1 > limit) return [];
       const from = Math.max(1, Math.min(a, b));
       const to = Math.min(Math.max(a, b), Number.isFinite(count) ? count : Infinity);
       const numbers = to < from ? [] : Array.from({ length: to - from + 1 }, (_, index) => from + index);
@@ -306,7 +308,11 @@ export function readTopics(text, count) {
     absorbed.push(...topics.splice(smallest, 1));
   }
   const articles = [...rest, ...absorbed].flatMap((topic) => topic.articles).sort((a, b) => a - b);
-  if (rest.length === 1) topics.push({ ...rest[0], articles });
+  // What the AI wrote for its 其他 stops fitting once more articles joined it
+  // than it had.
+  const own = rest.length === 1 && absorbed.flatMap((topic) => topic.articles).length <= rest[0].articles.length;
+  if (own) topics.push({ ...rest[0], articles });
+  else if (rest.length === 1) topics.push({ title: "其他", gist: "", summary: "", articles });
   if (rest.length > 1) topics.push({ title: "其他", gist: "", summary: "", articles });
   if (!topics.length) throw new Error("AI 没有归出主题，请重新生成。");
   return { topics, whole: Boolean(data) };
