@@ -262,8 +262,8 @@ test("a PNG or WebP photo after an unpunctuated sentence keeps the reserve; badg
     assert.equal(imageIsInline(img, { "data-image-source": src }), false, src);
   }
   for (const src of [
-    "https://img.example.com/e/a.png?k=icon",
-    "https://img.example.com/c/build.png?k=icon",
+    "https://cdn.example.com/static/icons/dl.png",
+    "https://cdn.example.com/ui/ic_share.png",
     "https://camo.githubusercontent.com/0a1b2c/3d4e5f",
     "https://cdn.example.com/e/wave.gif",
   ]) {
@@ -276,4 +276,36 @@ test("covers read proxy origins (recheck-164 P3-3)", () => {
   const encode = (value) => Buffer.from(value).toString("base64url");
   assert.equal(smallImage({ src: `https://rss.example/proxy/sig/${encode("https://twemoji.example/v/72x72/1f600.png")}` }), true);
   assert.equal(smallImage({ src: `https://rss.example/proxy/sig/${encode("https://cdn.example/2026/hero.jpg")}` }), false);
+});
+
+test("icon words count in the path only; GIFs, stickers and avatars on photo CDNs stay inline (recheck-168)", () => {
+  const words = "今天下午记者在现场看到大批市民排队等候入场";
+  for (const src of ["https://cdn.example.com/2026/10/hero.png?utm_campaign=emoji", "https://cdn.example.com/2026/10/hero.webp?theme=icon-free"]) {
+    const img = image(); element("P", [text(words), img]);
+    assert.equal(imageIsInline(img, { "data-image-source": src }), false, src);
+  }
+  for (const [src, alt] of [
+    ["https://cdn.example.com/ui/download-btn.png"],
+    ["https://cdn.example.com/static/iconfont/share.png"],
+    ["https://ci.example.com/build/status.png"],
+    ["https://files.example.social/custom_emojis/images/000/001/original/abc.png"],
+    ["https://cdn.example.social/x/abc.png", ":blobcat:"],
+  ]) {
+    const img = image(); element("P", [text(words), img]);
+    assert.equal(imageIsInline(img, { "data-image-source": src, alt }), true, src);
+  }
+  for (const [label, src, alt] of [
+    ["哈哈", "https://mmbiz.qpic.cn/mmbiz_gif/abc/640?wx_fmt=gif"],
+    ["点击关注", "https://mmbiz.qpic.cn/mmbiz_png/abc/640?wx_fmt=png"],
+    ["好", "https://pic1.zhimg.com/v2-abc.png", "[赞同]"],
+    ["Alice", "https://lh3.googleusercontent.com/a/ACg8ocK=s96-c"],
+    ["好", "https://wx1.sinaimg.cn/bmiddle/abc.png", "[doge]"],
+  ]) {
+    const img = image(); element("P", [text(label), img]);
+    assert.equal(imageIsInline(img, { "data-image-source": src, alt }), true, src);
+  }
+  assert.equal(smallImage({ src: "https://pic1.zhimg.com/v2-abc.png", alt: "[赞同]" }), true);
+  assert.equal(smallImage({ src: "https://wx1.sinaimg.cn/bmiddle/abc.png", alt: "[doge]" }), true);
+  assert.equal(smallImage({ src: "https://lh3.googleusercontent.com/a/ACg8ocK=s96-c" }), true);
+  assert.equal(smallImage({ src: "https://wx1.sinaimg.cn/large/abc.jpg", alt: "[doge]" }), false);
 });
