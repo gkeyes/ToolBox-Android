@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { imageIsInline, imageLineOpen } from "../src/reading/inlineImage.mjs";
+import { imageIsInline, imageLineOpen, smallImage } from "../src/reading/inlineImage.mjs";
 
 const text = (data) => ({ nodeType: 3, textContent: data });
 const element = (tagName, children = [], attrs = {}) => {
@@ -137,4 +137,56 @@ test("photos with a lead-in, credit or caption on one side keep the reserve", ()
   const hashed = image(); element("P", [element("SPAN", [text("来源")]), hashed]);
   assert.equal(imageIsInline(hashed, { "data-image-source": "https://example.com/ab12cd.png" }), false);
   for (const build of cases) { const img = image(); build(img); assert.equal(imageIsInline(img, { "data-image-source": "https://example.com/2026/10/photo.jpg" }), false); }
+});
+
+test("a photo alone keeps its reserve whatever words its file name or placeholder alt holds (recheck-148 P2-1)", () => {
+  for (const attrs of [
+    { "data-image-source": "https://cdn.example/2026/smile-campaign.jpg" },
+    { "data-image-source": "https://cdn.example/2026/facial-expression-study.jpg" },
+    { "data-image-source": "https://cdn.example/2026/sticker-shop-opening.jpg" },
+    { "data-image-source": "https://cdn.example/2026/a.jpg", alt: "[图片]" },
+    { "data-image-source": "https://cdn.example/2026/a.jpg", alt: "[image]" },
+  ]) {
+    const img = image(); element("DIV", [element("P", [img]), element("P", [text("next paragraph")])]);
+    assert.equal(imageIsInline(img, attrs), false, JSON.stringify(attrs));
+  }
+  for (const attrs of [
+    { "data-image-source": "https://face.t.sinajs.cn/t4/appstyle/expression/ext/normal/xiaoku.png" },
+    { "data-image-source": "https://cdn.example/stickers/cat.gif" },
+    { "data-image-source": "https://cdn.example/images/smile.gif" },
+    { "data-image-source": "https://cdn.example/a.png", alt: "[笑cry]" },
+  ]) {
+    const img = image(); element("P", [text("哈哈"), img]);
+    assert.equal(imageIsInline(img, attrs), true, JSON.stringify(attrs));
+  }
+});
+
+test("a photo with a sentence or a credit on one side keeps its reserve (recheck-148 P2-2)", () => {
+  const photo = { "data-image-source": "https://example.com/2026/10/photo.jpg" };
+  const cases = [
+    (img) => element("P", [text("今天下午记者在现场看到大批市民排队等候入场"), img]),
+    (img) => element("P", [text("The new station opened to the public this morning"), img]),
+    (img) => element("P", [img, text("Figure 1 The new station")]),
+    (img) => element("P", [img, text("图2 现场")]),
+    (img) => element("P", [img, text("张三 摄")]),
+  ];
+  for (const build of cases) { const img = image(); build(img); assert.equal(imageIsInline(img, photo), false); }
+  const badge = image(); element("P", [element("STRONG", [text("下载")]), badge]);
+  assert.equal(imageIsInline(badge, photo), true);
+});
+
+test("covers: folders, declared logos, every source, stickers and placeholder alts (recheck-156 N1-N5)", () => {
+  assert.equal(smallImage({ src: "https://cdn.example/pixel/2026/hero.jpg" }), false);
+  assert.equal(smallImage({ src: "https://cdn.example/beacon/launch/photo.jpg" }), false);
+  assert.equal(smallImage({ src: "https://t.example/pixel?id=1" }), true);
+  assert.equal(smallImage({ src: "https://cdn.example/new-logo.png", width: "1200", height: "675" }), false);
+  assert.equal(smallImage({ src: "https://cdn.example/site-logo.png" }), true);
+  assert.equal(smallImage({ src: "https://cdn.example/real.jpg", srcset: "https://t.example/pixel.gif 1x, https://cdn.example/real@2x.jpg 2x" }), false);
+  assert.equal(smallImage({ src: "https://cdn.example/real.jpg", "data-src": "https://t.example/pixel.gif" }), false);
+  assert.equal(smallImage({ src: "https://t.example/spacer.gif", "data-src": "https://t.example/pixel.gif" }), true);
+  assert.equal(smallImage({ src: "https://cdn.example/stickers/cat.gif" }), true);
+  assert.equal(smallImage({ src: "https://face.t.sinajs.cn/t4/appstyle/expression/ext/normal/xiaoku.png" }), true);
+  assert.equal(smallImage({ src: "https://cdn.example/a.jpg", alt: "[图片]" }), false);
+  assert.equal(smallImage({ src: "https://cdn.example/a.jpg", alt: "[笑cry]" }), true);
+  assert.equal(smallImage({ src: "https://cdn.example/2026/smile-campaign.jpg" }), false);
 });
