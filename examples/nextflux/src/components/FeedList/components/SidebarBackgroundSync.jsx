@@ -16,7 +16,7 @@ import {
 import { backgroundIntervalMs } from "@/toolbox/background-policy.mjs";
 
 export default function SidebarBackgroundSync() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const active = useStore(continuousSync);
   const health = useStore(backgroundSyncHealth);
   const { syncInterval } = useStore(settingsState);
@@ -53,7 +53,7 @@ export default function SidebarBackgroundSync() {
       <div className="sidebar-pref ds-row">
         <RefreshCw aria-hidden="true" className={"sidebar-pref-icon" + (health.state === "syncing" ? " animate-spin" : "")} />
         <div className="sidebar-pref-text min-w-0 flex-1">
-          <div className="sidebar-pref-title line-clamp-3 break-words ds-body font-medium">{t("sidebar.backgroundSync.title")}</div>
+          <div lang={i18n.resolvedLanguage} className="sidebar-pref-title line-clamp-3 break-words ds-body font-medium">{t("sidebar.backgroundSync.title")}</div>
           <div className="truncate ds-caption ds-tnum">{status}</div>
         </div>
         <Switch

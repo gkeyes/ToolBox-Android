@@ -3,7 +3,7 @@ import i18n from "i18next";
 import { initReactI18next } from "react-i18next";
 import zhCN from "../../../src/i18n/locales/zh-CN.js";
 import SidebarFeedNotifications from "../../../src/components/FeedList/components/SidebarFeedNotifications.jsx?sidebarNotificationsFixture";
-import { continuousSync, watchedFeeds } from "./sidebar-notifications-state.js";
+import { continuousSync, feeds, watchedFeeds } from "./sidebar-notifications-state.js";
 import "../../../src/index.css";
 
 await i18n.use(initReactI18next).init({
@@ -14,6 +14,7 @@ await i18n.use(initReactI18next).init({
 window.sidebarNotificationsFixture = {
   setSync: (enabled) => continuousSync.set(enabled),
   setWatched: (ids) => watchedFeeds.set(ids),
+  setFeeds: (list) => feeds.set(list),
 };
 
 createRoot(document.getElementById("root")).render(
