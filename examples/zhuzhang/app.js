@@ -4,7 +4,7 @@
   // Ledger money is integer cents. DOM content originating from users is escaped.
   const KEY = 'ledger.v1';
   const runtime = window.ZZRuntime;
-  const VERSION = '1.12.7';
+  const VERSION = '1.12.8';
   const MAX_CENTS = 100000000000;
   const $ = s => document.querySelector(s);
   const $$ = s => [...document.querySelectorAll(s)];
@@ -477,25 +477,37 @@
   // number when it can stop at a space. 1.12.6: the first word is dropped when keeping it would cut the end inside a
   // number the shorter start keeps whole (8栋 stays 8栋), and neither side splits a number from its 栋/单元/号楼/室.
   // 1.12.7: the 40% start obeys the same number rule (中海 18幢/19幢 at 390), and no start stops inside a word when it
-  // can stop at a space.
+  // can stop at a space. 1.12.8: 弄/区/期/院 join the units (1088弄, B区), and the line wrap keeps them whole too.
   function fitText(el,full){
-    const ch=[...full],n=ch.length,fits=()=>el.scrollHeight<=el.clientHeight+1,put=(h,t)=>{el.textContent=ch.slice(0,h).join('').replace(/[\s·・,，、]+$/,'')+'…'+ch.slice(n-t).join('').trimStart();};
-    el.textContent=full;if(fits()||n<4)return full;
+    // On the page each number with its 栋/单元/弄 (and each Latin word or 12-1202) sits in a no-wrap span, so the line
+    // wrap can't split 「2 / 单元」 either, unless keeping them whole would cost the end a number; the text is the same.
+    let G=true;
+    const show=x=>{if(!G||!el.replaceChildren||!document.createElement){el.textContent=x;return;}const out=[];let i=0;
+      for(const m of x.matchAll(/[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*[栋幢座号楼单元室层户弄区期院]*/g)){if(m[0].length<2)continue;out.push(x.slice(i,m.index));const sp=document.createElement('span');sp.className='nb';sp.textContent=m[0];out.push(sp);i=m.index+m[0].length;}
+      out.push(x.slice(i));el.replaceChildren(...out.filter(o=>o!==''));};
+    const ch=[...full],n=ch.length,fits=()=>el.scrollHeight<=el.clientHeight+1&&(el.scrollWidth||0)<=(el.clientWidth||0)+1,put=(h,t)=>show(ch.slice(0,h).join('').replace(/[\s·・,，、]+$/,'')+'…'+ch.slice(n-t).join('').trimStart());
+    show(full);if(fits()||n<4)return full;
+    G=false;show(full);if(fits())return full;
     const most=H=>{let lo=0,hi=n-H-1;while(lo<hi){const m=(lo+hi+1)>>1;put(H,m);if(fits())lo=m;else hi=m-1;}return lo;};
-    // Glued: inside a Latin word or number (12-1202 counts as one), or a number and its 栋/单元/号楼/室.
-    const lat=c=>/[A-Za-z0-9]/.test(c||''),dig=c=>/[0-9]/.test(c||''),unit=c=>/[栋幢座号楼单元室层户]/.test(c||'');
-    const glued=k=>{const a=ch[k-1],b=ch[k];return lat(a)&&lat(b)||lat(a)&&b==='-'||a==='-'&&lat(b)||dig(a)&&unit(b)||unit(a)&&unit(b)&&dig(ch[k-2]);};
+    // Glued: inside a Latin word or number (12-1202 counts as one), or a number or letter and its 栋/单元/弄/区 (1088弄, B区).
+    const lat=c=>/[A-Za-z0-9]/.test(c||''),unit=c=>/[栋幢座号楼单元室层户弄区期院]/.test(c||'');
+    const glued=k=>{const a=ch[k-1],b=ch[k];return lat(a)&&lat(b)||lat(a)&&b==='-'||a==='-'&&lat(b)||lat(a)&&unit(b)||unit(a)&&unit(b)&&lat(ch[k-2]);};
     // The end, moved past a glued cut when 4+ characters are left; its numbers count how much of the address it keeps.
     const tail=H=>{const T=most(H);let s=n-T;while(s<n&&glued(s))s++;return n-s>=4?n-s:T;};
     const nums=T=>(ch.slice(n-T).join('').match(/[0-9]+/g)||[]).length;
     const word=ch.findIndex((c,k)=>k>0&&/[\s·・,，、]/.test(c)),first=word>0&&word<=12?word:0;
-    let h=Math.min(2,n-2),t=tail(h);const t0=t,dirty=glued(h);
-    // A longer start only when the end keeps every number the short start's end keeps (18幢 and 19幢 stay apart).
-    const take=(H,T)=>{const clean=!glued(n-T)||glued(n-t0);if(clean&&(T>=Math.min(6,t0)&&nums(T)>=nums(t0)||dirty&&T>=4)){h=H;t=T;return true;}return false;};
-    if(!(first>h&&take(first,tail(first)))&&h+t>=18)for(let c=h+t;c>=h+t-3;c--){const h2=Math.floor(c*.4);if(h2<=h)break;put(h2,c-h2);if(fits()&&take(h2,tail(h2)))break;}
-    while(h+t<n-1){put(h+1,t);if(!fits())break;h++;}
-    if(glued(h)){let k=h;while(k>2&&glued(k))k--;if(!glued(k))h=k;}
-    put(h,t);return el.textContent;
+    const fit=()=>{
+      let h=Math.min(2,n-2),t=tail(h);const t0=t,dirty=glued(h);
+      // A longer start only when the end keeps every number the short start's end keeps (18幢 and 19幢 stay apart).
+      const take=(H,T)=>{const clean=!glued(n-T)||glued(n-t0);if(clean&&(T>=Math.min(6,t0)&&nums(T)>=nums(t0)||dirty&&T>=4)){h=H;t=T;return true;}return false;};
+      if(!(first>h&&take(first,tail(first)))&&h+t>=18)for(let c=h+t;c>=h+t-3;c--){const h2=Math.floor(c*.4);if(h2<=h)break;put(h2,c-h2);if(fits()&&take(h2,tail(h2)))break;}
+      while(h+t<n-1){put(h+1,t);if(!fits())break;h++;}
+      if(glued(h)){let k=h;while(k>2&&glued(k))k--;if(!glued(k))h=k;}
+      return [h,t];
+    };
+    const plain=fit();G=true;const whole=fit();
+    if(glued(whole[0])&&!glued(plain[0])||nums(whole[1])<nums(plain[1]))G=false;
+    put(...(G?whole:plain));return el.textContent;
   }
   function fitNames(){for(const el of $$('.mobile-project .project-name')){el.title=data.project.name;fitText(el,data.project.name);}}
   function homeTop(){const bar=$('.topbar');if(bar)document.documentElement.style.setProperty('--home-top',Math.max(0,bar.getBoundingClientRect().bottom)+'px');}

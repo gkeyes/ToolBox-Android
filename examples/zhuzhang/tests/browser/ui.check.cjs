@@ -63,14 +63,16 @@ const check = (name, ok, got) => { results.push({ name, ok: !!ok, got }); consol
     ...[6, 8, 9, 10, 11, 18].map((b) => [`阳光城·翡丽湾二期 B区 ${b}栋2单元 1803室`, 2, `${b}栋2单元 1803室`, '阳']),
     // A two-character estate on a wider phone: the 40% start may not cost the building either.
     ...[320, 390].flatMap((w) => [18, 19].flatMap((b) => [[`中海·国际社区 三期 ${b}幢 2单元 1803`, 2, `${b}幢 2单元 1803`, '中海', w], [`龙湖·春江郦城 ${b - 6}座 2单元 1803室`, 2, `${b - 6}座 2单元 1803室`, '龙湖', w]])),
-    ['Sunshine Tower 18 Unit 1203 Phase 2 East', 2, 'Phase 2 East', 'Sunshine', 390]]) {
+    ['Sunshine Tower 18 Unit 1203 Phase 2 East', 2, 'Phase 2 East', 'Sunshine', 390],
+    ...[320, 390].flatMap((w) => [12, 13].flatMap((b) => [[`上海市浦东新区张江镇碧云路 1088弄 ${b}号 1201`, 2, `${b}号 1201`, '上海', w], [`Vanke Park Phase 2 Bldg ${b}-1202`, 2, `${b}-1202`, 'Vanke', w]]))]) {
     const { ctx, p, zoom } = await open(width, ledger(name)); await zoom(z);
     const m = await p.evaluate(() => { const n = document.querySelector('.mobile-project .project-name'), bar = document.querySelector('.topbar'), small = document.querySelector('.mobile-project .project-meta');
-      return { text: n.textContent, size: parseFloat(getComputedStyle(n).fontSize), fits: n.scrollHeight <= n.clientHeight + 1, name: __seen(n), top: n.getBoundingClientRect().top - bar.getBoundingClientRect().top, sw: document.documentElement.scrollWidth,
+      return { text: n.textContent, split: [...n.querySelectorAll('.nb')].filter((x) => x.getClientRects().length > 1).map((x) => x.textContent), size: parseFloat(getComputedStyle(n).fontSize), fits: n.scrollHeight <= n.clientHeight + 1, name: __seen(n), top: n.getBoundingClientRect().top - bar.getBoundingClientRect().top, sw: document.documentElement.scrollWidth,
         meta: [...small.querySelectorAll('span')].map((x) => ({ t: x.textContent, seen: __seen(x) })) }; });
     check(`top bar ${name} ${width} ×${z}: keeps 「${start}」 and 「${end}」, and what shows fits its box`, m.text.startsWith(start) && m.text.endsWith(end) && m.fits && !m.name.length && m.size >= 14 * z, m);
     // Neither side of … stops inside a word, a number, or between a number and its 栋/单元/号楼/室.
-    const [hd, tl = ''] = m.text.split('…'), at = name.length - tl.length, hEnd = hd.length, glued = (a, b) => /[A-Za-z0-9]/.test(a || '') && /[A-Za-z0-9]/.test(b || '') || /[0-9]/.test(a || '') && /[栋幢座号楼单元室层户]/.test(b || '');
+    const [hd, tl = ''] = m.text.split('…'), at = name.length - tl.length, hEnd = hd.length, glued = (a, b) => /[A-Za-z0-9]/.test(a || '') && /[A-Za-z0-9]/.test(b || '') || /[A-Za-z0-9]/.test(a || '') && /[栋幢座号楼单元室层户弄区期院]/.test(b || '');
+    check(`top bar ${name} ${width} ×${z}: no line ends inside a number and its 栋/单元/弄 or a Latin word`, !m.split.length, m.split);
     check(`top bar ${name} ${width} ×${z}: cut only between words`, !m.text.includes('…') || (name.endsWith(tl) && !glued(name[at - 1], name[at]) && name.startsWith(hd) && !glued(name[hEnd - 1], name[hEnd])), { text: m.text });
     check(`top bar ${name} ${width} ×${z}: page stays ${width} wide, name clears the top, every meta piece readable in full`, m.sw === width && m.top >= 6 && m.meta.length === 2 && m.meta.every((x) => !x.seen.length), m);
     await ctx.close();

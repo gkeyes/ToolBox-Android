@@ -740,19 +740,26 @@ test('1.12.7 · a cut long name keeps each building apart and never cuts inside 
   for (const [per, lines] of [[8, 3], [12, 2]]) assert.equal(app.fitText(box(per, lines), 'Sunshine Tower 18 Unit 1203 Phase 2 East'), 'Sunshine…Phase 2 East', per + '×' + lines);
   // Every size: the start and end are the name's own, and neither cut splits a Latin word, a number (12-1202 is one)
   // or a number from its 栋/单元/号楼/室 (head back-off and tail snap), unless nothing cleaner fits at all.
-  const glued = (s, k) => { const a = s[k - 1], b = s[k], l = (c) => /[A-Za-z0-9]/.test(c || ''); return l(a) && l(b) || l(a) && b === '-' || a === '-' && l(b) || /[0-9]/.test(a || '') && /[栋幢座号楼单元室层户]/.test(b || ''); };
+  const glued = (s, k) => { const a = s[k - 1], b = s[k], l = (c) => /[A-Za-z0-9]/.test(c || ''); return l(a) && l(b) || l(a) && b === '-' || a === '-' && l(b) || l(a) && /[栋幢座号楼单元室层户弄区期院]/.test(b || ''); };
   const names = ['阳光城·翡丽湾二期 B区 8栋2单元 1803室', '中海·国际社区 三期 18幢 2单元 1803', '龙湖·春江郦城 12座 2单元 1803室', 'Riverside Garden Phase 3 Bldg 12-1202',
-    'Sunshine Tower 18 Unit 1203 Phase 2 East', '北京市朝阳区望京街道花家地西里三区 2号楼 1单元 501', '滨江花园三期12栋1202'];
+    'Sunshine Tower 18 Unit 1203 Phase 2 East', '北京市朝阳区望京街道花家地西里三区 2号楼 1单元 501', '滨江花园三期12栋1202',
+    'Vanke Park Phase 2 Bldg 12-1202', '上海市浦东新区张江镇碧云路 1088弄 12号 1201', '万科·城市花园 B区 12栋2单元 1803室'];
   let cuts = 0;
   for (const name of names) for (let per = 4; per <= 12; per++) for (const lines of [2, 3]) {
     const e = app.fitText(box(per, lines), name), ch = [...name];
     if (!e.includes('…')) continue;
     const [hd, tl] = e.split('…'), h = [...hd].length, at = ch.length - [...tl].length; cuts++;
     assert.ok(name.startsWith(hd) && name.endsWith(tl), e);
-    assert.ok(!glued(ch, at) || [...tl].length <= 6, `${per}×${lines} end cut inside a word: ${e}`);
+    assert.ok(!glued(ch, at) || !/\s/.test(tl), `${per}×${lines} end cut inside a word: ${e}`); // only when the end is one word
+    assert.ok(!(/^[栋幢座号楼单元室层户弄区期院]/.test(tl) && /[A-Za-z0-9栋幢座号楼单元室层户弄区期院]/.test(ch[at - 1])), `${per}×${lines} end starts on a unit torn from its number: ${e}`);
     assert.ok(!glued(ch, h) || !/[\s·]/.test(hd), `${per}×${lines} start cut inside a word: ${e}`); // only when even the first word can't fit
   }
-  assert.ok(cuts > 60, 'enough cut cases: ' + cuts);
+  assert.ok(cuts > 80, 'enough cut cases: ' + cuts);
+  // Neighbours stay apart whenever 「two characters…」 plus everything from their number fits the box.
+  for (const [a, b, from] of [['Vanke Park Phase 2 Bldg 12-1202', 'Vanke Park Phase 2 Bldg 13-1202', '12-1202'], ['上海市浦东新区张江镇碧云路 1088弄 12号 1201', '上海市浦东新区张江镇碧云路 1088弄 13号 1201', '12号 1201'],
+    ['万科·城市花园 B区 12栋2单元 1803室', '万科·城市花园 B区 13栋2单元 1803室', '12栋2单元 1803室'], ['中海·国际社区 三期 18幢 2单元 1803', '中海·国际社区 三期 19幢 2单元 1803', '18幢 2单元 1803']])
+    for (let per = 4; per <= 12; per++) for (const lines of [2, 3]) if (3 + [...from].length <= per * lines)
+      assert.notEqual(app.fitText(box(per, lines), a), app.fitText(box(per, lines), b), `${per}×${lines}: ${a} / ${b}`);
 });
 
 test('1.12.5 · the ledger fuzz itself works: it makes every kind of entry and catches a broken split', () => {
