@@ -262,7 +262,7 @@ export function readTopics(text, count) {
       // A catch-all left with under half of what it named is the rest of the
       // board, not all of it: its title and summary described every article.
       const rest = lumps && unique.length * 2 < new Set(all.filter(real)).size;
-      picked.push({ entry, topic: rest
+      picked.push({ entry, rest, topic: rest
         ? { title: "其他", gist: "", summary: "", articles: unique }
         : { title, gist: clean(item?.gist, 80), summary: clean(item?.summary, 400), articles: unique } });
     }
@@ -277,7 +277,11 @@ export function readTopics(text, count) {
     rivals = shown;
     picked = pick(rivals);
   }
-  const topics = picked.map(({ topic }) => topic);
+  // The rest of the board is the least important topic, whatever rank the AI
+  // gave its whole-board range, and there is only one of it.
+  const topics = picked.filter(({ rest }) => !rest).map(({ topic }) => topic);
+  const rest = picked.filter(({ rest }) => rest).flatMap(({ topic }) => topic.articles);
+  if (rest.length) topics.push({ title: "其他", gist: "", summary: "", articles: rest });
   if (!topics.length) throw new Error("AI 没有归出主题，请重新生成。");
   return { topics, whole: Boolean(data) };
 }
