@@ -56,3 +56,20 @@ test("sidebar notifications count existing watches, reflect sync state and expan
   await expect(details).toHaveCount(0);
   await expect(paused).toHaveCount(0);
 });
+
+test("the notification row title wraps instead of truncating at 2x text on a 320 px phone", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 640 });
+  await page.goto("/sidebar-notifications.html");
+  await page.waitForFunction(() => Boolean(window.sidebarNotificationsFixture));
+  await page.evaluate(() => { document.documentElement.style.fontSize = "32px"; });
+  // Located by class: renaming the title also renames the button.
+  const title = page.locator(".sidebar-pref .ds-body").first();
+  await expect(title).toHaveText("更新通知");
+  await title.evaluate((node) => { node.textContent = "Update notifications"; });
+  const metrics = await title.evaluate((node) => ({
+    clipped: node.scrollWidth > node.clientWidth || node.scrollHeight > node.clientHeight + 1,
+    lines: Math.round(node.getBoundingClientRect().height / parseFloat(getComputedStyle(node).lineHeight)),
+  }));
+  expect(metrics.clipped, "the whole title shows").toBe(false);
+  expect(metrics.lines, "it takes a second line").toBe(2);
+});

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
+import { Button } from "@heroui/react";
 import { HashRouter, useLocation } from "react-router";
 import i18n from "i18next";
 import { initReactI18next } from "react-i18next";
@@ -34,6 +35,7 @@ function ControlsFixture() {
   const route = useLocation();
   const [modal, setModal] = useState(false);
   const [alert, setAlert] = useState(false);
+  const [footerSheet, setFooterSheet] = useState(false);
   const [confirmations, setConfirmations] = useState(0);
   const showingArticle = route.pathname.includes("/article/");
 
@@ -65,12 +67,18 @@ function ControlsFixture() {
     <output data-testid="route">{route.pathname}</output>
     <div style={{ display: "flex", flexWrap: "wrap", gap: 12, padding: 20 }}>
       <button onClick={() => setModal(true)}>Open modal</button>
+      <button onClick={() => setFooterSheet(true)}>Open sheet with footer</button>
       <button onClick={() => settingsModalOpen.set(true)}>Open settings</button>
       <button onClick={() => setAlert(true)}>Open alert</button>
     </div>
     <output data-testid="confirmations">{confirmations}</output>
     <CustomModal open={modal} onOpenChange={setModal} title="Modal heading with enough text to wrap on a narrow display">
       <p style={{ padding: 16 }}>Modal body fixture</p>
+    </CustomModal>
+    {/* The rename / add-category / edit-feed shape: a sheet with a 取消 + 保存 footer. */}
+    <CustomModal open={footerSheet} onOpenChange={setFooterSheet} title="Rename"
+      footer={<><Button variant="tertiary" onPress={() => setFooterSheet(false)}>取消</Button><Button onPress={() => setFooterSheet(false)}>保存</Button></>}>
+      <p style={{ padding: 16 }}>Sheet body fixture</p>
     </CustomModal>
     <Settings />
     <CustomAlertDialog title="Confirm fixture action" content="Pending operations must still prevent dismissal."

@@ -59,6 +59,8 @@ const ArticlePageContent = forwardRef(function ArticlePageContent(
 
       <AISummary articleId={article.id} passive={passive} paused={readingPaused || !foreground} />
 
+      {/* The article's cover stands for its first video only; a second video
+          showing the same picture would look like a repeat. */}
       {mediaEnclosures.map((enclosure) => (
         <Iframe
           key={enclosure.url}
@@ -67,7 +69,7 @@ const ArticlePageContent = forwardRef(function ArticlePageContent(
             attribs: { src: enclosure.url },
           }}
           sources={[{ url: enclosure.url, type: enclosure.mime_type }]}
-          posterSources={article.coverSources?.length ? article.coverSources : [article.coverUrl].filter(Boolean)}
+          posterSources={enclosure === mediaEnclosures.find((item) => !item.mime_type?.startsWith("audio/")) ? (article.coverSources?.length ? article.coverSources : [article.coverUrl].filter(Boolean)) : []}
         />
       ))}
 

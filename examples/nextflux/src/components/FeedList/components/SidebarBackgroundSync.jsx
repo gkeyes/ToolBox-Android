@@ -53,7 +53,7 @@ export default function SidebarBackgroundSync() {
       <div className="sidebar-pref ds-row">
         <RefreshCw aria-hidden="true" className={"sidebar-pref-icon" + (health.state === "syncing" ? " animate-spin" : "")} />
         <div className="min-w-0 flex-1">
-          <div className="truncate ds-body font-medium">{t("sidebar.backgroundSync.title")}</div>
+          <div className="line-clamp-2 break-words ds-body font-medium">{t("sidebar.backgroundSync.title")}</div>
           <div className="truncate ds-caption ds-tnum">{status}</div>
         </div>
         <Switch

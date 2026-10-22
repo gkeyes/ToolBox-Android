@@ -217,6 +217,18 @@
 
   .sidebar-profile { border-radius: var(--ds-radius-card) !important; background: var(--ds-card); }
   [data-sidebar="footer"] { padding: var(--ds-space-xs) var(--ds-space-sm) var(--ds-space-sm); }
+  /* With the notification list open at large text sizes the footer can be taller than the
+     space left under the header; it then shrinks and scrolls so the account row stays
+     reachable, instead of running off the bottom of the screen. */
+  .sidebar-footer {
+    flex-shrink: 1;
+    min-block-size: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  /* The rows keep their height (the card clips with overflow: hidden, so it would shrink and
+     cut off its own rows); the footer scrolls instead. */
+  .sidebar-footer > * { flex-shrink: 0; }
   [data-sidebar="header"] { padding: var(--ds-space-xs) var(--ds-space-sm); }
 
   /* ---------- Search ---------- */

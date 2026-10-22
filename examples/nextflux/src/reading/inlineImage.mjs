@@ -86,6 +86,17 @@ const SMALL_ALT = /^\s*(?:(?:\p{Extended_Pictographic}|\p{Regional_Indicator}|\u
 const PHOTO_BEFORE = /[。.!！?？:：]\s*$|来源|图源|出处|摄影|图片|下图|如图|见图|如下|source|credit|photo|\bvia\b/i;
 const PHOTO_AFTER = /^\s*(?:图\s*\d*\s*[：:]|[▲△↑]|来源|图源|出处|摄影|图片|source|credit|photo|via\b)/i;
 
+// Images too small to stand for the article: anything 64 px or less on a
+// side, icons, emoji, stickers and badges, and tracking pixels and spacers,
+// which often come without a size. The article's cover skips them.
+const TRACKER = /(?:^|[/_.\-])(?:pixel|spacer|blank|beacon|tracking|tracker|1x1)(?:$|[/_.\-?#])/i;
+export function smallImage(attrs = {}) {
+  const width = number(attrs.width), height = number(attrs.height);
+  if ((width > 0 && width <= SMALL) || (height > 0 && height <= SMALL)) return true;
+  const source = String(attrs.src || "");
+  return namesIcon(attrs.class) || SMALL_SOURCE.test(source) || TRACKER.test(source) || SMALL_ALT.test(String(attrs.alt || ""));
+}
+
 export function imageIsInline(target, attrs = {}) {
   const width = number(attrs.width), height = number(attrs.height);
   if (width || height) return (width > 0 && width <= SMALL) || (height > 0 && height <= SMALL);

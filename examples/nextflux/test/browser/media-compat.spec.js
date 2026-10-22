@@ -353,6 +353,18 @@ test("video links can be copied or shared without starting a media download", as
   await expect(page.locator("video")).toHaveCount(0);
 });
 
+test("an embed that only plays in the browser opens it from its play button (recheck-142 D)", async ({ page }) => {
+  const embed = "https://www.youtube.com/embed/fixture";
+  await openArticle(page, `<iframe src="${embed}"></iframe>`);
+  await page.evaluate(() => {
+    window.opened = [];
+    window.ToolBox.browser = { async open(link) { window.opened.push(link); } };
+  });
+  await page.getByRole("button", { name: "在浏览器中播放视频", exact: true }).click();
+  await expect.poll(() => page.evaluate(() => window.opened)).toEqual([embed]);
+  expect((await snapshot(page)).requests).toHaveLength(0);
+});
+
 for (const width of [320, 900]) test(`the video card fits a ${width}px reader without a poster`, async ({ page }) => {
   await page.setViewportSize({ width, height: 900 });
   await openArticle(page, `<video src="${MP4}"></video>`);
