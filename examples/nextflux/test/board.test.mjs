@@ -126,10 +126,10 @@ test("article references keep their numbers: lists, ranges and 2.0 are not glued
   assert.deepEqual(articleNumbers("1-13", 12).length, 12);
   assert.deepEqual(articleNumbers("12-1", 12).length, 12);
   assert.deepEqual(articleNumbers("1-3", 3), [1, 2, 3]);
-  // Ranges over the whole board are no grouping when other topics follow.
+  // Ranges over the whole board give up only what other topics claim; no article drops off.
   for (const range of ['"1-12"', '"12-1"', '"1-13"', '"1-6","7-12"', '"1-6,7-12"']) {
     const whole = parseTopics(`{"topics":[{"title":"全部","articles":[${range}]},{"title":"台风","articles":[4,5]}]}`, 12);
-    assert.deepEqual(whole.map((topic) => [topic.title, topic.articles]), [["台风", [4, 5]]], range);
+    assert.deepEqual(whole.map((topic) => [topic.title, topic.articles]), [["全部", [1, 2, 3, 6, 7, 8, 9, 10, 11, 12]], ["台风", [4, 5]]], range);
   }
   // Ranges over nearly the whole board only give up what another topic claims, whichever comes first.
   for (const [reply, count, expected] of [
@@ -141,17 +141,18 @@ test("article references keep their numbers: lists, ranges and 2.0 are not glued
     ['{"topics":[{"title":"大","articles":["1-18"]},{"title":"小","articles":["18-20"]}]}', 20, [["大", Array.from({ length: 17 }, (_, i) => i + 1)], ["小", [18, 19, 20]]]],
     ['{"topics":[{"title":"大","articles":["1-9"]},{"title":"小","articles":[9,10]}]}', 10, [["大", [1, 2, 3, 4, 5, 6, 7, 8]], ["小", [9, 10]]]],
   ]) assert.deepEqual(parseTopics(reply, count).map((topic) => [topic.title, topic.articles]), expected, reply);
-  // A range plus single numbers that together reach the whole board is a whole-board range too.
-  for (const [range, kept] of [['"1-11",12', [12]], ['"1-10",11,12', [11, 12]], ['"1-10,11,12"', [11, 12]]]) {
+  // However a whole-board topic is written, it gives up only the overlap (recheck-147 F1, F2).
+  for (const range of ['"1-11",12', '"1-10",11,12', '"1-10,11,12"', '"1-12"']) {
     const whole = parseTopics(`{"topics":[{"title":"全部","articles":[${range}]},{"title":"乙","articles":[4]}]}`, 12);
-    assert.deepEqual(whole.map((topic) => [topic.title, topic.articles]), [["全部", kept], ["乙", [4]]], range);
+    assert.deepEqual(whole.map((topic) => [topic.title, topic.articles]), [["全部", [1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12]], ["乙", [4]]], range);
   }
+  assert.deepEqual(parseTopics('{"topics":[{"title":"甲","articles":[1]},{"title":"全部","articles":["1-7",8]}]}', 8).map((topic) => [topic.title, topic.articles]), [["甲", [1]], ["全部", [2, 3, 4, 5, 6, 7, 8]]]);
   // Salvaged from broken JSON, the same.
   const broken = parseTopics('{"topics":[{"title":"全部","summary":"有"引号"","articles":["1-12"]},{"title":"台风","summary":"s","articles":[4,5]}]}', 12);
-  assert.deepEqual(broken.map((topic) => [topic.title, topic.articles]), [["台风", [4, 5]]]);
-  // An explicit number beside such a range stays; a range over part of the board stays.
+  assert.deepEqual(broken.map((topic) => [topic.title, topic.articles]), [["全部", [1, 2, 3, 6, 7, 8, 9, 10, 11, 12]], ["台风", [4, 5]]]);
+  // An explicit number beside such a range is kept the same way; a range over part of the board stays.
   const mixed = parseTopics('{"topics":[{"title":"全部","articles":["1-12", 3]},{"title":"台风","articles":[4,5]}]}', 12);
-  assert.deepEqual(mixed.map((topic) => [topic.title, topic.articles]), [["全部", [3]], ["台风", [4, 5]]]);
+  assert.deepEqual(mixed.map((topic) => [topic.title, topic.articles]), [["全部", [1, 2, 3, 6, 7, 8, 9, 10, 11, 12]], ["台风", [4, 5]]]);
   const part = parseTopics('{"topics":[{"title":"前半","articles":["1-10"]},{"title":"台风","articles":[11,12]}]}', 12);
   assert.deepEqual(part.map((topic) => topic.articles.length), [10, 2]);
   // A board whose only topic is all of it keeps it, as does one listing the articles one by one.
