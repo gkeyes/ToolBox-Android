@@ -249,7 +249,7 @@ export function readTopics(text, count) {
   // other ten, and "1-11" beside [12] splits the board in two. A rival that
   // the MAX_TOPICS cap then leaves out claims nothing, so its articles stay
   // with the catch-all; the board is picked again without it.
-  const pick = (rivals, reserve) => {
+  const pick = (rivals) => {
     const claimed = new Set(rivals.flatMap((rival) => rival.numbers));
     const taken = new Set();
     const picked = [];
@@ -267,7 +267,7 @@ export function readTopics(text, count) {
       const rest = leftover || REST_TITLE.test(title);
       // All of the rest shares one place under the MAX_TOPICS cap and is
       // never cut; the other topics stop where the cap is reached.
-      const shared = reserve || picked.some((pick) => pick.rest) ? 1 : 0;
+      const shared = picked.some((pick) => pick.rest) ? 1 : 0;
       if (!rest && picked.filter((pick) => !pick.rest).length + shared >= MAX_TOPICS) continue;
       unique.forEach((n) => taken.add(n));
       picked.push({ entry, rest, topic: leftover
@@ -276,26 +276,27 @@ export function readTopics(text, count) {
     }
     return picked;
   };
-  const choose = (reserve) => {
+  const choose = () => {
     let rivals = read.filter(({ item, numbers, lumps }) => !lumps && clean(item?.title, 40) && numbers.some(real));
-    let picked = pick(rivals, reserve);
+    let picked = pick(rivals);
     for (;;) {
       const kept = new Set(picked.map(({ entry }) => entry));
       const shown = rivals.filter((rival) => kept.has(rival));
       if (shown.length === rivals.length) return picked;
       rivals = shown;
-      picked = pick(rivals, reserve);
+      picked = pick(rivals);
     }
   };
-  // A rest the AI put after the cap was reached keeps a place for itself.
-  let picked = choose(false);
-  if (picked.some(({ rest }) => rest) && picked.filter(({ rest }) => !rest).length >= MAX_TOPICS) picked = choose(true);
+  const picked = choose();
   // The rest of the board is the least important topic, whatever rank the AI
   // gave its whole-board range, and there is only one of it.
   // A lone rest keeps what the AI wrote for it; several become one 其他.
   // Either way its articles are in article order.
   const topics = picked.filter(({ rest }) => !rest).map(({ topic }) => topic);
   const rest = picked.filter(({ rest }) => rest).map(({ topic }) => topic);
+  // A rest the AI put after the cap was reached takes the last place, and
+  // the topic that held it joins the rest.
+  if (rest.length && topics.length >= MAX_TOPICS) rest.push(...topics.splice(MAX_TOPICS - 1));
   const articles = rest.flatMap((topic) => topic.articles).sort((a, b) => a - b);
   if (rest.length === 1) topics.push({ ...rest[0], articles });
   if (rest.length > 1) topics.push({ title: "其他", gist: "", summary: "", articles });
