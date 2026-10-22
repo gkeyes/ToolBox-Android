@@ -175,7 +175,11 @@ test("article references keep their numbers: lists, ranges and 2.0 are not glued
   assert.equal(new Set(capped.flatMap((topic) => topic.articles)).size, 12);
   // A catch-all left with under half of its articles is the rest, not 「全部」 (recheck-154 N2).
   const rest = parseTopics('{"topics":[{"title":"全部","gist":"今天的全部新闻","summary":"全部","articles":["1-12"]},{"title":"乙","articles":[1,2,3,4,5,6,7,8,9,10,11]}]}', 12);
-  assert.deepEqual(rest.map((topic) => [topic.title, topic.gist, topic.articles]), [["其他", "", [12]], ["乙", "", [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]]]);
+  assert.deepEqual(rest.map((topic) => [topic.title, topic.gist, topic.articles]), [["乙", "", [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]], ["其他", "", [12]]]);
+  // The rest comes last, and two catch-alls left as rests are one 「其他」 (recheck-157 M1, M2).
+  assert.deepEqual(parseTopics('{"topics":[{"title":"全部","articles":["1-12"]},{"title":"乙","articles":[1,2,3,4,5,6,7,8,9,10,11]}]}', 12).map((topic) => topic.title), ["乙", "其他"]);
+  const two = parseTopics('{"topics":[{"title":"甲","articles":["1-11"]},{"title":"乙","articles":["2-12"]},{"title":"丙","articles":[1,2,3,4,5,6,7,8]}]}', 12);
+  assert.deepEqual(two.map((topic) => [topic.title, topic.articles]), [["丙", [1, 2, 3, 4, 5, 6, 7, 8]], ["其他", [9, 10, 11, 12]]]);
   // A small board may be one topic.
   assert.deepEqual(parseTopics('{"topics":[{"title":"全部","articles":["1-3"]},{"title":"乙","articles":[1]}]}', 3)[0].articles, [1, 2, 3]);
   assert.deepEqual(articleNumbers("1-14", 12), []);
