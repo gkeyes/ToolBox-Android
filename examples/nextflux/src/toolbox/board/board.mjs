@@ -15,6 +15,8 @@ export const MAX_ARTICLES = 150;
 const EXCERPT_MAX = 280;
 const TITLE_MAX = 120;
 export const MAX_TOPICS = 7;
+// Titles that name the rest of the board.
+const REST_TITLE = /^(其[他它]|其余)(新闻|消息|资讯)?$|^others?$/i;
 
 export function startOfDay(now = new Date()) {
   const day = new Date(now);
@@ -247,7 +249,7 @@ export function readTopics(text, count) {
   // other ten, and "1-11" beside [12] splits the board in two. A rival that
   // the MAX_TOPICS cap then leaves out claims nothing, so its articles stay
   // with the catch-all; the board is picked again without it.
-  const pick = (rivals) => {
+  const pick = (rivals, reserve) => {
     const claimed = new Set(rivals.flatMap((rival) => rival.numbers));
     const taken = new Set();
     const picked = [];
@@ -259,12 +261,14 @@ export function readTopics(text, count) {
       const unique = [...new Set(numbers)];
       // A catch-all left with under half of what it named is the rest of the
       // board, not all of it: its title and summary described every article.
-      // A topic the AI itself calls 其他 is the rest too.
+      // A topic the AI itself calls 其他, 其它, 其他新闻 and the like is the
+      // rest too.
       const leftover = lumps && unique.length * 2 < new Set(all.filter(real)).size;
-      const rest = leftover || title === "其他";
-      // All of the rest shares one place under the MAX_TOPICS cap.
-      const places = picked.filter((pick) => !pick.rest).length + (picked.some((pick) => pick.rest) ? 1 : 0);
-      if (places >= MAX_TOPICS && !(rest && picked.some((pick) => pick.rest))) continue;
+      const rest = leftover || REST_TITLE.test(title);
+      // All of the rest shares one place under the MAX_TOPICS cap and is
+      // never cut; the other topics stop where the cap is reached.
+      const shared = reserve || picked.some((pick) => pick.rest) ? 1 : 0;
+      if (!rest && picked.filter((pick) => !pick.rest).length + shared >= MAX_TOPICS) continue;
       unique.forEach((n) => taken.add(n));
       picked.push({ entry, rest, topic: leftover
         ? { title: "其他", gist: "", summary: "", articles: unique }
@@ -272,23 +276,29 @@ export function readTopics(text, count) {
     }
     return picked;
   };
-  let rivals = read.filter(({ item, numbers, lumps }) => !lumps && clean(item?.title, 40) && numbers.some(real));
-  let picked = pick(rivals);
-  for (;;) {
-    const kept = new Set(picked.map(({ entry }) => entry));
-    const shown = rivals.filter((rival) => kept.has(rival));
-    if (shown.length === rivals.length) break;
-    rivals = shown;
-    picked = pick(rivals);
-  }
+  const choose = (reserve) => {
+    let rivals = read.filter(({ item, numbers, lumps }) => !lumps && clean(item?.title, 40) && numbers.some(real));
+    let picked = pick(rivals, reserve);
+    for (;;) {
+      const kept = new Set(picked.map(({ entry }) => entry));
+      const shown = rivals.filter((rival) => kept.has(rival));
+      if (shown.length === rivals.length) return picked;
+      rivals = shown;
+      picked = pick(rivals, reserve);
+    }
+  };
+  // A rest the AI put after the cap was reached keeps a place for itself.
+  let picked = choose(false);
+  if (picked.some(({ rest }) => rest) && picked.filter(({ rest }) => !rest).length >= MAX_TOPICS) picked = choose(true);
   // The rest of the board is the least important topic, whatever rank the AI
   // gave its whole-board range, and there is only one of it.
-  // A lone rest keeps what the AI wrote for it; several become one 其他 in
-  // article order.
+  // A lone rest keeps what the AI wrote for it; several become one 其他.
+  // Either way its articles are in article order.
   const topics = picked.filter(({ rest }) => !rest).map(({ topic }) => topic);
   const rest = picked.filter(({ rest }) => rest).map(({ topic }) => topic);
-  if (rest.length === 1) topics.push(rest[0]);
-  if (rest.length > 1) topics.push({ title: "其他", gist: "", summary: "", articles: rest.flatMap((topic) => topic.articles).sort((a, b) => a - b) });
+  const articles = rest.flatMap((topic) => topic.articles).sort((a, b) => a - b);
+  if (rest.length === 1) topics.push({ ...rest[0], articles });
+  if (rest.length > 1) topics.push({ title: "其他", gist: "", summary: "", articles });
   if (!topics.length) throw new Error("AI 没有归出主题，请重新生成。");
   return { topics, whole: Boolean(data) };
 }

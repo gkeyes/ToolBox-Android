@@ -194,6 +194,16 @@ test("article references keep their numbers: lists, ranges and 2.0 are not glued
   assert.equal(full.length, 7);
   assert.deepEqual(full.map((topic) => topic.title), ["对1", "对2", "对3", "对4", "对5", "对6", "其他"]);
   assert.equal(new Set(full.flatMap((topic) => topic.articles)).size, 20);
+  // 其它, 其他新闻 and Others are the rest too; 其他国家 is a topic (recheck-163 V1).
+  const kinds = parseTopics('{"topics":[{"title":"其它新闻","articles":[12,3,9]},{"title":"A","articles":[1,2]},{"title":"Others","articles":[5]},{"title":"其他国家","articles":[4]}]}', 12);
+  assert.deepEqual(kinds.map((topic) => [topic.title, topic.articles]), [["A", [1, 2]], ["其他国家", [4]], ["其他", [3, 5, 9, 12]]]);
+  // A lone rest is in article order too (recheck-163 V2).
+  assert.deepEqual(parseTopics('{"topics":[{"title":"其他","articles":[12,3,9]},{"title":"A","articles":[1,2]}]}', 12).at(-1).articles, [3, 9, 12]);
+  // A rest after seven topics still gets a place (recheck-163 V3).
+  const late = parseTopics(`{"topics":[${Array.from({ length: 7 }, (_, i) => `{"title":"对${i + 1}","articles":[${2 * i + 1},${2 * i + 2}]}`).join(",")},{"title":"全部","articles":["1-20"]}]}`, 20);
+  assert.equal(late.length, 7);
+  assert.equal(late.at(-1).title, "其他");
+  assert.equal(new Set(late.flatMap((topic) => topic.articles)).size, 20);
   // A small board may be one topic.
   assert.deepEqual(parseTopics('{"topics":[{"title":"全部","articles":["1-3"]},{"title":"乙","articles":[1]}]}', 3)[0].articles, [1, 2, 3]);
   assert.deepEqual(articleNumbers("1-14", 12), []);
