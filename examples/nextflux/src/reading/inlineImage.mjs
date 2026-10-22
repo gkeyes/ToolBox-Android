@@ -83,20 +83,30 @@ function scan(node, step) {
 // Weibo/QQ style) only counts on a sticker's file type and never as a
 // placeholder ([图片], [image]) or a file name ([IMG_1234]), which feeds put
 // on photos. The cover and the inline reserve share these rules.
-const SMALL_SOURCE = /twemoji|(?:^|\/)(?:emojis?|emoticons?|stickers?|expressions?|smileys?|smilies)\/|(?:^|\/)(?:smile|smiley|emoji|emoticon|sticker)(?:[-_]?\d{1,4})?\.(?:png|gif|svg|webp)(?:$|[?#])|(?:^|\/)(?:16|20|24|32|36|48|64|72|96|128)x(?:16|20|24|32|36|48|64|72|96|128)\/|(?:^|\/)1f[0-9a-f]{3}(?:[-_][0-9a-f]{4,5})*\.(?:png|gif|svg|webp)(?:$|[?#])|(?:^|\/\/)(?:img\.shields\.io|badgen\.net|badge\.fury\.io)\//i;
+const SMALL_SOURCE = /twemoji|(?:^|\/)(?:emojis?|custom_emojis?|emoticons?|stickers?|expressions?|smileys?|smilies)\/|(?:^|\/)(?:smile|smiley|emoji|emoticon|sticker)(?:[-_]?\d{1,4})?\.(?:png|gif|svg|webp)(?:$|[?#])|(?:^|\/)(?:16|20|24|32|36|48|64|72|96|128)x(?:16|20|24|32|36|48|64|72|96|128)\/|(?:^|\/)1f[0-9a-f]{3}(?:[-_][0-9a-f]{4,5})*\.(?:png|gif|svg|webp)(?:$|[?#])|(?:^|\/\/)(?:img\.shields\.io|badgen\.net|badge\.fury\.io)\//i;
 const EMOJI_ALT = /^\s*(?:\p{Extended_Pictographic}|\p{Regional_Indicator}|\u200d|\ufe0f)+\s*$/u;
-const STICKER_ALT = /^\s*\[[^\[\]\d_]{1,8}\]\s*$/u;
+// [笑cry] (Weibo/QQ) or :blobcat: (Mastodon custom emoji).
+const STICKER_ALT = /^\s*(?:\[[^\[\]\d_]{1,8}\]|:[A-Za-z0-9_+-]{2,32}:)\s*$/u;
 const PLACEHOLDER_ALT = /^\s*\[\s*(?:图片|圖片|照片|图像|圖像|配图|配圖|image|img|photo|picture|pic)\s*\]\s*$/i;
 const stickerAlt = (alt) => STICKER_ALT.test(String(alt || "")) && !PLACEHOLDER_ALT.test(String(alt || ""));
 // A photo's file type (JPEG, AVIF, HEIC, also as a CDN format parameter or a
-// WordPress ".jpg.webp" copy) or a photo CDN (WeChat article images, Zhihu,
-// Google/Blogger, Weibo uploads); GIF, SVG, icon files and GitHub's camo badge
-// proxy are emoji, stickers or badges. PNG and WebP are both, so the words
-// decide for them.
-const PHOTO_FORMAT = /\.(?:jpe?g|jfif|avif|hei[cf])(?:\.webp)?(?:$|[?#])|[?&](?:wx_fmt|format|fm)=(?:jpe?g|avif|hei[cf])\b|^https?:\/\/(?:mmbiz\.qpic\.cn|pic\d*\.zhimg\.com|(?:lh\d+|blogger)\.googleusercontent\.com|(?:wx|tva)\d\.sinaimg\.cn)\//i;
+// WordPress ".jpg.webp" copy). A photo CDN (WeChat article images, Zhihu,
+// Google/Blogger, Weibo uploads) counts as a photo too unless the address
+// names a GIF, PNG or WebP, which those hosts also serve stickers and
+// decorations as. GIF, SVG, icon files and GitHub's camo badge proxy are
+// emoji, stickers or badges. PNG and WebP are both, so the words decide.
+const PHOTO_FORMAT = /\.(?:jpe?g|jfif|avif|hei[cf])(?:\.webp)?(?:$|[?#])|[?&](?:wx_fmt|format|fm)=(?:jpe?g|avif|hei[cf])\b/i;
+const PHOTO_HOST = /^https?:\/\/(?:mmbiz\.qpic\.cn|pic\d*\.zhimg\.com|(?:lh\d+|blogger)\.googleusercontent\.com|(?:wx|tva)\d\.sinaimg\.cn)\//i;
+const NAMED_TYPE = /\.(?:png|gif|webp|svg)(?:$|[?#])|[?&](?:wx_fmt|format|fm)=(?:png|gif|webp)\b|\/mmbiz_(?:png|gif)\//i;
+const photoHost = (address) => PHOTO_HOST.test(address) && !NAMED_TYPE.test(address) && !AVATAR.test(address);
 const SMALL_FORMAT = /\.(?:gif|svg|ico|bmp)(?:$|[?#])|[?&](?:wx_fmt|format|fm)=(?:gif|svg)\b|^https?:\/\/camo\.githubusercontent\.com\//i;
-// An icon word anywhere in the address, query included ("a.png?k=icon").
-const SOURCE_ICON = /(?:^|[/_.\-\s?&=])(?:icons?|emoji|emoticons?|emotions?|smil(?:e|ey|ies)|badges?|logos?|avatars?|favicon|stickers?)(?:$|[/_.\-\s\d?&=#])/i;
+// An icon word in the address's path (not its query, where "?utm_campaign=
+// emoji" says nothing about the picture): an icons/ or iconfont/ folder, an
+// ic_ file, a button, a status badge. Google account avatars live under /a/.
+const SOURCE_ICON = /(?:^|[/_.\-])(?:icons?|iconfont|emoji|emoticons?|emotions?|smil(?:e|ey|ies)|badges?|logos?|avatars?|favicon|stickers?|btn|buttons?)(?:$|[/_.\-\d])|(?:^|\/)ic_[^/]*$|(?:^|\/)status\.(?:png|svg|webp)$/i;
+const AVATAR = /^https?:\/\/lh\d+\.googleusercontent\.com\/a\//i;
+const pathOf = (address) => address.replace(/[?#].*$/, "");
+const iconAddress = (address) => SOURCE_ICON.test(pathOf(address)) || AVATAR.test(address);
 // Words around a photo on the same line: a lead-in that ends a sentence or
 // introduces it (。 ： 如下图) or holds a credit (来源：某某, Source) before
 // it; a caption marker (图：, 图1, Figure 1, ▲, 来源) or a credit (张三 摄)
@@ -141,7 +151,7 @@ function withOrigin(address) {
 
 // One source that cannot be the cover: a tracker, an emoji or sticker set or a
 // badge service. The cover is then taken from the image's other sources.
-export const smallSource = (source) => withOrigin(source).some((address) => SMALL_SOURCE.test(address) || TRACKER.test(address));
+export const smallSource = (source) => withOrigin(source).some((address) => SMALL_SOURCE.test(address) || TRACKER.test(address) || AVATAR.test(address));
 export function smallImage(attrs = {}) {
   const width = number(attrs.width), height = number(attrs.height);
   if ((width > 0 && width <= SMALL) || (height > 0 && height <= SMALL)) return true;
@@ -167,25 +177,28 @@ export function imageIsInline(target, attrs = {}) {
   const parent = parentOf(target);
   if (!parent || tagOf(parent) === "FIGURE") return false;
   const addresses = addressesOf(attrs);
-  const source = addresses.join(" ");
   if (attrs["data-image-icon"] || addresses.some((address) => SMALL_SOURCE.test(address)) || EMOJI_ALT.test(String(attrs.alt || ""))) return true;
   const before = scan(target, -1).text;
   const after = scan(target, 1).text;
   if (before && after) return true;
   // A photo alone on its line keeps the reserve whatever its alt says.
   if (!before && !after) return false;
-  // Text on one side only. A JPEG or a photo CDN is a photo whatever the
-  // words; a sticker name or an icon word marks the rest as inline. Otherwise
-  // a photo when the words read like a lead-in, credit or caption. A GIF, SVG
-  // or camo badge after a sentence is an emoji or badge (recheck-159: those
-  // reserved 16:9 and pulled the text up 173 px, as labelled badges did in
-  // recheck-127); a PNG, WebP or unknown type is a photo after more than a
-  // label's words (recheck-164: PNG screenshots and WeChat PNG pictures after
-  // an unpunctuated sentence jumped 173 px down).
+  // Text on one side only. A JPEG is a photo whatever the words; a sticker
+  // name or an icon word marks the rest as inline. Otherwise a photo when
+  // the words read like a lead-in, credit or caption. A GIF, SVG or camo
+  // badge is an emoji or badge (recheck-159: those reserved 16:9 and pulled
+  // the text up 173 px, as labelled badges did in recheck-127), even on a
+  // photo CDN (recheck-168: WeChat GIF stickers); a photo-CDN address of no
+  // named type is a photo. A PNG, WebP or unknown type is a photo after more
+  // than a label's words (recheck-164: PNG screenshots after an unpunctuated
+  // sentence jumped 173 px down), so an unnamed PNG emoji there still gets
+  // the reserve.
   if (addresses.some((address) => PHOTO_FORMAT.test(address))) return false;
-  if (stickerAlt(attrs.alt) || SOURCE_ICON.test(source) || ICON.test(String(attrs.alt || ""))) return true;
+  if (stickerAlt(attrs.alt) || addresses.some(iconAddress) || ICON.test(String(attrs.alt || ""))) return true;
   if (before ? PHOTO_BEFORE.test(before) : PHOTO_AFTER.test(after)) return false;
-  return addresses.some((address) => SMALL_FORMAT.test(address)) || [...(before || after)].length <= LABEL;
+  if (addresses.some((address) => SMALL_FORMAT.test(address))) return true;
+  if (addresses.some(photoHost)) return false;
+  return [...(before || after)].length <= LABEL;
 }
 
 // True while nothing follows the image on its line yet, so text mounted by a
