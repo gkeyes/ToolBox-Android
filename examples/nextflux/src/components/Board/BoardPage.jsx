@@ -7,8 +7,8 @@ import { AISummaryIcon } from "@/components/ui/icons.jsx";
 import { SidebarTrigger } from "@/components/ui/sidebar.jsx";
 import ArticleView from "@/components/ArticleView/ArticleView.jsx";
 import { settingsState } from "@/stores/settingsStore.js";
-import { board, boardStream, digest, openBoard, refreshBoard, writeDigest } from "@/toolbox/board/boardStore.js";
-import { parseDigest } from "@/toolbox/board/board.mjs";
+import { board, boardReadState, boardStream, digest, markBoardAsRead, openBoard, refreshBoard, writeDigest } from "@/toolbox/board/boardStore.js";
+import { boardArticleIds, digestArticleNumbers, parseDigest } from "@/toolbox/board/board.mjs";
 import { registerBackHandler } from "@/toolbox/systemBack.js";
 import "@/toolbox/board/board.css";
 
@@ -60,7 +60,8 @@ function Topics({ state, onOpen }) {
 function Digest({ state, onOpen }) {
   const written = useStore(digest);
   const [speaking, setSpeaking] = useState(false);
-  const sections = parseDigest(written.text, state.articles.length);
+  const included = new Set(digestArticleNumbers(state.topics, state.articles));
+  const sections = parseDigest(written.text, state.articles.length, included);
   const writing = written.status === "streaming";
   useEffect(() => { writeDigest(); }, [state.at]);
   useEffect(() => () => { if (speechAvailable()) window.speechSynthesis.cancel(); }, []);
@@ -80,7 +81,7 @@ function Digest({ state, onOpen }) {
   return <>
     {writing && !sections.length && <p className="nf-board-status" role="status"><Spinner />正在把今天的主题写成文章…</p>}
     {sections.length > 0 && <article className="nf-board-card nf-board-digest">
-      <p className="nf-board-digest-meta">AI 根据 {state.total - state.skipped} 篇未读写成{written.status === "done" ? ` · 约 ${minutes} 分钟读完` : ""}</p>
+      <p className="nf-board-digest-meta">根据看板收录的 {boardArticleIds(state.topics, state.articles).length} 篇文章与主题摘要写成{written.status === "done" ? ` · 约 ${minutes} 分钟读完` : ""}</p>
       {sections.map((section, index) => (
         <section key={index}>
           {section.title && <h4>{section.title}</h4>}
@@ -102,6 +103,24 @@ function Digest({ state, onOpen }) {
       <Button variant="secondary" fullWidth onPress={() => writeDigest({ again: true })}>{writing ? "重新开始写" : "重新写一篇"}</Button>
     </div>
   </>;
+}
+
+function ReadAction({ state, working, count }) {
+  const read = useStore(boardReadState);
+  const saving = read.status === "saving";
+  const current = read.boardAt === state.at;
+  return <div className="nf-board-read-action">
+    <Button variant="secondary" fullWidth isDisabled={working || saving || count === 0} onPress={() => markBoardAsRead()}>
+      {saving && <Spinner />}{saving ? "正在标为已读…" : "看板文章一键已读"}
+    </Button>
+    <p className="nf-board-read-help">仅处理看板收录的 {count} 篇，其余未读保留。</p>
+    {current && read.status === "done" && <p className="nf-board-read-result" role="status">
+      {read.count > 0 ? `已将 ${read.count} 篇看板文章标为已读。` : "看板收录的文章已经是已读。"}
+    </p>}
+    {current && read.status === "error" && <p className="nf-board-inline-error" role="alert">
+      {read.count > 0 ? `已完成 ${read.count} 篇。` : ""}{read.error}
+    </p>}
+  </div>;
 }
 
 // While a stream runs only its newest part is drawn: redrawing a whole
@@ -136,14 +155,19 @@ function LiveRun({ stream }) {
   const [all, setAll] = useState(false);
   if (!stream) return <p className="nf-board-status" role="status"><Spinner />正在读取今天的未读文章…</p>;
   const shown = all ? stream.sent : stream.sent.slice(0, 3);
+  const merging = stream.stage === "merge";
+  const batch = `第 ${stream.batchIndex || 1} / ${stream.batchCount || 1} 批`;
   const phase = stream.text ? "AI 正在输出" : stream.thinking ? "AI 正在思考" : "等待 AI 回应";
   return <div className="nf-board-live" aria-live="off">
     <section className="nf-board-card nf-board-live-card">
-      <div className="nf-board-live-head"><span className="nf-board-live-tag">发送</span><h3>今天的 {stream.sent.length} 篇未读{stream.skipped > 0 ? `（另有 ${stream.skipped} 篇较早的没有发送）` : ""}</h3></div>
+      <div className="nf-board-live-head"><span className="nf-board-live-tag">{merging ? "汇总" : "分析"}</span><h3>{batch} · {stream.sent.length} {merging ? "个候选主题" : "篇未读"}</h3></div>
+      <p className="nf-board-live-progress" role="status">{merging
+        ? `今日 ${stream.total ?? stream.sent.length} 篇未读已分析，正在合并主题${stream.round > 1 ? `（第 ${stream.round} 轮）` : ""}。`
+        : `今日共 ${stream.total ?? stream.sent.length} 篇未读，已分析 ${stream.processed || 0} 篇。`}</p>
       <ol className="nf-board-live-sent">
         {shown.map((article, index) => <li key={index}><span className="ds-tnum">[{index + 1}]</span>{article.feedTitle ? `${article.feedTitle} · ` : ""}{article.title || "（无标题）"}</li>)}
       </ol>
-      {!all && stream.sent.length > 3 && <button type="button" className="nf-board-chip is-more" onClick={() => setAll(true)}>展开全部 {stream.sent.length} 篇</button>}
+      {!all && stream.sent.length > 3 && <button type="button" className="nf-board-chip is-more" onClick={() => setAll(true)}>展开本批 {stream.sent.length} {merging ? "个主题" : "篇"}</button>}
     </section>
     {stream.first && <section className="nf-board-card nf-board-live-card">
       <div className="nf-board-live-head"><span className="nf-board-live-tag is-receive">第一次</span><h3>回答太长，被截在长度上限，没有一个完整的主题</h3></div>
@@ -172,10 +196,11 @@ function RawOutput({ raw }) {
 
 function caption(state, stream) {
   if (state.status === "loading" || state.updating) {
-    const phase = !stream ? "正在读取未读文章" : stream.text ? `${stream.text.length} 字 · ${stream.first ? "第二次，" : ""}AI 正在输出` : stream.first ? "第一次的回答被截断，正在请 AI 回答得短一点" : stream.thinking ? "AI 正在思考" : `已发送 ${stream.sent.length} 篇，等待 AI`;
+    const batch = stream ? `${stream.stage === "merge" ? "汇总" : "分析"} ${stream.batchIndex || 1}/${stream.batchCount || 1} 批 · ` : "";
+    const phase = !stream ? "正在读取今日全部未读文章" : `${batch}${stream.text ? `${stream.text.length} 字 · AI 正在输出` : stream.first ? "回答被截断，正在精简重试" : stream.thinking ? "AI 正在思考" : "等待 AI 回应"}`;
     return state.updating && state.at ? `${phase}，下面是 ${clock(state.at)} 的版本，进度在卡片下方` : phase;
   }
-  if (state.status === "done") return `${state.total} 篇未读 · ${clock(state.at)} 更新`;
+  if (state.status === "done") return `今日 ${state.total} 篇 · 收录 ${boardArticleIds(state.topics, state.articles).length} 篇 · ${clock(state.at)} 更新`;
   return "";
 }
 
@@ -221,7 +246,7 @@ export default function BoardPage() {
   };
   const working = state.status === "loading" || state.updating;
   const done = state.status === "done";
-  const read = state.total - state.skipped;
+  const includedCount = boardArticleIds(state.topics, state.articles).length;
 
   return (
     <div className="main-content flex">
@@ -276,12 +301,11 @@ export default function BoardPage() {
           {state.status === "error" && <RawOutput raw={state.raw} />}
           {done && <>
             <p className="nf-board-summary">
-              {tab !== "topics" ? `把 ${state.topics.length} 个主题写成一篇文章`
-                : state.cut ? `AI 读了今天的 ${read} 篇未读，回答中途断开，只列出完整收到的 ${state.topics.length} 个主题`
-                  : `AI 把今天的 ${read} 篇未读归成 ${state.topics.length} 个主题，按重要程度排列`}
-              {state.skipped > 0 ? `（只看了最新的 ${read} 篇）` : ""}
+              {`今日 ${state.total} 篇未读已全部参与分析，${state.cut ? "AI 回答中途断开，先展示完整收到的" : "选出"} ${state.topics.length} 个主题，收录 ${includedCount} 篇文章`}
+              {tab === "digest" ? "，汇成一篇文章" : ""}
               {state.newCount > 0 && !state.updating ? `，比上一版多 ${state.newCount} 篇新文章` : ""}
             </p>
+            <ReadAction state={state} working={working} count={includedCount} />
             {state.error && <p className="nf-board-inline-error" role="alert">更新失败：{state.error}</p>}
             {state.error && <RawOutput raw={state.raw} />}
             <div className={state.updating ? "nf-board-cards is-stale" : "nf-board-cards"}>

@@ -227,6 +227,42 @@ export function updateArticleStarred(article) {
   }, { priority: "manual" });
 }
 
+// A board (or another explicit selection) may only acknowledge its own IDs.
+// Never expand this scope to a feed, duplicate copies, or the whole account.
+export function markArticlesAsRead(articleIds) {
+  const selected = Array.isArray(articleIds) ? [...new Set(articleIds)] : null;
+  if (!selected || selected.some((id) => !Number.isSafeInteger(id) || id <= 0)) {
+    return Promise.reject(new Error("文章编号无效，请刷新后重试。"));
+  }
+  if (!selected.length) return Promise.resolve(0);
+  for (const id of selected) autoReadQueue.cancelUnsent(id);
+  return runAccountOperation(async (check) => {
+    let markedCount = 0;
+    try {
+      const unread = new Set(await getArticleIds({ ids: selected, filter: "unread" }));
+      check();
+      const ids = selected.filter((id) => unread.has(id));
+      // Match the existing automatic-read batch size while keeping this manual
+      // action in the same account queue until all its acknowledgements finish.
+      for (let offset = 0; offset < ids.length; offset += 256) {
+        const batch = ids.slice(offset, offset + 256);
+        check();
+        await minifluxAPI.updateEntriesStatus(batch, "read", check);
+        await saveAcknowledged(batch.map((id) => ({ id, status: "read" })), check);
+        markedCount += batch.length;
+      }
+      return markedCount;
+    } catch (cause) {
+      const message = cause?.message || "标记已读失败，请重试。";
+      const failure = new Error(markedCount && cause?.code !== "ACCOUNT_CHANGED"
+        ? `已确认 ${markedCount} 篇标为已读，其余未能确认完成。${message}` : message, { cause });
+      if (typeof cause?.code === "string") failure.code = cause.code;
+      failure.markedCount = markedCount;
+      throw failure;
+    }
+  }, { priority: "manual" });
+}
+
 export function markAllAsRead(type = "all", id = null) {
   // This server-wide scope can include articles absent from the current cache.
   // Wait outside the writer until the whole sync has published those articles.

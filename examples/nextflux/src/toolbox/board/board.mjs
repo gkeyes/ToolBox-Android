@@ -5,13 +5,13 @@
 
 import { dedupeArticles } from "../dedupe.mjs";
 
-// One request carries every chosen article. The whole prompt (instructions,
-// titles, excerpts and numbering) stays within this many characters, so a
-// busy day still fits a common context window.
+// A busy day is read in bounded requests, then its candidate topics are
+// combined. Instructions, titles, excerpts and numbering share this budget.
 export const PROMPT_BUDGET = 24000;
 // Per article: "[n] ", the line break before the excerpt and the blank line after.
 const ARTICLE_OVERHEAD = 10;
-export const MAX_ARTICLES = 150;
+// Per request, not per day. batchArticles keeps every article in the snapshot.
+export const MAX_BATCH_ARTICLES = 150;
 const EXCERPT_MAX = 280;
 const TITLE_MAX = 120;
 export const MAX_TOPICS = 7;
@@ -51,16 +51,15 @@ export function todaysUnread(rows, { now = new Date(), isVisibleFeed = () => tru
 // Preview text is already plain text; only tidy its whitespace.
 const tidy = (value, max) => String(value || "").replace(/\s+/g, " ").trim().slice(0, max);
 
-// Picks the newest articles that fit the prompt budget. Every chosen article
-// keeps its title; the excerpts share what is left. Returns the articles that
-// go into the prompt (oldest are dropped first) and how many were left out.
+// Fits one request. Every chosen article keeps its title; the excerpts share
+// what is left. batchArticles sends the remainder in subsequent requests.
 export function fitArticles(articles, budget = PROMPT_BUDGET - PROMPT_OVERHEAD) {
   const chosen = [];
   let used = 0;
-  for (const article of articles.slice(0, MAX_ARTICLES)) {
+  for (const article of articles.slice(0, MAX_BATCH_ARTICLES)) {
     const head = `${tidy(article.feedTitle, 40)} · ${tidy(article.title, TITLE_MAX) || "（无标题）"}`;
     // Keep room for at least a short excerpt per article.
-    if (used + head.length + ARTICLE_OVERHEAD + 40 > budget) break;
+    if (used + head.length + ARTICLE_OVERHEAD + (chosen.length + 1) * 40 > budget) break;
     used += head.length + ARTICLE_OVERHEAD;
     chosen.push({ ...article, head });
   }
@@ -72,8 +71,25 @@ export function fitArticles(articles, budget = PROMPT_BUDGET - PROMPT_OVERHEAD) 
   };
 }
 
-const articleList = (articles) => articles
-  .map((article, index) => `[${index + 1}] ${article.head}${article.excerpt ? `\n${article.excerpt}` : ""}`)
+// Freeze the day's order once. Each request numbers its own articles locally;
+// the saved number maps that reply back to this complete, immutable order.
+export function batchArticles(all) {
+  const articles = [];
+  const batches = [];
+  for (let offset = 0; offset < all.length;) {
+    const fitted = fitArticles(all.slice(offset, offset + MAX_BATCH_ARTICLES)).articles;
+    if (!fitted.length) throw new Error("文章无法放入 AI 请求，请缩短文章预览后重试。");
+    const batch = fitted.map((article, index) => ({ ...article, number: offset + index + 1 }));
+    articles.push(...batch);
+    batches.push(batch);
+    offset += batch.length;
+  }
+  return { articles, batches };
+}
+
+const articleLine = (article, number) => `[${number}] ${article.head}${article.excerpt ? `\n${article.excerpt}` : ""}`;
+const articleList = (articles, globalNumbers = false) => articles
+  .map((article, index) => articleLine(article, globalNumbers ? article.number ?? index + 1 : index + 1))
   .join("\n\n");
 
 const TOPICS_PROMPT = [
@@ -86,12 +102,11 @@ const TOPICS_PROMPT = [
   "文字里需要引号时用「」，不要用英文双引号。",
 ].join("\n");
 
-// The instructions and the user message's opening line, outside the articles.
-const PROMPT_OVERHEAD = Math.max(TOPICS_PROMPT.length, 200) + 40;
-
 // Asked again after a reply ran into the AI's length limit before one topic
 // was whole: a shorter answer fits.
 const BRIEF = "上一次的回答太长被截断了。这次回答要短：最多 5 个主题，summary 只写一句话，不超过 40 个字，直接输出 JSON。";
+// Reserve the retry instructions too, plus the opening line and separators.
+const PROMPT_OVERHEAD = TOPICS_PROMPT.length + BRIEF.length + 65;
 export function topicsMessages(articles, { brief = false } = {}) {
   return [
     { role: "system", content: brief ? `${TOPICS_PROMPT}\n${BRIEF}` : TOPICS_PROMPT },
@@ -100,6 +115,88 @@ export function topicsMessages(articles, { brief = false } = {}) {
 }
 
 const clean = (value, max) => String(value ?? "").replace(/\*\*/g, "").replace(/\s+/g, " ").trim().slice(0, max);
+const positiveInteger = (value) => Number.isSafeInteger(value) && value > 0;
+
+// Only code translates references between stages. Each source keeps one place
+// in the final board, even if overlapping candidate groups mention it twice.
+function remapTopics(topics, resolve) {
+  const taken = new Set();
+  return topics.map((topic) => {
+    const articles = [];
+    for (const number of topic.articles || []) {
+      if (!positiveInteger(number)) continue;
+      for (const mapped of resolve(number)) {
+        if (!positiveInteger(mapped) || taken.has(mapped)) continue;
+        taken.add(mapped);
+        articles.push(mapped);
+      }
+    }
+    return { ...topic, articles: articles.sort((a, b) => a - b) };
+  }).filter((topic) => topic.articles.length);
+}
+
+export function mapBatchTopics(topics, batch) {
+  return remapTopics(topics, (number) => [batch[number - 1]?.number]);
+}
+
+const MERGE_PROMPT = [
+  "你是一位新闻编辑，正在汇总“今日看板”的候选主题。",
+  "下面的候选主题来自分批阅读今天全部未读文章，每项前面有候选编号 [n]，内容是该候选的重点和摘要。",
+  "合并讲同一件事的候选，选出 3 到 7 个最值得看的最终主题，按重要程度排列；零散、不重要的候选可以不选，不要把无关事件硬合并。",
+  "只输出一个 JSON 对象，不要输出其他文字，格式：",
+  "{\"topics\":[{\"title\":\"主题名，不超过 12 个字\",\"gist\":\"一句话重点，不超过 24 个字\",\"summary\":\"两三句话的摘要\",\"articles\":[1,3]}]}",
+  "articles 只填选入本主题的候选编号，不是原始文章编号；每个入选候选的全部来源都将归入该主题，不要填写未被摘要采用的候选。",
+  "全部用简体中文，只根据候选内容写，不要编造。文字里需要引号时用「」，不要用英文双引号。",
+].join("\n");
+const MERGE_OVERHEAD = MERGE_PROMPT.length + BRIEF.length + 65;
+const candidateLine = (topic, number) => `[${number}] ${clean(topic.title, 40)}：${clean(topic.gist, 80)}\n${clean(topic.summary, 400)}\n来源文章数：${topic.articles?.length || 0}`;
+
+// Candidate text is bounded by the same field limits as readTopics. A full
+// request therefore holds far more than MAX_TOPICS candidates, so repeated
+// merging always makes progress. Provenance arrays never enter the prompt.
+export function batchTopics(candidates) {
+  const batches = [];
+  let batch = [];
+  let used = 0;
+  for (const candidate of candidates) {
+    let size = candidateLine(candidate, batch.length + 1).length + (batch.length ? 2 : 0);
+    if (batch.length && used + size > PROMPT_BUDGET - MERGE_OVERHEAD) {
+      batches.push(batch);
+      batch = [];
+      used = 0;
+      size = candidateLine(candidate, 1).length;
+    }
+    batch.push(candidate);
+    used += size;
+  }
+  if (batch.length) batches.push(batch);
+  return batches;
+}
+
+export function mergeTopicsMessages(candidates, { brief = false } = {}) {
+  return [
+    { role: "system", content: brief ? `${MERGE_PROMPT}\n${BRIEF}` : MERGE_PROMPT },
+    { role: "user", content: `候选主题共 ${candidates.length} 个：\n\n${candidates.map((topic, index) => candidateLine(topic, index + 1)).join("\n\n")}` },
+  ];
+}
+
+export function expandTopics(topics, candidates) {
+  return remapTopics(topics, (number) => candidates[number - 1]?.articles || []);
+}
+
+// The analysed snapshot is larger than the set actually used by the board.
+// Only this latter set may be marked read; invalid references name nothing.
+export function boardArticleIds(topics, articles) {
+  const ids = new Set();
+  for (const topic of topics) {
+    for (const number of topic.articles || []) {
+      if (!positiveInteger(number)) continue;
+      const id = articles[number - 1]?.id;
+      if (positiveInteger(id)) ids.add(id);
+    }
+  }
+  return [...ids];
+}
 
 // JSON as models write it: also accepts a trailing comma before } or ].
 // Drops trailing commas before } or ], leaving text inside strings alone.
@@ -320,23 +417,78 @@ export function readTopics(text, count) {
 
 const DIGEST_PROMPT = [
   "你是一位新闻编辑，把读者今天的新闻写成一篇简短的文章。",
-  "下面先给出已经整理好的主题，再给出文章，文章前面有编号 [n]。",
+  "下面先给出分批分析后整理出的全部看板主题摘要，再给出各主题选取的代表性原文预览，原文前面有固定编号 [n]。",
+  "以全部主题摘要为写作基础，代表性原文用于核实细节和准确引用；只能引用给出的原文编号，不要另行编号，也不要猜测没有给出的来源。",
   "按主题的顺序写，每个主题一段，第一行“## 主题名”，下一行用两到四句简体中文写清楚发生了什么，句末标出依据的文章编号，如 [2][5]。",
   "只根据给出的内容写，不要编造；不要写开场白或结尾。",
 ].join("\n");
 
+// A digest reads all final topic summaries, then shares the remaining budget
+// across their sources in rounds. Sending a prefix of the entire day's list
+// could miss later topics or renumber their citations, so select within each
+// topic and retain its snapshot numbers instead.
+function digestInput(topics, articles) {
+  const byNumber = new Map();
+  articles.forEach((article, index) => {
+    const number = article.number ?? index + 1;
+    if (positiveInteger(number) && !byNumber.has(number)) byNumber.set(number, article);
+  });
+  const groups = topics.map((topic) => ({
+    title: clean(topic.title, 40),
+    gist: clean(topic.gist, 80),
+    summary: clean(topic.summary, 400),
+    numbers: [...new Set(topic.articles || [])].filter((number) => positiveInteger(number) && byNumber.has(number)),
+    selected: [],
+    cursor: 0,
+    full: false,
+  }));
+  const selected = new Map();
+  const messages = () => {
+    const outline = groups.map((topic, index) => `${index + 1}. ${topic.title}：${topic.gist}（文章 ${topic.selected.map((n) => `[${n}]`).join("")}）${topic.summary ? `\n主题摘要：${topic.summary}` : ""}`).join("\n");
+    return [
+      { role: "system", content: DIGEST_PROMPT },
+      { role: "user", content: `主题：\n${outline}\n\n文章：\n\n${articleList([...selected.values()], true)}` },
+    ];
+  };
+  let used = messages().reduce((sum, message) => sum + message.content.length, 0);
+  if (used > PROMPT_BUDGET) throw new Error("看板主题过多，请先汇总主题再生成文章。");
+  for (;;) {
+    let added = false;
+    for (const group of groups) {
+      if (group.full || group.cursor >= group.numbers.length) continue;
+      const number = group.numbers[group.cursor++];
+      const source = byNumber.get(number);
+      const article = {
+        number,
+        head: source.head ? tidy(source.head, 40 + 3 + TITLE_MAX) : `${tidy(source.feedTitle, 40)} · ${tidy(source.title, TITLE_MAX) || "（无标题）"}`,
+        excerpt: tidy(source.excerpt ?? source.text, EXCERPT_MAX),
+      };
+      const size = `[${number}]`.length + (selected.has(number) ? 0 : articleLine(article, number).length + (selected.size ? 2 : 0));
+      if (used + size > PROMPT_BUDGET) { group.full = true; continue; }
+      group.selected.push(number);
+      selected.set(number, article);
+      used += size;
+      added = true;
+    }
+    if (!added) break;
+  }
+  return { messages: messages(), numbers: [...selected.keys()] };
+}
+
 export function digestMessages(topics, articles) {
-  const outline = topics.map((topic, index) => `${index + 1}. ${topic.title}：${topic.gist}（文章 ${topic.articles.map((n) => `[${n}]`).join("")}）`).join("\n");
-  return [
-    { role: "system", content: DIGEST_PROMPT },
-    { role: "user", content: `主题：\n${outline}\n\n文章：\n\n${articleList(articles)}` },
-  ];
+  return digestInput(topics, articles).messages;
+}
+
+// The UI can allow exactly these citations, even while the text is streaming.
+export function digestArticleNumbers(topics, articles) {
+  return digestInput(topics, articles).numbers;
 }
 
 // Splits the (possibly still streaming) digest into sections. Text between
 // citations stays text; a citation is kept only if it names a real article.
 // Parts are {text} with non-empty text, or {cite}.
-export function parseDigest(text, count) {
+export function parseDigest(text, count, allowedNumbers = null) {
+  const allowed = allowedNumbers == null ? null : new Set(allowedNumbers);
   const sections = [];
   let current = null;
   const push = (value) => {
@@ -358,7 +510,7 @@ export function parseDigest(text, count) {
     for (const match of line.matchAll(/\[(\d+)\]/g)) {
       const number = Number(match[1]);
       if (match.index > last) push(line.slice(last, match.index));
-      if (number >= 1 && number <= count) current.parts.push({ cite: number });
+      if (number >= 1 && number <= count && (!allowed || allowed.has(number))) current.parts.push({ cite: number });
       last = match.index + match[0].length;
     }
     if (last < line.length) push(line.slice(last));
