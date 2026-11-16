@@ -3,8 +3,13 @@ import { getCachedArticleMetadata, getFeeds } from "@/db/storage.js";
 import { settingsState } from "@/stores/settingsStore.js";
 import { authState } from "@/stores/authStore.js";
 import { isSyncing } from "@/stores/syncStore.js";
+import { markArticlesAsRead } from "@/stores/articlesStore.js";
 import { streamChat } from "@/api/openai.js";
-import { digestMessages, fitArticles, parseTopics, readTopics, startOfDay, todaysUnread, topicsMessages } from "./board.mjs";
+import {
+  batchArticles, batchTopics, boardArticleIds, digestMessages, expandTopics,
+  mapBatchTopics, mergeTopicsMessages, parseTopics, readTopics, startOfDay,
+  todaysUnread, topicsMessages,
+} from "./board.mjs";
 
 // The board for today, kept while the app runs.
 // status: idle | loading | done | empty | error. While a newer board is being
@@ -21,6 +26,10 @@ export const boardOpen = atom(false);
 // page to show while it waits: { sent: [{ title, feedTitle }], skipped,
 // thinking, text }. Cleared when a board is made.
 export const boardStream = atom(null);
+// An explicit action on the sources of one displayed board, never all of
+// the articles that were sent to the AI for consideration.
+const READ_EMPTY = { status: "idle", boardAt: null, count: 0, error: "" };
+export const boardReadState = atom({ ...READ_EMPTY });
 
 let run = null;
 // The article settings the running board is made under.
@@ -31,6 +40,7 @@ let settle = null;
 // settings were settling, or it was closed and out of date).
 let unsynced = false;
 let digestRun = null;
+let readRun = null;
 
 const aiReady = () => Boolean(settingsState.get().aiApiKey);
 
@@ -90,32 +100,38 @@ export async function refreshBoard({ onlyIfNew = false } = {}) {
     if (!all.length) {
       stopDigest();
       board.set({ ...EMPTY, status: "empty", at: Date.now(), day: today, filter });
+      if (!readRun) boardReadState.set({ ...READ_EMPTY });
       return;
     }
     // The written digest belongs to the board on screen: it keeps streaming
     // while a newer board is made and stops only when that board replaces it.
     if (!keep) stopDigest();
     board.set(keep ? { ...previous, updating: true, error: "" } : { ...EMPTY, status: "loading", day: today, filter });
-    const { articles, skipped } = fitArticles(all);
-    const sent = articles.map(({ title, feedTitle }) => ({ title, feedTitle }));
-    // One AI call. A reply that ran into the length limit before one topic
-    // was whole is asked again, once, for a shorter answer; the first reply
-    // stays on screen above the second, marked as cut.
-    const ask = async (first = null) => {
+    // Every eligible article belongs to this immutable, numbered snapshot.
+    // The request budget limits each batch, never the day's coverage.
+    const { articles, batches } = batchArticles(all);
+    let activeAsk = null;
+    // Each batch reuses the streaming parser and its one shorter retry.
+    // Merge calls reference candidate topics; only code expands those
+    // references back to article numbers in the original snapshot.
+    const ask = async (items, messages, progress, first = null) => {
+      const request = {};
+      activeAsk = request;
       const brief = Boolean(first);
       let text = "";
       let thinking = "";
       let frame = null;
       const publish = () => {
         frame = null;
-        if (live()) boardStream.set({ ...boardStream.get(), thinking, text });
+        if (live() && activeAsk === request) boardStream.set({ ...boardStream.get(), thinking, text });
       };
       const later = () => { frame ??= setTimeout(publish, 80); };
-      boardStream.set({ sent, skipped, thinking: "", text: "", first });
+      const sent = items.map(({ title, feedTitle }) => ({ title, feedTitle }));
+      boardStream.set({ sent, skipped: 0, ...progress, thinking: "", text: "", first });
       let read = null;
       let length = false;
       try {
-        const result = await streamChat(topicsMessages(articles, { brief }), {
+        const result = await streamChat(messages(items, { brief }), {
           signal: controller.signal,
           onChunk: (chunk) => { text += chunk; later(); },
           onThink: (chunk) => { thinking += chunk; later(); },
@@ -125,7 +141,7 @@ export async function refreshBoard({ onlyIfNew = false } = {}) {
         // A reply cut off mid-way still makes a board from the topics that
         // arrived whole; when none did, what had arrived stays on screen.
         if (error?.code === "INCOMPLETE_STREAM" && text) {
-          try { read = { topics: parseTopics(text, articles.length), cut: true }; } catch { /* nothing whole arrived */ }
+          try { read = { topics: parseTopics(text, items.length), cut: true }; } catch { /* nothing whole arrived */ }
         }
         if (!read) {
           if ((text || thinking) && error && typeof error === "object") error.raw ??= { thinking, text };
@@ -137,7 +153,7 @@ export async function refreshBoard({ onlyIfNew = false } = {}) {
       }
       if (read || !live()) return read;
       try {
-        const { topics, whole } = readTopics(text, articles.length);
+        const { topics, whole } = readTopics(text, items.length);
         // Stopped at the length limit: later topics may be missing, unless
         // the JSON had already closed.
         return { topics, cut: length && !whole };
@@ -151,22 +167,66 @@ export async function refreshBoard({ onlyIfNew = false } = {}) {
         throw error;
       }
     };
-    let read;
-    try {
-      read = await ask();
-    } catch (error) {
-      if (!error?.length || !live()) throw error;
-      const first = { text: error.raw?.text || "", thinking: error.raw?.thinking || "" };
+    const readBatch = async (items, messages, progress) => {
       try {
-        read = await ask(first);
-      } catch (again) {
-        // A second failure keeps the first reply next to its own.
-        if (again && typeof again === "object") again.raw = { thinking: "", text: "", ...again.raw, first };
-        throw again;
+        return await ask(items, messages, progress);
+      } catch (error) {
+        if (!error?.length || !live()) throw error;
+        const first = { text: error.raw?.text || "", thinking: error.raw?.thinking || "" };
+        try {
+          return await ask(items, messages, progress, first);
+        } catch (again) {
+          // A second failure keeps the first reply next to its own.
+          if (again && typeof again === "object") again.raw = { thinking: "", text: "", ...again.raw, first };
+          throw again;
+        }
+      }
+    };
+    let topics = [];
+    let cut = false;
+    let processed = 0;
+    for (const [index, batch] of batches.entries()) {
+      if (!live()) return;
+      const read = await readBatch(batch, topicsMessages, {
+        stage: "articles", batchIndex: index + 1, batchCount: batches.length,
+        processed, total: all.length,
+      });
+      if (!live()) return;
+      topics.push(...mapBatchTopics(read.topics, batch));
+      cut ||= read.cut;
+      processed += batch.length;
+    }
+    // A busy day still ends in a few ranked topics. Candidate summaries
+    // themselves are batched if needed, so no later batch is discarded to
+    // squeeze a consolidation request into the context window.
+    if (batches.length > 1) {
+      let round = 1;
+      while (topics.length > 1) {
+        const groups = batchTopics(topics);
+        const merged = [];
+        for (const [index, candidates] of groups.entries()) {
+          if (!live()) return;
+          if (groups.length > 1 && candidates.length === 1) {
+            merged.push(...candidates);
+            continue;
+          }
+          const read = await readBatch(candidates, mergeTopicsMessages, {
+            stage: "merge", batchIndex: index + 1, batchCount: groups.length,
+            round, processed, total: all.length,
+          });
+          if (!live()) return;
+          merged.push(...expandTopics(read.topics, candidates));
+          cut ||= read.cut;
+        }
+        // Every full candidate batch holds more items than an answer can
+        // return. Guard that invariant before attempting another level.
+        if (groups.length > 1 && merged.length >= topics.length) throw new Error("AI 主题汇总未能收敛，请重新生成。");
+        topics = merged;
+        if (groups.length === 1) break;
+        round += 1;
       }
     }
     if (!live()) return;
-    const { topics, cut } = read;
     boardStream.set(null);
     stopDigest();
     board.set({
@@ -175,10 +235,12 @@ export async function refreshBoard({ onlyIfNew = false } = {}) {
       topics,
       // The reply broke off, so later topics may be missing.
       cut,
-      articles: articles.map(({ id, title, feedTitle }) => ({ id, title, feedTitle })),
-      skipped,
+      // Keep the original excerpts for the digest, including after a
+      // reader marks these sources read or a later sync changes the cache.
+      articles,
+      skipped: 0,
       total: all.length,
-      at: Date.now(),
+      at: Math.max(Date.now(), (previous.at || 0) + 1),
       day: today,
       filter,
       ids: all.map((article) => article.id),
@@ -188,6 +250,7 @@ export async function refreshBoard({ onlyIfNew = false } = {}) {
       unseen: !boardOpen.get(),
     });
     digest.set({ status: "idle", text: "", error: "", boardAt: null });
+    if (!readRun) boardReadState.set({ ...READ_EMPTY });
   } catch (error) {
     if (!live()) return;
     const message = error?.message || "生成今日看板失败。";
@@ -231,6 +294,41 @@ function catchUp() {
   else if (boardOpen.get()) refreshBoard();
 }
 
+// Freeze the sources of the displayed board at the click, not the set of
+// candidates considered by the AI. Refreshing the board cannot widen an
+// operation already in flight, and repeated clicks share the same action.
+export function markBoardAsRead() {
+  if (readRun) return readRun.promise;
+  const state = board.get();
+  if (state.status !== "done" || state.updating) return Promise.resolve(0);
+  const ids = boardArticleIds(state.topics, state.articles);
+  if (!ids.length) return Promise.resolve(0);
+  const account = authState.get().userId;
+  const operation = {};
+  readRun = operation;
+  const live = () => readRun === operation && authState.get().userId === account;
+  const sameBoard = () => board.get().articles === state.articles && board.get().at === state.at;
+  boardReadState.set({ status: "saving", boardAt: state.at, count: 0, error: "" });
+  operation.promise = (async () => {
+    try {
+      const count = await markArticlesAsRead(ids);
+      if (live()) boardReadState.set(sameBoard()
+        ? { status: "done", boardAt: state.at, count, error: "" }
+        : { ...READ_EMPTY });
+      return count;
+    } catch (error) {
+      const count = error?.markedCount || 0;
+      if (live()) boardReadState.set(sameBoard()
+        ? { status: "error", boardAt: state.at, count, error: error?.message || "标为已读失败，请重试。" }
+        : { ...READ_EMPTY });
+      return count;
+    } finally {
+      if (readRun === operation) readRun = null;
+    }
+  })();
+  return operation.promise;
+}
+
 // The digest is written once per board, on first view of the 文章 tab.
 export async function writeDigest({ again = false } = {}) {
   const state = board.get();
@@ -243,13 +341,8 @@ export async function writeDigest({ again = false } = {}) {
   const live = () => digestRun === controller && !controller.signal.aborted && board.get().at === state.at;
   digest.set({ status: "streaming", text: "", error: "", boardAt: state.at });
   try {
-    const all = await todaysArticles();
-    if (!live()) return;
-    // Number the articles exactly as the board did.
-    const byId = new Map(all.map((article) => [article.id, article]));
-    const articles = fitArticles(state.articles.map((article) => byId.get(article.id) || { ...article, text: "" })).articles;
     let text = "";
-    await streamChat(digestMessages(state.topics, articles), {
+    await streamChat(digestMessages(state.topics, state.articles), {
       signal: controller.signal,
       onChunk: (chunk) => { text += chunk; if (live()) digest.set({ ...digest.get(), text }); },
     });
@@ -271,6 +364,8 @@ function reset() {
   board.set({ ...EMPTY });
   boardStream.set(null);
   digest.set({ status: "idle", text: "", error: "", boardAt: null });
+  readRun = null;
+  boardReadState.set({ ...READ_EMPTY });
   boardOpen.set(false);
 }
 

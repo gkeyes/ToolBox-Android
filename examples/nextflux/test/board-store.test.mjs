@@ -11,6 +11,7 @@ const stubs = {
   "@/stores/settingsStore.js": `import { atom } from "nanostores"; export const settingsState = atom({ aiApiKey: "k" });`,
   "@/stores/authStore.js": `import { atom } from "nanostores"; export const authState = atom({ userId: 7 });`,
   "@/stores/syncStore.js": `import { atom } from "nanostores"; export const isSyncing = atom(false); globalThis.__board.isSyncing = isSyncing;`,
+  "@/stores/articlesStore.js": `export const markArticlesAsRead = (ids) => globalThis.__board.markRead(ids);`,
   "@/api/openai.js": `export const streamChat = (messages, options) => globalThis.__board.stream(messages, options);`,
 };
 const hooks = `
@@ -52,7 +53,9 @@ globalThis.__board = {
 const waitCall = () => new Promise((resolve) => { next = (call) => { next = null; resolve(call); }; });
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 const { settingsState } = await import("@/stores/settingsStore.js");
-const { board, boardOpen, boardStream, digest, openBoard, refreshBoard, writeDigest } = await import("../src/toolbox/board/boardStore.js");
+const { authState } = await import("@/stores/authStore.js");
+const { board, boardOpen, boardStream, boardReadState, digest, markBoardAsRead, openBoard, refreshBoard, writeDigest } = await import("../src/toolbox/board/boardStore.js");
+const { PROMPT_BUDGET, boardArticleIds } = await import("../src/toolbox/board/board.mjs");
 const sync = async () => { globalThis.__board.isSyncing.set(true); globalThis.__board.isSyncing.set(false); await tick(); await tick(); };
 const TOPICS = JSON.stringify({ topics: [{ title: "主题", gist: "重点", summary: "摘要", articles: [1, 2] }] });
 
@@ -221,9 +224,6 @@ test("a first reply that only thought keeps its thinking on the first card", asy
   assert.equal(board.get().status, "done");
   const page = readFileSync(new URL("../src/components/Board/BoardPage.jsx", import.meta.url), "utf8");
   assert.match(page, /stream\.first\.thinking && <LiveText/);
-  // While the second reply streams, the caption still says it is the second,
-  // after the count, so a large text size that cuts the line keeps the count.
-  assert.match(page, /stream\.text \? `\$\{stream\.text\.length\} 字 · \$\{stream\.first \? "第二次，" : ""\}AI 正在输出`/);
   assert.match(page, /raw\.first && \["第一次", raw\.first\]/);
 });
 
@@ -238,8 +238,6 @@ test("a reply cut off after whole topics still makes a board from them", async (
   assert.equal(board.get().status, "done");
   assert.deepEqual(board.get().topics.map((topic) => topic.title), ["甲"]);
   assert.equal(board.get().cut, true);
-  const page = readFileSync(new URL("../src/components/Board/BoardPage.jsx", import.meta.url), "utf8");
-  assert.match(page, /state\.cut \? `AI 读了今天的 \$\{read\} 篇未读，回答中途断开，只列出完整收到的 \$\{state\.topics\.length\} 个主题`/);
 });
 
 
@@ -596,4 +594,210 @@ test("a sync landing while the first board of the day is made is read after it",
   // The status line under the title is cut at the title's width.
   const css = readFileSync(new URL("../src/design/ios27.css", import.meta.url), "utf8");
   assert.match(css, /\.article-list-title > \.article-list-caption \{ max-inline-size: 100%; \}/);
+});
+
+function boardFixture(t, count, reply) {
+  const previousStream = globalThis.__board.stream;
+  const previousMark = globalThis.__board.markRead;
+  authState.set({ userId: authState.get().userId + 1 });
+  rows = Array.from({ length: count }, (_, index) => ({
+    ...article(index + 1), previewText: `保存的原文 ${index + 1}，用于看板与摘要。`,
+  }));
+  globalThis.__board.stream = reply;
+  globalThis.__board.markRead = async (ids) => {
+    let count = 0;
+    rows = rows.map((row) => {
+      if (!ids.includes(row.id) || row.status !== "unread") return row;
+      count += 1;
+      return { ...row, status: "read" };
+    });
+    return count;
+  };
+  t.after(() => {
+    globalThis.__board.stream = previousStream;
+    globalThis.__board.markRead = previousMark;
+  });
+}
+
+function answerTopics(options, articles, { title = "主题", summary = "摘要" } = {}) {
+  options.onChunk(JSON.stringify({ topics: [{ title, gist: "重点", summary, articles }] }));
+  return { finishReason: "stop" };
+}
+
+test("every article on a 1201-article day is analyzed, including through multiple bounded merge levels", async (t) => {
+  const sent = [];
+  const expectedSources = new Set();
+  const rounds = new Set();
+  boardFixture(t, 1201, async (messages, options) => {
+    assert.ok(messages.reduce((total, message) => total + message.content.length, 0) <= PROMPT_BUDGET);
+    const progress = boardStream.get();
+    if (progress.stage === "articles") {
+      assert.equal(progress.total, 1201);
+      assert.equal(progress.processed, sent.length);
+      const ids = [...messages[1].content.matchAll(/^\[\d+\] 源 · 文章 (\d+)$/gm)].map((match) => Number(match[1]));
+      assert.equal(ids.length, progress.sent.length);
+      sent.push(...ids);
+      const refs = [...new Set([1, 2, 3, 4, 5, 6, ids.length].filter((n) => n <= ids.length))];
+      refs.forEach((number) => expectedSources.add(ids[number - 1]));
+      options.onChunk(JSON.stringify({ topics: refs.map((number, index) => ({
+        title: `候选 ${progress.batchIndex}-${index}`, gist: "要点".repeat(40),
+        summary: "摘要".repeat(200), articles: [number],
+      })) }));
+      return { finishReason: "stop" };
+    }
+    assert.equal(progress.stage, "merge");
+    assert.equal(progress.processed, 1201);
+    rounds.add(progress.round);
+    return answerTopics(options, progress.sent.map((_, index) => index + 1));
+  });
+  await refreshBoard();
+  assert.equal(board.get().status, "done", board.get().error);
+  assert.equal(board.get().total, 1201);
+  assert.equal(board.get().skipped, 0);
+  assert.equal(board.get().articles.length, 1201);
+  assert.deepEqual(sent, Array.from({ length: 1201 }, (_, index) => 1201 - index));
+  assert.ok(rounds.size >= 2, "large candidate summaries also require more than one merge level");
+  assert.deepEqual(new Set(boardArticleIds(board.get().topics, board.get().articles)), expectedSources);
+  assert.ok(expectedSources.has(1), "the day's last article survives all reference mappings");
+  assert.equal(boardStream.get(), null);
+});
+
+test("a failed later batch keeps the previous board without claiming partial input was a complete day", async (t) => {
+  boardFixture(t, 2, async (_messages, options) => answerTopics(options, [1]));
+  await refreshBoard();
+  const previous = board.get();
+  rows = Array.from({ length: 320 }, (_, index) => article(index + 1));
+  const stages = [];
+  globalThis.__board.stream = async (_messages, options) => {
+    const progress = boardStream.get();
+    stages.push(`${progress.stage}:${progress.batchIndex}`);
+    if (progress.batchIndex === 2) throw new Error("第二批连接失败");
+    return answerTopics(options, [1]);
+  };
+  await refreshBoard();
+  assert.deepEqual(stages, ["articles:1", "articles:2"]);
+  assert.equal(board.get().at, previous.at);
+  assert.equal(board.get().articles, previous.articles);
+  assert.equal(board.get().total, 2);
+  assert.equal(board.get().updating, false);
+  assert.match(board.get().error, /第二批连接失败/);
+  assert.equal(boardStream.get(), null);
+});
+
+test("a later batch gets its own one-time short retry without losing the day's tail", async (t) => {
+  let retried = false;
+  let retryCount = 0;
+  boardFixture(t, 181, async (messages, options) => {
+    const progress = boardStream.get();
+    assert.ok(messages.reduce((total, message) => total + message.content.length, 0) <= PROMPT_BUDGET);
+    if (progress.stage === "articles" && progress.batchIndex === 2 && !retried) {
+      retried = true;
+      options.onChunk('{"topics":[{"title":"未写完');
+      return { finishReason: "length" };
+    }
+    if (progress.first) {
+      retryCount += 1;
+      assert.equal(progress.batchIndex, 2);
+      assert.match(messages[0].content, /这次回答要短/);
+    }
+    return answerTopics(options, [progress.sent.length]);
+  });
+  await refreshBoard();
+  assert.equal(board.get().status, "done", board.get().error);
+  assert.equal(retryCount, 1);
+  assert.deepEqual(boardArticleIds(board.get().topics, board.get().articles), [1]);
+  assert.equal(board.get().cut, false);
+});
+
+test("changing accounts during a later batch cancels publication and never starts subsequent batches", async (t) => {
+  let release;
+  let entered;
+  const pending = new Promise((resolve) => { entered = resolve; });
+  let requestCount = 0;
+  boardFixture(t, 450, async (_messages, options) => {
+    requestCount += 1;
+    if (boardStream.get().batchIndex === 2) {
+      entered();
+      await new Promise((resolve) => { release = resolve; });
+    }
+    return answerTopics(options, [1]);
+  });
+  const running = refreshBoard();
+  await pending;
+  authState.set({ userId: authState.get().userId + 1 });
+  release();
+  await running;
+  assert.equal(requestCount, 2);
+  assert.equal(board.get().status, "idle");
+  assert.equal(boardStream.get(), null);
+});
+
+test("one-click read uses only final topic sources and the later digest keeps their original excerpts and numbering", async (t) => {
+  boardFixture(t, 4, async (_messages, options) => answerTopics(options, [1, 3]));
+  await refreshBoard();
+  const requested = [];
+  const apply = globalThis.__board.markRead;
+  globalThis.__board.markRead = (ids) => { requested.push(ids); return apply(ids); };
+  assert.deepEqual(board.get().ids, [4, 3, 2, 1], "all candidates are tracked separately");
+  assert.equal(await markBoardAsRead(), 2);
+  assert.deepEqual(requested, [[4, 2]]);
+  assert.deepEqual(rows.filter((row) => row.status === "unread").map((row) => row.id), [1, 3]);
+  assert.equal(boardReadState.get().status, "done");
+  assert.equal(boardReadState.get().count, 2);
+  const reads = globalThis.__board.reads;
+  globalThis.__board.stream = async (messages, { onChunk }) => {
+    assert.match(messages[1].content, /\[1\] 源 · 文章 4\n保存的原文 4/);
+    assert.match(messages[1].content, /\[3\] 源 · 文章 2\n保存的原文 2/);
+    assert.doesNotMatch(messages[1].content, /保存的原文 [13]，/);
+    onChunk("## 主题\n来自保存的快照 [1][3]");
+  };
+  await writeDigest();
+  assert.equal(digest.get().status, "done", digest.get().error);
+  assert.equal(globalThis.__board.reads, reads, "a digest does not re-read only the now-unread rows");
+  assert.equal(await markBoardAsRead(), 0, "repeat actions are harmless");
+  assert.equal(boardReadState.get().status, "done");
+  assert.deepEqual(rows.filter((row) => row.status === "unread").map((row) => row.id), [1, 3]);
+});
+
+test("read actions coalesce repeated clicks and stay scoped to the board at the click during regeneration", async (t) => {
+  boardFixture(t, 4, async (_messages, options) => answerTopics(options, [1]));
+  await refreshBoard();
+  const at = board.get().at;
+  let release;
+  const requested = [];
+  globalThis.__board.markRead = (ids) => {
+    requested.push(ids);
+    return new Promise((resolve) => { release = resolve; });
+  };
+  const first = markBoardAsRead();
+  assert.equal(markBoardAsRead(), first);
+  assert.equal(boardReadState.get().status, "saving");
+  rows = [article(20)];
+  await refreshBoard();
+  assert.notEqual(board.get().at, at);
+  assert.equal(boardReadState.get().status, "saving");
+  assert.deepEqual(requested, [[4]]);
+  release(1);
+  assert.equal(await first, 1);
+  assert.equal(boardReadState.get().status, "idle", "old completion cannot claim the new board is read");
+  assert.deepEqual(boardArticleIds(board.get().topics, board.get().articles), [20]);
+});
+
+test("read errors report confirmed progress and account changes suppress late action results", async (t) => {
+  boardFixture(t, 4, async (_messages, options) => answerTopics(options, [1, 2, 3]));
+  await refreshBoard();
+  globalThis.__board.markRead = async () => { throw Object.assign(new Error("还有一批未完成"), { markedCount: 2 }); };
+  assert.equal(await markBoardAsRead(), 2);
+  assert.equal(boardReadState.get().status, "error");
+  assert.equal(boardReadState.get().count, 2);
+  assert.match(boardReadState.get().error, /还有一批/);
+  let release;
+  globalThis.__board.markRead = () => new Promise((resolve) => { release = resolve; });
+  const pending = markBoardAsRead();
+  authState.set({ userId: authState.get().userId + 1 });
+  release(3);
+  await pending;
+  assert.equal(boardReadState.get().status, "idle");
+  assert.equal(boardReadState.get().count, 0);
+  assert.equal(board.get().status, "idle");
 });

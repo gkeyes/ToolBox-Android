@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { arrivedAt, digestMessages, fitArticles, parseDigest, parseTopics, PROMPT_BUDGET, todaysUnread, topicsMessages } from "../src/toolbox/board/board.mjs";
+import { arrivedAt, batchArticles, batchTopics, boardArticleIds, digestArticleNumbers, digestMessages, expandTopics, fitArticles, mapBatchTopics, MAX_BATCH_ARTICLES, MAX_TOPICS, mergeTopicsMessages, parseDigest, parseTopics, PROMPT_BUDGET, todaysUnread, topicsMessages } from "../src/toolbox/board/board.mjs";
 
 test("today's unread: arrived since local midnight, visible feeds, newest first", () => {
   const now = new Date(2026, 9, 16, 13, 0);
@@ -36,6 +36,176 @@ test("the prompt stays within its budget on a busy day, keeping the newest artic
   assert.equal(skipped, many.length - articles.length);
   const user = topicsMessages(articles)[1].content;
   assert.ok(user.length <= PROMPT_BUDGET + 600, `prompt ${user.length}`);
+});
+
+const promptSize = (messages) => messages.reduce((sum, message) => sum + message.content.length, 0);
+
+test("a day of more than 1000 articles is fully analysed in bounded requests, including brief retries", () => {
+  const all = Array.from({ length: 1001 }, (_, index) => Object.freeze({
+    id: 9000 + index,
+    number: -1,
+    feedTitle: "订阅源".repeat(30),
+    title: `第${index + 1}篇：${"新闻标题".repeat(60)}`,
+    text: "文章预览".repeat(300),
+  }));
+  const { articles, batches } = batchArticles(all);
+  assert.equal(articles.length, all.length);
+  assert.deepEqual(articles.map((article) => article.id), all.map((article) => article.id));
+  assert.deepEqual(articles.map((article) => article.number), all.map((_, index) => index + 1));
+  assert.ok(batches.length > 1);
+  assert.deepEqual(batches.flat(), articles);
+  for (const batch of batches) {
+    assert.ok(batch.length > 0 && batch.length <= MAX_BATCH_ARTICLES);
+    assert.ok(batch.every((article) => article.head && article.excerpt.length >= 40));
+    for (const brief of [false, true]) {
+      const messages = topicsMessages(batch, { brief });
+      assert.ok(promptSize(messages) <= PROMPT_BUDGET);
+      // Each independent analysis uses local indices, not the snapshot's offset.
+      const numbers = [...messages[1].content.matchAll(/^\[(\d+)\] /gm)].map((match) => Number(match[1]));
+      assert.deepEqual(numbers, batch.map((_, index) => index + 1));
+    }
+  }
+  assert.equal(batches.at(-1).at(-1), articles.at(-1));
+  assert.equal(articles.at(-1).number, 1001);
+  assert.ok(all.every((article) => article.number === -1));
+  assert.deepEqual(batchArticles([]), { articles: [], batches: [] });
+});
+
+test("local replies from later batches retain their real article identities", () => {
+  const { articles, batches } = batchArticles(Array.from({ length: 450 }, (_, index) => ({ id: 10000 + index, title: `文章${index + 1}` })));
+  assert.deepEqual(batches.map((batch) => batch.length), [150, 150, 150]);
+  const topics = mapBatchTopics([
+    { title: "第二批事件", articles: [150, 1, 1, 151, 0, -1, 1.5, "2"] },
+    { title: "第二批另一个事件", articles: [150, 2] },
+    { title: "无来源", articles: [900] },
+  ], batches[1]);
+  assert.deepEqual(topics.map((topic) => topic.articles), [[151, 300], [152]]);
+  assert.deepEqual(boardArticleIds(topics, articles), [10150, 10299, 10151]);
+  const last = mapBatchTopics([{ title: "最后一篇", articles: [150] }], batches[2]);
+  assert.deepEqual(last[0].articles, [450]);
+  assert.deepEqual(boardArticleIds(last, articles), [10449]);
+});
+
+test("large candidate sets merge in bounded levels without putting article-ID arrays in the prompt", () => {
+  const candidates = Array.from({ length: 800 }, (_, index) => ({
+    title: `候选${index + 1}${"很长的主题".repeat(30)}`,
+    gist: "候选重点".repeat(80),
+    summary: "摘要依据".repeat(200),
+    articles: [900000001 + index * 2, 900000002 + index * 2],
+  }));
+  assert.deepEqual(batchTopics(candidates).flat(), candidates);
+  assert.deepEqual(batchTopics([]), []);
+  let current = candidates;
+  let levels = 0;
+  while (current.length > MAX_TOPICS) {
+    const next = [];
+    for (const batch of batchTopics(current)) {
+      for (const brief of [false, true]) {
+        const messages = mergeTopicsMessages(batch, { brief });
+        assert.ok(promptSize(messages) <= PROMPT_BUDGET);
+        assert.match(messages[0].content, /候选主题/);
+        assert.doesNotMatch(messages[1].content, /90000000[12]/);
+        const numbers = [...messages[1].content.matchAll(/^\[(\d+)\] /gm)].map((match) => Number(match[1]));
+        assert.deepEqual(numbers, batch.map((_, index) => index + 1));
+      }
+      // Simulate an AI grouping its candidates; only the code expands sources.
+      const reply = JSON.stringify({ topics: [{ title: "汇总", summary: "共同事件", articles: batch.map((_, index) => index + 1) }] });
+      next.push(...expandTopics(parseTopics(reply, batch.length), batch));
+    }
+    assert.ok(next.length < current.length);
+    current = next;
+    levels += 1;
+  }
+  assert.ok(levels >= 2);
+  assert.deepEqual(current.flatMap((topic) => topic.articles), candidates.flatMap((topic) => topic.articles));
+});
+
+test("only selected candidates contribute sources, with no invented or duplicate global references", () => {
+  const candidates = [
+    { title: "未入选", articles: [1, 2] },
+    { title: "入选", articles: [500, 700] },
+    { title: "另一候选", articles: [700, 900, -1, 0, 1.5, "2"] },
+  ];
+  const final = expandTopics([
+    { title: "主题", summary: "采用第二个候选", articles: [2, 2, 1000] },
+    { title: "另一主题", articles: [3, -1] },
+  ], candidates);
+  assert.deepEqual(final.map((topic) => topic.articles), [[500, 700], [900]]);
+  assert.ok(!final.flatMap((topic) => topic.articles).some((number) => number === 1 || number === 2));
+  assert.deepEqual(candidates[2].articles, [700, 900, -1, 0, 1.5, "2"]);
+});
+
+test("board read IDs are the exact final membership, never all analysed candidates", () => {
+  const articles = [{ id: 41 }, { id: 42 }, { id: 41 }, { id: 0 }, { id: -3 }, { id: 1.5 }, { id: "43" }, { id: 44 }];
+  const topics = [
+    { articles: [1, 3, 4, 5, 6, 7, 9, 0, -1, 1.5, "2"] },
+    { articles: [8, 1] },
+  ];
+  assert.deepEqual(boardArticleIds(topics, articles), [41, 44]);
+  assert.deepEqual(boardArticleIds([], articles), []);
+  assert.deepEqual(boardArticleIds(topics, []), []);
+});
+
+test("a large digest keeps every topic summary and fairly samples only included sources using global numbers", () => {
+  const articles = Array.from({ length: 10001 }, (_, index) => ({
+    id: 50000 + index,
+    number: index + 1,
+    title: `原文${index + 1}`,
+    head: `${index < 2000 ? "未入选原文" : "入选原文"}${"标题".repeat(100)}`,
+    excerpt: "原文预览".repeat(100),
+  }));
+  const topics = Array.from({ length: MAX_TOPICS }, (_, index) => {
+    const from = 2001 + index * 1000;
+    return {
+      title: `主题${index + 1}`,
+      gist: `重点${index + 1}`,
+      summary: `第${index + 1}个主题的完整摘要。${"汇总事实".repeat(200)}`,
+      articles: Array.from({ length: index === MAX_TOPICS - 1 ? 2001 : 1000 }, (_, offset) => from + offset),
+    };
+  });
+  // Ensure a five-digit, very late reference is represented, not renumbered.
+  topics.at(-1).articles.reverse();
+  const messages = digestMessages(topics, articles);
+  const numbers = digestArticleNumbers(topics, articles);
+  assert.ok(promptSize(messages) <= PROMPT_BUDGET);
+  assert.match(messages[0].content, /全部看板主题摘要/);
+  assert.match(messages[0].content, /代表性原文/);
+  for (let index = 0; index < topics.length; index++) {
+    assert.match(messages[1].content, new RegExp(`第${index + 1}个主题的完整摘要`));
+  }
+  const included = new Set(topics.flatMap((topic) => topic.articles));
+  assert.ok(numbers.length < included.size);
+  assert.ok(numbers.every((number) => included.has(number)));
+  assert.ok(numbers.includes(10001));
+  assert.doesNotMatch(messages[1].content, /未入选原文/);
+  const rawNumbers = [...messages[1].content.matchAll(/^\[(\d+)\] /gm)].map((match) => Number(match[1]));
+  assert.deepEqual(rawNumbers, numbers);
+  const counts = topics.map((topic) => numbers.filter((number) => topic.articles.includes(number)).length);
+  assert.ok(counts.every((count) => count > 0));
+  assert.ok(Math.max(...counts) - Math.min(...counts) <= 1);
+});
+
+test("digest citations keep explicit nonconsecutive numbers and snapshots still work after their articles are read", () => {
+  const articles = [
+    { id: 99, number: 151, title: "来源甲", feedTitle: "甲", text: "事实甲", status: "read" },
+    { id: 100, number: 1001, title: "来源乙", feedTitle: "乙", text: "事实乙", status: "read" },
+  ];
+  const topics = [{ title: "事件", gist: "发生了什么", summary: "甲和乙说明了事件", articles: [151, 1001] }];
+  const user = digestMessages(topics, articles)[1].content;
+  assert.match(user, /甲和乙说明了事件/);
+  assert.match(user, /\[151\] 甲 · 来源甲\n事实甲/);
+  assert.match(user, /\[1001\] 乙 · 来源乙\n事实乙/);
+  assert.deepEqual(digestArticleNumbers(topics, articles), [151, 1001]);
+  assert.doesNotMatch(user, /^\[1\] /m);
+});
+
+test("digest citation allowlists reject real but unused articles and accept both sets and arrays", () => {
+  const text = "## 事件\n内容[1][2][3][9]";
+  const cites = (sections) => sections.flatMap((section) => section.parts.filter((part) => part.cite).map((part) => part.cite));
+  assert.deepEqual(cites(parseDigest(text, 10)), [1, 2, 3, 9]);
+  assert.deepEqual(cites(parseDigest(text, 10, new Set([1, 3, 99]))), [1, 3]);
+  assert.deepEqual(cites(parseDigest(text, 10, [1, 3])), [1, 3]);
+  assert.deepEqual(cites(parseDigest(text, 10, [])), []);
 });
 
 test("preview text is used as is: code like List<T> survives", () => {
