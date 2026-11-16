@@ -179,6 +179,8 @@ SDK 自动注入，不要把类型声明放进 script 标签。四个内置范�
 
 需要前台交互的剪贴板、分享、浏览器、文件选择、相机、快捷方式、震动和单次定位（location.getCurrent），由当前可见且有窗口焦点的工具发起。后台取得位置请在持续会话中使用 location.watch({ allowBackground: true })，并需要 location.background 授权。授权后没有触屏倒计时或每分钟调用额度。系统文件选择器、相机、分享及桌面确认仍由 Android 处理。
 
+`files.open(["image/*"])` 优先打开 Android 系统照片选择器，以图片缩略图选择一张照片或截图；AndroidX 在系统不支持时回退到文档选择器。仍使用 `files.open` 权限和原有单次读取 token，不需要读取整个相册的权限。指定多个精确 MIME（如 `["image/png", "image/jpeg"]`）、混合类型或省略过滤器时仍使用文档选择器，以保留原有文件类型过滤语义。取消选择返回 `null`。照片选择器可能返回 HEIC 等图片，工具应检查自己的解码能力并提示不支持的格式。
+
 网络通过 ToolBox 原生 HTTPS 接口访问；TLS 验证和跨源重定向凭据剥离继续生效。外部网页、iframe 和 Worker 不获得 ToolBox bridge。
 
 ### 页面状态与关闭保存（0.8.28 起）

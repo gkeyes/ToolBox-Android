@@ -6,6 +6,7 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.os.Looper
+import android.provider.MediaStore
 import androidx.activity.ComponentActivity
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -24,6 +25,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.android.controller.ActivityController
+import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
 class ForegroundCapabilityBrokerTest {
@@ -41,9 +43,26 @@ class ForegroundCapabilityBrokerTest {
 
     @Test
     fun pickerResultReachesTheActivityRecreatedByAConfigurationChange() {
+        assertPickerResultSurvivesConfigurationChange(listOf("text/plain"))
+    }
+
+    @Test
+    @Config(sdk = [34])
+    fun imageRequestOpensPhotoPickerAndSurvivesActivityRecreation() {
+        assertPickerResultSurvivesConfigurationChange(listOf("image/*"))
+    }
+
+    private fun assertPickerResultSurvivesConfigurationChange(mimeTypes: List<String>) {
         val first = resumedActivityWithBroker()
-        val pending = openPicker()
-        val requestCode = shadowOf(first.get()).nextStartedActivityForResult.requestCode
+        val pending = openPicker(mimeTypes)
+        val launch = shadowOf(first.get()).nextStartedActivityForResult
+        if (mimeTypes == listOf("image/*")) {
+            assertEquals(MediaStore.ACTION_PICK_IMAGES, launch.intent.action)
+            assertEquals("image/*", launch.intent.type)
+        } else {
+            assertEquals(Intent.ACTION_OPEN_DOCUMENT, launch.intent.action)
+        }
+        val requestCode = launch.requestCode
         val saved = Bundle()
         first.pause().saveInstanceState(saved).stop()
 
@@ -60,6 +79,32 @@ class ForegroundCapabilityBrokerTest {
 
         assertTrue(pending.isCompleted)
         assertEquals(picked, runBlocking { pending.await() })
+    }
+
+    @Test
+    @Config(sdk = [34])
+    fun cancellingPhotoPickerReturnsNullAndReleasesThePendingRequest() {
+        val controller = resumedActivityWithBroker()
+        val pending = openPicker(listOf("image/*"))
+        val launch = shadowOf(controller.get()).nextStartedActivityForResult
+        controller.get().activityResultRegistry.dispatchResult(launch.requestCode, Activity.RESULT_CANCELED, null)
+        awaitCall()
+
+        assertTrue(pending.isCompleted)
+        assertEquals(null, runBlocking { pending.await() })
+        assertEquals(null, PendingForegroundRequests.open)
+        assertFalse(PendingForegroundRequests.mutex.isLocked)
+    }
+
+    @Test
+    @Config(sdk = [34])
+    fun explicitImageFormatsKeepTheirDocumentPickerFilter() {
+        val controller = resumedActivityWithBroker()
+        openPicker(listOf("image/png", "image/jpeg", "image/webp"))
+        val intent = shadowOf(controller.get()).nextStartedActivityForResult.intent
+
+        assertEquals(Intent.ACTION_OPEN_DOCUMENT, intent.action)
+        assertEquals(listOf("image/png", "image/jpeg", "image/webp"), intent.getStringArrayExtra(Intent.EXTRA_MIME_TYPES)?.toList())
     }
 
     @Test
@@ -97,9 +142,9 @@ class ForegroundCapabilityBrokerTest {
         return controller.start().resume()
     }
 
-    private fun openPicker(): CompletableDeferred<Uri?> {
+    private fun openPicker(mimeTypes: List<String> = listOf("text/plain")): CompletableDeferred<Uri?> {
         val files = ForegroundCapabilityBroker.activeHandlers(app, "demo.tool", "Demo", requireForegroundRuntime = {}).files!!
-        call = scope.launch { runCatching { files.open(listOf("text/plain")) } }
+        call = scope.launch { runCatching { files.open(mimeTypes) } }
         return checkNotNull(PendingForegroundRequests.open) { "The picker did not start" }
     }
 

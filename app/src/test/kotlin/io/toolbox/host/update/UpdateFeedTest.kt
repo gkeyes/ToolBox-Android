@@ -55,6 +55,20 @@ class UpdateFeedTest {
     }
 
     @Test
+    fun seamlessStitchReleaseUpdatesThePreviouslyImportedTool() {
+        val release = ParsedRelease(
+            "dev", null, "",
+            listOf(ReleaseAsset("seamless-stitch-v1.1.0.tbx", "u", 1, null)),
+        )
+        val update = UpdateFeedParser.tools(release).single()
+        assertEquals("1.1.0", update.version)
+        assertEquals("io.gkeyes.seamlessstitch", update.toolId)
+        assertTrue(update.matches("io.gkeyes.seamlessstitch"))
+        assertFalse(update.matches("io.toolbox.seamlessstitch"))
+        assertFalse(update.matches("com.someone.seamlessstitch"))
+    }
+
+    @Test
     fun testChannelKeepsTheNewerPackagePerTool() {
         val asset = ReleaseAsset("x", "u", 0, null)
         val merged = UpdateFeedParser.mergeTools(

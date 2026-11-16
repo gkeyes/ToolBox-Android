@@ -16,6 +16,7 @@ import android.os.Bundle
 import android.os.CancellationSignal
 import android.provider.OpenableColumns
 import androidx.activity.ComponentActivity
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContract
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.FileProvider
@@ -505,11 +506,23 @@ internal class ForegroundCapabilityBroker private constructor(
     }
 
     private class OpenDocumentContract : ActivityResultContract<List<String>, Uri?>() {
-        override fun createIntent(context: Context, input: List<String>): Intent =
-            Intent(Intent.ACTION_OPEN_DOCUMENT)
+        private val photoPicker = ActivityResultContracts.PickVisualMedia()
+
+        override fun createIntent(context: Context, input: List<String>): Intent {
+            // A broad image-only request opts into Android's visual picker. Keep
+            // explicit MIME lists on SAF: Photo Picker cannot enforce several
+            // individual image formats without broadening the caller's filter.
+            if (input == listOf("image/*")) {
+                return photoPicker.createIntent(
+                    context,
+                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+                )
+            }
+            return Intent(Intent.ACTION_OPEN_DOCUMENT)
                 .addCategory(Intent.CATEGORY_OPENABLE)
                 .setType(if (input.size == 1) input.single() else "*/*")
                 .also { intent -> if (input.size > 1) intent.putExtra(Intent.EXTRA_MIME_TYPES, input.toTypedArray()) }
+        }
 
         override fun parseResult(resultCode: Int, intent: Intent?): Uri? =
             intent?.data?.takeIf { resultCode == android.app.Activity.RESULT_OK }

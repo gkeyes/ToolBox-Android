@@ -258,6 +258,38 @@
       ]
     }
   },
+  "seamless-stitch": {
+    "manifest": "manifest.json",
+    "javascript": [
+      "*.js"
+    ],
+    "package": [
+      "bash",
+      "package.sh",
+      "{output}"
+    ],
+    "expected_files": [
+      "README.md",
+      "THIRD_PARTY_NOTICES.md",
+      "app.js",
+      "engine.js",
+      "icon.svg",
+      "index.html",
+      "integrity.json",
+      "licenses/ToolBox-MIT.txt",
+      "licenses/screenStitch-MIT.txt",
+      "licenses/screenshot-stitcher-MIT.txt",
+      "manifest.json",
+      "runtime.js",
+      "style.css",
+      "worker.js"
+    ],
+    "tests": {
+      "unit": [
+        "tests/*.test.cjs"
+      ]
+    }
+  },
   "socialcoach": {
     "manifest": "manifest.json",
     "npm": true,
