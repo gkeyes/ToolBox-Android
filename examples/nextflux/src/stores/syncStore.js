@@ -13,6 +13,7 @@ import { runtimeForeground } from "../toolbox/foreground.js";
 import { nativeTimerEffective } from "../toolbox/background-state.js";
 import { createAutoSyncDeadline } from "../toolbox/auto-sync-deadline.mjs";
 import { backgroundIntervalMs } from "../toolbox/background-policy.mjs";
+import { normalizeRecentCacheLimit } from "../toolbox/recent-cache.mjs";
 
 export const isOnline = atom(navigator.onLine);
 export const isSyncing = atom(false);
@@ -280,6 +281,10 @@ async function collectSnapshot(baseCheck) {
   })), check);
   // Starting before network requests preserves the existing overlap semantics.
   const syncedAt = new Date();
+  // One sync owns one setting snapshot. A later preference change takes effect
+  // on the next complete sync, never halfway through a paginated window.
+  const recentCacheLimit = normalizeRecentCacheLimit(settingsState.get().recentCacheLimit);
+  const recentEntryIds = recentCacheLimit > 0 ? new Set() : null;
   const previous = getLastSyncTime();
   const previousTime = previous?.getTime?.() ?? Number.NaN;
   const newEntryIds = new Set();
@@ -315,10 +320,11 @@ async function collectSnapshot(baseCheck) {
     staging = operation.catch((failure) => { requestFailure ||= failure; });
     return operation;
   };
-  const consume = async (method, args, priority, progressLabel) => {
+  const consume = async (method, args, priority, progressLabel, onEntries) => {
     let count = 0;
     const onPage = async (batch) => {
       await addEntries(batch, priority);
+      onEntries?.(batch);
       count += batch.length;
       if (progressLabel) syncProgress.set(`${progressLabel} · ${count}`);
     };
@@ -338,6 +344,12 @@ async function collectSnapshot(baseCheck) {
       starred: () => consume(minifluxAPI.getAllStarredEntries, [check], 1, "正在同步已读收藏"),
       readChanged: () => consume(minifluxAPI.getReadChangedEntries, [since, check], 0, "正在同步已读状态与收藏"),
     });
+    if (recentEntryIds) {
+      syncProgress.set(`正在缓存最近 ${recentCacheLimit} 条文章…`);
+      await consume(minifluxAPI.getRecentEntries, [recentCacheLimit, check], 2,
+        `正在缓存最近文章（最多 ${recentCacheLimit} 条）`,
+        (batch) => batch.forEach((entry) => recentEntryIds.add(entry.id)));
+    }
     await staging;
     check();
 
@@ -357,6 +369,8 @@ async function collectSnapshot(baseCheck) {
       feeds: serverFeeds.map(mapServerFeed),
       categories: serverCategories.map((category) => ({ id: category.id, title: category.title })),
       oldestServerReadId,
+      recentCacheLimit,
+      recentEntryIds: recentEntryIds ? [...recentEntryIds] : undefined,
     };
   } catch (failure) {
     await staging;
@@ -388,13 +402,26 @@ export function sync(mode = "foreground") {
       try {
         check();
         syncProgress.set("正在保存完整阅读数据…");
-        const catalogs = { feeds: collected.feeds, categories: collected.categories, oldestServerReadId: collected.oldestServerReadId };
+        const { activeArticle, refreshArticleStateAfterSync } = await import("./articlesStore.js");
+        const protectedArticleIds = () => {
+          // The route changes before its asynchronous body read publishes to
+          // activeArticle. Protect that destination as well as the visible row.
+          const routeId = Number(globalThis.window?.location?.hash?.match(/\/article\/(\d+)(?:[/?#]|$)/)?.[1]);
+          return [...new Set([activeArticle.get()?.id, routeId]
+            .filter((id) => Number.isSafeInteger(id) && id > 0))];
+        };
+        const catalogs = {
+          feeds: collected.feeds, categories: collected.categories,
+          oldestServerReadId: collected.oldestServerReadId,
+          recentEntryIds: collected.recentEntryIds,
+          protectedArticleIds: protectedArticleIds(),
+        };
         await prepareArticleSyncCommit(collected.token, catalogs);
         check();
         await runAccountOperation(async (commitCheck) => {
-          await commitArticleSync(collected.token, catalogs);
+          // The reader may have opened another article during candidate prep.
+          await commitArticleSync(collected.token, { ...catalogs, protectedArticleIds: protectedArticleIds() });
           commitCheck(false);
-          const { refreshArticleStateAfterSync } = await import("./articlesStore.js");
           await refreshArticleStateAfterSync(commitCheck);
           commitCheck(false);
           lastSync.set(collected.syncedAt);
@@ -408,6 +435,8 @@ export function sync(mode = "foreground") {
           newEntryCount: collected.newEntryCount || 0,
           updatedCount: collected.updatedCount || 0,
           unreadCount,
+          recentCacheLimit: collected.recentCacheLimit,
+          recentCachedCount: collected.recentEntryIds?.length ?? 0,
         };
       } catch (failure) {
         await abortArticleSync(collected.token).catch(() => {});

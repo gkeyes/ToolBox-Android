@@ -5,7 +5,7 @@ import i18n from "i18next";
 import { initReactI18next } from "react-i18next";
 import zhCN from "../../../src/i18n/locales/zh-CN.js";
 import { initializePreferences } from "@/toolbox/preferences.js";
-import { feedLoads } from "./controls-sidebar-state.js";
+import { feedLoads, finishSync, isOnline, syncCalls } from "./controls-sidebar-state.js";
 import "../../../src/index.css";
 
 const storageKey = "nextflux-sidebar-test-preferences";
@@ -38,6 +38,9 @@ document.documentElement.dataset.theme = "light";
 window.controlsSidebarFixture = {
   settings: () => settingsState.get(),
   feedLoads,
+  syncCalls,
+  finishSync,
+  setOnline: (value) => isOnline.set(value),
   writes,
   pendingWrites: () => pending.length,
   failNextWrite: () => { failure = true; },
@@ -46,6 +49,10 @@ window.controlsSidebarFixture = {
   persistedHidden: () => {
     const stored = JSON.parse(localStorage.getItem(storageKey) || "null");
     return stored?.settings ? JSON.parse(stored.settings).showHiddenFeeds : null;
+  },
+  persistedCacheLimit: () => {
+    const stored = JSON.parse(localStorage.getItem(storageKey) || "null");
+    return stored?.settings ? JSON.parse(stored.settings).recentCacheLimit : null;
   },
 };
 

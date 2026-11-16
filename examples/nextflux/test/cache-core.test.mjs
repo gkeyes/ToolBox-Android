@@ -15,11 +15,17 @@ const clone=(value)=>value===undefined?undefined:structuredClone(value);
 function memoryStorage(initial={}){
   const values=new Map(Object.entries(initial).map(([key,value])=>[key,clone(value)]));
   let loseNextRootReply=false;
+  let failNextRootWrite=false;
   return {
     values,
     loseNextRootReply(){loseNextRootReply=true;},
+    failNextRootWrite(){failNextRootWrite=true;},
     async getMany(keys){return keys.map(key=>values.has(key)?clone(values.get(key)):null);},
     async apply(change={}){
+      if(failNextRootWrite&&(change.set||[]).some(item=>item.key===ROOT_KEY)){
+        failNextRootWrite=false;
+        throw Object.assign(new Error("simulated failed root write"),{code:"NETWORK_UNAVAILABLE"});
+      }
       for(const item of change.set||[])values.set(item.key,clone(item.value));
       for(const key of change.remove||[])values.delete(key);
       if(loseNextRootReply&&(change.set||[]).some(item=>item.key===ROOT_KEY)){
@@ -112,4 +118,162 @@ test("persisted cache refuses a different account binding",async()=>{
     second.initialize({...ACCOUNT,userId:"8"}),
     error=>error?.code==="ACCOUNT_CHANGED",
   );
+});
+
+const catalogs=(extra={})=>({feeds:[FEED],categories:[CATEGORY],...extra});
+const readArticle=(id,extra={})=>article({id,status:"read",content:`<p>第 ${id} 条的完整正文</p>`,...extra});
+const ids=async(cache)=>(await cache.selectIds({})).sort((a,b)=>a-b);
+
+async function seedArticles(rows,{storage=memoryStorage(),catalog=catalogs()}={}){
+  const cache=createArticleCache(storage,{autoGc:false,tokenPrefix:"retentionseed",digest});
+  await cache.initialize(ACCOUNT);
+  const token=await cache.prepareSync({account:ACCOUNT,syncedAt:SYNCED_AT});
+  await cache.applySyncBatch(token,rows);
+  await cache.commitSync(token,catalog);
+  return {cache,storage};
+}
+
+async function resyncArticles(cache,rows=[],catalog=catalogs()){
+  const token=await cache.prepareSync({account:ACCOUNT,syncedAt:"2026-09-27T03:30:00.000Z"});
+  await cache.applySyncBatch(token,rows);
+  await cache.commitSync(token,catalog);
+}
+
+async function reopenCache(storage){
+  const reopened=createArticleCache(storage,{autoGc:false,tokenPrefix:"retentionreopened",digest});
+  await reopened.initialize(ACCOUNT);
+  return reopened;
+}
+
+test("recent window retains all unread and starred articles with durable bodies after GC and restart",async()=>{
+  const {cache,storage}=await seedArticles([
+    readArticle(1),readArticle(2,{status:"unread"}),readArticle(3,{starred:1}),
+    readArticle(4),readArticle(5,{status:"unread"}),readArticle(6),
+  ]);
+  await resyncArticles(cache,[],catalogs({recentEntryIds:[4,5],protectedArticleIds:[6]}));
+  assert.deepEqual(await ids(cache),[2,3,4,5,6]);
+  assert.deepEqual(await cache.counts([7]),{unread:{7:2},starred:{7:1}});
+  const beforeGc=storage.values.size;
+  await cache.collectGarbage();
+  assert.ok(storage.values.size<beforeGc,"retired article and index documents are collected");
+  const reopened=await reopenCache(storage);
+  assert.deepEqual(await ids(reopened),[2,3,4,5,6]);
+  assert.equal(await reopened.readArticle(1),null);
+  for(const id of [2,3,4,5,6])assert.equal((await reopened.readArticle(id)).content,readArticle(id).content);
+  assert.equal((await reopened.readArticle(3)).starred,1);
+});
+
+test("smaller recent windows retire old read entries and larger fetched windows restore them",async()=>{
+  const rows=Array.from({length:8},(_,index)=>readArticle(index+1));
+  const {cache}=await seedArticles(rows);
+  await resyncArticles(cache,[],catalogs({recentEntryIds:[6,7,8]}));
+  assert.deepEqual(await ids(cache),[6,7,8]);
+  await resyncArticles(cache,[],catalogs({recentEntryIds:[8]}));
+  assert.deepEqual(await ids(cache),[8]);
+  await cache.collectGarbage();
+  await resyncArticles(cache,rows.slice(1),catalogs({recentEntryIds:[2,3,4,5,6,7,8]}));
+  assert.deepEqual(await ids(cache),[2,3,4,5,6,7,8]);
+  assert.equal((await cache.readArticle(2)).content,readArticle(2).content);
+});
+
+test("omitting the recent window preserves the existing archive policy",async()=>{
+  const {cache}=await seedArticles([readArticle(1),readArticle(2)]);
+  await resyncArticles(cache,[readArticle(3)],catalogs({protectedArticleIds:[]}));
+  assert.deepEqual(await ids(cache),[1,2,3]);
+  await resyncArticles(cache,[],catalogs({recentEntryIds:[]}));
+  assert.deepEqual(await ids(cache),[],"an explicit successful empty window can retire ordinary read history");
+});
+
+test("aborting a prepared recent-window sync preserves the original snapshot and checkpoint",async()=>{
+  const {cache,storage}=await seedArticles([readArticle(1),readArticle(2)]);
+  const before=await cache.meta();
+  const token=await cache.prepareSync({account:ACCOUNT,syncedAt:"2026-09-28T03:30:00.000Z"});
+  await cache.applySyncBatch(token,[readArticle(3)]);
+  await cache.prepareSyncCommit(token,catalogs({recentEntryIds:[3]}));
+  assert.deepEqual(await ids(cache),[1,2],"preparation is not publication");
+  await cache.abortSync(token);
+  await cache.collectGarbage();
+  const reopened=await reopenCache(storage);
+  assert.deepEqual(await reopened.meta(),before);
+  assert.deepEqual(await ids(reopened),[1,2]);
+  assert.equal((await reopened.readArticle(1)).content,readArticle(1).content);
+  assert.equal(await reopened.readArticle(3),null);
+});
+
+test("a failed recent-window root write leaves original articles readable through GC and restart",async()=>{
+  const {cache,storage}=await seedArticles([readArticle(1),readArticle(2)]);
+  const before=await cache.meta();
+  const token=await cache.prepareSync({account:ACCOUNT,syncedAt:"2026-09-28T03:30:00.000Z"});
+  await cache.applySyncBatch(token,[readArticle(3)]);
+  const catalog=catalogs({recentEntryIds:[3]});
+  await cache.prepareSyncCommit(token,catalog);
+  storage.failNextRootWrite();
+  await assert.rejects(cache.commitSync(token,catalog),error=>error.code==="NETWORK_UNAVAILABLE");
+  assert.deepEqual(await cache.meta(),before);
+  assert.deepEqual(await ids(cache),[1,2]);
+  await cache.collectGarbage();
+  const reopened=await reopenCache(storage);
+  assert.deepEqual(await reopened.meta(),before);
+  assert.equal((await reopened.readArticle(2)).content,readArticle(2).content);
+  assert.equal(await reopened.readArticle(3),null);
+});
+
+test("acknowledged stars and read states after preparation restore complete retired rows",async()=>{
+  const {cache,storage}=await seedArticles([readArticle(1),readArticle(2),readArticle(4)]);
+  const token=await cache.prepareSync({account:ACCOUNT,syncedAt:"2026-09-28T03:30:00.000Z"});
+  const updated=readArticle(1,{content:"<p>同步获取到的更新正文</p>",changed_at:"2026-09-28T02:00:00.000Z"});
+  await cache.applySyncBatch(token,[updated,readArticle(3)]);
+  const catalog=catalogs({recentEntryIds:[3]});
+  await cache.prepareSyncCommit(token,catalog);
+  await cache.patchState([{id:1,starred:1},{id:2,status:"read"},{id:4,status:"unread"}]);
+  await cache.collectGarbage();
+  await cache.commitSync(token,catalog);
+  assert.deepEqual(await ids(cache),[1,2,3,4]);
+  assert.equal((await cache.readArticle(1)).content,updated.content,"newly fetched body survives restoration");
+  assert.equal((await cache.readArticle(1)).starred,1);
+  assert.equal((await cache.readArticle(2)).status,"read","even a no-op acknowledged read is protected for this round");
+  assert.equal((await cache.readArticle(4)).status,"unread");
+  assert.deepEqual(await cache.counts([7]),{unread:{7:1},starred:{7:1}});
+  await cache.collectGarbage();
+  const reopened=await reopenCache(storage);
+  assert.equal((await reopened.readArticle(1)).content,updated.content);
+  assert.equal((await reopened.readArticle(2)).content,readArticle(2).content);
+  assert.equal((await reopened.readArticle(4)).content,readArticle(4).content);
+});
+
+test("articles opened before and after preparation survive until a later unprotected sync",async()=>{
+  const {cache,storage}=await seedArticles([1,2,3,4].map(id=>readArticle(id)));
+  const token=await cache.prepareSync({account:ACCOUNT,syncedAt:"2026-09-28T03:30:00.000Z"});
+  await cache.prepareSyncCommit(token,catalogs({recentEntryIds:[4],protectedArticleIds:[1]}));
+  await cache.collectGarbage();
+  await cache.commitSync(token,catalogs({recentEntryIds:[4],protectedArticleIds:[2]}));
+  assert.deepEqual(await ids(cache),[1,2,4]);
+  await cache.collectGarbage();
+  const reopened=await reopenCache(storage);
+  assert.equal((await reopened.readArticle(1)).content,readArticle(1).content);
+  assert.equal((await reopened.readArticle(2)).content,readArticle(2).content);
+  await resyncArticles(cache,[],catalogs({recentEntryIds:[4],protectedArticleIds:[]}));
+  assert.deepEqual(await ids(cache),[4]);
+});
+
+test("late reading protection never revives server-removed articles or deleted feeds",async()=>{
+  const otherFeed={...FEED,id:8,title:"将删除的订阅"};
+  const {cache}=await seedArticles([readArticle(1),readArticle(2,{feedId:8}),readArticle(3)],{
+    catalog:catalogs({feeds:[FEED,otherFeed]}),
+  });
+  const token=await cache.prepareSync({account:ACCOUNT,syncedAt:"2026-09-28T03:30:00.000Z"});
+  await cache.applySyncBatch(token,[readArticle(1,{status:"removed"})]);
+  await cache.prepareSyncCommit(token,catalogs({recentEntryIds:[3]}));
+  await cache.commitSync(token,catalogs({recentEntryIds:[3],protectedArticleIds:[1,2]}));
+  assert.deepEqual(await ids(cache),[3]);
+  assert.equal(await cache.readArticle(1),null);
+  assert.equal(await cache.readArticle(2),null);
+});
+
+test("invalid retention IDs fail without evicting local history",async()=>{
+  const {cache}=await seedArticles([readArticle(1),readArticle(2)]);
+  const token=await cache.prepareSync({account:ACCOUNT,syncedAt:SYNCED_AT});
+  await assert.rejects(cache.prepareSyncCommit(token,catalogs({recentEntryIds:["2"]})),error=>error.code==="INVALID_REQUEST");
+  await cache.abortSync(token);
+  assert.deepEqual(await ids(cache),[1,2]);
 });
