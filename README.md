@@ -14,7 +14,7 @@ ToolBox 是 Android 工具宿主。宿主负责本地工具目录、TBX 安装�
 | 普通网页浏览 | 工具的浏览器能力 | `BrowserLauncher` → `BrowserActivity` | 独立 WebView、站点规则、系统下载器 |
 | 宿主界面 | 上述原生页面 | `core-ui` 的主题 token、按钮、卡片、对话框与动效 | Compose、统一外观（主题模式与降低透明度设置） |
 
-Gradle 项目包含 `app`、`core-ui`、`core-data`、`tool-package`、`tool-runtime`、`tool-api` 六个模块。TBX 是独立工具包，不是 Android 模块。`examples/` 中的 12 个工具由 `scripts/ci/tbx-targets.json` 登记；其中仓位计算器、快速笔记、后台任务演示、通知实验室四个在 APK 构建时打包为内置示例，其余工具单独分发。
+Gradle 项目包含 `app`、`core-ui`、`core-data`、`tool-package`、`tool-runtime`、`tool-api` 六个模块。TBX 是独立工具包，不是 Android 模块。`examples/` 中的工具由 `scripts/ci/tbx-targets.json` 登记；其中仓位计算器、快速笔记、后台任务演示、通知实验室四个在 APK 构建时打包为内置示例，其余工具（包括[无缝长图](examples/seamless-stitch/README.md)）单独分发。
 
 ## 本地构建
 

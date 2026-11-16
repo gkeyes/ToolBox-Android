@@ -46,7 +46,10 @@ internal data class ToolPackage(val slug: String, val version: String, val asset
          * `io.toolbox.<directory without dashes>`. Tools the user built and imported before they became examples
          * keep their original id so their stored data survives the update; their manifests declare these ids.
          */
-        val LEGACY_TOOL_IDS = mapOf("zhuzhang" to "io.gkeyes.zhuzhang")
+        val LEGACY_TOOL_IDS = mapOf(
+            "zhuzhang" to "io.gkeyes.zhuzhang",
+            "seamless-stitch" to "io.gkeyes.seamlessstitch",
+        )
     }
 }
 
