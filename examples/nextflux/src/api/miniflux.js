@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { SERVER_URL, basicAuth, toolboxAxiosAdapter } from "../toolbox/network.js";
 import { adaptivePageRequest, nextEntryCursor, SYNC_PAGE_SIZE, SYNC_MIN_PAGE_SIZE } from "../toolbox/sync-pagination.mjs";
 import { createNetworkPriorityGate } from "../toolbox/foreground-gate.mjs";
+import { normalizeRecentCacheLimit } from "../toolbox/recent-cache.mjs";
 
 // 创建 axios 实例
 const createApiClient = () => {
@@ -199,13 +200,22 @@ async function fetchEntryPage(endpoint, filters, cursor, requestedSize, check) {
   delete baseFilters.offset;
   delete baseFilters.limit;
 
+  const requestedPageSize = Math.max(1, Math.min(Number(requestedSize) || SYNC_PAGE_SIZE, SYNC_PAGE_SIZE));
   return adaptivePageRequest({
-    pageSize: Math.max(SYNC_MIN_PAGE_SIZE, Math.min(Number(requestedSize) || SYNC_PAGE_SIZE, SYNC_PAGE_SIZE)),
-    minPageSize: SYNC_MIN_PAGE_SIZE,
+    pageSize: requestedPageSize,
+    minPageSize: Math.min(SYNC_MIN_PAGE_SIZE, requestedPageSize),
     check: current,
     request: async (pageSize) => {
-      const params = { ...baseFilters, limit: pageSize };
-      if (cursor > 0) params[cursorParam] = cursor;
+      // Miniflux accepts multiple statuses as repeated query parameters. Use
+      // URLSearchParams so the native Axios adapter does not join them with a
+      // comma (which would silently stop filtering removed entries).
+      const params = new URLSearchParams();
+      for (const [key, value] of Object.entries({ ...baseFilters, limit: pageSize })) {
+        for (const item of Array.isArray(value) ? value : [value]) {
+          if (item !== undefined && item !== null) params.append(key, String(item));
+        }
+      }
+      if (cursor > 0) params.set(cursorParam, String(cursor));
       const { data } = await runNetworkOperation(() => apiClient.get(endpoint, { params }), current);
       await current();
       if (!Array.isArray(data.entries)) throw new Error("服务器返回的文章列表无效。");
@@ -217,7 +227,10 @@ async function fetchEntryPage(endpoint, filters, cursor, requestedSize, check) {
 // Stable ID cursor pagination keeps database work bounded even when the archive
 // contains tens of thousands of entries. New rows arriving during a descending
 // walk are picked up by the existing changed_at overlap on the next sync.
-export async function getEntriesInBatches(endpoint, params = {}, check, onPage) {
+export async function getEntriesInBatches(endpoint, params = {}, check, onPage, { maxEntries = Infinity } = {}) {
+  if (maxEntries !== Infinity && (!Number.isSafeInteger(maxEntries) || maxEntries < 0)) {
+    throw new Error("文章缓存数量无效。");
+  }
   const current = operationCheck(check);
   const filters = { order: "id", direction: "desc", ...params };
   delete filters.limit;
@@ -229,11 +242,13 @@ export async function getEntriesInBatches(endpoint, params = {}, check, onPage) 
 
   const entries = [];
   let pageSize = SYNC_PAGE_SIZE;
-  while (true) {
-    const result = await fetchEntryPage(endpoint, filters, cursor, pageSize, current);
+  let received = 0;
+  while (received < maxEntries) {
+    const result = await fetchEntryPage(endpoint, filters, cursor, Math.min(pageSize, maxEntries - received), current);
     pageSize = result.pageSize;
     const batch = result.data.entries;
     if (!batch.length) return onPage ? undefined : entries;
+    if (batch.length > pageSize) throw new Error("服务器返回的文章数量超过请求上限，已停止同步。");
 
     const ids = new Set();
     for (const entry of batch) {
@@ -241,13 +256,24 @@ export async function getEntriesInBatches(endpoint, params = {}, check, onPage) 
       ids.add(entry.id);
     }
     const nextCursor = nextEntryCursor(batch, cursor, direction);
+    if (cursor > 0 && (direction === "asc" ? batch[0].id <= cursor : batch[0].id >= cursor)) {
+      throw new Error("服务器返回了重复的文章页，已停止同步。");
+    }
     if (onPage) await onPage(batch);
     else entries.push(...batch);
     await current();
+    received += batch.length;
     cursor = nextCursor;
     if (batch.length < pageSize) return onPage ? undefined : entries;
   }
+  return onPage ? undefined : entries;
 }
+
+// Latest means server intake order (descending entry ID), independent of the
+// list's display sort. The explicit total bound also covers adaptive retries.
+export const getRecentEntries = (limit, check, onPage) => getEntriesInBatches("/v1/entries", {
+  status: ["read", "unread"],
+}, check, onPage, { maxEntries: normalizeRecentCacheLimit(limit) });
 
 // 优先同步自上次窗口以来仍为未读的文章；changed_after 也能覆盖
 // “旧文章被重新标为未读”的情况，而不必每次重拉全部未读历史。
@@ -482,6 +508,7 @@ const minifluxApi = {
   getUnreadChangedEntries,
   getReadChangedEntries,
   getAllUnreadEntries,
+  getRecentEntries,
   markAllAsRead,
   getAllStarredEntries,
   fetchEntryContent,

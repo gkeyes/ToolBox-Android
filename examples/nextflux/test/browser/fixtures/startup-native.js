@@ -26,6 +26,7 @@ export const STORED_SETTINGS = {
   showReadingTime: true,
   autoHideToolbar: false,
   syncInterval: "30",
+  recentCacheLimit: "200",
   showLineNumbers: false,
   forceDarkCodeTheme: false,
   defaultExpandCategory: false,

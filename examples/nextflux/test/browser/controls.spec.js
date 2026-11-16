@@ -342,6 +342,105 @@ async function openSidebarPreferences(page, width = 1280) {
   await expect(page.getByRole("switch", { name: "显示隐藏订阅", exact: true })).toBeVisible();
 }
 
+async function openCachePreferences(page, width = 393) {
+  await page.setViewportSize({ width, height: 850 });
+  await page.goto("/controls.html?sidebar=1");
+  await page.waitForFunction(() => Boolean(window.controlsSidebarFixture));
+  await expect(page).toHaveTitle("NextFlux control regression");
+  await expect(page.locator("vite-error-overlay")).toHaveCount(0);
+  const group = page.locator("section.settings-group").filter({ has: page.getByRole("heading", { name: "离线缓存", exact: true }) });
+  await expect(group).toBeVisible();
+  return group;
+}
+
+async function chooseCacheLimit(page, group, value) {
+  await group.getByRole("button", { name: /^最近文章/ }).click();
+  await page.getByRole("menuitemradio", { name: value === "0" ? "关闭额外缓存" : `${value} 条`, exact: true }).click();
+}
+
+for (const width of [393, 1280]) {
+  test(`offline cache exposes all five limits and persists selection ${width}px`, async ({ page }, info) => {
+    const group = await openCachePreferences(page, width);
+    await expect(group.getByRole("button", { name: /^最近文章/ })).toContainText("200 条");
+    await expect(group).toContainText("未读和收藏额外保留");
+    await expect(group).toContainText("图片和音视频仍需联网");
+    if (width === 393) {
+      await group.getByRole("button", { name: /^最近文章/ }).click();
+      await expect(page.getByRole("menuitemradio")).toHaveCount(6);
+      await info.attach("offline-cache-393-options.png", { body: await page.screenshot(), contentType: "image/png" });
+      await page.keyboard.press("Escape");
+    }
+    for (const value of ["50", "100", "500", "1000", "200"]) {
+      await chooseCacheLimit(page, group, value);
+      await expect.poll(() => page.evaluate(() => window.controlsSidebarFixture.persistedCacheLimit())).toBe(value);
+      await expect(group.getByRole("button", { name: /^最近文章/ })).toContainText(`${value} 条`);
+    }
+    await chooseCacheLimit(page, group, "500");
+    await expect.poll(() => page.evaluate(() => window.controlsSidebarFixture.persistedCacheLimit())).toBe("500");
+    await page.reload();
+    await page.waitForFunction(() => Boolean(window.controlsSidebarFixture));
+    await expect(group.getByRole("button", { name: /^最近文章/ })).toContainText("500 条");
+    expect(await page.evaluate(() => window.controlsSidebarFixture.syncCalls)).toEqual([]);
+    await group.scrollIntoViewIfNeeded();
+    const geometry = await group.boundingBox();
+    expect(geometry.x).toBeGreaterThanOrEqual(0);
+    expect(geometry.x + geometry.width).toBeLessThanOrEqual(width + 1);
+    await info.attach(`offline-cache-${width}.png`, { body: await page.screenshot(), contentType: "image/png" });
+  });
+}
+
+test("offline cache waits for durable settings and freezes its limit during sync", async ({ page }) => {
+  const group = await openCachePreferences(page);
+  await page.evaluate(() => window.controlsSidebarFixture.holdWrites());
+  await chooseCacheLimit(page, group, "100");
+  await expect.poll(() => page.evaluate(() => window.controlsSidebarFixture.pendingWrites())).toBe(1);
+  await expect(group.getByRole("button", { name: "立即缓存", exact: true })).toBeDisabled();
+  await expect(group.getByRole("status")).toHaveText("正在保存缓存设置…");
+  expect(await page.evaluate(() => window.controlsSidebarFixture.syncCalls)).toEqual([]);
+  await page.evaluate(() => window.controlsSidebarFixture.finishWrites());
+  await expect(group.getByRole("button", { name: "立即缓存", exact: true })).toBeEnabled();
+  await group.getByRole("button", { name: "立即缓存", exact: true }).click();
+  await expect(group.getByRole("status")).toContainText("正在缓存最近文章 · 100");
+  expect(await page.evaluate(() => window.controlsSidebarFixture.syncCalls)).toEqual([{ mode: "foreground", limit: "100", persistedLimit: "100" }]);
+  await expect(group.getByRole("button", { name: "立即缓存", exact: true })).toBeDisabled();
+  await group.getByRole("button", { name: /^最近文章/ }).click();
+  for (const value of ["50", "100", "200", "500", "1000"]) {
+    await expect(page.getByRole("menuitemradio", { name: `${value} 条`, exact: true })).toBeDisabled();
+  }
+  await page.keyboard.press("Escape");
+  await page.evaluate(() => window.controlsSidebarFixture.finishSync());
+  await expect(page.getByText("最近文章缓存已更新", { exact: true })).toBeVisible();
+  await expect(group.getByRole("button", { name: "立即缓存", exact: true })).toBeEnabled();
+});
+
+test("offline cache keeps the last saved limit when preference storage fails", async ({ page }) => {
+  const group = await openCachePreferences(page);
+  await chooseCacheLimit(page, group, "50");
+  await expect.poll(() => page.evaluate(() => window.controlsSidebarFixture.persistedCacheLimit())).toBe("50");
+  await page.evaluate(() => window.controlsSidebarFixture.failNextWrite());
+  await chooseCacheLimit(page, group, "1000");
+  await expect(page.getByText("缓存设置保存失败，请重试。", { exact: true })).toBeVisible();
+  await expect(group.getByRole("button", { name: /^最近文章/ })).toContainText("50 条");
+  await expect.poll(() => page.evaluate(() => window.controlsSidebarFixture.persistedCacheLimit())).toBe("50");
+  expect(await page.evaluate(() => window.controlsSidebarFixture.syncCalls)).toEqual([]);
+});
+
+test("offline cache explains offline availability and can disable additional caching", async ({ page }) => {
+  const group = await openCachePreferences(page);
+  await page.evaluate(() => window.controlsSidebarFixture.setOnline(false));
+  await expect(group.getByRole("status")).toContainText("已缓存的正文仍可阅读");
+  await expect(group.getByRole("button", { name: "立即缓存", exact: true })).toBeDisabled();
+  await chooseCacheLimit(page, group, "0");
+  await expect.poll(() => page.evaluate(() => window.controlsSidebarFixture.persistedCacheLimit())).toBe("0");
+  await page.evaluate(() => window.controlsSidebarFixture.setOnline(true));
+  await expect(group.getByRole("button", { name: "立即缓存", exact: true })).toBeDisabled();
+  await page.reload();
+  await page.waitForFunction(() => Boolean(window.controlsSidebarFixture));
+  await expect(group.getByRole("button", { name: /^最近文章/ })).toContainText("关闭额外缓存");
+  await expect(group.getByRole("button", { name: "立即缓存", exact: true })).toBeDisabled();
+  expect(await page.evaluate(() => window.controlsSidebarFixture.syncCalls)).toEqual([]);
+});
+
 test("sidebar keeps feed visibility in the feed list and groups sync notifications", async ({ page }) => {
   await openSidebarPreferences(page);
   const hidden = page.getByRole("switch", { name: "显示隐藏订阅", exact: true });

@@ -1,5 +1,6 @@
 import { persistentAtom } from "@nanostores/persistent";
 import { deferPreferenceWrites, flushPreferences } from "../toolbox/preferences.js";
+import { DEFAULT_RECENT_CACHE_LIMIT, normalizeRecentCacheLimit } from "../toolbox/recent-cache.mjs";
 
 const defaultValue = {
   lineHeight: 1.8,
@@ -28,6 +29,7 @@ const defaultValue = {
   showReadingTime: true,
   autoHideToolbar: false,
   syncInterval: "15", // 添加同步间隔设置，默认15分钟
+  recentCacheLimit: String(DEFAULT_RECENT_CACHE_LIMIT),
   showLineNumbers: false,
   forceDarkCodeTheme: false,
   defaultExpandCategory: false, // 默认展开分类
@@ -65,7 +67,7 @@ export function decodeSettings(str) {
   let storedValue;
   try { storedValue = JSON.parse(str); } catch { return { ...defaultValue }; }
   if (!storedValue || typeof storedValue !== "object" || Array.isArray(storedValue)) return { ...defaultValue };
-  return { ...defaultValue, ...storedValue };
+  return { ...defaultValue, ...storedValue, recentCacheLimit: String(normalizeRecentCacheLimit(storedValue.recentCacheLimit)) };
 }
 
 export const settingsState = persistentAtom("settings", defaultValue, {

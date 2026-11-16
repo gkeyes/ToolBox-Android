@@ -20,6 +20,12 @@ const fail = (message, code = "CACHE_INVALID") => Object.assign(new Error(messag
 const cancelled = () => fail("登录状态已改变，此次操作已停止。", "ACCOUNT_CHANGED");
 const invalid = () => fail("阅读缓存格式或内容损坏，请退出登录后重新同步。");
 const validId = (id) => Number.isSafeInteger(id) && id >= 0;
+const articleIdSet = (ids) => {
+  if (!Array.isArray(ids) || ids.some((id) => !validId(id))) {
+    throw fail("文章缓存保留范围无效，请重新同步。", "INVALID_REQUEST");
+  }
+  return new Set(ids);
+};
 const keyOf = (table, row) => table === "feedIcons" ? row.feedId : row.id;
 const emptyMaps = () => Object.fromEntries(TABLES.map((name) => [name, new Map()]));
 const emptyRoot = (account = null, revision = 0) => ({
@@ -866,10 +872,11 @@ export function createArticleCache(storage, options = {}) {
   const overlayFields = (row, fields) => fields && Object.entries(fields).some(([key, value]) => row[key] !== value)
     ? { ...row, ...fields } : row;
 
-  function assertSyncConflicts(stage, maps) {
+  function assertSyncConflicts(stage, maps, restored) {
     for (const [id, fields] of stage.confirmed) {
-      const incoming = stage.changes.has(id) ? stage.changes.get(id) : maps.articles.get(id);
-      if (!incoming || fields.status === "removed" || !maps.feeds.has(incoming.feedId)) {
+      const incoming = stage.changes.has(id) ? stage.changes.get(id) : maps.articles.get(id) ?? restored?.get(id);
+      if (!incoming || (restored && !maps.articles.has(id) && !restored.has(id)) ||
+          fields.status === "removed" || !maps.feeds.has(incoming.feedId)) {
         throw fail("同步期间文章被删除，已保留已确认的操作，请重新同步。", "SYNC_STATE_CONFLICT");
       }
     }
@@ -894,6 +901,10 @@ export function createArticleCache(storage, options = {}) {
     if (stage.prepared) return { token };
     if (stage.preparing) { await stage.preparing; return { token }; }
     const preparation = (async () => {
+      // Undefined retains the existing archive policy. An explicit empty
+      // window keeps only unread, starred and temporarily protected articles.
+      const recentIds = catalog.recentEntryIds === undefined ? null : articleIdSet(catalog.recentEntryIds);
+      const protectedIds = articleIdSet(catalog.protectedArticleIds ?? []);
       // Capture metadata/index references atomically, then build the candidate
       // outside the interactive writer. The copies belong only to this sync.
       await enqueue(async () => {
@@ -915,6 +926,17 @@ export function createArticleCache(storage, options = {}) {
       }
       for (const [id, row] of maps.articles) if (!maps.feeds.has(row.feedId) || row.status === "removed") maps.articles.delete(id);
       pruneServerPurged(maps.articles, catalog.oldestServerReadId, stage.confirmed);
+      // Keep metadata only for rows retired by this local policy. Server
+      // removals and deleted feeds must never be revived by a later reader.
+      // Original/staged body references stay leased until the sync finishes.
+      stage.retentionRemoved = new Map();
+      if (recentIds) for (const [id, row] of maps.articles) {
+        if (row.status === "read" && row.starred !== 1 && !recentIds.has(id) &&
+            !protectedIds.has(id) && !stage.confirmed.has(id)) {
+          stage.retentionRemoved.set(id, row);
+          maps.articles.delete(id);
+        }
+      }
       maps.feedIcons = new Map([...maps.feedIcons].filter(([id]) => maps.feeds.has(id)));
       const delta = await buildDelta(stage, maps);
       checkStage(stage);
@@ -935,17 +957,30 @@ export function createArticleCache(storage, options = {}) {
       const stage = requireSync(token);
       try {
         const candidate = stage.prepared;
-        assertSyncConflicts(stage, candidate.maps);
         const changes = new Map();
+        // Opening or starring an old article can happen after preparation.
+        // Restore its complete row before overlaying acknowledged fields; an
+        // overlay onto undefined would lose its body reference and feed ID.
+        const protectedIds = articleIdSet(catalog.protectedArticleIds ?? []);
+        for (const id of new Set([...protectedIds, ...stage.confirmed.keys()])) {
+          if (candidate.maps.articles.has(id)) continue;
+          const row = stage.retentionRemoved?.get(id);
+          if (row && row.status !== "removed" && candidate.maps.feeds.has(row.feedId)) changes.set(id, row);
+        }
+        assertSyncConflicts(stage, candidate.maps, changes);
         const counts = countValue(candidate);
         // Only fields confirmed during this round override the fetched result.
         // Unrelated fetched fields, including bodies, remain in the candidate.
         for (const [id, fields] of stage.confirmed) {
-          const before = candidate.maps.articles.get(id);
+          const before = changes.get(id) ?? candidate.maps.articles.get(id);
           const after = overlayFields(before, fields);
           if (before === after) continue;
           changes.set(id, after);
+        }
+        for (const [id, after] of changes) {
+          const before = candidate.maps.articles.get(id);
           for (const [row, direction] of [[before, -1], [after, 1]]) {
+            if (!row) continue;
             if (row.status === "unread") counts.unread[row.feedId] = (counts.unread[row.feedId] || 0) + direction;
             if (row.starred === 1) counts.starred[row.feedId] = (counts.starred[row.feedId] || 0) + direction;
           }
