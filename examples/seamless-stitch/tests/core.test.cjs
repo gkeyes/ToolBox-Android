@@ -55,3 +55,41 @@ test('three screenshots make a continuous nonoverlapping output plan',()=>{
   const p=E.plan(ims,crop,joins);assert.equal(p.height,ims[0].h-crop.top-crop.bottom+709);
   for(let i=1;i<p.segments.length;i++){const a=p.segments[i-1],b=p.segments[i];assert.equal(a.outY+a.h,b.outY);}
 });
+
+const crop0={top:0,bottom:0,left:0,right:0};
+const sheets=[600,600,600].map(h=>({w:320,h}));
+const cuts=[{seam:430,shift:300,overlap:300},{seam:440,shift:300,overlap:300}];
+test('dragging upper picture changes only its ending cut',()=>{
+  const before=structuredClone(cuts),next=E.dragSeam(sheets,crop0,cuts,0,'upper',20);
+  assert.equal(next.seam,410);assert.equal(next.seam-next.shift,130);assert.equal(next.overlap,320);
+  assert.deepEqual(cuts,before);assert.equal(E.plan(sheets,crop0,[next,cuts[1]]).height,1180);
+});
+test('dragging lower picture changes only its starting cut',()=>{
+  const next=E.dragSeam(sheets,crop0,cuts,0,'lower',20);
+  assert.equal(next.seam,430);assert.equal(next.seam-next.shift,110);assert.equal(next.overlap,280);
+  assert.equal(E.plan(sheets,crop0,[next,cuts[1]]).height,1220);
+});
+test('dragging respects neighbouring seams and keeps each segment nonempty',()=>{
+  for(let index=0;index<2;index++)for(const side of ['upper','lower'])for(const delta of [-10000,10000]){
+    const joins=cuts.map(j=>({...j}));joins[index]=E.dragSeam(sheets,crop0,joins,index,side,delta);
+    const p=E.plan(sheets,crop0,joins);assert(p.segments.every(s=>s.h>=1));assert(joins[index].overlap>=0&&joins[index].overlap<600);
+    assert.deepEqual(joins[1-index],cuts[1-index]);
+    for(let i=1;i<p.segments.length;i++)assert.equal(p.segments[i].outY,p.segments[i-1].outY+p.segments[i-1].h);
+  }
+});
+test('unequal heights keep overlap within the precision control bounds',()=>{
+  const images=[{w:320,h:1000},{w:320,h:600}],joins=[{seam:800,shift:600,overlap:400}];
+  for(const side of ['upper','lower'])for(const delta of [-10000,10000]){
+    const j=E.dragSeam(images,crop0,joins,0,side,delta);assert(j.overlap>=0&&j.overlap<600);E.plan(images,crop0,[j]);
+  }
+});
+test('drag positions snap to original image pixels and mark manual review',()=>{
+  const j=E.dragSeam(sheets,crop0,cuts,0,'upper',2.6);assert.equal(j.seam,427);assert(j.manual&&j.reviewed);assert.equal(j.duplicate,false);
+});
+test('dragging back restores source cuts without shifting the other picture',()=>{
+  const moved=E.dragSeam(sheets,crop0,cuts,0,'lower',30),back=E.dragSeam(sheets,crop0,[moved,cuts[1]],0,'lower',-30);
+  assert.equal(back.seam,cuts[0].seam);assert.equal(back.shift,cuts[0].shift);
+});
+test('invalid drag input fails explicitly',()=>{
+  assert.throws(()=>E.dragSeam(sheets,crop0,cuts,0,'upper',NaN));assert.throws(()=>E.dragSeam(sheets,crop0,cuts,0,'sideways',1));
+});

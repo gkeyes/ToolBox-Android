@@ -222,6 +222,20 @@
     }
     return {width:rectFor(images[0],crop).w,height:origin,segments,seams};
   }
-  root.StitchEngine={detectCrop,rectFor,matchPair,chooseSeam,plan};
+  // A positive delta moves the selected picture down under a fixed seam.
+  // Keep the opposite picture's cut and every neighbouring join unchanged.
+  function dragSeam(images,crop,joins,index,side,delta) {
+    if(!Number.isFinite(delta)||!joins[index]||!['upper','lower'].includes(side))throw new Error('无效的接缝调整。');
+    const join=joins[index],a=rectFor(images[index],crop),b=rectFor(images[index+1],crop);
+    const previousStart=index?joins[index-1].seam-joins[index-1].shift:0;
+    const nextEnd=index+1<joins.length?joins[index+1].seam:b.h;
+    const minShift=a.h-Math.min(a.h,b.h)+1;
+    let upper=join.seam,lower=join.seam-join.shift;
+    if(side==='upper')upper=clamp(upper-Math.round(delta),Math.max(previousStart+1,lower+minShift),Math.min(a.h,lower+a.h));
+    else lower=clamp(lower-Math.round(delta),Math.max(0,upper-a.h),Math.min(nextEnd-1,upper-minShift));
+    const shift=upper-lower;
+    return {...join,seam:upper,shift,overlap:a.h-shift,reviewed:true,manual:true,duplicate:false};
+  }
+  root.StitchEngine={detectCrop,rectFor,matchPair,chooseSeam,plan,dragSeam};
   if(typeof module!=='undefined')module.exports=root.StitchEngine;
 })(typeof self!=='undefined'?self:globalThis);

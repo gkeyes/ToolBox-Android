@@ -23,8 +23,10 @@
   <section id="result-section" hidden aria-labelledby="result-title">
     <div class="section-heading"><h2 id="result-title">拼接预览</h2><button id="zoom" class="text-button">放大查看</button></div>
     <p id="result-info" class="muted"></p>
-    <div id="preview-wrap" class="preview-wrap"><canvas id="preview" aria-label="拼接后的长图预览"></canvas></div>
-    <details id="crop-details">
+    <p class="hint">点击图片或接缝标记，分别拖动上图、下图来对齐。</p>
+    <div id="preview-wrap" class="preview-wrap"><div id="preview-stage"><canvas id="preview" aria-label="拼接后的长图预览，点击调整最近的接缝"></canvas><div id="seam-markers"></div></div></div>
+    <div class="function-bars" aria-label="拼接工具">
+    <details id="crop-details" class="function-bar">
       <summary>裁切固定栏 <span id="crop-summary"></span></summary>
       <p class="hint">阴影部分不会导出。点击上方缩略图可切换原图。</p>
       <canvas id="crop-preview" aria-label="原图裁切范围预览"></canvas>
@@ -37,20 +39,33 @@
       <div class="toolbar"><button id="uncrop" class="secondary">保留全部边缘</button><button id="apply-crop" class="primary">应用并识别</button></div>
       <button id="redetect" class="text-button wide">重新自动识别裁切范围</button>
     </details>
-    <details id="seams-details"><summary>检查与微调接缝 <span id="seam-summary"></span></summary><p class="hint">重叠高度越大，去掉的重复内容越多。预览中的紫线只是接缝位置提示，不会写入图片。</p><div id="seams"></div></details>
-    <section class="export-panel" aria-labelledby="export-title">
-      <h2 id="export-title">导出图片</h2>
+    <details id="seams-details" class="function-bar"><summary>接缝精调 <span id="seam-summary"></span></summary><div class="form-row"><label for="seam-select">当前接缝</label><select id="seam-select"></select></div><div id="seams"></div></details>
+    <details id="export-details" class="function-bar">
+      <summary>导出图片 <span id="export-summary">PNG · 原始尺寸</span></summary>
       <div class="form-row"><label for="format">图片格式</label><select id="format"><option value="png">PNG · 无损清晰</option><option value="jpeg">JPG · 文件更小</option></select></div>
       <div id="quality-row" class="form-row" hidden><label for="quality">JPG 画质</label><select id="quality"><option value="0.95">高画质 · 95%</option><option value="0.85" selected>均衡 · 85%</option><option value="0.65">省空间 · 65%</option></select></div>
       <div class="form-row"><label for="scale">导出尺寸</label><select id="scale"><option value="1">原始宽度 · 100%</option><option value="0.75">缩小至 75%</option><option value="0.5">缩小至 50%</option><option value="1080">宽度不超过 1080 px</option></select></div>
       <p id="export-info" class="hint"></p>
       <button id="export" class="primary wide">保存图片</button>
       <p id="export-status" class="hint" role="status"></p>
-    </section>
+    </details>
+    </div>
   </section>
-  <footer>无缝长图 1.1.0 <span>·</span> 本地处理</footer>
+  <footer>无缝长图 1.2.0 <span>·</span> 本地处理</footer>
 </main>
-<dialog id="help-dialog"><div class="dialog-title"><h2>使用说明</h2><button id="close-help" class="icon-button" aria-label="关闭说明">×</button></div><ol><li>添加同一页面的连续截图，截图之间保留至少一小段重复内容。</li><li>点击“自动拼接”，检查正文边缘和接缝；需要时调整裁切或重叠高度。</li><li>选择 PNG 或 JPG、画质和尺寸，点击“保存图片”。</li></ol><p>适合同一缩放比例的纵向滚动截图。动态视频、固定悬浮窗、页面重新排版或没有重叠的图片，可能需要手动调整。</p><p>未出现在任何截图里的内容无法补齐。退出工具会清除当前图片，请先导出。单次最多 12 张。</p><p>PNG 保留像素；JPG 会有损压缩。“原始宽度”不代表提升原图清晰度。</p><p class="hint">开源说明见包内 THIRD_PARTY_NOTICES.md。</p></dialog>
+<dialog id="help-dialog"><div class="dialog-title"><h2>使用说明</h2><button id="close-help" class="icon-button" aria-label="关闭说明">×</button></div><ol><li>添加同一页面的连续截图，截图之间保留至少一小段重复内容。</li><li>点击“自动拼接”，点选预览里的接缝，分别上下拖动两张图片来对齐；支持撤销，数字、滑块和加减按钮仍可精调。</li><li>展开“导出图片”功能栏，选择 PNG 或 JPG、画质和尺寸，点击“保存图片”。</li></ol><p>适合同一缩放比例的纵向滚动截图。动态视频、固定悬浮窗、页面重新排版或没有重叠的图片，可能需要手动调整。</p><p>未出现在任何截图里的内容无法补齐。退出工具会清除当前图片，请先导出。单次最多 12 张。</p><p>PNG 保留像素；JPG 会有损压缩。“原始宽度”不代表提升原图清晰度。</p><p class="hint">开源说明见包内 THIRD_PARTY_NOTICES.md。</p></dialog>
 <dialog id="zoom-dialog"><div class="dialog-title"><h2>完整预览</h2><button id="close-zoom" class="icon-button" aria-label="关闭预览">×</button></div><div class="zoom-toolbar"><button id="fit-zoom" class="secondary">适合屏幕</button><button id="actual-zoom" class="secondary">原始宽度</button></div><div id="zoom-scroll"><canvas id="zoom-canvas"></canvas></div></dialog>
+<dialog id="seam-dialog" aria-labelledby="editor-title">
+  <div class="dialog-title"><h2 id="editor-title">拖动接缝</h2><button id="close-editor" class="text-button">完成</button></div>
+  <div class="editor-navigation"><button id="previous-seam" class="text-button">上一处</button><span id="editor-position"></span><button id="next-seam" class="text-button">下一处</button></div>
+  <p class="hint editor-hint">拼缝保持固定，按住任一图片上下拖动。</p>
+  <div id="editor-stage">
+    <div class="drag-half"><canvas id="drag-upper" tabindex="0" role="img" aria-label="上图，按住上下拖动；方向键每次移动 1 像素"></canvas><span class="drag-label">上图 · 上下拖动</span></div>
+    <div class="fixed-seam" aria-hidden="true"><span>拼缝</span></div>
+    <div class="drag-half"><canvas id="drag-lower" tabindex="0" role="img" aria-label="下图，按住上下拖动；方向键每次移动 1 像素"></canvas><span class="drag-label lower-label">下图 · 上下拖动</span></div>
+  </div>
+  <div class="editor-actions"><span id="drag-readout" role="status"></span><button id="undo-seam" class="text-button">撤销</button></div>
+  <div id="editor-precision"></div>
+</dialog>
 <script src="engine.js"></script><script src="runtime.js"></script><script src="app.js"></script>
 </body></html>

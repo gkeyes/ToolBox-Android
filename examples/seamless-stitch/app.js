@@ -2,7 +2,7 @@
 (() => {
   'use strict';
   const $=id=>document.getElementById(id),E=window.StitchEngine,R=window.StitchRuntime;
-  const state={items:[],crop:null,joins:[],plan:null,busy:false,selected:0,worker:null,generation:0};
+  const state={items:[],crop:null,joins:[],plan:null,busy:false,selected:0,worker:null,generation:0,activeSeam:0,history:[],drag:null,dragFrame:0};
   const tick=()=>new Promise(r=>setTimeout(r,0));
   const status=(message,type='')=>{$('status').textContent=message;$('status').className=type;};
   const sizeLabel=n=>n<1048576?`${(n/1024).toFixed(0)} KB`:`${(n/1048576).toFixed(2)} MB`;
@@ -15,7 +15,8 @@
     if(!value){$('stitch').disabled=state.items.length<2;updateExport();renderThumbs();}
   }
   function invalidate(){
-    state.plan=null;state.joins=[];state.crop=null;
+    state.plan=null;state.joins=[];state.crop=null;state.history=[];state.activeSeam=0;
+    if($('seam-dialog').open)$('seam-dialog').close();
     $('result-section').hidden=true;$('export-status').textContent='';
     $('preview').width=$('preview').height=1;
     $('zoom-canvas').width=$('zoom-canvas').height=1;
@@ -143,11 +144,11 @@
       validateCrop(result.crop,images);
       if(images.length===2 && !reversed && result.joins[0].confidence>.5 && result.joins[0].detectedShift<0){state.items.reverse();state.selected=0;retry=true;}
       else{
-        state.crop=result.crop;state.joins=result.joins;
+        state.crop=result.crop;state.joins=result.joins;state.activeSeam=0;state.history=[];
         for(const key of ['top','bottom','left','right'])$('crop-'+key).value=state.crop[key];
         rebuildPlan();drawCrop();renderSeams();
         const uncertain=state.joins.filter(x=>!x.reviewed).length;
-        $('result-section').hidden=false;$('seams-details').open=uncertain>0;
+        $('result-section').hidden=false;openBar(uncertain?'seams-details':null);
         status(uncertain?`有 ${uncertain} 处接缝需要检查。请调整并确认后导出。`:`已完成拼接${reversed?'，并自动修正了两张截图的顺序':''}。请检查预览后保存。`,uncertain?'error':'success');
       }
     }catch(e){
@@ -162,7 +163,7 @@
     $('result-info').textContent=`${p.width} × ${p.height} px · ${state.items.length} 张截图 · ${state.joins.length} 处接缝`;
     const c=state.crop;$('crop-summary').textContent=`上 ${c.top} / 下 ${c.bottom} / 左 ${c.left} / 右 ${c.right}`;
     drawPlan($('preview'),Math.min(600,p.width,Math.floor(p.width*14000/p.height)));
-    $('export-status').textContent='';updateExport();
+    renderMarkers();$('export-status').textContent='';updateExport();
   }
   function drawPlan(canvas,width){
     const p=state.plan,ratio=width/p.width;
@@ -188,51 +189,121 @@
     ctx.fillStyle='rgba(22,15,38,.65)';ctx.fillRect(0,0,canvas.width,y);ctx.fillRect(0,y+h,canvas.width,canvas.height-y-h);ctx.fillRect(0,y,x,h);ctx.fillRect(x+w,y,canvas.width-x-w,h);
     ctx.strokeStyle='#b48bff';ctx.lineWidth=2;ctx.strokeRect(x,y,w,h);
   }
-  function drawSeam(canvas,i){
-    const p=state.plan;if(!p)return;
-    const center=p.seams[i],from=Math.max(0,center-100),to=Math.min(p.height,center+100);
-    canvas.width=Math.min(660,p.width);const ratio=canvas.width/p.width;canvas.height=Math.max(1,Math.round((to-from)*ratio));
-    const ctx=canvas.getContext('2d');ctx.fillStyle='#fff';ctx.fillRect(0,0,canvas.width,canvas.height);
-    for(const s of p.segments){const lo=Math.max(from,s.outY),hi=Math.min(to,s.outY+s.h);if(hi<=lo)continue;
-      const item=state.items[s.index],sc=item.w/item.analysis.w;
-      const dy=Math.round((lo-from)*ratio),end=Math.round((hi-from)*ratio);
-      ctx.drawImage(item.img,s.x*sc,(s.y+lo-s.outY)*sc,s.w*sc,(hi-lo)*sc,0,dy,canvas.width,end-dy);
-    }
-    ctx.strokeStyle='#9a69eb';ctx.lineWidth=1;ctx.setLineDash([5,5]);const y=(center-from)*ratio;ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(canvas.width,y);ctx.stroke();
+  function snapshot(){return state.joins.map(j=>({...j}));}
+  function remember(joins){state.history.push(joins);if(state.history.length>20)state.history.shift();}
+  function openBar(id){document.querySelectorAll('.function-bar').forEach(el=>{el.open=el.id===id;});}
+  function renderMarkers(){
+    $('seam-markers').replaceChildren();if(!state.plan)return;
+    state.plan.seams.forEach((y,i)=>{
+      const marker=button('','seam-marker'+(i===state.activeSeam?' active':''),()=>openEditor(i),`调整第 ${i+1} 处接缝`);
+      marker.style.top=(y/state.plan.height*100)+'%';
+      const label=document.createElement('span');label.textContent=`接缝 ${i+1} · 拖动`;marker.append(label);$('seam-markers').append(marker);
+    });
   }
   function adjustOverlap(i,value){
+    if(state.busy||state.drag)return;
     const images=state.items.map(x=>x.analysis),a=E.rectFor(images[i],state.crop),b=E.rectFor(images[i+1],state.crop);
     const max=Math.min(a.h,b.h)-1,n=Math.round(Number(value));
     if(!Number.isFinite(n)||n<0||n>max){status(`重叠高度应为 0 到 ${max} px。`,'error');renderSeams();return;}
-    const prev={...state.joins[i]},shift=a.h-n;
-    state.joins[i]={...prev,shift,overlap:n,seam:E.chooseSeam(images[i],images[i+1],state.crop,shift),reviewed:true,manual:true,duplicate:false};
-    try{rebuildPlan();renderSeams();status('接缝已更新，请检查文字是否连续。');}
-    catch(e){state.joins[i]=prev;rebuildPlan();renderSeams();status(e.message,'error');}
+    const prev=snapshot(),shift=a.h-n;
+    state.joins[i]={...prev[i],shift,overlap:n,seam:E.chooseSeam(images[i],images[i+1],state.crop,shift),reviewed:true,manual:true,duplicate:false};
+    try{E.plan(images,state.crop,state.joins);remember(prev);rebuildPlan();renderSeams();status('接缝已更新，请检查文字是否连续。');}
+    catch(e){state.joins=prev;rebuildPlan();renderSeams();status(e.message,'error');}
+  }
+  function precisionControls(host,i,prefix){
+    host.replaceChildren();const join=state.joins[i];if(!join)return;
+    const title=document.createElement('div');title.className='seam-title';
+    const label=document.createElement('strong');label.textContent=`第 ${i+1} 张 → 第 ${i+2} 张`;
+    const result=document.createElement('span');result.className='seam-state'+(!join.reviewed?' warn':'');
+    result.textContent=join.manual?'手动设置':join.reviewed?'已自动对齐':'需要检查';title.append(label,result);
+    const stepper=document.createElement('div');stepper.className='stepper';
+    const text=document.createElement('label');text.textContent='重叠高度 (px)';text.htmlFor=`${prefix}-${i}`;
+    const input=document.createElement('input');input.id=`${prefix}-${i}`;input.type='number';input.min='0';input.value=join.overlap;
+    const images=state.items.map(x=>x.analysis),max=Math.min(E.rectFor(images[i],state.crop).h,E.rectFor(images[i+1],state.crop).h)-1;
+    input.max=max;input.inputMode='numeric';input.addEventListener('change',()=>adjustOverlap(i,input.value));
+    stepper.append(text,button('−','secondary',()=>adjustOverlap(i,state.joins[i].overlap-1),'减少 1 像素重叠'),input,button('＋','secondary',()=>adjustOverlap(i,state.joins[i].overlap+1),'增加 1 像素重叠'));
+    const range=document.createElement('input');range.type='range';range.className='seam-range';range.min=0;range.max=max;range.value=join.overlap;range.setAttribute('aria-label',`第 ${i+1} 处重叠高度`);
+    range.addEventListener('input',()=>{input.value=range.value;});range.addEventListener('change',()=>adjustOverlap(i,range.value));
+    host.append(title,stepper,range);
+    if(!join.reviewed){
+      const msg=document.createElement('p');msg.className='seam-message';msg.textContent=join.duplicate?'这两张几乎相同，请移除重复截图；如确需保留，可确认直接拼接。':join.detectedShift<0?'顺序可能反了，请调整截图顺序。当前预览为直接拼接。':'没有找到可靠的共同内容，当前预览为直接拼接。';
+      const confirm=button('确认直接拼接','secondary wide',()=>adjustOverlap(i,0));host.append(msg,confirm);
+    }
   }
   function renderSeams(){
-    $('seams').replaceChildren();const warnings=state.joins.filter(j=>!j.reviewed).length;
-    $('seam-summary').textContent=warnings?`${warnings} 处待确认`:`${state.joins.length} 处已对齐`;
-    state.joins.forEach((join,i)=>{
-      const wrap=document.createElement('div');wrap.className='seam';
-      const title=document.createElement('div');title.className='seam-title';
-      const label=document.createElement('strong');label.textContent=`第 ${i+1} 张 → 第 ${i+2} 张`;
-      const result=document.createElement('span');result.className='seam-state'+(!join.reviewed?' warn':'');
-      result.textContent=join.manual?'手动设置':join.reviewed?'已自动对齐':'需要检查';title.append(label,result);
-      const canvas=document.createElement('canvas');canvas.className='seam-canvas';canvas.setAttribute('aria-label',`第 ${i+1} 处接缝局部预览`);
-      const stepper=document.createElement('div');stepper.className='stepper';
-      const text=document.createElement('label');text.textContent='重叠高度 (px)';text.htmlFor=`overlap-${i}`;
-      const input=document.createElement('input');input.id=`overlap-${i}`;input.type='number';input.min='0';input.value=join.overlap;
-      const images=state.items.map(x=>x.analysis),max=Math.min(E.rectFor(images[i],state.crop).h,E.rectFor(images[i+1],state.crop).h)-1;input.max=max;input.inputMode='numeric';input.addEventListener('change',()=>adjustOverlap(i,input.value));
-      stepper.append(text,button('−','secondary',()=>adjustOverlap(i,join.overlap-1),'减少 1 像素重叠'),input,button('＋','secondary',()=>adjustOverlap(i,join.overlap+1),'增加 1 像素重叠'));
-      const range=document.createElement('input');range.type='range';range.className='seam-range';range.min=0;range.max=max;range.value=join.overlap;range.setAttribute('aria-label',`第 ${i+1} 处重叠高度`);range.addEventListener('input',()=>{input.value=range.value;});range.addEventListener('change',()=>adjustOverlap(i,range.value));
-      wrap.append(title,canvas,stepper,range);
-      if(!join.reviewed){
-        const msg=document.createElement('p');msg.className='seam-message';msg.textContent=join.duplicate?'这两张几乎相同，请移除重复截图；如确需保留，可确认直接拼接。':join.detectedShift<0?'顺序可能反了，请调整截图顺序。当前预览为直接拼接。':'没有找到可靠的共同内容，当前预览为直接拼接。';
-        const confirm=button('确认直接拼接','secondary wide',()=>adjustOverlap(i,0));wrap.append(msg,confirm);
-      }
-      $('seams').append(wrap);drawSeam(canvas,i);
+    const warnings=state.joins.filter(j=>!j.reviewed).length;
+    $('seam-summary').textContent=warnings?`${warnings} 处待确认`:`${state.joins.length} 处 · 像素微调`;
+    $('seam-select').replaceChildren();state.joins.forEach((j,i)=>{
+      const option=document.createElement('option');option.value=i;option.textContent=`接缝 ${i+1} · 第 ${i+1} / ${i+2} 张${j.reviewed?'':' · 待确认'}`;$('seam-select').append(option);
     });
+    $('seam-select').value=state.activeSeam;
+    precisionControls($('seams'),state.activeSeam,'overlap');
+    $('seams').prepend(button('在图片上拖动调整','secondary wide seam-open',()=>openEditor(state.activeSeam)));
+    if($('seam-dialog').open){precisionControls($('editor-precision'),state.activeSeam,'editor-overlap');drawEditor();}
     updateExport();
+  }
+  function openEditor(i){
+    if(state.busy||!state.plan||state.drag)return;
+    state.activeSeam=i;renderMarkers();
+    if(!$('seam-dialog').open)$('seam-dialog').showModal();
+    renderSeams();
+  }
+  function drawEditor(){
+    if(!$('seam-dialog').open||!state.plan)return;
+    const i=state.activeSeam,join=state.joins[i];
+    $('editor-position').textContent=`接缝 ${i+1} / ${state.joins.length}`;
+    $('previous-seam').disabled=i===0||!!state.drag;$('next-seam').disabled=i===state.joins.length-1||!!state.drag;
+    $('undo-seam').disabled=!state.history.length||!!state.drag;
+    $('drag-readout').textContent=`重叠 ${join.overlap} px${state.drag?' · 正在拖动':''}`;
+    $('editor-precision').querySelectorAll('input,button').forEach(el=>{el.disabled=!!state.drag;});
+    for(const side of ['upper','lower']){
+      const canvas=$('drag-'+side),bounds=canvas.getBoundingClientRect();if(!bounds.width||!bounds.height)continue;
+      const dpr=Math.min(2,window.devicePixelRatio||1),ratio=bounds.width/state.plan.width;
+      canvas.width=Math.round(bounds.width*dpr);canvas.height=Math.round(bounds.height*dpr);
+      const ctx=canvas.getContext('2d');ctx.scale(dpr,dpr);ctx.imageSmoothingQuality='high';
+      const index=side==='upper'?i:i+1,item=state.items[index],r=E.rectFor(item.analysis,state.crop);
+      const cut=side==='upper'?join.seam:join.seam-join.shift;
+      const from=side==='upper'?cut-bounds.height/ratio:cut,to=from+bounds.height/ratio;
+      // Show only pixels still belonging to this segment, leaving a checkerboard at its ends.
+      const segment=state.plan.segments[index],start=segment.y-r.y,end=start+segment.h;
+      const lo=Math.max(start,from),hi=Math.min(end,to),sc=item.w/item.analysis.w;
+      if(hi>lo)ctx.drawImage(item.img,r.x*sc,(r.y+lo)*sc,r.w*sc,(hi-lo)*sc,0,(lo-from)*ratio,bounds.width,(hi-lo)*ratio);
+    }
+  }
+  function refreshEdited(){rebuildPlan();renderSeams();}
+  function finishDrag(cancel=false){
+    const drag=state.drag;if(!drag)return;
+    cancelAnimationFrame(state.dragFrame);state.dragFrame=0;
+    if(cancel||!drag.moved)state.joins=drag.before;else remember(drag.before);
+    state.drag=null;drag.canvas.classList.remove('dragging');
+    if(drag.canvas.hasPointerCapture(drag.id))drag.canvas.releasePointerCapture(drag.id);
+    refreshEdited();
+  }
+  function moveDrag(e){
+    const drag=state.drag;if(!drag||drag.id!==e.pointerId)return;
+    const delta=(e.clientY-drag.y)/drag.ratio;
+    const next=E.dragSeam(state.items.map(x=>x.analysis),state.crop,drag.before,drag.index,drag.side,delta);
+    if(Math.abs(e.clientY-drag.y)<2&&!drag.moved)return;
+    drag.moved=true;state.joins[drag.index]=next;state.plan=E.plan(state.items.map(x=>x.analysis),state.crop,state.joins);
+    if(!state.dragFrame)state.dragFrame=requestAnimationFrame(()=>{state.dragFrame=0;drawEditor();});
+  }
+  for(const side of ['upper','lower']){
+    const canvas=$('drag-'+side);
+    canvas.addEventListener('pointerdown',e=>{
+      if(e.button!==0||!e.isPrimary||state.drag||state.busy||!state.plan)return;
+      canvas.setPointerCapture(e.pointerId);canvas.classList.add('dragging');
+      state.drag={id:e.pointerId,canvas,side,index:state.activeSeam,y:e.clientY,ratio:canvas.getBoundingClientRect().width/state.plan.width,before:snapshot(),moved:false};
+      drawEditor();
+    });
+    canvas.addEventListener('pointermove',moveDrag);
+    canvas.addEventListener('pointerup',e=>{if(state.drag?.id===e.pointerId){moveDrag(e);finishDrag();}});
+    for(const event of ['pointercancel','lostpointercapture'])canvas.addEventListener(event,e=>{if(state.drag?.id===e.pointerId)finishDrag(true);});
+    canvas.addEventListener('keydown',e=>{
+      if(!['ArrowUp','ArrowDown'].includes(e.key)||state.drag||!state.plan)return;e.preventDefault();
+      const prev=snapshot(),delta=(e.key==='ArrowDown'?1:-1)*(e.shiftKey?10:1);
+      state.joins[state.activeSeam]=E.dragSeam(state.items.map(x=>x.analysis),state.crop,prev,state.activeSeam,side,delta);
+      remember(prev);refreshEdited();canvas.focus();
+    });
   }
   function exportDimensions(){
     if(!state.plan)return null;
@@ -243,10 +314,11 @@
     $('quality-row').hidden=$('format').value!=='jpeg';
     const dims=exportDimensions(),unchecked=state.joins.some(j=>!j.reviewed);
     const dirty=state.crop&&Object.entries(readCrop()).some(([k,v])=>v!==state.crop[k]);
-    $('export').disabled=state.busy||!state.plan||unchecked||dirty;
+    $('export').disabled=state.busy||!!state.drag||!state.plan||unchecked||dirty;
     if(!dims)return;
     const over=dims.w*dims.h>32000000||dims.h>32760||dims.w>16384;
     const fmt=$('format').value==='png'?'PNG 无损':`JPG · ${Math.round(Number($('quality').value)*100)}% 画质`;
+    $('export-summary').textContent=`${fmt} · ${dims.w} px`;
     $('export-info').textContent=dirty?'裁切值已改变，请先点击“应用并识别”。':unchecked?'请先检查并确认所有接缝。':over?'当前尺寸超过安全画布范围，请选择较小尺寸或分批拼接。':`${fmt} · ${dims.w} × ${dims.h} px。${$('format').value==='png'?'适合文字截图，文件通常更大。':'画质越高，文件通常越大。'}`;
     if(over)$('export').disabled=true;
   }
@@ -269,6 +341,19 @@
     }catch(e){$('export-status').textContent=R.explain(e);$('export-status').className='hint error';}
     finally{canvas.width=canvas.height=1;setBusy(false);}
   }
+  document.querySelectorAll('.function-bar').forEach(el=>el.querySelector('summary').addEventListener('click',e=>{e.preventDefault();openBar(el.open?null:el.id);}));
+  $('preview').addEventListener('click',e=>{
+    if(!state.plan)return;const bounds=e.currentTarget.getBoundingClientRect(),y=(e.clientY-bounds.top)/bounds.height*state.plan.height;
+    let index=0;state.plan.seams.forEach((v,i)=>{if(Math.abs(v-y)<Math.abs(state.plan.seams[index]-y))index=i;});openEditor(index);
+  });
+  $('seam-select').addEventListener('change',()=>{state.activeSeam=Number($('seam-select').value);renderSeams();renderMarkers();});
+  $('previous-seam').addEventListener('click',()=>openEditor(Math.max(0,state.activeSeam-1)));
+  $('next-seam').addEventListener('click',()=>openEditor(Math.min(state.joins.length-1,state.activeSeam+1)));
+  $('undo-seam').addEventListener('click',()=>{if(!state.drag&&state.history.length){state.joins=state.history.pop();refreshEdited();}});
+  $('close-editor').addEventListener('click',()=>{finishDrag(true);$('seam-dialog').close();});
+  $('seam-dialog').addEventListener('cancel',()=>finishDrag(true));
+  $('seam-dialog').addEventListener('close',()=>{finishDrag(true);$('drag-upper').width=$('drag-lower').width=1;});
+  window.addEventListener('resize',()=>{finishDrag(true);drawEditor();});
   $('add').addEventListener('click',pick);$('drop-zone').addEventListener('click',pick);
   $('file-input').addEventListener('change',async e=>{await addFiles(e.target.files);e.target.value='';});
   $('stitch').addEventListener('click',()=>analyze());
