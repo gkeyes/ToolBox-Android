@@ -6,6 +6,30 @@
   const tick=()=>new Promise(r=>setTimeout(r,0));
   const status=(message,type='')=>{$('status').textContent=message;$('status').className=type;};
   const sizeLabel=n=>n<1048576?`${(n/1024).toFixed(0)} KB`:`${(n/1048576).toFixed(2)} MB`;
+  let modalScroll=null;
+  function unlockPage(){
+    if(!modalScroll||document.querySelector('dialog[open]'))return;
+    const {x,y}=modalScroll,root=document.documentElement;modalScroll=null;
+    root.classList.remove('modal-open');
+    for(const key of ['--modal-page-top','--modal-page-left','--modal-scrollbar-gap'])root.style.removeProperty(key);
+    window.scrollTo({left:x,top:y,behavior:'instant'});
+  }
+  function showDialog(dialog){
+    if(dialog.open)return;
+    if(!modalScroll){
+      const root=document.documentElement;modalScroll={x:window.scrollX,y:window.scrollY};
+      // Some Android WebViews do not contain scrolling over non-scrollable
+      // dialog/backdrop surfaces. Freeze the page as well, preserving its view
+      // and scrollbar space; leave every dialog's own scroller untouched.
+      root.style.setProperty('--modal-page-top',`${-modalScroll.y}px`);
+      root.style.setProperty('--modal-page-left',`${-modalScroll.x}px`);
+      root.style.setProperty('--modal-scrollbar-gap',`${Math.max(0,window.innerWidth-root.clientWidth)}px`);
+      root.classList.add('modal-open');
+    }
+    try{dialog.showModal();}catch(e){unlockPage();throw e;}
+  }
+  // Handles close buttons, Escape/platform cancel and programmatic close.
+  document.querySelectorAll('dialog').forEach(dialog=>dialog.addEventListener('close',unlockPage));
   function button(label,cls,handler,title){const b=document.createElement('button');b.textContent=label;b.className=cls;if(title)b.setAttribute('aria-label',title);b.addEventListener('click',handler);return b;}
   function setBusy(value,cancelable=false){
     state.busy=value;
@@ -245,7 +269,7 @@
   function openEditor(i){
     if(state.busy||!state.plan||state.drag)return;
     state.activeSeam=i;renderMarkers();
-    if(!$('seam-dialog').open)$('seam-dialog').showModal();
+    showDialog($('seam-dialog'));
     renderSeams();
   }
   function drawEditor(){
@@ -366,8 +390,8 @@
   for(const k of ['top','bottom','left','right'])$('crop-'+k).addEventListener('input',()=>{drawCrop();updateExport();});
   for(const k of ['format','quality','scale'])$(k).addEventListener('change',()=>{updateExport();$('export-status').textContent='';});
   $('export').addEventListener('click',exportImage);
-  $('help-button').addEventListener('click',()=>$('help-dialog').showModal());$('close-help').addEventListener('click',()=>$('help-dialog').close());
-  $('zoom').addEventListener('click',()=>{if(!state.plan)return;const p=state.plan;drawPlan($('zoom-canvas'),Math.min(p.width,Math.floor(p.width*30000/p.height),Math.floor(Math.sqrt(20000000*p.width/p.height))));$('zoom-canvas').style.width='100%';$('zoom-dialog').showModal();});
+  $('help-button').addEventListener('click',()=>showDialog($('help-dialog')));$('close-help').addEventListener('click',()=>$('help-dialog').close());
+  $('zoom').addEventListener('click',()=>{if(!state.plan)return;const p=state.plan;drawPlan($('zoom-canvas'),Math.min(p.width,Math.floor(p.width*30000/p.height),Math.floor(Math.sqrt(20000000*p.width/p.height))));$('zoom-canvas').style.width='100%';showDialog($('zoom-dialog'));});
   $('close-zoom').addEventListener('click',()=>{$('zoom-dialog').close();$('zoom-canvas').width=$('zoom-canvas').height=1;});
   $('fit-zoom').addEventListener('click',()=>{$('zoom-canvas').style.width='100%';});
   $('actual-zoom').addEventListener('click',()=>{$('zoom-canvas').style.width=state.plan.width+'px';});
