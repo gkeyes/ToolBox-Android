@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useStore } from "@nanostores/react";
 import { useNavigate, useParams } from "react-router";
 import { Button, Label, ListBox, Select, Tabs, cn } from "@heroui/react";
@@ -371,7 +371,7 @@ export default function BoardPage() {
   // Back itself first).
   useEffect(() => (articleId ? undefined : registerBackHandler(() => navigate("/"))), [articleId, navigate]);
   // The header floats; the content starts under it.
-  useEffect(() => {
+  useLayoutEffect(() => {
     const head = headRef.current;
     const page = pageRef.current;
     if (!head || !page) return undefined;
@@ -379,7 +379,12 @@ export default function BoardPage() {
     apply();
     const observer = typeof ResizeObserver === "function" ? new ResizeObserver(apply) : null;
     observer?.observe(head, { box: "border-box" });
-    return () => observer?.disconnect();
+    // Tabs inserts its collection after the header first mounts. Measure that
+    // structural change immediately so content cannot use the shorter height
+    // until ResizeObserver's next delivery. Text and style changes stay on RO.
+    const children = typeof MutationObserver === "function" ? new MutationObserver(apply) : null;
+    children?.observe(head, { childList: true, subtree: true });
+    return () => { observer?.disconnect(); children?.disconnect(); };
   }, []);
 
   const openArticle = async (event, article) => {
