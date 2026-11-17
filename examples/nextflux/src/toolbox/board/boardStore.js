@@ -33,6 +33,8 @@ const READ_EMPTY = { status: "idle", boardAt: null, count: 0, error: "" };
 export const boardReadState = atom({ ...READ_EMPTY });
 
 let run = null;
+let runPromise = null;
+let runDay = null;
 // The article settings the running board is made under.
 let runFilter = null;
 // A pending settings change.
@@ -64,6 +66,21 @@ const articleFilter = () => {
   return `${Boolean(settings.showHiddenFeeds)}|${settings.hideDuplicateArticles !== false}|${settings.duplicateMatch || "either"}`;
 };
 
+function publishToday(state) {
+  todaySnapshot = state;
+  // The running day's work belongs to its snapshot. Completing it in the
+  // background must not replace a historical report the reader selected.
+  if (!board.get().historical) board.set(state);
+}
+
+function clearTodayDigest() {
+  todayDigest = { status: "idle", text: "", error: "", boardAt: null };
+  if (!board.get().historical) {
+    stopDigest();
+    digest.set(todayDigest);
+  }
+}
+
 async function todaysArticles() {
   const settings = settingsState.get();
   const feeds = new Map((await getFeeds())
@@ -85,11 +102,21 @@ async function todaysArticles() {
 
 // Builds today's board. With `onlyIfNew`, it does nothing unless today's
 // unread articles include some the current board has not seen.
-export async function refreshBoard({ onlyIfNew = false } = {}) {
-  if (runtimeClosing.get()) return;
+export function refreshBoard({ onlyIfNew = false } = {}) {
+  if (runtimeClosing.get()) return Promise.resolve();
+  // A second click can land while the cache is still being read, before the
+  // page has a loading state. Reuse that request instead of aborting it and
+  // charging for another analysis of the same day under the same settings.
+  if (run && (onlyIfNew || (runDay === startOfDay().getTime() && runFilter === articleFilter()))) return runPromise;
+  runPromise = generateTodayBoard({ onlyIfNew });
+  return runPromise;
+}
+
+async function generateTodayBoard({ onlyIfNew }) {
   const previous = board.get().historical ? todaySnapshot || { ...EMPTY } : board.get();
-  if (onlyIfNew && run) return;
-  selection += 1;
+  // A visible refresh supersedes pending navigation. Restarting a hidden
+  // day task for changed settings must leave the reader's history choice.
+  if (!board.get().historical) selection += 1;
   // This run reads today's articles afresh.
   unsynced = false;
   run?.abort();
@@ -98,6 +125,7 @@ export async function refreshBoard({ onlyIfNew = false } = {}) {
   const account = accountKey();
   const live = () => run === controller && !controller.signal.aborted && accountKey() === account;
   const today = startOfDay().getTime();
+  runDay = today;
   const filter = articleFilter();
   runFilter = filter;
   const keep = previous.status === "done" && previous.day === today && previous.filter === filter;
@@ -114,25 +142,24 @@ export async function refreshBoard({ onlyIfNew = false } = {}) {
     // Nothing new: the finally below still reads a sync that landed meanwhile.
     if (onlyIfNew && (keep || failed) && !fresh.length) return;
     if (!all.length) {
-      stopDigest();
-      board.set({ ...EMPTY, status: "empty", at: Date.now(), day: today, filter });
-      todaySnapshot = board.get();
-      if (!readRun) boardReadState.set({ ...READ_EMPTY });
+      clearTodayDigest();
+      publishToday({ ...EMPTY, status: "empty", at: Date.now(), day: today, filter });
+      if (!board.get().historical && !readRun) boardReadState.set({ ...READ_EMPTY });
       return;
     }
     // The written digest belongs to the board on screen: it keeps streaming
     // while a newer board is made and stops only when that board replaces it.
-    if (!keep) stopDigest();
-    board.set(keep ? { ...previous, updating: true, error: "" } : { ...EMPTY, status: "loading", day: today, filter });
+    if (!keep) clearTodayDigest();
+    publishToday(keep ? { ...previous, updating: true, error: "" } : { ...EMPTY, status: "loading", day: today, filter });
     const { articles, topics, cut } = await generateBoard({
       articles: all, signal: controller.signal,
       onProgress: (progress) => { if (live()) boardStream.set(progress); },
     });
     if (!live()) return;
     boardStream.set(null);
-    stopDigest();
+    clearTodayDigest();
     const at = Math.max(Date.now(), (previous.at || 0) + 1);
-    board.set({
+    publishToday({
       ...EMPTY,
       status: "done",
       topics,
@@ -152,10 +179,7 @@ export async function refreshBoard({ onlyIfNew = false } = {}) {
       freshIds: keep ? fresh.map((article) => article.id) : [],
       unseen: !boardOpen.get(),
     });
-    digest.set({ status: "idle", text: "", error: "", boardAt: null });
-    if (!readRun) boardReadState.set({ ...READ_EMPTY });
-    todaySnapshot = board.get();
-    todayDigest = digest.get();
+    if (!board.get().historical && !readRun) boardReadState.set({ ...READ_EMPTY });
     // Publishing a successful board does not depend on history storage. A
     // storage failure is visible, while this session's result stays usable.
     try {
@@ -163,17 +187,16 @@ export async function refreshBoard({ onlyIfNew = false } = {}) {
       snapshotSave = { at, promise: pending };
       const saved = await pending;
       if (live() && saved) {
-        board.set({ ...board.get(), expiresAt: saved.expiresAt });
-        todaySnapshot = board.get();
+        publishToday({ ...todaySnapshot, expiresAt: saved.expiresAt });
       }
     } catch (error) {
-      if (live()) board.set({ ...board.get(), error: `看板已生成，历史保存失败：${error.message || "请重试"}` });
+      if (live()) publishToday({ ...todaySnapshot, error: `看板已生成，历史保存失败：${error.message || "请重试"}` });
     }
   } catch (error) {
     if (!live()) return;
     const message = error?.message || "生成今日看板失败。";
-    board.set(keep
-      ? { ...board.get(), updating: false, error: message, raw: error?.raw ?? null }
+    publishToday(keep
+      ? { ...todaySnapshot, updating: false, error: message, raw: error?.raw ?? null }
       : { ...EMPTY, status: "error", error: message, raw: error?.raw ?? null, day: today, filter, ids: all.map((article) => article.id) });
     boardStream.set(null);
   } finally {
@@ -191,9 +214,62 @@ function stopDigest() {
 
 function rememberToday() {
   const state = board.get();
-  if (!state.historical && state.status !== "idle" && state.status !== "loading") {
-    todaySnapshot = { ...state, updating: false };
+  if (!state.historical && (run || (state.status !== "idle" && state.status !== "loading"))) {
+    todaySnapshot = { ...state, updating: Boolean(run && state.updating) };
     todayDigest = digest.get();
+  }
+}
+
+function reportFilter(saved) {
+  if (typeof saved.filter === "string") return saved.filter;
+  // Version 1.24 saved the article settings inside the generation
+  // fingerprint. Restore those reports without another provider call too.
+  try {
+    const values = JSON.parse(saved.fingerprint || "null");
+    if (Array.isArray(values) && values[0] === "board-v2" && typeof values[3] === "boolean"
+      && typeof values[4] === "boolean" && typeof values[5] === "string") {
+      return `${values[3]}|${values[4]}|${values[5]}`;
+    }
+  } catch { /* A report with unknown settings remains available in history. */ }
+  return null;
+}
+
+function reportSnapshot(saved, historical = true) {
+  return { ...EMPTY, status: "done", historical, kind: saved.kind,
+    reportId: saved.id, at: saved.completedAt,
+    day: startOfDay(new Date(saved.kind === "today" ? saved.periodStart : saved.periodEnd)).getTime(),
+    filter: reportFilter(saved),
+    periodStart: saved.periodStart, periodEnd: saved.periodEnd, expiresAt: saved.expiresAt,
+    topics: saved.topics, articles: saved.articles, ids: saved.articles.map((article) => article.id),
+    total: saved.total, skipped: saved.skipped || 0, cut: Boolean(saved.cut),
+  };
+}
+
+function reportDigest(saved) {
+  return { status: saved.digest ? "done" : "idle", text: saved.digest || "", error: "",
+    boardAt: saved.digest ? saved.completedAt : null };
+}
+
+async function restoreToday(live) {
+  await initializeBoardHistory();
+  if (!live()) return;
+  const today = startOfDay().getTime();
+  const candidates = reportHistory.get().reports.filter((report) => report.kind === "today"
+    && report.periodStart === today && report.expiresAt > Date.now())
+    .sort((a, b) => b.completedAt - a.completedAt);
+  for (const candidate of candidates) {
+    const saved = await readBoardReport(candidate.id);
+    if (!live()) return;
+    if (!saved || saved.kind !== "today" || saved.periodStart !== today || saved.expiresAt <= Date.now()
+      || reportFilter(saved) !== articleFilter()) continue;
+    todaySnapshot = reportSnapshot(saved, false);
+    todayDigest = reportDigest(saved);
+    board.set(todaySnapshot);
+    digest.set(todayDigest);
+    // New arrivals may have been synced while the app was not running. Read
+    // the current cache for the update hint, keeping the restored report.
+    unsynced = true;
+    return;
   }
 }
 
@@ -204,22 +280,18 @@ export async function showBoardReport(id) {
   if (token !== selection || accountKey() !== account) return;
   if (!saved || saved.expiresAt <= Date.now()) throw new Error("这份看板报告已过期或已删除。");
   rememberToday();
-  run?.abort(); run = null;
   stopDigest();
-  boardStream.set(null);
-  board.set({ ...EMPTY, status: "done", historical: true, kind: saved.kind,
-    reportId: saved.id, at: saved.completedAt, day: startOfDay(new Date(saved.periodEnd)).getTime(),
-    periodStart: saved.periodStart, periodEnd: saved.periodEnd, expiresAt: saved.expiresAt,
-    topics: saved.topics, articles: saved.articles, ids: saved.articles.map((article) => article.id),
-    total: saved.total, skipped: saved.skipped || 0, cut: Boolean(saved.cut),
-  });
-  digest.set({ status: saved.digest ? "done" : "idle", text: saved.digest || "", error: "", boardAt: saved.completedAt });
+  if (!run) boardStream.set(null);
+  board.set(reportSnapshot(saved));
+  digest.set(reportDigest(saved));
   if (!readRun) boardReadState.set({ ...READ_EMPTY });
   return saved;
 }
 
 export async function showTodayBoard() {
-  selection += 1;
+  const token = ++selection;
+  const account = accountKey();
+  const live = () => selection === token && accountKey() === account;
   if (board.get().historical) {
     stopDigest();
     board.set(todaySnapshot || { ...EMPTY });
@@ -227,9 +299,20 @@ export async function showTodayBoard() {
     digest.set(saved && saved.status !== "streaming" ? saved : { status: "idle", text: "", error: "", boardAt: null });
     if (!readRun) boardReadState.set({ ...READ_EMPTY });
   }
+  if (!run && board.get().status === "idle") {
+    try { await restoreToday(live); }
+    catch (error) {
+      if (live()) board.set({ ...EMPTY, status: "error", day: startOfDay().getTime(), filter: articleFilter(),
+        error: `今日看板恢复失败：${error.message || "请重试"}` });
+      return;
+    }
+    if (!live()) return;
+  }
   const state = board.get();
   const stale = state.day !== startOfDay().getTime() || state.filter !== articleFilter();
-  if (!run && (state.status === "idle" || state.status === "error" || stale)) return refreshBoard();
+  // Navigating back to a failed attempt is not consent to retry it. Keep
+  // the error and let the explicit refresh/retry action start another call.
+  if (!run && (state.status === "idle" || stale)) return refreshBoard();
   catchUp();
 }
 
@@ -320,7 +403,7 @@ export function markBoardAsRead() {
   return operation.promise;
 }
 
-// The digest is written once per board, on first view of the 文章 tab.
+// A digest is written only when explicitly requested for the current board.
 export async function writeDigest({ again = false } = {}) {
   if (runtimeClosing.get()) return;
   const state = board.get();
@@ -374,9 +457,9 @@ export async function flushBoardWork() {
   run?.abort(); run = null;
   stopDigest();
   boardStream.set(null);
-  const state = board.get();
-  if (state.status === "loading") board.set({ ...state, status: "error", error: "今日总览生成已暂停，请重新生成。" });
-  else if (state.updating) board.set({ ...state, updating: false, error: "今日总览更新已暂停，请重试。" });
+  const state = board.get().historical ? todaySnapshot : board.get();
+  if (state?.status === "loading") publishToday({ ...state, status: "error", error: "今日总览生成已暂停，请重新生成。" });
+  else if (state?.updating) publishToday({ ...state, updating: false, error: "今日总览更新已暂停，请重试。" });
   if (digest.get().status === "streaming") digest.set({ ...digest.get(), status: "error", error: "文章生成已暂停，请重试。" });
   const results = await Promise.allSettled([...reportWrites]);
   const failed = results.find((result) => result.status === "rejected");
@@ -386,6 +469,8 @@ export async function flushBoardWork() {
 function reset() {
   run?.abort();
   run = null;
+  runPromise = null;
+  runDay = null;
   stopDigest();
   board.set({ ...EMPTY });
   boardStream.set(null);
@@ -428,8 +513,9 @@ settingsState.listen(() => {
   clearTimeout(settle);
   settle = setTimeout(() => {
     settle = null;
-    const state = board.get();
-    if (state.status === "idle" || state.historical || !authState.get().userId) return;
+    const visible = board.get();
+    const state = visible.historical ? todaySnapshot : visible;
+    if (!state || (!run && (state.status === "idle" || visible.historical)) || !authState.get().userId) return;
     const made = run ? runFilter : state.filter;
     // An open board follows at once; a closed one waits to be opened.
     if ((made !== articleFilter() || state.day !== startOfDay().getTime()) && boardOpen.get()) refreshBoard();

@@ -111,6 +111,7 @@ export async function saveBoardSnapshot(state, text = "") {
     completedAt: state.at, total: state.total, skipped: state.skipped || 0,
     includedCount: boardArticleIds(state.topics, state.articles).length,
     articles: state.articles, topics: state.topics, cut: Boolean(state.cut), digest: text,
+    filter: state.filter,
     fingerprint: config().fingerprint,
   };
   return manager.saveReport(report);

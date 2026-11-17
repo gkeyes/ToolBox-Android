@@ -5,8 +5,9 @@ import { PRODUCTION_URL, STORED_SETTINGS, installNativeBoundary } from "./fixtur
 // Only the native network boundary is synthetic; no AI/provider request leaves
 // this test. Each analysis batch nominates its last article, then the merge
 // keeps only its last candidate. Earlier candidates must remain unread too.
-async function prepareBoard(page, { count = 181, holdRead = false, failRead = false } = {}) {
+async function prepareBoard(page, { count = 181, holdRead = false, failRead = false, persistStorage = false } = {}) {
   await installNativeBoundary(page, {
+    persistStorage,
     auth: {
       serverUrl: "https://miniflux.xiaochen.win", username: "board-test-user", password: "", userId: 7,
       token: "fixed-synthetic-test-token", authType: "token",
@@ -82,6 +83,10 @@ test("today's whole input is analyzed and one-click read changes only final boar
   for (let id = 1; id <= 181; id += 1) expect(sent).toContain(`今日文章 ${id}\n`);
   expect(input.some((message) => message.kind === "merge")).toBe(true);
   for (const { messages } of input) expect(messages.reduce((sum, message) => sum + message.content.length, 0)).toBeLessThanOrEqual(24_000);
+  await expect(page.getByRole("tablist", { name: "看板范围" })).toHaveCount(1);
+  await expect(page.getByRole("tab", { name: "今日", exact: true })).toHaveAttribute("aria-selected", "true");
+  await expect(page.locator(".nf-board-card h3")).toHaveText("全日重点");
+  await expect(page.locator(".nf-board-card-head > .nf-board-rank")).toHaveText("1");
   // The final batch's local reference must resolve to the global oldest ID.
   await expect(page.locator('.nf-board-chip[href="#/board/article/1"]')).toHaveText("测试订阅 · 今日文章 1");
   await expect(page.locator(".nf-board-read-help")).toHaveText("仅处理看板收录的 1 篇，其余未读保留。");
@@ -104,14 +109,60 @@ test("today's whole input is analyzed and one-click read changes only final boar
   expect(await page.evaluate(() => window.__boardTest.reads.length)).toBe(1);
   // Writing after marking still uses the frozen source text and its original
   // number. Out-of-board and out-of-range references never become links.
-  await page.getByRole("tab", { name: "文章", exact: true }).click();
-  await expect(page.locator(".nf-board-digest h4")).toHaveText("全日重点");
+  const complete = page.getByRole("button", { name: "完整报告", exact: true });
+  await expect(complete).toHaveAttribute("aria-expanded", "false");
+  await expect(page.locator(".nf-board-digest")).toHaveCount(0);
+  await complete.click();
+  await expect(complete).toHaveAttribute("aria-expanded", "true");
+  await expect(page.getByRole("button", { name: "生成完整报告", exact: true })).toBeVisible();
+  await complete.click();
+  await complete.click();
+  expect(await page.evaluate(() => window.__boardTest.messages.length)).toBe(input.length);
+  await page.getByRole("button", { name: "生成完整报告", exact: true }).click();
+  await expect(page.locator(".nf-board-digest h4 > span:last-child")).toHaveText("全日重点");
+  await expect(page.locator(".nf-board-digest h4 > .nf-board-rank")).toHaveText("1");
   await expect(page.locator(".nf-board-digest .nf-board-cite")).toHaveCount(1);
   await expect(page.locator(".nf-board-digest .nf-board-cite")).toHaveAttribute("href", "#/board/article/1");
   const digestInput = await page.evaluate(() => window.__boardTest.messages.find((message) => message.kind === "digest").messages);
   expect(digestInput[1].content).toContain("[181]");
   expect(digestInput[1].content).toContain("这是今日文章 1 的独立原文摘要。");
+  const completedCalls = await page.evaluate(() => window.__boardTest.messages.length);
+  await complete.click();
+  await complete.click();
+  await expect(page.locator(".nf-board-digest h4 > span:last-child")).toHaveText("全日重点");
+  expect(await page.evaluate(() => window.__boardTest.messages.length)).toBe(completedCalls);
   expect(errors).toEqual([]);
+});
+
+test("today restores its saved report after reload and does not regenerate while switching history", async ({ page }) => {
+  await prepareBoard(page, { count: 12, persistStorage: true });
+  const heading = await page.locator(".nf-board-card h3").textContent();
+  await expect.poll(() => page.evaluate(async () => (await import("/src/toolbox/board/historyStore.js")).reportHistory.get().reports.length)).toBe(1);
+  await page.reload();
+  expect(await page.evaluate(() => typeof window.__boardTest)).toBe("undefined");
+  await expect(page.locator(".nf-board-card h3")).toHaveText(heading);
+  const today = page.getByRole("tab", { name: "今日", exact: true });
+  const history = page.getByRole("tab", { name: /历史报告/ });
+  await expect(history).toHaveAttribute("aria-selected", "true");
+  await page.evaluate(() => {
+    window.__reloadedAiCalls = [];
+    window.ToolBox.network.openStream = async (payload) => {
+      window.__reloadedAiCalls.push(payload.url);
+      throw new Error("Opening a saved daily report must not request AI");
+    };
+  });
+  for (let visit = 0; visit < 2; visit += 1) {
+    await today.click();
+    await expect(today).toHaveAttribute("aria-selected", "true");
+    await expect(page.locator(".nf-board-card h3")).toHaveText(heading);
+    await expect(page.locator(".nf-board-summary")).toContainText("今日 12 篇未读已全部参与分析");
+    await expect(page.locator(".nf-board-inline-error")).toHaveCount(0);
+    expect(await page.evaluate(() => window.__reloadedAiCalls)).toEqual([]);
+    if (visit === 0) {
+      await history.click();
+      await expect(history).toHaveAttribute("aria-selected", "true");
+    }
+  }
 });
 
 test("a failed read update remains retryable without marking omitted articles", async ({ page }) => {
