@@ -43,6 +43,7 @@ const defaultValue = {
   aiApiKey: "",
   aiBaseUrl: "https://api.openai.com/v1",
   aiModel: "gpt-4o-mini",
+  autoBoardEnabled: true,
   speechApiKey: "",
   speechRegion: "global",
   speechModel: "speech-2.8-turbo",
@@ -67,7 +68,11 @@ export function decodeSettings(str) {
   let storedValue;
   try { storedValue = JSON.parse(str); } catch { return { ...defaultValue }; }
   if (!storedValue || typeof storedValue !== "object" || Array.isArray(storedValue)) return { ...defaultValue };
-  return { ...defaultValue, ...storedValue, recentCacheLimit: String(normalizeRecentCacheLimit(storedValue.recentCacheLimit)) };
+  return {
+    ...defaultValue, ...storedValue,
+    recentCacheLimit: String(normalizeRecentCacheLimit(storedValue.recentCacheLimit)),
+    autoBoardEnabled: storedValue.autoBoardEnabled !== false,
+  };
 }
 
 export const settingsState = persistentAtom("settings", defaultValue, {

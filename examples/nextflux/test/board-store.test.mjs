@@ -10,9 +10,15 @@ const stubs = {
     export const getCachedArticleMetadata = async () => globalThis.__board.rows();`,
   "@/stores/settingsStore.js": `import { atom } from "nanostores"; export const settingsState = atom({ aiApiKey: "k" });`,
   "@/stores/authStore.js": `import { atom } from "nanostores"; export const authState = atom({ userId: 7 });`,
-  "@/stores/syncStore.js": `import { atom } from "nanostores"; export const isSyncing = atom(false); globalThis.__board.isSyncing = isSyncing;`,
+  "@/stores/syncStore.js": `import { atom } from "nanostores"; export const syncCommitted = atom(null); globalThis.__board.syncCommitted = syncCommitted;`,
   "@/stores/articlesStore.js": `export const markArticlesAsRead = (ids) => globalThis.__board.markRead(ids);`,
   "@/api/openai.js": `export const streamChat = (messages, options) => globalThis.__board.stream(messages, options);`,
+  "./historyStore.js": `import { atom } from "nanostores";
+    export const reportHistory = atom({reports: []});
+    export const initializeBoardHistory = async () => null;
+    export const readBoardReport = (id) => globalThis.__board.readReport(id);
+    export const saveBoardSnapshot = (state, text) => globalThis.__board.saveSnapshot(state, text);
+    export const saveBoardDigest = (id, text) => globalThis.__board.saveDigest(id, text);`,
 };
 const hooks = `
 const stubs = ${JSON.stringify(stubs)};
@@ -34,6 +40,17 @@ globalThis.__board = {
   // onRead, when set, runs right after the articles are read.
   // onRead, when set, runs right after the articles are read; readDelay
   // (ms), when set, holds the read back that long. reads counts them.
+  reports: new Map(),
+  readReport: async (id) => globalThis.__board.reports.get(id),
+  saveSnapshot: async (state, text) => {
+    const report = { ...state, id: state.reportId, completedAt: state.at, expiresAt: state.at + 172800000, digest: text };
+    globalThis.__board.reports.set(report.id, report);
+    return report;
+  },
+  saveDigest: async (id, text) => {
+    const report = globalThis.__board.reports.get(id);
+    if (report) globalThis.__board.reports.set(id, { ...report, digest: text });
+  },
   reads: 0,
   readDelay: 0,
   rows: () => {
@@ -54,12 +71,13 @@ const waitCall = () => new Promise((resolve) => { next = (call) => { next = null
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 const { settingsState } = await import("@/stores/settingsStore.js");
 const { authState } = await import("@/stores/authStore.js");
-const { board, boardOpen, boardStream, boardReadState, digest, markBoardAsRead, openBoard, refreshBoard, writeDigest } = await import("../src/toolbox/board/boardStore.js");
+const { board, boardOpen, boardStream, boardReadState, digest, flushBoardWork, markBoardAsRead, openBoard, refreshBoard, showBoardReport, showTodayBoard, writeDigest } = await import("../src/toolbox/board/boardStore.js");
 const { PROMPT_BUDGET, boardArticleIds } = await import("../src/toolbox/board/board.mjs");
-const sync = async () => { globalThis.__board.isSyncing.set(true); globalThis.__board.isSyncing.set(false); await tick(); await tick(); };
+const emitSync = () => globalThis.__board.syncCommitted.set({ outcome: "committed", newEntryIds: rows.map((row) => row.id), syncedAt: new Date().toISOString() });
+const sync = async () => { emitSync(); await tick(); await tick(); };
 const TOPICS = JSON.stringify({ topics: [{ title: "主题", gist: "重点", summary: "摘要", articles: [1, 2] }] });
 
-test("a failed board does not ask the AI again on a sync with nothing new", async () => {
+test("syncs never retry a failed manual board, even when new articles arrive", async () => {
   rows = [article(3)];
   let call = waitCall();
   refreshBoard();
@@ -68,15 +86,16 @@ test("a failed board does not ask the AI again on a sync with nothing new", asyn
   assert.equal(board.get().status, "error");
   const before = calls.length;
   await sync(); await sync();
-  assert.equal(calls.length, before, "no AI call for a sync with nothing new");
-  // Something new does try again.
   rows = [article(3), article(4)];
-  call = waitCall();
   await sync();
+  assert.equal(calls.length, before);
+  assert.equal(board.get().newAvailableCount, 1);
+  call = waitCall();
+  refreshBoard();
   const retry = await call;
-  assert.equal(retry.kind, "topics");
-  retry.reject(new Error("HTTP 500"));
+  retry.onChunk(TOPICS); retry.resolve();
   await tick(); await tick();
+  assert.equal(board.get().status, "done");
 });
 
 test("a sync while the digest is written leaves it running and it finishes", async () => {
@@ -333,31 +352,28 @@ test("flipping 查重方式 on the open board asks the AI once, and flipping bac
   openBoard(false);
 });
 
-test("a sync while settings settle waits for them; changed back, it still brings in new articles", async () => {
+test("a sync while settings settle only updates the new-article hint when the filter returns", async () => {
   const settled = () => new Promise((resolve) => setTimeout(resolve, 700));
   rows = [article(1), article(2)];
   settingsState.set({ ...settingsState.get(), duplicateMatch: "either" });
   await settled();
-  let call = waitCall();
-  refreshBoard();
+  let call = waitCall(); refreshBoard();
   (await call).onChunk(TOPICS); calls.at(-1).resolve();
-  await tick(); await tick();
-  openBoard(true);
-  // A sync inside the window makes no call of its own.
+  await tick(); await tick(); openBoard(true);
   const before = calls.length;
   settingsState.set({ ...settingsState.get(), duplicateMatch: "url" });
   rows = [article(1), article(2), article(3)];
   await sync();
-  assert.equal(calls.length, before, "the sync waits for the settings");
   settingsState.set({ ...settingsState.get(), duplicateMatch: "either" });
-  call = waitCall();
   await settled();
-  // Back to the board's settings: one call, for the new article.
-  const fresh = await call;
-  assert.equal(calls.length, before + 1);
-  fresh.onChunk(TOPICS); fresh.resolve();
+  assert.equal(calls.length, before);
+  assert.equal(board.get().newAvailableCount, 1);
+  assert.ok(!board.get().ids.includes(3));
+  call = waitCall(); refreshBoard();
+  (await call).onChunk(TOPICS); calls.at(-1).resolve();
   await tick(); await tick();
   assert.equal(board.get().newCount, 1);
+  assert.equal(board.get().newAvailableCount, 0);
   openBoard(false);
 });
 
@@ -387,123 +403,58 @@ test("a board from yesterday is made again even when the settings end where they
   openBoard(false);
 });
 
-test("a sync deferred by settling settings is kept when the board closes, and after a board still being made", async () => {
-  const settled = () => new Promise((resolve) => setTimeout(resolve, 700));
+test("syncs while the page closes or a manual board runs preserve the snapshot and update its hint", async () => {
   rows = [article(1), article(2)];
-  settingsState.set({ ...settingsState.get(), duplicateMatch: "either" });
-  await settled();
-  let call = waitCall();
-  refreshBoard();
+  let call = waitCall(); refreshBoard();
   (await call).onChunk(TOPICS); calls.at(-1).resolve();
   await tick(); await tick();
-  // Closed before the settings settle: the sync's article still comes in.
-  openBoard(true);
-  let before = calls.length;
-  settingsState.set({ ...settingsState.get(), duplicateMatch: "url" });
+  openBoard(false);
+  const before = calls.length;
   rows = [article(1), article(2), article(3)];
   await sync();
-  settingsState.set({ ...settingsState.get(), duplicateMatch: "either" });
-  openBoard(false);
-  call = waitCall();
-  await settled();
-  const closed = await call;
-  assert.equal(calls.length, before + 1, "one call for the synced article");
-  closed.onChunk(TOPICS); closed.resolve();
+  assert.equal(calls.length, before);
+  assert.equal(board.get().newAvailableCount, 1);
+  call = waitCall(); refreshBoard();
+  const running = await call;
+  rows = [...rows, article(4)];
+  await sync();
+  running.onChunk(TOPICS); running.resolve();
   await tick(); await tick();
+  assert.equal(calls.length, before + 1);
   assert.ok(board.get().ids.includes(3));
-
-  // A board being made when the sync lands: brought up to date after it.
-  call = waitCall();
-  refreshBoard();
-  const running = await call;
-  before = calls.length;
-  rows = [article(1), article(2), article(3), article(4)];
-  await sync();
-  assert.equal(calls.length, before, "nothing while the board is made");
-  call = waitCall();
-  running.onChunk(TOPICS); running.resolve();
-  const after = await call;
-  assert.equal(after.kind, "topics", "the synced article is asked about once the board is made");
-  after.onChunk(TOPICS); after.resolve();
-  await tick(); await tick();
-  assert.ok(board.get().ids.includes(4));
+  assert.ok(!board.get().ids.includes(4));
+  assert.equal(board.get().newAvailableCount, 1);
 });
 
-test("a sync while a closed board is out of date is read once the settings return; a queued sync waits for settling settings", async () => {
-  const settled = () => new Promise((resolve) => setTimeout(resolve, 700));
+test("failed and status-only sync events cannot replace a manual board", async () => {
   rows = [article(1), article(2)];
-  settingsState.set({ ...settingsState.get(), duplicateMatch: "either" });
-  await settled();
-  let call = waitCall();
-  refreshBoard();
+  let call = waitCall(); refreshBoard();
   (await call).onChunk(TOPICS); calls.at(-1).resolve();
   await tick(); await tick();
-  // Changed while open, closed, synced while out of date, then changed back.
-  openBoard(true);
-  let before = calls.length;
-  settingsState.set({ ...settingsState.get(), duplicateMatch: "url" });
-  openBoard(false);
-  await settled();
-  rows = [article(1), article(2), article(5)];
-  await sync();
-  assert.equal(calls.length, before, "closed and out of date: nothing yet");
-  call = waitCall();
-  settingsState.set({ ...settingsState.get(), duplicateMatch: "either" });
-  await settled();
-  const back = await call;
-  assert.equal(calls.length, before + 1, "the synced article is read");
-  back.onChunk(TOPICS); back.resolve();
-  await tick(); await tick();
-  assert.ok(board.get().ids.includes(5));
-
-  // A sync queued behind a board being made, then settings start changing
-  // before it is done: nothing until they settle.
-  openBoard(true);
-  call = waitCall();
-  refreshBoard();
-  const running = await call;
-  rows = [article(1), article(2), article(5), article(6)];
-  await sync();
-  settingsState.set({ ...settingsState.get(), duplicateMatch: "title" });
-  before = calls.length;
-  running.onChunk(TOPICS); running.resolve();
-  await tick(); await tick();
-  assert.equal(calls.length, before, "the queued sync waits for the settings");
-  settingsState.set({ ...settingsState.get(), duplicateMatch: "either" });
-  call = waitCall();
-  await settled();
-  const last = await call;
-  assert.equal(calls.length, before + 1, "one call once they settle");
-  last.onChunk(TOPICS); last.resolve();
-  await tick(); await tick();
-  assert.ok(board.get().ids.includes(6));
-  openBoard(false);
-});
-
-test("a sync landing while a refresh finds nothing new is read after it", async () => {
-  const settled = () => new Promise((resolve) => setTimeout(resolve, 700));
-  rows = [article(1), article(2)];
-  settingsState.set({ ...settingsState.get(), duplicateMatch: "either" });
-  await settled();
-  let call = waitCall();
-  refreshBoard();
-  (await call).onChunk(TOPICS); calls.at(-1).resolve();
-  await tick(); await tick();
-  openBoard(true);
   const before = calls.length;
-  // The refresh reads nothing new; a sync bringing article 7 finishes right after the read.
-  globalThis.__board.onRead = () => {
-    rows = [article(1), article(2), article(7)];
-    globalThis.__board.isSyncing.set(true); globalThis.__board.isSyncing.set(false);
-  };
-  call = waitCall();
-  refreshBoard({ onlyIfNew: true });
-  const after = await call;
-  assert.equal(calls.length, before + 1, "the sync's article is asked about");
-  after.onChunk(TOPICS); after.resolve();
+  const snapshot = board.get().articles;
+  rows = [...rows, article(5)];
+  globalThis.__board.syncCommitted.set({ outcome: "failed" });
+  await tick();
+  assert.equal(board.get().newAvailableCount, 0);
+  await sync(); await sync();
+  assert.equal(calls.length, before);
+  assert.equal(board.get().articles, snapshot);
+  assert.equal(board.get().newAvailableCount, 1);
+});
+
+test("a sync landing while a no-op manual refresh reads is reflected without starting an AI request", async () => {
+  rows = [article(1), article(2)];
+  let call = waitCall(); refreshBoard();
+  (await call).onChunk(TOPICS); calls.at(-1).resolve();
   await tick(); await tick();
-  assert.ok(board.get().ids.includes(7));
-  openBoard(false);
+  const before = calls.length;
+  globalThis.__board.onRead = () => { rows = [...rows, article(7)]; emitSync(); };
+  await refreshBoard({ onlyIfNew: true });
+  await tick(); await tick();
+  assert.equal(calls.length, before);
+  assert.ok(!board.get().ids.includes(7));
+  assert.equal(board.get().newAvailableCount, 1);
 });
 
 test("settings changed back while a slow read builds the board under others: the board is made again under the ones in place", async () => {
@@ -535,29 +486,21 @@ test("settings changed back while a slow read builds the board under others: the
   openBoard(false);
 });
 
-test("a sync left over when the AI was switched off mid-build is read when the board is next opened", async () => {
+test("the new-article hint works with no AI key and reopening never consumes it automatically", async () => {
   rows = [article(1), article(2)];
-  let call = waitCall();
-  refreshBoard();
+  let call = waitCall(); refreshBoard();
   const running = await call;
-  // A sync lands while the board is made, then the AI key is cleared
-  // before it is done: nothing can read the sync yet.
-  rows = [article(1), article(2), article(8)];
-  await sync();
+  rows = [...rows, article(8)]; await sync();
   const key = settingsState.get().aiApiKey;
   settingsState.set({ ...settingsState.get(), aiApiKey: "" });
   const before = calls.length;
   running.onChunk(TOPICS); running.resolve();
   await tick(); await tick();
-  assert.equal(calls.length, before, "no AI, nothing asked");
-  // The key back and the board opened: the sync's article comes in.
+  assert.equal(board.get().newAvailableCount, 1);
   settingsState.set({ ...settingsState.get(), aiApiKey: key });
-  call = waitCall();
-  openBoard(true);
-  const opened = await call;
-  opened.onChunk(TOPICS); opened.resolve();
-  await tick(); await tick();
-  assert.ok(board.get().ids.includes(8));
+  await openBoard(true);
+  assert.equal(calls.length, before);
+  assert.ok(!board.get().ids.includes(8));
   openBoard(false);
 });
 
@@ -573,25 +516,18 @@ test("an empty board keeps the settings it was made under, so opening it again r
   openBoard(false);
 });
 
-test("a sync landing while the first board of the day is made is read after it", async () => {
-  // A board not made yet, as at launch.
+test("a sync during the first snapshot read waits for the next manual update", async () => {
   board.set({ ...board.get(), status: "idle", ids: [], filter: null, day: null });
   rows = [article(1), article(2)];
-  // The sync finishes as the articles are read, before the board shows as loading.
-  globalThis.__board.onRead = () => {
-    rows = [article(1), article(2), article(9)];
-    globalThis.__board.isSyncing.set(true); globalThis.__board.isSyncing.set(false);
-  };
-  let call = waitCall();
-  refreshBoard();
+  globalThis.__board.onRead = () => { rows = [...rows, article(9)]; emitSync(); };
+  const before = calls.length;
+  const call = waitCall(); refreshBoard();
   const first = await call;
-  call = waitCall();
   first.onChunk(TOPICS); first.resolve();
-  const after = await call;
-  after.onChunk(TOPICS); after.resolve();
   await tick(); await tick();
-  assert.ok(board.get().ids.includes(9));
-  // The status line under the title is cut at the title's width.
+  assert.equal(calls.length, before + 1);
+  assert.ok(!board.get().ids.includes(9));
+  assert.equal(board.get().newAvailableCount, 1);
   const css = readFileSync(new URL("../src/design/ios27.css", import.meta.url), "utf8");
   assert.match(css, /\.article-list-title > \.article-list-caption \{ max-inline-size: 100%; \}/);
 });
@@ -800,4 +736,164 @@ test("read errors report confirmed progress and account changes suppress late ac
   assert.equal(boardReadState.get().status, "idle");
   assert.equal(boardReadState.get().count, 0);
   assert.equal(board.get().status, "idle");
+});
+
+test("opening saved reports reuses frozen topics and digest while syncs and filters leave the selection alone", async (t) => {
+  boardFixture(t, 4, async (_messages, options) => answerTopics(options, [1, 3]));
+  await refreshBoard();
+  const today = board.get();
+  const report = {
+    id: "interval-saved", kind: "interval", completedAt: Date.now() - 3600000,
+    periodStart: Date.now() - 7200000, periodEnd: Date.now() - 3700000,
+    expiresAt: Date.now() + 3600000, total: 4,
+    articles: today.articles, topics: today.topics, digest: "## 已保存的报告\n依据 [1][3]",
+  };
+  globalThis.__board.reports.set(report.id, report);
+  let generated = 0;
+  globalThis.__board.stream = async () => { generated++; throw new Error("should not call AI"); };
+  await showBoardReport(report.id);
+  assert.equal(board.get().historical, true);
+  assert.equal(board.get().reportId, report.id);
+  assert.equal(digest.get().text, report.digest);
+  const marked = await markBoardAsRead();
+  assert.equal(marked, 2);
+  assert.equal(rows.filter((row) => row.status === "unread").length, 2);
+  await openBoard(true);
+  rows = [...rows, article(5)]; await sync();
+  const originalSettings = settingsState.get();
+  settingsState.set({ ...originalSettings, duplicateMatch: "url" });
+  await new Promise((resolve) => setTimeout(resolve, 650));
+  assert.equal(board.get().reportId, report.id);
+  assert.equal(board.get().total, 4);
+  assert.equal(generated, 0);
+  settingsState.set(originalSettings);
+  await showTodayBoard();
+  assert.equal(board.get().historical, false);
+  assert.equal(board.get().at, today.at);
+  assert.equal(generated, 0);
+  openBoard(false);
+});
+
+test("the first opening selects saved history without another AI request", async (t) => {
+  boardFixture(t, 2, async () => { throw new Error("must use saved history"); });
+  const { reportHistory } = await import("./historyStore.js");
+  const report = {
+    id: "last-report", kind: "interval", completedAt: Date.now() - 10000,
+    periodStart: Date.now() - 20000, periodEnd: Date.now() - 10000,
+    expiresAt: Date.now() + 3600000, total: 1,
+    articles: [{ id: 1, title: "保存的来源", number: 1 }],
+    topics: [{ title: "保存的主题", gist: "重点", summary: "摘要", articles: [1] }], digest: "保存的正文 [1]",
+  };
+  globalThis.__board.reports.set(report.id, report);
+  reportHistory.set({ reports: [report] });
+  t.after(() => reportHistory.set({ reports: [] }));
+  await openBoard(true);
+  assert.equal(board.get().reportId, report.id);
+  assert.equal(digest.get().status, "done");
+  assert.equal(digest.get().text, report.digest);
+  openBoard(false);
+});
+
+test("late history loads cannot replace a newer selection or a different account on the same user ID", async (t) => {
+  boardFixture(t, 2, async (_messages, options) => answerTopics(options, [1]));
+  await refreshBoard();
+  const today = board.get();
+  const saved = { ...today, id: "delayed", completedAt: today.at, expiresAt: Date.now() + 3600000 };
+  const original = globalThis.__board.readReport;
+  let release;
+  globalThis.__board.readReport = () => new Promise((resolve) => { release = resolve; });
+  t.after(() => { globalThis.__board.readReport = original; });
+  let loading = showBoardReport(saved.id);
+  await showTodayBoard();
+  release(saved); await loading;
+  assert.equal(board.get().historical, false);
+  loading = showBoardReport(saved.id);
+  authState.set({ ...authState.get(), serverUrl: "https://another.example" });
+  release(saved); await loading;
+  assert.equal(board.get().status, "idle");
+  assert.equal(digest.get().text, "");
+});
+
+test("history persistence failure keeps a completed today board usable", async (t) => {
+  boardFixture(t, 2, async (_messages, options) => answerTopics(options, [1]));
+  const save = globalThis.__board.saveSnapshot;
+  globalThis.__board.saveSnapshot = async () => { throw new Error("quota"); };
+  t.after(() => { globalThis.__board.saveSnapshot = save; });
+  await refreshBoard();
+  assert.equal(board.get().status, "done");
+  assert.match(board.get().error, /历史保存失败.*quota/);
+  assert.equal(board.get().total, 2);
+  assert.equal(await markBoardAsRead(), 1);
+});
+
+test("digest persistence waits for the initial report snapshot and keeps its original completion time", async (t) => {
+  boardFixture(t, 2, async (messages, options) => {
+    if (messages[1].content.startsWith("主题")) { options.onChunk("保存的完整文章 [1]"); return; }
+    return answerTopics(options, [1]);
+  });
+  const save = globalThis.__board.saveSnapshot;
+  let release;
+  globalThis.__board.saveSnapshot = (state, text) => new Promise((resolve) => {
+    release = async () => resolve(await save(state, text));
+  });
+  t.after(() => { globalThis.__board.saveSnapshot = save; });
+  const generating = refreshBoard();
+  while (!release) await tick();
+  const state = board.get();
+  const writing = writeDigest();
+  await tick();
+  assert.equal(digest.get().status, "done");
+  assert.equal(globalThis.__board.reports.has(state.reportId), false);
+  let flushed = false;
+  const flushing = flushBoardWork().then(() => { flushed = true; });
+  await tick(); assert.equal(flushed, false);
+  await release(); await generating; await writing; await flushing;
+  const report = globalThis.__board.reports.get(state.reportId);
+  assert.equal(report.digest, "保存的完整文章 [1]");
+  assert.equal(report.completedAt, state.at);
+  assert.equal(report.expiresAt, state.at + 172800000);
+});
+
+test("opening while an automatic report runs shows its progress without starting today's AI", async (t) => {
+  let requested = 0;
+  boardFixture(t, 151, async () => { requested++; throw new Error("must use running report"); });
+  const { reportHistory } = await import("./historyStore.js");
+  reportHistory.set({ reports: [], pendingCount: 0, job: { id: "running-report", status: "running" } });
+  t.after(() => reportHistory.set({ reports: [] }));
+  assert.equal(await openBoard(true), "reports");
+  assert.equal(requested, 0);
+  assert.equal(board.get().status, "idle");
+  openBoard(false);
+});
+
+test("runtime flush stops manual streams and waits for an already completed snapshot to become durable", async (t) => {
+  boardFixture(t, 2, async (_messages, options) => answerTopics(options, [1]));
+  const save = globalThis.__board.saveSnapshot;
+  let release;
+  globalThis.__board.saveSnapshot = (state, text) => new Promise((resolve) => {
+    release = async () => resolve(await save(state, text));
+  });
+  t.after(() => { globalThis.__board.saveSnapshot = save; });
+  const generating = refreshBoard();
+  while (!release) await tick();
+  const state = board.get();
+  let flushed = false;
+  const flushing = flushBoardWork().then(() => { flushed = true; });
+  await tick(); assert.equal(flushed, false);
+  await release(); await generating; await flushing;
+  assert.equal(globalThis.__board.reports.get(state.reportId).completedAt, state.at);
+  const callReady = waitCall();
+  globalThis.__board.stream = (messages, options) => new Promise((resolve, reject) => {
+    const call = { messages, ...options, resolve, reject };
+    calls.push(call); next?.(call);
+    options.signal.addEventListener("abort", () => reject(Object.assign(new Error("aborted"), { name: "AbortError" })));
+  });
+  const updating = refreshBoard();
+  const live = await callReady;
+  await flushBoardWork();
+  live.onChunk(TOPICS); live.resolve();
+  await updating;
+  assert.equal(live.signal.aborted, true);
+  assert.equal(board.get().updating, false);
+  assert.equal(board.get().at, state.at);
 });

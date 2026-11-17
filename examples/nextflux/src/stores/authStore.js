@@ -90,14 +90,18 @@ export function logout() {
     clearMediaCache();
     const { cancelAccountOperations, lastSync } = await import("./syncStore.js");
     const draining = cancelAccountOperations();
-    const [{ clearArticleCache }, articles, feeds, { stopContinuousSync }, { clearFeedNotifications }] = await Promise.all([
+    const [{ clearArticleCache }, articles, feeds, { stopContinuousSync }, { clearFeedNotifications }, { clearBoardHistory }] = await Promise.all([
       import("../db/storage.js"), import("./articlesStore.js"), import("./feedsStore.js"), import("../toolbox/background.js"),
-      import("../toolbox/feed-notifications.js"),
+      import("../toolbox/feed-notifications.js"), import("../toolbox/board/historyStore.js"),
     ]);
     // clear() invalidates the Worker epoch immediately, then drains native
     // writers before publishing its empty root. Starting it before awaiting the
     // account queue also cancels storage admission waits owned by that queue.
-    const cleanup = Promise.allSettled([draining, clearArticleCache(), secureStorage().remove(AUTH_KEY), clearFeedNotifications()]);
+    // Resetting auth above retires the report manager synchronously. Wait for
+    // its abort, queued checkpoints and account-local cleanup before relogin.
+    const cleanup = Promise.allSettled([
+      draining, clearArticleCache(), secureStorage().remove(AUTH_KEY), clearFeedNotifications(), clearBoardHistory(),
+    ]);
     let backgroundFailure = null;
     try { await stopContinuousSync(); } catch (failure) { backgroundFailure = failure; }
     const results = await cleanup;

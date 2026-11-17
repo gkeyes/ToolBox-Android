@@ -93,8 +93,8 @@ const articleList = (articles, globalNumbers = false) => articles
   .join("\n\n");
 
 const TOPICS_PROMPT = [
-  "你是一位新闻编辑，为读者整理“今日看板”。",
-  "下面是读者今天还没读的文章，每篇前面有编号 [n]。",
+  "你是一位新闻编辑，为读者整理本期看板。",
+  "下面是本次待分析的未读文章，每篇前面有编号 [n]。",
   "把讲同一件事的文章归成一个主题，选出 3 到 7 个最值得看的主题，按重要程度从高到低排列；零散、不重要的文章可以不归入任何主题。",
   "只输出一个 JSON 对象，不要输出其他文字，格式：",
   "{\"topics\":[{\"title\":\"主题名，不超过 12 个字\",\"gist\":\"一句话重点，不超过 24 个字\",\"summary\":\"两三句话的摘要\",\"articles\":[1,3]}]}",
@@ -110,7 +110,7 @@ const PROMPT_OVERHEAD = TOPICS_PROMPT.length + BRIEF.length + 65;
 export function topicsMessages(articles, { brief = false } = {}) {
   return [
     { role: "system", content: brief ? `${TOPICS_PROMPT}\n${BRIEF}` : TOPICS_PROMPT },
-    { role: "user", content: `今天的未读文章共 ${articles.length} 篇：\n\n${articleList(articles)}` },
+    { role: "user", content: `本批未读文章共 ${articles.length} 篇：\n\n${articleList(articles)}` },
   ];
 }
 
@@ -140,8 +140,8 @@ export function mapBatchTopics(topics, batch) {
 }
 
 const MERGE_PROMPT = [
-  "你是一位新闻编辑，正在汇总“今日看板”的候选主题。",
-  "下面的候选主题来自分批阅读今天全部未读文章，每项前面有候选编号 [n]，内容是该候选的重点和摘要。",
+  "你是一位新闻编辑，正在汇总本期看板的候选主题。",
+  "下面的候选主题来自分批阅读本次全部未读文章，每项前面有候选编号 [n]，内容是该候选的重点和摘要。",
   "合并讲同一件事的候选，选出 3 到 7 个最值得看的最终主题，按重要程度排列；零散、不重要的候选可以不选，不要把无关事件硬合并。",
   "只输出一个 JSON 对象，不要输出其他文字，格式：",
   "{\"topics\":[{\"title\":\"主题名，不超过 12 个字\",\"gist\":\"一句话重点，不超过 24 个字\",\"summary\":\"两三句话的摘要\",\"articles\":[1,3]}]}",
@@ -416,7 +416,7 @@ export function readTopics(text, count) {
 }
 
 const DIGEST_PROMPT = [
-  "你是一位新闻编辑，把读者今天的新闻写成一篇简短的文章。",
+  "你是一位新闻编辑，把本期看板的新闻写成一篇简短的文章。",
   "下面先给出分批分析后整理出的全部看板主题摘要，再给出各主题选取的代表性原文预览，原文前面有固定编号 [n]。",
   "以全部主题摘要为写作基础，代表性原文用于核实细节和准确引用；只能引用给出的原文编号，不要另行编号，也不要猜测没有给出的来源。",
   "按主题的顺序写，每个主题一段，第一行“## 主题名”，下一行用两到四句简体中文写清楚发生了什么，句末标出依据的文章编号，如 [2][5]。",

@@ -50,10 +50,12 @@ register("data:text/javascript," + encodeURIComponent(loader));
 
 const values = new Map();
 const clone = (value) => value === undefined ? undefined : structuredClone(value);
+let beforeStorageApply = null;
 const storage = {
   async get(key) { return clone(values.get(key) ?? null); },
   async getMany(keys) { return keys.map((key) => clone(values.get(key) ?? null)); },
   async apply(change) {
+    await beforeStorageApply?.(change);
     for (const { key, value } of change.set || []) values.set(key, clone(value));
     for (const key of change.remove || []) values.delete(key);
   },
@@ -99,7 +101,7 @@ globalThis.window = Object.assign(new EventTarget(), {
 });
 Object.defineProperty(globalThis.navigator, "onLine", { value: true, configurable: true });
 const toastErrors = mock.method(toast, "error", () => {});
-const { sync, cancelAccountOperations, isOnline, isSyncing, lastSync } = await import("../src/stores/syncStore.js");
+const { sync, cancelAccountOperations, isOnline, isSyncing, lastSync, syncCommitted } = await import("../src/stores/syncStore.js");
 const { authState } = await import("../src/stores/authStore.js");
 const { settingsState } = await import("../src/stores/settingsStore.js");
 const { feeds, categories, unreadCounts, starredCounts } = await import("../src/stores/feedsStore.js");
@@ -130,6 +132,7 @@ const expectedIds = (count, limit, protectedIds = []) => [...new Set([
 beforeEach(async () => {
   await cancelAccountOperations();
   boundary.afterPreparation = null;
+  beforeStorageApply = null;
   await clearArticleCache();
   resetArticleState();
   window.location.hash = "#/";
@@ -141,6 +144,7 @@ beforeEach(async () => {
   settingsState.set({ ...defaults, recentCacheLimit: "100", syncInterval: "0", hideDuplicateArticles: false });
   isOnline.set(true);
   lastSync.set(null);
+  syncCommitted.set(null);
   await initializeArticleCache(account);
   serverRows = entries(120);
   requests = [];
@@ -155,6 +159,11 @@ test("initial sync supplements unread and bookmarks with recent read bodies that
   const result = await sync();
   assert.equal(result.outcome, "committed");
   assert.equal(result.initialSync, true);
+  assert.deepEqual([...result.initialEntryIds].sort((a, b) => a - b), expectedIds(120, 100),
+    "the first baseline includes unique unread, starred and recent-window IDs");
+  assert.equal(result.initialEntryIds.length, result.updatedCount);
+  assert.deepEqual(result.newEntryIds, []);
+  assert.equal(result.newEntryCount, 0);
   assert.equal(result.recentCacheLimit, 100);
   assert.equal(result.recentCachedCount, 100);
   assert.deepEqual(await cachedIds(), expectedIds(120, 100));
@@ -180,6 +189,7 @@ test("a later 100 to 50 sync prunes old read history while preserving unread and
   requests = [];
   const result = await sync();
   assert.equal(result.initialSync, false);
+  assert.deepEqual(result.initialEntryIds, []);
   assert.equal(result.recentCacheLimit, 50);
   assert.equal(result.recentCachedCount, 50);
   assert.deepEqual(await cachedIds(), expectedIds(120, 50));
@@ -207,13 +217,16 @@ test("turning the recent window off preserves existing history and skips its net
   assert.equal(boundary.commits.at(-1).recentEntryIds, undefined);
 });
 
-test("a recent page failure aborts all staged additions and keeps the prior root and sync checkpoint", async () => {
+test("a recent page failure aborts all staged additions and keeps the prior root and sync checkpoint", async (t) => {
   serverRows = entries(400);
   await sync();
   const beforeRoot = clone(values.get(ROOT_KEY));
   const beforeIds = await cachedIds();
   const beforeSync = getLastSyncTime().toISOString();
   const beforeLastSync = lastSync.get().toISOString();
+  const beforeEvent = syncCommitted.get();
+  const events = [];
+  t.after(syncCommitted.listen((event) => events.push(event)));
   const commits = boundary.commits.length;
   settingsState.set({ ...settingsState.get(), recentCacheLimit: "500" });
   requests = [];
@@ -228,11 +241,14 @@ test("a recent page failure aborts all staged additions and keeps the prior root
   assert.equal((await getArticleById(350)).content, "<p>本地可读正文 350</p>");
   assert.equal(getLastSyncTime().toISOString(), beforeSync);
   assert.equal(lastSync.get().toISOString(), beforeLastSync);
+  assert.equal(syncCommitted.get(), beforeEvent, "a failed sync does not replace the last committed event");
+  assert.deepEqual(events, [], "partially staged data never publishes arrivals");
   assert.equal(toastErrors.mock.callCount(), 1);
   assert.equal(isSyncing.get(), false);
   // Aborting also releases the staging token, so a later successful sync works.
   interceptRequest = null;
   const recovered = await sync();
+  assert.deepEqual(events, [recovered], "only the recovered successful commit publishes");
   assert.equal(recovered.recentCachedCount, 400);
   assert.equal((await getArticleById(250)).content, "<p>本地可读正文 250</p>");
 });
@@ -298,4 +314,140 @@ test("an article route still loading is protected before its activeArticle body 
   assert.equal(activeArticle.get().id, 30, "the route is protected without waiting for activeArticle to change");
   assert.equal((await getArticleById(32)).content, "<p>本地可读正文 32</p>", "the pending destination can finish loading after commit");
   assert.equal(await getArticleById(33), null);
+});
+
+test("the initial sync publishes a completed baseline after cache and visible state refresh without counting historical arrivals", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: Date.now() });
+  const arrived = new Date(Date.now() - 1000).toISOString();
+  serverRows = entries(220).map((entry) => ({
+    ...entry, status: "unread", created_at: arrived, published_at: arrived, changed_at: arrived,
+  }));
+  let advanced = false;
+  interceptRequest = () => {
+    if (advanced) return;
+    advanced = true;
+    t.mock.timers.tick(1000);
+    // This entry will fall into the next sync's created_at overlap. The
+    // initial event must still identify it as already part of the baseline.
+    serverRows.at(-1).created_at = new Date().toISOString();
+  };
+  settingsState.set({ ...settingsState.get(), recentCacheLimit: "0" });
+  const events = [];
+  boundary.afterPreparation = () => {
+    assert.equal(syncCommitted.get(), null, "staging a first baseline does not publish it before commit");
+  };
+  t.after(syncCommitted.listen((event) => events.push({
+    event,
+    persistedSync: getLastSyncTime()?.toISOString(),
+    visibleSync: lastSync.get()?.toISOString(),
+    counts: clone(unreadCounts.get()),
+  })));
+  const result = await sync();
+  assert.equal(result.outcome, "committed");
+  assert.equal(result.initialSync, true);
+  assert.equal(result.updatedCount, 220);
+  assert.deepEqual([...result.initialEntryIds].sort((a, b) => a - b), serverRows.map((entry) => entry.id));
+  assert.equal(new Set(result.initialEntryIds).size, 220);
+  assert.ok(Date.parse(serverRows.at(-1).created_at) > Date.parse(result.syncedAt));
+  assert.ok(result.initialEntryIds.includes(serverRows.at(-1).id));
+  assert.deepEqual(result.newEntryIds, []);
+  assert.equal(result.newEntryCount, 0, "initial backlog does not start an automatic period report");
+  assert.equal(events.length, 1);
+  assert.equal(events[0].event, result);
+  assert.equal(events[0].persistedSync, result.syncedAt);
+  assert.equal(events[0].visibleSync, result.syncedAt);
+  assert.deepEqual(events[0].counts, { 7: 220 });
+  assert.ok(Number.isFinite(Date.parse(result.syncedAt)));
+  assert.ok(Date.parse(result.committedAt) >= Date.parse(result.syncedAt));
+});
+
+test("committed arrivals are real new entry IDs, deduplicated across phases and independent of cache-window expansion", async (t) => {
+  await sync();
+  const previous = getLastSyncTime().getTime();
+  activeArticle.set(await getArticleById(2));
+  t.mock.timers.enable({ apis: ["Date"], now: previous + 10000 });
+  const changedAt = new Date(previous + 9000).toISOString();
+  const createdAt = new Date(previous + 5000).toISOString();
+  serverRows = serverRows.map((entry) => entry.id === 2
+    ? { ...entry, status: "read", changed_at: changedAt } : entry);
+  const arrival = (id, status, starred = false) => ({
+    ...entries(1)[0], id, title: `新到文章 ${id}`, status, starred,
+    created_at: createdAt, published_at: OLD_TIME, changed_at: changedAt,
+  });
+  serverRows.push(arrival(121, "unread"), arrival(122, "read", true), arrival(123, "unread", true), {
+    ...arrival(124, "unread"), created_at: new Date(previous).toISOString(),
+  });
+  assert.equal(await getArticleById(4), null, "older read body starts outside the cached window");
+  settingsState.set({ ...settingsState.get(), recentCacheLimit: "200" });
+  const events = [];
+  t.after(syncCommitted.listen((event) => events.push({ event, counts: clone(unreadCounts.get()),
+    persistedSync: getLastSyncTime()?.toISOString(), visibleSync: lastSync.get()?.toISOString(),
+    activeStatus: activeArticle.get()?.status })));
+  const result = await sync();
+  assert.equal(result.initialSync, false);
+  assert.deepEqual(result.initialEntryIds, []);
+  assert.deepEqual([...result.newEntryIds].sort((a, b) => a - b), [121, 122, 123]);
+  assert.equal(result.newEntryCount, 3, "unread/starred/changed/recent copies count only once");
+  assert.ok(result.updatedCount > result.newEntryCount);
+  assert.equal((await getArticleById(4)).status, "read", "window expansion restores history without declaring it new");
+  assert.equal((await getArticleById(2)).status, "read", "an existing entry state change is not a new arrival");
+  assert.ok(await getArticleById(124), "the strict created_at boundary still caches the article");
+  assert.equal(events.length, 1);
+  assert.equal(events[0].event, result);
+  assert.deepEqual(events[0].counts, { 7: 3 });
+  assert.equal(events[0].persistedSync, result.syncedAt);
+  assert.equal(events[0].visibleSync, result.syncedAt);
+  assert.equal(events[0].activeStatus, "read", "the visible article state refresh finishes before the event");
+  assert.equal(result.committedAt, new Date(previous + 10000).toISOString());
+});
+
+test("native root commit failure publishes no event and preserves the last completed baseline", async (t) => {
+  await sync();
+  const previous = getLastSyncTime().getTime();
+  t.mock.timers.enable({ apis: ["Date"], now: previous + 10000 });
+  const arrivedAt = new Date(previous + 5000).toISOString();
+  serverRows.push({ ...entries(1)[0], id: 121, status: "unread", created_at: arrivedAt, changed_at: arrivedAt });
+  const beforeRoot = clone(values.get(ROOT_KEY));
+  const beforeEvent = syncCommitted.get();
+  const events = [];
+  t.after(syncCommitted.listen((event) => events.push(event)));
+  beforeStorageApply = (change) => {
+    if (change.set?.some(({ key }) => key === ROOT_KEY)) {
+      throw Object.assign(new Error("native cache commit failed"), { code: "NETWORK_UNAVAILABLE" });
+    }
+  };
+  await assert.rejects(sync(), /native cache commit failed/);
+  assert.deepEqual(values.get(ROOT_KEY), beforeRoot);
+  assert.equal(await getArticleById(121), null);
+  assert.equal(getLastSyncTime().getTime(), previous);
+  assert.equal(lastSync.get().getTime(), previous);
+  assert.equal(syncCommitted.get(), beforeEvent);
+  assert.deepEqual(events, []);
+  beforeStorageApply = null;
+  const recovered = await sync();
+  assert.deepEqual(recovered.newEntryIds, [121]);
+  assert.equal(recovered.newEntryCount, 1);
+  assert.deepEqual(events, [recovered]);
+});
+
+test("a failed first commit never publishes initial IDs, and retry establishes the complete baseline once", async (t) => {
+  const events = [];
+  t.after(syncCommitted.listen((event) => events.push(event)));
+  beforeStorageApply = (change) => {
+    if (change.set?.some(({ key }) => key === ROOT_KEY)) {
+      throw Object.assign(new Error("initial native commit failed"), { code: "NETWORK_UNAVAILABLE" });
+    }
+  };
+  await assert.rejects(sync(), /initial native commit failed/);
+  assert.equal(syncCommitted.get(), null);
+  assert.equal(getLastSyncTime(), null);
+  assert.equal(lastSync.get(), null);
+  assert.deepEqual(events, []);
+  beforeStorageApply = null;
+  const recovered = await sync();
+  assert.equal(recovered.initialSync, true);
+  assert.deepEqual([...recovered.initialEntryIds].sort((a, b) => a - b), expectedIds(120, 100));
+  assert.deepEqual(recovered.newEntryIds, []);
+  assert.equal(recovered.newEntryCount, 0);
+  assert.deepEqual(events, [recovered]);
 });

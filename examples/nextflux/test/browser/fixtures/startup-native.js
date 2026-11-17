@@ -39,6 +39,7 @@ export const STORED_SETTINGS = {
   sidebarIconStyle: "a",
   aiBaseUrl: "https://api.openai.com/v1",
   aiModel: "startup-regression-model",
+  autoBoardEnabled: true,
   speechRegion: "global",
   speechModel: "speech-2.8-turbo",
   speechVoiceId: "startup-regression-voice",
@@ -55,7 +56,7 @@ export const SPEECH_SECRET = "startup-regression-speech-secret";
 
 export async function installNativeBoundary(page, {
   denySecure = false, failAuthRead = false, url = PRODUCTION_URL,
-  auth = null, cacheRoot = null, settings = STORED_SETTINGS,
+  auth = null, cacheRoot = null, settings = STORED_SETTINGS, persistStorage = false,
 } = {}) {
   const allowedOrigin = new URL(url).origin;
   await page.route("**/*", async (route) => {
@@ -65,7 +66,7 @@ export async function installNativeBoundary(page, {
       await route.abort("blockedbyclient");
     }
   });
-  await page.addInitScript(({ denySecure, failAuthRead, storedSettings, storedTheme, storedCategoryExpanded, aiSecret, speechSecret, auth, cacheRoot }) => {
+  await page.addInitScript(({ denySecure, failAuthRead, storedSettings, storedTheme, storedCategoryExpanded, aiSecret, speechSecret, auth, cacheRoot, persistStorage }) => {
     const preferences = {
       settings: JSON.stringify(storedSettings),
       theme: JSON.stringify(storedTheme),
@@ -74,6 +75,14 @@ export async function installNativeBoundary(page, {
     };
     const plain = new Map([["nextflux.preferences.v1", preferences]]);
     if (cacheRoot) plain.set("nextflux.cache.v3.root", cacheRoot);
+    // Optional native persistence across a reload in the same test. Ordinary
+    // startup cases still begin with exactly the supplied storage snapshot.
+    const durableKey = "nextflux-test-native-storage";
+    if (persistStorage && sessionStorage.getItem(durableKey)) {
+      plain.clear();
+      for (const [key, value] of JSON.parse(sessionStorage.getItem(durableKey))) plain.set(key, value);
+    }
+    const persist = () => { if (persistStorage) sessionStorage.setItem(durableKey, JSON.stringify([...plain])); };
     const secure = new Map([
       ["nextflux.ai-key.v1", aiSecret],
       ["nextflux.speech-key.v1", speechSecret],
@@ -133,10 +142,12 @@ export async function installNativeBoundary(page, {
         async set(key, value) {
           recordWrite("storage.set", key, value);
           plain.set(key, copy(value));
+          persist();
         },
         async remove(key) {
           recordWrite("storage.remove", key);
           plain.delete(key);
+          persist();
         },
         async apply(change = {}) {
           const updates = change.set || [];
@@ -152,6 +163,7 @@ export async function installNativeBoundary(page, {
           for (const key of removals) recordWrite("storage.apply.remove", key);
           plain.clear();
           for (const [key, value] of next) plain.set(key, value);
+          persist();
         },
         async keys() {
           reads.push("storage.keys");
@@ -189,6 +201,6 @@ export async function installNativeBoundary(page, {
   }, {
     denySecure, failAuthRead, storedSettings: settings,
     storedTheme: STORED_THEME, storedCategoryExpanded: STORED_CATEGORY_EXPANDED,
-    aiSecret: AI_SECRET, speechSecret: SPEECH_SECRET, auth, cacheRoot,
+    aiSecret: AI_SECRET, speechSecret: SPEECH_SECRET, auth, cacheRoot, persistStorage,
   });
 }
