@@ -19,6 +19,9 @@ export const isOnline = atom(navigator.onLine);
 export const isSyncing = atom(false);
 export const syncProgress = atom("");
 export const lastSync = atom(null);
+// Only a complete, committed sync publishes this event. Counts alone cannot
+// distinguish new arrivals from state changes or a larger recent-cache window.
+export const syncCommitted = atom(null);
 export const error = atom(null);
 let syncInterval = null;
 let autoSyncActive = false;
@@ -364,6 +367,11 @@ async function collectSnapshot(baseCheck) {
     return {
       token, syncedAt,
       initialSync: !previous,
+      // The initial snapshot is a seen baseline, including entries created
+      // while that first sync was running. Reuse the successfully staged ID
+      // map so a later overlap window cannot treat them as unseen arrivals.
+      initialEntryIds: previous ? [] : [...entryChanges.keys()],
+      newEntryIds: [...newEntryIds],
       newEntryCount: newEntryIds.size,
       updatedCount: entryChanges.size,
       feeds: serverFeeds.map(mapServerFeed),
@@ -428,16 +436,22 @@ export function sync(mode = "foreground") {
         });
         const { unreadCounts } = await import("./feedsStore.js");
         const unreadCount = Object.values(unreadCounts.get()).reduce((sum, value) => sum + (Number(value) || 0), 0);
-        return {
+        const result = {
           outcome: "committed",
           syncedAt: collected.syncedAt.toISOString(),
+          committedAt: new Date().toISOString(),
           initialSync: collected.initialSync,
+          initialEntryIds: collected.initialEntryIds,
+          newEntryIds: collected.newEntryIds,
           newEntryCount: collected.newEntryCount || 0,
           updatedCount: collected.updatedCount || 0,
           unreadCount,
           recentCacheLimit: collected.recentCacheLimit,
           recentCachedCount: collected.recentEntryIds?.length ?? 0,
         };
+        check(false);
+        syncCommitted.set(result);
+        return result;
       } catch (failure) {
         await abortArticleSync(collected.token).catch(() => {});
         check(false);

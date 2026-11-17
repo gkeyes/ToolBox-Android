@@ -20,11 +20,18 @@ async function boot() {
   window.ToolBox.runtime.registerFlushHandler(async () => {
     // Stores must read the restored preference engine, including during early exit.
     await initializePreferences();
-    const [{ flushSyncWork }, { flushBackgroundWork }] = await Promise.all([
-      import("./stores/syncStore.js"), import("./toolbox/background.js"),
+    const [{ flushSyncWork }, { flushBackgroundWork }, { flushBoardHistory }, { flushBoardWork }] = await Promise.all([
+      import("./stores/syncStore.js"), import("./toolbox/background.js"), import("./toolbox/board/historyStore.js"),
+      import("./toolbox/board/boardStore.js"),
     ]);
-    const work = await Promise.allSettled([flushSyncWork(), flushBackgroundWork()]);
-    await flushPreferences();
+    // Abort AI work and save its checkpoint while the existing sync writers
+    // drain; closing must not wait for a provider to finish generating text.
+    const settle = (tasks) => Promise.allSettled(tasks.map((task) => Promise.resolve().then(() => task())));
+    const work = await settle([flushBoardWork, flushBoardHistory, flushSyncWork, flushBackgroundWork]);
+    // The final RSS commit may enqueue history work during that first drain.
+    // Drain it again before preferences, even when another cleanup failed.
+    work.push(...await settle([flushBoardHistory]));
+    work.push(...await settle([flushPreferences]));
     const failure = work.find((result) => result.status === "rejected");
     if (failure) throw failure.reason;
   });
@@ -38,6 +45,12 @@ async function boot() {
   if (auth.userId) {
     startupStage = "恢复阅读缓存";
     await initializeArticleCache({ serverUrl: auth.serverUrl, userId: String(auth.userId) });
+    // The history journal owns its recoverable error state. A failed report
+    // recovery must still let the reader open its already restored articles.
+    try {
+      const { initializeBoardHistory } = await import("./toolbox/board/historyStore.js");
+      await initializeBoardHistory();
+    } catch { /* The history screen offers recovery without blocking reading. */ }
   }
   startupStage = "打开阅读界面";
   installLinkHandling();
