@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useStore } from "@nanostores/react";
 import { useNavigate, useParams } from "react-router";
-import { Button, Tabs, cn } from "@heroui/react";
-import { RefreshCw } from "lucide-react";
+import { Button, Label, ListBox, Select, Tabs, cn } from "@heroui/react";
+import { ChevronDown, RefreshCw } from "lucide-react";
 import { AISummaryIcon } from "@/components/ui/icons.jsx";
 import { SidebarTrigger } from "@/components/ui/sidebar.jsx";
 import ArticleView from "@/components/ArticleView/ArticleView.jsx";
 import CustomModal from "@/components/ui/CustomModal.jsx";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible.jsx";
 import { getArticleById } from "@/db/storage.js";
 import { settingsState } from "@/stores/settingsStore.js";
 import { board, boardReadState, boardStream, digest, markBoardAsRead, openBoard, refreshBoard, showBoardReport, showTodayBoard, writeDigest } from "@/toolbox/board/boardStore.js";
@@ -24,6 +25,11 @@ const reportDate = (value) => Number.isFinite(epoch(value))
   ? new Date(epoch(value)).toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false })
   : "--";
 const periodLabel = (report) => `${reportDate(report.periodStart)} — ${reportDate(report.periodEnd)}`;
+// Presentation only: saved titles, source references and speech stay intact.
+const titleWithoutOrdinal = (title) => String(title || "")
+  .replace(/^\s*(?:(?:\d\uFE0F?\u20E3)+|🔟)\s*/u, "")
+  .replace(/^\s*\d{1,2}(?:[.．]\s+|[、)）]\s*)/u, "")
+  .trim();
 
 function Spinner() {
   return <span className="nf-board-spinner" aria-hidden="true" />;
@@ -56,7 +62,7 @@ function Topics({ state, onOpen }) {
     <section key={index} className="nf-board-card">
       <div className="nf-board-card-head">
         <span className="nf-board-rank" data-rank={index + 1}>{index + 1}</span>
-        <h3>{topic.title}</h3>
+        <h3>{titleWithoutOrdinal(topic.title)}</h3>
         {fresh.size > 0 && topic.articles.some((n) => fresh.has(state.articles[n - 1]?.id)) && <span className="nf-board-new" aria-label="有新文章">新</span>}
         <span className="nf-board-row-count">{topic.articles.length} 篇</span>
       </div>
@@ -66,15 +72,15 @@ function Topics({ state, onOpen }) {
   ));
 }
 
-function Digest({ state, onOpen, saved = false }) {
+function Digest({ state, onOpen }) {
   const written = useStore(digest);
   const [speaking, setSpeaking] = useState(false);
   const included = useMemo(() => new Set(digestArticleNumbers(state.topics, state.articles)), [state.topics, state.articles]);
   const sections = parseDigest(written.text, state.articles.length, included);
   const writing = written.status === "streaming";
-  // Saved reports open exactly as written. A manual rewrite is an explicit
-  // action; browsing the history never creates another AI request.
-  useEffect(() => { if (!saved) writeDigest(); }, [state.at, saved]);
+  let ordinal = 0;
+  // Opening or reopening the disclosure only reads. Generating prose is an
+  // explicit action, including for today's report and after an earlier error.
   useEffect(() => () => { if (speechAvailable()) window.speechSynthesis.cancel(); }, []);
   const speak = () => {
     const synth = window.speechSynthesis;
@@ -90,31 +96,48 @@ function Digest({ state, onOpen, saved = false }) {
   };
   const minutes = Math.max(1, Math.round(written.text.replace(/\s+/g, "").length / 400));
   return <>
-    {writing && !sections.length && <p className="nf-board-status" role="status"><Spinner />{saved ? "正在把这期主题写成文章…" : "正在把今天的主题写成文章…"}</p>}
+    {writing && !sections.length && <p className="nf-board-status" role="status"><Spinner />正在整理完整报告…</p>}
     {sections.length > 0 && <article className="nf-board-card nf-board-digest">
       <p className="nf-board-digest-meta">根据看板收录的 {boardArticleIds(state.topics, state.articles).length} 篇文章与主题摘要写成{written.status === "done" ? ` · 约 ${minutes} 分钟读完` : ""}</p>
-      {sections.map((section, index) => (
-        <section key={index}>
-          {section.title && <h4>{section.title}</h4>}
-          <p>{section.parts.map((part, at) => {
-            if ("text" in part) return part.text;
-            const article = state.articles[part.cite - 1];
-            return <a key={at} className="nf-board-cite" href={`#/board/article/${article.id}`} title={article.title} onClick={(event) => onOpen(event, article)}>
-              {article.feedTitle || article.title || `#${part.cite}`}
-            </a>;
-          })}</p>
-        </section>
-      ))}
+      {sections.map((section, index) => {
+        const number = section.title ? ++ordinal : 0;
+        return (
+          <section key={index}>
+            {section.title && <h4><span className="nf-board-rank" data-rank={number}>{number}</span><span>{titleWithoutOrdinal(section.title)}</span></h4>}
+            <p>{section.parts.map((part, at) => {
+              if ("text" in part) return part.text;
+              const article = state.articles[part.cite - 1];
+              return <a key={at} className="nf-board-cite" href={`#/board/article/${article.id}`} title={article.title} onClick={(event) => onOpen(event, article)}>
+                {article.feedTitle || article.title || `#${part.cite}`}
+              </a>;
+            })}</p>
+          </section>
+        );
+      })}
     </article>}
     {written.error && <p className="nf-board-inline-error" role="alert">{written.error}</p>}
-    {!writing && !written.text && written.status !== "error" && <p className="nf-board-status">这份报告尚未生成文章，可以按需生成。</p>}
+    {!writing && !written.text && written.status !== "error" && <p className="nf-board-status">主题卡片已包含本期重点。如需连贯阅读，可按需生成完整报告。</p>}
     <div className="nf-board-actions">
       {speechAvailable() && written.status === "done" && <Button variant="secondary" fullWidth onPress={speak}>{speaking ? "停止朗读" : "朗读"}</Button>}
       {/* While it writes, the same button starts it over: a stream that never
           finishes is not a dead end. */}
-      <Button variant="secondary" fullWidth onPress={() => writeDigest({ again: true })}>{writing ? "重新开始写" : written.text ? "重新写一篇" : "生成文章"}</Button>
+      <Button variant="secondary" fullWidth isDisabled={state.updating} onPress={() => writeDigest({ again: true })}>{writing ? "重新开始写" : written.text ? "重新生成完整报告" : "生成完整报告"}</Button>
     </div>
   </>;
+}
+
+function CompleteReport({ state, onOpen }) {
+  const [expanded, setExpanded] = useState(false);
+  return <Collapsible className="nf-board-complete" open={expanded} onOpenChange={setExpanded}>
+    <CollapsibleTrigger asChild>
+      <Button variant="secondary" fullWidth className="nf-board-complete-toggle">
+        完整报告<ChevronDown className={cn("size-4 shrink-0", expanded && "rotate-180")} aria-hidden="true" />
+      </Button>
+    </CollapsibleTrigger>
+    <CollapsibleContent>
+      {expanded && <div className="nf-board-complete-body"><Digest state={state} onOpen={onOpen} /></div>}
+    </CollapsibleContent>
+  </Collapsible>;
 }
 
 function ReadAction({ state, working, count }) {
@@ -168,14 +191,23 @@ function AutomaticReport({ history, enabled, aiReady, detailed, busy, onGenerate
 
 function ReportPicker({ reports, selected, busy, onChoose }) {
   return <section className="nf-board-history" aria-label="报告历史">
-    <label htmlFor="nf-board-report-picker">48 小时内的报告</label>
-    <select id="nf-board-report-picker" value={selected} disabled={busy || !reports.length} onChange={(event) => onChoose(event.target.value)}>
-      <option value="">{reports.length ? "选择一份报告" : "还没有已生成的报告"}</option>
-      {reports.map((report) => <option key={report.id} value={report.id}>
-        {report.unseen ? "新 · " : ""}{report.kind === "today" ? "今日总览 · " : ""}{periodLabel(report)} · {report.total || 0} 篇
-      </option>)}
-    </select>
-    <p>报告从首次生成完成起保留 48 小时。打开历史不会重新调用 AI。</p>
+    <Select fullWidth variant="secondary" value={selected || null} isDisabled={busy || !reports.length}
+      placeholder={reports.length ? "选择一份报告" : "还没有已生成的报告"}
+      onChange={(value) => { if (value) onChoose(String(value)); }}>
+      <Label>报告时间</Label>
+      <Select.Trigger id="nf-board-report-picker"><Select.Value /><Select.Indicator /></Select.Trigger>
+      <Select.Popover className="nf-board-report-popover">
+        <ListBox aria-label="历史报告">
+          {reports.map((report) => {
+            const label = `${report.unseen ? "新 · " : ""}${report.kind === "today" ? "今日总览 · " : ""}${periodLabel(report)} · ${report.total || 0} 篇`;
+            return <ListBox.Item key={report.id} id={report.id} textValue={label}>
+              <span className="nf-board-report-option">{label}</span><ListBox.ItemIndicator />
+            </ListBox.Item>;
+          })}
+        </ListBox>
+      </Select.Popover>
+    </Select>
+    <p>报告自生成完成起保留 48 小时。</p>
   </section>;
 }
 
@@ -273,8 +305,6 @@ function caption(state, stream) {
   return "";
 }
 
-let lastTab = "topics";
-
 export default function BoardPage() {
   const state = useStore(board);
   const stream = useStore(boardStream);
@@ -282,10 +312,6 @@ export default function BoardPage() {
   const { articleListStyle, aiApiKey, autoBoardEnabled } = useStore(settingsState);
   const { articleId } = useParams();
   const navigate = useNavigate();
-  // The 主题/文章 choice is kept while the app runs, so coming back from the
-  // list opens the board on the same view.
-  const [tab, setTabState] = useState(() => lastTab);
-  const setTab = (value) => { lastTab = value; setTabState(value); };
   const [scope, setScope] = useState(() => state.historical || state.kind === "interval" ? "reports" : "today");
   const [now, setNow] = useState(Date.now);
   const [choosing, setChoosing] = useState(false);
@@ -305,8 +331,8 @@ export default function BoardPage() {
   const includedCount = boardArticleIds(state.topics, state.articles).length;
   const unseenCount = reports.filter((report) => report.unseen).length;
 
-  // Opening the daily overview may update it. Reading a saved report never
-  // starts another AI request, including when returning from its article.
+  // Reopening the board reuses its current report. Saved reports never start
+  // another AI request, including when returning from their source articles.
   useEffect(() => {
     const request = ++reportRequest.current;
     Promise.resolve(openBoard(true)).then((openedScope) => {
@@ -379,6 +405,7 @@ export default function BoardPage() {
     finally { if (request === reportRequest.current) setChoosing(false); }
   };
   const chooseScope = (value) => {
+    if (value === scope) return;
     reportRequest.current += 1;
     setScope(value);
     setActionError("");
@@ -392,10 +419,14 @@ export default function BoardPage() {
     Promise.resolve(retry ? retryPendingReport() : generatePendingReport())
       .catch((error) => setActionError(error.message || "时段报告暂时无法生成。"));
   };
-  const title = isHistory ? "时段报告" : "今日看板";
+  const title = isHistory ? "历史报告" : "今日看板";
   const subheading = isHistory
     ? done ? `分析 ${state.total} 篇 · 收录 ${includedCount} 篇` : "查看最近 48 小时生成的报告"
     : caption(state, stream);
+  const automatic = (isHistory || history.job || history.pendingCount > 0) && <AutomaticReport
+    history={history} enabled={autoBoardEnabled !== false} aiReady={Boolean(aiApiKey?.trim())}
+    detailed={isHistory} busy={choosing} onGenerate={() => runPending()} onRetry={() => runPending(true)}
+  />;
 
   return (
     <div className="main-content flex">
@@ -419,43 +450,35 @@ export default function BoardPage() {
                 radius="full"
                 variant="ghost"
                 aria-label="重新生成看板"
+                isDisabled={working}
                 onPress={() => refreshBoard()}
               >
                 {working ? <Spinner /> : <RefreshCw className="size-5" />}
               </Button>
             </div>}
           </div>
-          {done && (
-            <div className="article-list-scoped-tabs nf-board-switch" data-fit="full">
-              <div className="article-list-tabs px-3">
-                <Tabs selectedKey={tab} onSelectionChange={(key) => setTab(String(key))} aria-label="看板形式" variant="primary">
-                  <Tabs.ListContainer>
-                    <Tabs.List aria-label="看板形式" className="w-fit *:w-fit">
-                      <Tabs.Tab id="topics"><Tabs.Indicator className="bg-accent" /><span>主题</span></Tabs.Tab>
-                      <Tabs.Tab id="digest"><Tabs.Indicator className="bg-accent" /><span>文章</span></Tabs.Tab>
-                    </Tabs.List>
-                  </Tabs.ListContainer>
-                </Tabs>
-              </div>
+          <div className="article-list-scoped-tabs nf-board-navigation" data-fit="full">
+            <div className="article-list-tabs px-3">
+              <Tabs selectedKey={scope} onSelectionChange={(key) => chooseScope(String(key))} aria-label="看板范围" variant="primary">
+                <Tabs.ListContainer>
+                  <Tabs.List aria-label="看板范围">
+                    <Tabs.Tab id="today"><Tabs.Indicator className="bg-accent" /><span>今日</span></Tabs.Tab>
+                    <Tabs.Tab id="reports"><Tabs.Indicator className="bg-accent" /><span>历史报告</span>{unseenCount > 0 && <span className="nf-board-history-dot" aria-label={`有 ${unseenCount} 份新报告`} />}</Tabs.Tab>
+                  </Tabs.List>
+                </Tabs.ListContainer>
+              </Tabs>
             </div>
-          )}
+          </div>
         </div>
         <div className="nf-board-scroll">
-          <nav className="nf-board-scope" aria-label="看板范围">
-            <button type="button" aria-pressed={!isHistory} onClick={() => chooseScope("today")}>今日总览</button>
-            <button type="button" aria-pressed={isHistory} onClick={() => chooseScope("reports")}>48 小时报告{unseenCount > 0 && <span className="nf-board-scope-new">{unseenCount} 新</span>}</button>
-          </nav>
-          {(isHistory || history.job || history.pendingCount > 0) && <AutomaticReport
-            history={history} enabled={autoBoardEnabled !== false} aiReady={Boolean(aiApiKey?.trim())}
-            detailed={isHistory} busy={choosing} onGenerate={() => runPending()} onRetry={() => runPending(true)}
-          />}
           {isHistory && <ReportPicker reports={reports} selected={selectedReport?.id || ""} busy={choosing} onChoose={chooseReport} />}
+          {history.job && automatic}
           {actionError && actionError !== history.job?.error && <p className="nf-board-inline-error" role="alert">{actionError}</p>}
           {isHistory && history.error && history.error !== actionError && history.error !== history.job?.error && <p className="nf-board-inline-error" role="alert">{history.error}</p>}
           {isHistory && history.status === "loading" && <p className="nf-board-status" role="status"><Spinner />正在读取报告历史…</p>}
           {isHistory && choosing && <p className="nf-board-status" role="status"><Spinner />正在打开报告…</p>}
           {isHistory && !choosing && !visible && history.status !== "loading" && <p className="nf-board-status" role="status">
-            {reportExpired ? "这份报告已超过 48 小时。请选择其他报告，或返回今日总览。" : reports.length ? "选择一份报告，查看这个时段的主题和文章。" : "还没有已生成的报告，新增未读会在这里累计。"}
+            {reportExpired ? "这份报告已超过 48 小时。请选择其他报告，或返回今日。" : reports.length ? "选择一份报告，查看这个时段的重点。" : "还没有已生成的报告，新增未读会在这里累计。"}
           </p>}
           {!isHistory && (state.status === "idle" || state.status === "loading") ? <LiveRun stream={stream} /> : null}
           {!isHistory && state.newAvailableCount > 0 && <section className="nf-board-auto" aria-label="今日总览更新">
@@ -470,24 +493,24 @@ export default function BoardPage() {
           {!isHistory && state.status === "error" && <RawOutput raw={state.raw} />}
           {done && <>
             {isHistory && <div className="nf-board-period">
-              <p>{periodLabel(state)}</p>
               <p>{reportDate(selectedReport.completedAt)} 生成 · {reportDate(state.expiresAt || selectedReport.expiresAt)} 到期</p>
             </div>}
             <p className="nf-board-summary">
               {`${isHistory && state.kind === "interval" ? "本时段" : "今日"} ${state.total} 篇未读已全部参与分析，${state.cut ? "AI 回答中途断开，先展示完整收到的" : "选出"} ${state.topics.length} 个主题，收录 ${includedCount} 篇文章`}
-              {tab === "digest" ? "，汇成一篇文章" : ""}
               {!isHistory && state.newCount > 0 && !state.updating ? `，比上一版多 ${state.newCount} 篇新文章` : ""}
             </p>
             <ReadAction state={state} working={working} count={includedCount} />
             {state.error && <p className="nf-board-inline-error" role="alert">更新失败：{state.error}</p>}
             {state.error && <RawOutput raw={state.raw} />}
             <div className={state.updating ? "nf-board-cards is-stale" : "nf-board-cards"}>
-              {tab === "topics" ? <Topics state={state} onOpen={openArticle} /> : <Digest state={state} onOpen={openArticle} saved={isHistory || state.historical} />}
+              <Topics state={state} onOpen={openArticle} />
+              <CompleteReport key={state.reportId || state.at} state={state} onOpen={openArticle} />
             </div>
             {/* Under the cards: above them, its growing text pushed the board
                 being read down by up to 600px. */}
             {state.updating && <LiveRun stream={stream} />}
           </>}
+          {!history.job && automatic}
         </div>
       </div>
       <ArticleView />

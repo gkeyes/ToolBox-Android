@@ -194,6 +194,26 @@ test("turning automatic reports off keeps arrivals journaled and the manual acti
   assert.equal(completed.job, null);
 });
 
+test("a saved today snapshot retains its article settings for reuse after a restart", async (t) => {
+  const f = await fixture(t);
+  const at = Date.now();
+  const day = new Date(at); day.setHours(0, 0, 0, 0);
+  const state = {
+    reportId: `today-${at}`, kind: "today", at, day: day.getTime(),
+    periodStart: day.getTime(), periodEnd: at, filter: "false|false|either", total: 1,
+    articles: [{ id: 1, title: "保存的文章", number: 1 }],
+    topics: [{ title: "保存的主题", articles: [1] }],
+  };
+  await f.history.saveBoardSnapshot(state, "已写好的完整报告 [1]");
+  const saved = await f.repository().readReport(state.reportId);
+  assert.equal(saved.filter, state.filter);
+  assert.equal(saved.kind, "today");
+  assert.equal(saved.periodStart, day.getTime());
+  assert.equal(saved.digest, "已写好的完整报告 [1]");
+  assert.deepEqual(saved.articles, state.articles);
+  assert.deepEqual(f.aiCalls, [], "saving and restoring do not generate content");
+});
+
 test("late initialization and an old sync event cannot publish into the replacement account", { timeout: 5000 }, async (t) => {
   const f = await fixture(t);
   f.addArticles([701], 7);

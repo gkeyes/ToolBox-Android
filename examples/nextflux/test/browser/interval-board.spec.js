@@ -74,20 +74,36 @@ async function commitArticles(page, first, count) {
   }, { first, count });
 }
 
-async function seedReport(page, { id = "saved-overview", remaining = 48 * 60 * 60 * 1000, kind = "today" } = {}) {
-  await page.evaluate(async ({ id, remaining, kind }) => {
+async function seedReport(page, { id = "saved-overview", remaining = 48 * 60 * 60 * 1000, kind = "today", topicCount = 1 } = {}) {
+  await page.evaluate(async ({ id, remaining, kind, topicCount }) => {
     const at = Date.now() - 48 * 60 * 60 * 1000 + remaining;
     const { saveBoardSnapshot } = await import("/src/toolbox/board/historyStore.js");
+    const articles = Array.from({ length: topicCount + 1 }, (_, index) => ({
+      id: 9001 + index,
+      title: index === 0 ? "已清理的来源" : index === topicCount ? "未收录的来源" : `历史来源 ${index + 1}`,
+      feedTitle: "历史订阅", url: index === 0 ? "https://example.test/saved-source" : index === topicCount ? "https://example.test/omitted" : `https://example.test/saved-source/${index + 1}`,
+      text: index === 0 ? "这是已保存的来源预览，<b>这部分保持纯文本</b>。" : index === topicCount ? "未纳入报告。" : "这段文字在生成报告时已保存。",
+    }));
+    const topics = Array.from({ length: topicCount }, (_, index) => ({
+      title: topicCount === 1 ? "之前保存的主题" : `${["1. ", "2️⃣ "][index] || ""}历史主题 ${index + 1}`,
+      summary: "这个版本可以继续阅读。", articles: [index + 1],
+    }));
+    const digest = topicCount === 1 ? "## 已保存的文章\n这段内容来自报告保存的来源。[1]"
+      : "这是无标题的导语。\n\n" + topics.map((_, index) => `## ${["1. ", "2️⃣ "][index] || ""}已保存的文章 ${index + 1}\n这段内容来自报告保存的来源。[${index + 1}]`).join("\n\n");
     await saveBoardSnapshot({
       status: "done", reportId: id, kind, at, day: at - 3_600_000,
-      periodStart: at - 3_600_000, periodEnd: at, total: 2,
-      topics: [{ title: "之前保存的主题", summary: "这个版本可以继续阅读。", articles: [1] }],
-      articles: [
-        { id: 9001, title: "已清理的来源", feedTitle: "历史订阅", url: "https://example.test/saved-source", text: "这是已保存的来源预览，<b>这部分保持纯文本</b>。" },
-        { id: 9002, title: "未收录的来源", feedTitle: "历史订阅", url: "https://example.test/omitted", text: "未纳入报告。" },
-      ],
-    }, "## 已保存的文章\n这段内容来自报告保存的来源。[1]");
-  }, { id, remaining, kind });
+      periodStart: at - 3_600_000, periodEnd: at, total: articles.length, topics, articles,
+    }, digest);
+  }, { id, remaining, kind, topicCount });
+}
+
+const reportPicker = (page) => page.getByRole("region", { name: "报告历史" }).getByRole("button");
+
+async function chooseSavedReport(page, name) {
+  await reportPicker(page).click();
+  await page.getByRole("option", { name }).click();
+  await expect(page.getByRole("listbox")).toHaveCount(0);
+  await expect(reportPicker(page)).toContainText(name);
 }
 
 test("151 new unread items start a silent report, with later arrivals kept for the next one", async ({ page }) => {
@@ -109,7 +125,7 @@ test("151 new unread items start a silent report, with later arrivals kept for t
   // starting a second, overlapping full-day AI request.
   const callsWhileRunning = await page.evaluate(() => window.__intervalTest.messages.length);
   await page.evaluate(() => { location.hash = "#/board"; });
-  await expect(page.getByRole("button", { name: /48 小时报告/ })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("tab", { name: /历史报告/ })).toHaveAttribute("aria-selected", "true");
   await expect(page.locator(".nf-board-auto-status")).toBeVisible();
   expect(await page.evaluate(() => window.__intervalTest.messages.length)).toBe(callsWhileRunning);
   await page.evaluate(() => { window.__intervalTest.hold = false; window.__intervalTest.release(); });
@@ -126,12 +142,12 @@ test("151 new unread items start a silent report, with later arrivals kept for t
 
   // Completion adds a report to the picker. Choosing it and reading its
   // written form both use storage, without resubmitting it to the provider.
-  await page.locator("#nf-board-report-picker").selectOption(completed.history.reports[0].id);
+  await chooseSavedReport(page, /151 篇/);
   await expect(page.locator(".nf-board-summary")).toContainText("本时段 151 篇未读已全部参与分析");
-  await expect(page.getByRole("button", { name: /48 小时报告/ })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("tab", { name: /历史报告/ })).toHaveAttribute("aria-selected", "true");
   await expect(page.locator(".nf-board-auto-count")).toContainText("已累计新增未读 10 篇");
-  await page.getByRole("tab", { name: "文章", exact: true }).click();
-  await expect(page.locator(".nf-board-digest h4")).toHaveText("本期重点");
+  await page.getByRole("button", { name: "完整报告", exact: true }).click();
+  await expect(page.locator(".nf-board-digest h4 > span:last-child")).toHaveText("本期重点");
   expect(await page.evaluate(() => window.__intervalTest.messages.length)).toBe(completed.calls);
   expect(await page.evaluate(() => window.__intervalTest.reads)).toEqual([]);
   const selected = await page.evaluate(async () => {
@@ -192,7 +208,7 @@ test("automatic reports can be disabled, and a failed manual report retries with
   await page.evaluate(() => { window.__intervalTest.fail = false; });
   await page.getByRole("button", { name: "重试生成" }).click();
   await expect.poll(() => page.evaluate(async () => (await import("/src/toolbox/board/historyStore.js")).reportHistory.get().reports.length)).toBe(2);
-  await expect(page.locator("#nf-board-report-picker")).toHaveValue("saved-overview");
+  await expect(reportPicker(page)).toContainText("今日总览");
   await expect(page.locator(".nf-board-card h3")).toHaveText("之前保存的主题");
   const completed = await page.evaluate(async () => ({
     report: (await import("/src/toolbox/board/historyStore.js")).reportHistory.get().reports.find((report) => report.kind === "interval"),
@@ -201,10 +217,10 @@ test("automatic reports can be disabled, and a failed manual report retries with
   }));
   expect(completed.report).toMatchObject({ total: 12, includedCount: 1 });
   expect(completed.reads).toEqual([]);
-  await page.locator("#nf-board-report-picker").selectOption(completed.report.id);
+  await chooseSavedReport(page, /12 篇/);
   await expect(page.locator(".nf-board-summary")).toContainText("本时段 12 篇未读已全部参与分析");
-  await page.getByRole("tab", { name: "文章", exact: true }).click();
-  await expect(page.locator(".nf-board-digest h4")).toHaveText("本期重点");
+  await page.getByRole("button", { name: "完整报告", exact: true }).click();
+  await expect(page.locator(".nf-board-digest h4 > span:last-child")).toHaveText("本期重点");
   expect(await page.evaluate(() => window.__intervalTest.messages.length)).toBe(completed.calls);
 });
 
@@ -214,8 +230,10 @@ test("saved daily reports survive reload, preview a cleaned source, and disappea
   await prepareIntervals(page, { persistStorage: true });
   await seedReport(page, { remaining: 60_000 });
   await page.goto(`${PRODUCTION_URL}#/board`);
+  await page.reload();
+  expect(await page.evaluate(() => typeof window.__intervalTest)).toBe("undefined");
   await expect(page.locator(".nf-board-card h3")).toHaveText("之前保存的主题");
-  await expect(page.getByRole("button", { name: /48 小时报告/ })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("tab", { name: /历史报告/ })).toHaveAttribute("aria-selected", "true");
   await page.evaluate(() => {
     document.documentElement.style.fontSize = "24px";
     window.__sourceLinks = [];
@@ -223,7 +241,7 @@ test("saved daily reports survive reload, preview a cleaned source, and disappea
   });
   const layout = await page.evaluate(() => {
     const picker = document.querySelector("#nf-board-report-picker").getBoundingClientRect();
-    const choices = [...document.querySelectorAll(".nf-board-scope button")].map((button) => {
+    const choices = [...document.querySelectorAll(".nf-board-navigation [role=tab]")].map((button) => {
       const rect = button.getBoundingClientRect();
       return { left: rect.left, right: rect.right, height: rect.height };
     });
@@ -247,14 +265,142 @@ test("saved daily reports survive reload, preview a cleaned source, and disappea
   await page.keyboard.press("Escape");
   await expect(preview).not.toBeVisible();
   expect(page.url()).toBe(`${PRODUCTION_URL}#/board`);
-  await page.getByRole("tab", { name: "文章", exact: true }).click();
-  await expect(page.locator(".nf-board-digest h4")).toHaveText("已保存的文章");
+  await page.getByRole("button", { name: "完整报告", exact: true }).click();
+  await expect(page.locator(".nf-board-digest h4 > span:last-child")).toHaveText("已保存的文章");
   // No AI stub was reinstalled after navigation. The saved digest is enough.
   expect(await page.evaluate(async () => (await import("/src/toolbox/board/boardStore.js")).digest.get().status)).toBe("done");
   await page.clock.fastForward(61_000);
   await expect(page.locator(".nf-board-status")).toContainText("这份报告已超过 48 小时");
   await expect(page.locator(".nf-board-digest")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "看板文章一键已读", exact: true })).toHaveCount(0);
-  await expect(page.locator("#nf-board-report-picker option")).toHaveCount(1);
-  await expect(page.getByRole("button", { name: "今日总览", exact: true })).toBeVisible();
+  await expect(reportPicker(page)).toBeDisabled();
+  await expect(reportPicker(page)).toHaveText("还没有已生成的报告");
+  await expect(page.getByRole("tab", { name: "今日", exact: true })).toBeVisible();
+});
+
+test("saved report menus follow the theme, fit large phone text, and keep reading free of AI or read updates", async ({ page }, testInfo) => {
+  const errors = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  page.on("console", (message) => {
+    if (message.type() !== "error") return;
+    const text = message.text();
+    // This fixture deliberately rejects the startup integration-status probe;
+    // its API and store both log that expected offline result.
+    if (text.startsWith("检查第三方集成状态失败: Error: 无法连接服务器，请检查网络后重试。") && text.includes("/src/stores/basicInfoStore.js")) return;
+    errors.push(text);
+  });
+  await prepareIntervals(page);
+  await commitArticles(page, 9001, 4);
+  await seedReport(page, { remaining: 47 * 60 * 60 * 1000 });
+  await seedReport(page, { id: "saved-period", kind: "interval", topicCount: 3 });
+  await page.evaluate(() => { location.hash = "#/board"; });
+  await expect(page).toHaveURL(`${PRODUCTION_URL}#/board`);
+  await expect(page).toHaveTitle(/NextFlux/i);
+  await expect(page.locator("vite-error-overlay")).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "历史报告", exact: true })).toBeVisible();
+  await expect(page.getByRole("tablist", { name: "看板范围" })).toHaveCount(1);
+  await expect(page.getByRole("tablist", { name: "看板范围" }).getByRole("tab")).toHaveCount(2);
+  await expect(page.locator(".nf-board-card h3")).toHaveText(["历史主题 1", "历史主题 2", "历史主题 3"]);
+  await expect(page.locator(".nf-board-card-head > .nf-board-rank")).toHaveText(["1", "2", "3"]);
+  const picker = reportPicker(page);
+  const complete = page.getByRole("button", { name: "完整报告", exact: true });
+  await expect(picker).toHaveAccessibleName(/报告时间/);
+  await expect(complete).toHaveAttribute("aria-expanded", "false");
+  await expect(page.locator(".nf-board-digest")).toHaveCount(0);
+  const initialCalls = await page.evaluate(() => window.__intervalTest.messages.length);
+
+  await chooseSavedReport(page, /2 篇/);
+  await expect(page.locator(".nf-board-card h3")).toHaveText("之前保存的主题");
+  await complete.click();
+  await expect(page.locator(".nf-board-digest h4 > span:last-child")).toHaveText("已保存的文章");
+  await complete.click();
+  await complete.click();
+  await expect(page.locator(".nf-board-digest h4 > span:last-child")).toHaveText("已保存的文章");
+  await chooseSavedReport(page, /4 篇/);
+  await expect(complete).toHaveAttribute("aria-expanded", "false");
+  await complete.click();
+  // An untitled introduction does not consume 1, and old saved content gets
+  // the same display numbering as a newly generated report.
+  await expect(page.locator(".nf-board-digest h4 > span:last-child")).toHaveText(["已保存的文章 1", "已保存的文章 2", "已保存的文章 3"]);
+  await expect(page.locator(".nf-board-digest h4 > .nf-board-rank")).toHaveText(["1", "2", "3"]);
+  const badgeStyles = await page.locator(".nf-board-card-head > .nf-board-rank, .nf-board-digest h4 > .nf-board-rank").evaluateAll((badges) => badges.map((badge) => {
+    const style = getComputedStyle(badge);
+    const rect = badge.getBoundingClientRect();
+    return { radius: Number.parseFloat(style.borderRadius), background: style.backgroundColor, width: rect.width, height: rect.height };
+  }));
+  for (const badge of badgeStyles) {
+    expect(badge.radius).toBeGreaterThanOrEqual(badge.height / 2);
+    expect(badge.width).toBeCloseTo(badge.height, 0);
+  }
+  expect(badgeStyles.slice(0, 3)).toEqual(badgeStyles.slice(3));
+  expect(badgeStyles[0].background).not.toBe(badgeStyles[1].background);
+  expect(badgeStyles[1].background).not.toBe(badgeStyles[2].background);
+  await expect(page.locator(".nf-board-digest .nf-board-cite")).toHaveCount(3);
+  expect(await page.locator(".nf-board-digest .nf-board-cite").evaluateAll((links) => links.map((link) => link.getAttribute("href")))).toEqual([
+    "#/board/article/9001", "#/board/article/9002", "#/board/article/9003",
+  ]);
+  await page.setViewportSize({ width: 400, height: 1200 });
+  await expect.poll(() => page.locator(".nf-board-complete").evaluate((element) => element.getAnimations({ subtree: true }).some((animation) => animation.playState === "running"))).toBe(false);
+  await page.locator(".nf-board-digest").screenshot({ path: testInfo.outputPath("saved-digest-numbering.png") });
+  await complete.click();
+
+  const backgrounds = {};
+  const menuStyles = {};
+  for (const view of [
+    { name: "phone-dark", theme: "dark", width: 320, fontSize: "24px" },
+    { name: "phone-light", theme: "light", width: 320, fontSize: "24px" },
+    { name: "desktop-light", theme: "light", width: 1200, fontSize: "16px" },
+  ]) {
+    await page.setViewportSize({ width: view.width, height: 900 });
+    await page.evaluate(async ({ theme, fontSize }) => {
+      (await import("/src/stores/themeStore.js")).setTheme(theme);
+      document.documentElement.style.fontSize = fontSize;
+    }, view);
+    await picker.click();
+    const menu = page.getByRole("listbox", { name: /历史报告/ });
+    await expect(menu).toBeVisible();
+    const popover = page.locator(".nf-board-report-popover");
+    await expect(popover).not.toHaveAttribute("data-entering", "true");
+    await expect(popover).toHaveCSS("opacity", "1");
+    await expect.poll(() => popover.evaluate((element) => element.getAnimations({ subtree: true }).some((animation) => animation.playState === "running"))).toBe(false);
+    await expect(menu.getByRole("option")).toHaveCount(2);
+    await expect(menu.getByRole("option", { name: /4 篇/ })).toHaveAttribute("aria-selected", "true");
+    await expect(menu.getByRole("option", { name: /2 篇/ })).toHaveAttribute("aria-selected", "false");
+    const layout = await menu.evaluate((element) => {
+      const bounds = (node) => {
+        const rect = node.getBoundingClientRect();
+        return { left: rect.left, right: rect.right, height: rect.height, overflow: node.scrollWidth > node.clientWidth + 1 };
+      };
+      const style = getComputedStyle(element.closest(".nf-board-report-popover"));
+      return {
+        viewport: innerWidth, overflow: document.documentElement.scrollWidth > innerWidth + 1,
+        menu: bounds(element), options: [...element.querySelectorAll('[role="option"]')].map(bounds),
+        tabs: [...document.querySelectorAll('.nf-board-navigation [role="tab"]')].map(bounds),
+        background: style.backgroundColor, backdropFilter: style.backdropFilter, opacity: style.opacity,
+      };
+    });
+    expect(layout.overflow).toBe(false);
+    for (const item of [layout.menu, ...layout.options, ...layout.tabs]) {
+      expect(item.left).toBeGreaterThanOrEqual(0);
+      expect(item.right).toBeLessThanOrEqual(layout.viewport);
+      expect(item.overflow).toBe(false);
+    }
+    for (const tab of layout.tabs) expect(tab.height).toBeGreaterThanOrEqual(44);
+    backgrounds[view.name] = layout.background;
+    menuStyles[view.name] = { background: layout.background, backdropFilter: layout.backdropFilter, opacity: layout.opacity };
+    await page.screenshot({ path: testInfo.outputPath(`history-${view.name}.png`), fullPage: false });
+    await expect.poll(() => menu.evaluate((element) => element.contains(document.activeElement))).toBe(true);
+    await page.keyboard.press("Escape");
+    await expect(menu).toHaveCount(0);
+    await expect(picker).toBeFocused();
+  }
+  await testInfo.attach("report-menu-styles", { body: JSON.stringify(menuStyles, null, 2), contentType: "application/json" });
+  expect(backgrounds["phone-dark"]).not.toBe(backgrounds["phone-light"]);
+  // The page remains interactive after the final portal closes.
+  await complete.click();
+  await expect(page.locator(".nf-board-digest h4")).toHaveCount(3);
+  expect(await page.evaluate(() => window.__intervalTest.messages.length)).toBe(initialCalls);
+  expect(await page.evaluate(() => window.__intervalTest.reads)).toEqual([]);
+  expect(await page.evaluate(async () => (await (await import("/src/db/storage.js")).getCachedArticleMetadata({ filter: "unread" })).map((article) => article.id).sort())).toEqual([9001, 9002, 9003, 9004]);
+  expect(errors).toEqual([]);
 });

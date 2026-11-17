@@ -72,7 +72,7 @@ const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 const { settingsState } = await import("@/stores/settingsStore.js");
 const { authState } = await import("@/stores/authStore.js");
 const { board, boardOpen, boardStream, boardReadState, digest, flushBoardWork, markBoardAsRead, openBoard, refreshBoard, showBoardReport, showTodayBoard, writeDigest } = await import("../src/toolbox/board/boardStore.js");
-const { PROMPT_BUDGET, boardArticleIds } = await import("../src/toolbox/board/board.mjs");
+const { PROMPT_BUDGET, boardArticleIds, startOfDay } = await import("../src/toolbox/board/board.mjs");
 const emitSync = () => globalThis.__board.syncCommitted.set({ outcome: "committed", newEntryIds: rows.map((row) => row.id), syncedAt: new Date().toISOString() });
 const sync = async () => { emitSync(); await tick(); await tick(); };
 const TOPICS = JSON.stringify({ topics: [{ title: "主题", gist: "重点", summary: "摘要", articles: [1, 2] }] });
@@ -385,9 +385,10 @@ test("a board from yesterday is made again even when the settings end where they
   (await call).onChunk(TOPICS); calls.at(-1).resolve();
   await tick(); await tick();
   board.set({ ...board.get(), day: board.get().day - 86400000 });
+  call = waitCall();
   openBoard(true);
   // (Opening a stale board makes it again; answer that first.)
-  const reopened = calls.at(-1);
+  const reopened = await call;
   reopened.onChunk(TOPICS); reopened.resolve();
   await tick(); await tick();
   board.set({ ...board.get(), day: board.get().day - 86400000 });
@@ -864,6 +865,291 @@ test("opening while an automatic report runs shows its progress without starting
   assert.equal(requested, 0);
   assert.equal(board.get().status, "idle");
   openBoard(false);
+});
+
+test("a failed today board stays failed across navigation until an explicit retry", async (t) => {
+  let requested = 0;
+  boardFixture(t, 2, async () => { requested++; throw new Error("连接中断"); });
+  await refreshBoard();
+  assert.equal(board.get().status, "error");
+  await openBoard(true);
+  await showTodayBoard();
+  openBoard(false);
+  await openBoard(true);
+  rows.push(article(3)); await sync();
+  assert.equal(requested, 1);
+  assert.equal(board.get().status, "error");
+  assert.match(board.get().error, /连接中断/);
+  globalThis.__board.stream = async (_messages, options) => {
+    requested++;
+    return answerTopics(options, [1]);
+  };
+  await refreshBoard();
+  assert.equal(requested, 2, "only the explicit retry calls the provider again");
+  assert.equal(board.get().status, "done");
+  openBoard(false);
+});
+
+test("rapid refreshes during cache reads and generation share the same today operation", async (t) => {
+  let releaseRead, releaseAI, readEntered, aiEntered;
+  const reading = new Promise((resolve) => { readEntered = resolve; });
+  const generating = new Promise((resolve) => { aiEntered = resolve; });
+  const readGate = new Promise((resolve) => { releaseRead = resolve; });
+  const aiGate = new Promise((resolve) => { releaseAI = resolve; });
+  let requested = 0;
+  let signal;
+  boardFixture(t, 2, async (_messages, options) => {
+    requested++; signal = options.signal; aiEntered();
+    await aiGate;
+    return answerTopics(options, [1]);
+  });
+  const read = globalThis.__board.rows;
+  globalThis.__board.rows = async () => {
+    const snapshot = read(); readEntered(); await readGate; return snapshot;
+  };
+  t.after(() => { globalThis.__board.rows = read; releaseRead(); releaseAI(); });
+  const first = refreshBoard();
+  await reading;
+  assert.equal(board.get().status, "idle", "the loading UI has not yet disabled refresh");
+  assert.equal(refreshBoard(), first);
+  await openBoard(true);
+  releaseRead();
+  await generating;
+  assert.equal(refreshBoard(), first);
+  assert.equal(signal.aborted, false);
+  assert.equal(requested, 1);
+  releaseAI(); await first;
+  assert.equal(board.get().status, "done");
+  openBoard(false);
+});
+
+for (const returnWhileRunning of [true, false]) {
+  test(`today generation survives history navigation when returning ${returnWhileRunning ? "during" : "after"} the request`, async (t) => {
+    let releaseToday, releaseDigest, todayStarted, digestStarted;
+    const ready = new Promise((resolve) => { todayStarted = resolve; });
+    const writingReady = new Promise((resolve) => { digestStarted = resolve; });
+    const todayGate = new Promise((resolve) => { releaseToday = resolve; });
+    const digestGate = new Promise((resolve) => { releaseDigest = resolve; });
+    let todaySignal, historicalDigestSignal;
+    let requested = 0;
+    boardFixture(t, 3, async (messages, options) => {
+      if (messages[1].content.startsWith("主题")) {
+        historicalDigestSignal = options.signal;
+        options.onChunk("## 历史长文改写\n历史的来源。[1]");
+        digestStarted(); await digestGate; return;
+      }
+      requested++; todaySignal = options.signal; todayStarted();
+      await todayGate;
+      return answerTopics(options, [1, 2], { title: "后台完成的今日主题" });
+    });
+    t.after(() => { releaseToday(); releaseDigest(); });
+    const at = Date.now() - 10000;
+    const historical = { id: `background-history-${returnWhileRunning}`, kind: "interval",
+      periodStart: at - 10000, periodEnd: at, completedAt: at, expiresAt: Date.now() + 172800000, total: 1,
+      articles: [{ id: 1, title: "历史来源", number: 1 }],
+      topics: [{ title: "历史主题", summary: "旧摘要", articles: [1] }], digest: "旧的历史正文 [1]" };
+    globalThis.__board.reports.set(historical.id, historical);
+    const running = refreshBoard();
+    await ready;
+    await showBoardReport(historical.id);
+    assert.equal(todaySignal.aborted, false, "viewing history leaves the day's analysis running");
+    assert.equal(board.get().reportId, historical.id);
+    let historyWriting;
+    let historicalReadState;
+    if (returnWhileRunning) {
+      await showTodayBoard();
+      assert.equal(board.get().status, "loading");
+      assert.equal(board.get().historical, false);
+      assert.equal(boardStream.get().total, 3);
+    } else {
+      assert.equal(await markBoardAsRead(), 1);
+      historicalReadState = boardReadState.get();
+      historyWriting = writeDigest({ again: true });
+      await writingReady;
+    }
+    releaseToday(); await running;
+    if (!returnWhileRunning) {
+      assert.equal(board.get().reportId, historical.id, "background completion cannot change the selected report");
+      assert.equal(digest.get().status, "streaming");
+      assert.match(digest.get().text, /历史长文改写/);
+      assert.equal(historicalDigestSignal.aborted, false, "completing today cannot stop a historical digest");
+      assert.deepEqual(boardReadState.get(), historicalReadState, "history's read result belongs to that history");
+      releaseDigest(); await historyWriting;
+      await showTodayBoard();
+    }
+    assert.equal(board.get().status, "done");
+    assert.equal(board.get().kind, "today");
+    assert.equal(board.get().total, 3);
+    assert.equal(board.get().topics[0].title, "后台完成的今日主题");
+    assert.equal(digest.get().status, "idle", "the new day's digest is separate from historical prose");
+    const completed = board.get();
+    assert.equal(globalThis.__board.reports.get(completed.reportId)?.topics[0].title, "后台完成的今日主题");
+    await showBoardReport(historical.id); await showTodayBoard();
+    assert.equal(board.get().at, completed.at);
+    assert.equal(requested, 1, "navigating back never restarts the analysis");
+  });
+}
+
+test("a today failure in the background keeps the selected history and waits for explicit retry", async (t) => {
+  let release, entered;
+  const started = new Promise((resolve) => { entered = resolve; });
+  const gate = new Promise((resolve) => { release = resolve; });
+  let requested = 0;
+  boardFixture(t, 2, async () => { requested++; entered(); await gate; throw new Error("后台今日连接失败"); });
+  t.after(() => release());
+  const at = Date.now() - 10000;
+  const historical = { id: "history-during-failure", kind: "interval", periodStart: at - 10000, periodEnd: at,
+    completedAt: at, expiresAt: Date.now() + 172800000, total: 1,
+    articles: [{ id: 1, number: 1 }], topics: [{ title: "保留的历史", articles: [1] }], digest: "保留的历史正文 [1]" };
+  globalThis.__board.reports.set(historical.id, historical);
+  const running = refreshBoard();
+  await started; await showBoardReport(historical.id);
+  release(); await running;
+  assert.equal(board.get().reportId, historical.id);
+  assert.equal(board.get().error, "");
+  assert.equal(digest.get().text, historical.digest);
+  await showTodayBoard();
+  assert.equal(board.get().status, "error");
+  assert.match(board.get().error, /后台今日连接失败/);
+  await showTodayBoard();
+  assert.equal(requested, 1);
+});
+
+test("changing settings for a background today run preserves a pending historical selection", async (t) => {
+  let firstStarted, secondStarted;
+  const firstReady = new Promise((resolve) => { firstStarted = resolve; });
+  const secondReady = new Promise((resolve) => { secondStarted = resolve; });
+  let requested = 0;
+  let firstSignal;
+  boardFixture(t, 2, async (_messages, options) => {
+    requested++;
+    if (requested === 1) {
+      firstSignal = options.signal; firstStarted();
+      await new Promise((_resolve, reject) => options.signal.addEventListener("abort",
+        () => reject(Object.assign(new Error("aborted"), { name: "AbortError" })), { once: true }));
+    }
+    secondStarted();
+    return answerTopics(options, [1], { title: "新筛选下的今日" });
+  });
+  const at = Date.now() - 10000;
+  const historical = { id: "settings-history-1", kind: "interval", periodStart: at - 10000, periodEnd: at,
+    completedAt: at, expiresAt: Date.now() + 172800000, total: 1,
+    articles: [{ id: 1, number: 1 }], topics: [{ title: "历史主题", articles: [1] }], digest: "历史 [1]" };
+  const selected = { ...historical, id: "settings-history-2" };
+  globalThis.__board.reports.set(historical.id, historical);
+  const read = globalThis.__board.readReport;
+  const settings = settingsState.get();
+  let release;
+  globalThis.__board.readReport = (id) => id === selected.id ? new Promise((resolve) => { release = resolve; }) : read(id);
+  t.after(() => { globalThis.__board.readReport = read; openBoard(false); settingsState.set(settings); release?.(selected); });
+  const running = refreshBoard();
+  await firstReady; await openBoard(true); await showBoardReport(historical.id);
+  const choosing = showBoardReport(selected.id);
+  settingsState.set({ ...settings, showHiddenFeeds: !settings.showHiddenFeeds });
+  await secondReady;
+  assert.equal(firstSignal.aborted, true, "changed article settings replace the old analysis");
+  release(selected); await choosing; await running; await tick();
+  assert.equal(board.get().reportId, selected.id, "the pending history choice survives the background replacement");
+  await showTodayBoard();
+  assert.equal(board.get().topics[0].title, "新筛选下的今日");
+  assert.equal(requested, 2);
+});
+
+test("cold today navigation restores the newest compatible persisted day, including version 1.24 fingerprints", async (t) => {
+  let requested = 0;
+  boardFixture(t, 3, async () => { requested++; throw new Error("must restore saved today"); });
+  const { reportHistory } = await import("./historyStore.js");
+  const settings = settingsState.get();
+  const filter = `${Boolean(settings.showHiddenFeeds)}|${settings.hideDuplicateArticles !== false}|${settings.duplicateMatch || "either"}`;
+  const day = startOfDay().getTime();
+  const at = Math.max(day, Date.now() - 5000);
+  const saved = {
+    id: "cold-today", kind: "today", periodStart: day, periodEnd: at,
+    completedAt: at, expiresAt: Date.now() + 172800000, total: 2,
+    articles: [{ id: 1, title: "保存的来源 1", number: 1 }, { id: 2, title: "保存的来源 2", number: 2 }],
+    topics: [{ title: "保存的今日主题", gist: "重点", summary: "摘要", articles: [1] }],
+    digest: "## 保存的今日长文\n原来已读过的报告。[1]",
+    fingerprint: JSON.stringify(["board-v2", "https://old-ai.example", "old-model",
+      Boolean(settings.showHiddenFeeds), settings.hideDuplicateArticles !== false, settings.duplicateMatch || "either"]),
+  };
+  const reports = [
+    { ...saved, id: "newer-interval", kind: "interval", completedAt: at + 3 },
+    { ...saved, id: "newer-incompatible", filter: `other-${filter}`, completedAt: at + 2 },
+    saved,
+    { ...saved, id: "older-compatible", filter, completedAt: at - 1 },
+    { ...saved, id: "yesterday", periodStart: day - 86400000, completedAt: at + 1 },
+  ];
+  for (const report of reports) globalThis.__board.reports.set(report.id, report);
+  reportHistory.set({ reports });
+  t.after(() => reportHistory.set({ reports: [] }));
+  // The app first shows its latest historical interval. Choosing today
+  // must recover today's own saved snapshot rather than analyze it again.
+  await openBoard(true);
+  assert.equal(board.get().reportId, "newer-interval");
+  await showTodayBoard(); await tick(); await tick();
+  assert.equal(board.get().historical, false);
+  assert.equal(board.get().reportId, saved.id);
+  assert.equal(board.get().filter, filter);
+  assert.equal(digest.get().text, saved.digest);
+  assert.equal(board.get().newAvailableCount, 1);
+  assert.equal(requested, 0);
+  assert.equal(await markBoardAsRead(), 1);
+  await sync();
+  await showBoardReport("newer-interval");
+  await showTodayBoard();
+  openBoard(false); await openBoard(true);
+  assert.equal(board.get().reportId, saved.id);
+  assert.equal(board.get().total, 2, "read status changes cannot shrink the saved report");
+  assert.equal(requested, 0);
+  openBoard(false);
+});
+
+test("a failed history read cannot silently trigger another paid today generation", async (t) => {
+  let requested = 0;
+  boardFixture(t, 2, async (_messages, options) => { requested++; return answerTopics(options, [1]); });
+  const { reportHistory } = await import("./historyStore.js");
+  const read = globalThis.__board.readReport;
+  globalThis.__board.readReport = async () => { throw new Error("读取超时"); };
+  reportHistory.set({ reports: [{ id: "unreadable-today", kind: "today", periodStart: startOfDay().getTime(),
+    completedAt: Date.now(), expiresAt: Date.now() + 172800000 }] });
+  t.after(() => { globalThis.__board.readReport = read; reportHistory.set({ reports: [] }); });
+  await showTodayBoard();
+  assert.equal(board.get().status, "error");
+  assert.match(board.get().error, /恢复失败.*读取超时/);
+  await showTodayBoard();
+  assert.equal(requested, 0);
+  await refreshBoard();
+  assert.equal(requested, 1);
+  assert.equal(board.get().status, "done");
+});
+
+test("a delayed today restore cannot replace a newer history selection or another account", async (t) => {
+  boardFixture(t, 2, async () => { throw new Error("must not generate"); });
+  const { reportHistory } = await import("./historyStore.js");
+  const read = globalThis.__board.readReport;
+  const settings = settingsState.get();
+  const saved = { id: "delayed-today", kind: "today", periodStart: startOfDay().getTime(),
+    periodEnd: Date.now(), completedAt: Date.now(), expiresAt: Date.now() + 172800000,
+    articles: [{ id: 1, number: 1 }], topics: [], total: 1,
+    filter: `${Boolean(settings.showHiddenFeeds)}|${settings.hideDuplicateArticles !== false}|${settings.duplicateMatch || "either"}` };
+  const interval = { ...saved, id: "chosen-history", kind: "interval" };
+  globalThis.__board.reports.set(interval.id, interval);
+  reportHistory.set({ reports: [saved] });
+  let release;
+  globalThis.__board.readReport = (id) => id === saved.id ? new Promise((resolve) => { release = resolve; }) : read(id);
+  t.after(() => { globalThis.__board.readReport = read; reportHistory.set({ reports: [] }); });
+  let pending = showTodayBoard();
+  while (!release) await tick();
+  await showBoardReport(interval.id);
+  release(saved); await pending;
+  assert.equal(board.get().reportId, interval.id);
+  release = null;
+  pending = showTodayBoard();
+  while (!release) await tick();
+  authState.set({ ...authState.get(), serverUrl: "https://replacement.example" });
+  release(saved); await pending;
+  assert.equal(board.get().status, "idle");
+  assert.equal(digest.get().text, "");
 });
 
 test("runtime flush stops manual streams and waits for an already completed snapshot to become durable", async (t) => {
