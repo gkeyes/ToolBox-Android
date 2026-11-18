@@ -29,6 +29,21 @@ async function open(page, width = 393, theme = "light", scale = 1) {
   await expect(page.locator("vite-error-overlay")).toHaveCount(0);
 }
 
+async function openSummary(page) {
+  await page.getByRole("button", { name: "AI 摘要", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "AI 摘要", exact: true });
+  await expect(dialog).toBeVisible();
+  // Measure the settled surface, not HeroUI's short entrance zoom.
+  await expect(page.locator('.nextflux-summary-backdrop[data-entering="true"], .nextflux-summary-container[data-entering="true"]')).toHaveCount(0);
+  return dialog;
+}
+
+async function closeSummary(page) {
+  await page.getByRole("dialog", { name: "AI 摘要", exact: true }).getByRole("button", { name: "关闭 AI 摘要", exact: true }).click();
+  await expect(page.getByRole("dialog", { name: "AI 摘要", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "AI 摘要", exact: true })).toBeFocused();
+}
+
 // Phones reach low-frequency reader actions through the dock's "More" sheet;
 // wide screens show them inline. Press whichever surface the layout offers.
 async function readerAction(page, name) {
@@ -103,10 +118,20 @@ for (const [width, theme, scale] of [[320, "light", 1], [393, "light", 1], [393,
     } else {
       await expect(page.getByRole("button", { name: "全文适配", exact: true })).toBeVisible();
     }
-    await closeGeometry(page.locator(".ai-summary .nextflux-close-button"));
+    await expect(page.locator("main .ai-summary")).toHaveCount(0);
+    const summary = await openSummary(page);
+    await expect(summary.locator(".nextflux-summary-text")).toHaveText("Fixture summary.");
+    const summaryClose = summary.getByRole("button", { name: "关闭 AI 摘要", exact: true });
+    await expect(summaryClose).toBeVisible();
+    const close = await summaryClose.boundingBox();
+    expect(close.width).toBeGreaterThanOrEqual(32);
+    expect(close.height).toBeGreaterThanOrEqual(32);
+    expect(close.x).toBeGreaterThanOrEqual(0);
+    expect(close.x + close.width).toBeLessThanOrEqual(width + 1);
     if (width === 393 && scale === 1) await info.attach(`toolbar-${theme}.png`, {
       body: await page.screenshot(), contentType: "image/png",
     });
+    await closeSummary(page);
     // The outer part of the target is still active although it is no longer painted.
     await page.locator(".action-buttons .nextflux-close-button").click({ position: { x: 2, y: 24 } });
     await expect(page.getByTestId("article-list")).toBeVisible();
@@ -125,14 +150,154 @@ test("all optional controls fit one row without clipping and loading does not gr
   await bounds(page);
 });
 
-test("toolbar actions and AI close still dispatch their existing behavior", async ({ page }) => {
+test("toolbar actions work and closing an AI summary preserves its cached result", async ({ page }) => {
   await open(page);
   await readerAction(page, "Unread");
   await page.getByRole("button", { name: "Share", exact: true }).click();
   expect(await page.evaluate(() => window.controlsFixture.calls.map(([name]) => name))).toEqual(["status", "share"]);
-  await page.locator(".ai-summary .nextflux-close-button").click();
-  await expect(page.locator(".ai-summary")).toHaveCount(0);
+  const before = await page.getByTestId("reader-body").boundingBox();
+  const summary = await openSummary(page);
+  await expect(summary.locator(".nextflux-summary-text")).toHaveText("Fixture summary.");
+  const after = await page.getByTestId("reader-body").boundingBox();
+  expect(after.y).toBeCloseTo(before.y, 0);
+  expect(after.height).toBeCloseTo(before.height, 0);
+  await closeSummary(page);
+  expect(await page.evaluate(() => window.controlsFixture.summary.state().summary)).toBe("Fixture summary.");
+  await openSummary(page);
+  await expect(summary.locator(".nextflux-summary-text")).toHaveText("Fixture summary.");
+  expect(await page.evaluate(() => window.controlsFixture.summary.requests())).toEqual([]);
+  await closeSummary(page);
 });
+
+test("AI summary close, Escape, backdrop and system back stop the stream and retain received text", async ({ page }) => {
+  await open(page);
+  await page.evaluate(() => window.controlsFixture.summary.hold(true));
+  for (const method of ["close", "escape", "backdrop", "system back"]) {
+    const index = await page.evaluate(() => {
+      window.controlsFixture.summary.clear();
+      return window.controlsFixture.summary.requests().length;
+    });
+    const dialog = await openSummary(page);
+    const text = `已收到的摘要：${method}`;
+    await page.evaluate(({ index, text }) => window.controlsFixture.summary.chunk(index, text), { index, text });
+    await expect(dialog.locator(".nextflux-summary-text")).toHaveText(text);
+    if (method === "close") await closeSummary(page);
+    else if (method === "escape") await page.keyboard.press("Escape");
+    else if (method === "backdrop") await page.mouse.click(5, 5);
+    else expect(await page.evaluate(() => {
+      const event = new Event("toolboxback", { cancelable: true });
+      window.dispatchEvent(event);
+      return event.defaultPrevented;
+    })).toBe(true);
+    await expect(dialog).toHaveCount(0);
+    await expect(page.getByTestId("route")).toHaveText("/feed/1/article/42");
+    expect(await page.evaluate((index) => window.controlsFixture.summary.requests()[index].aborted, index)).toBe(true);
+    expect(await page.evaluate(() => window.controlsFixture.summary.state())).toEqual({ loading: false, summary: text, error: null });
+    await openSummary(page);
+    await expect(dialog.locator(".nextflux-summary-text")).toHaveText(text);
+    expect(await page.evaluate(() => window.controlsFixture.summary.requests().length)).toBe(index + 1);
+    await closeSummary(page);
+  }
+  await expectUncovered(page);
+});
+
+test("AI summary stop keeps partial text and explicit regeneration can recover from an error", async ({ page }) => {
+  await open(page);
+  await page.evaluate(() => { window.controlsFixture.summary.clear(); window.controlsFixture.summary.hold(true); });
+  const dialog = await openSummary(page);
+  await page.evaluate(() => window.controlsFixture.summary.chunk(0, "已经生成的第一部分。"));
+  await expect(dialog.locator(".nextflux-summary-text")).toHaveText("已经生成的第一部分。");
+  await dialog.getByRole("button", { name: "停止生成", exact: true }).click();
+  await expect(dialog).toBeVisible();
+  await expect(dialog.locator(".nextflux-summary-text")).toHaveText("已经生成的第一部分。");
+  expect(await page.evaluate(() => window.controlsFixture.summary.requests()[0].aborted)).toBe(true);
+  await dialog.getByRole("button", { name: "重新生成", exact: true }).click();
+  expect(await page.evaluate(() => window.controlsFixture.summary.requests().length)).toBe(2);
+  await expect(dialog.locator(".nextflux-summary-text")).toHaveCount(0);
+  await page.evaluate(() => window.controlsFixture.summary.fail(1, "Synthetic summary failure"));
+  await expect(dialog).toContainText("Synthetic summary failure");
+  await dialog.getByRole("button", { name: /^(重试|生成摘要)$/ }).click();
+  expect(await page.evaluate(() => window.controlsFixture.summary.requests().length)).toBe(3);
+  await page.evaluate(() => {
+    window.controlsFixture.summary.chunk(2, "重新生成后的完整摘要。");
+    window.controlsFixture.summary.done(2);
+  });
+  await expect(dialog.locator(".nextflux-summary-text")).toHaveText("重新生成后的完整摘要。");
+  await expect(dialog).not.toContainText("Synthetic summary failure");
+  await closeSummary(page);
+});
+
+test("AI summary switches articles without reopening or accepting a cancelled run's late callbacks", async ({ page }) => {
+  await open(page);
+  await page.evaluate(() => {
+    window.controlsFixture.summary.clear();
+    window.controlsFixture.summary.hold(true);
+    window.controlsFixture.summary.set(43, { loading: false, summary: "另一篇文章已有的摘要。", error: null });
+  });
+  const dialog = await openSummary(page);
+  await page.evaluate(() => window.controlsFixture.summary.chunk(0, "旧请求的内容。"));
+  await expect(dialog.locator(".nextflux-summary-text")).toHaveText("旧请求的内容。");
+  await page.evaluate(() => window.controlsFixture.setArticle(43));
+  await expect(page.getByTestId("route")).toHaveText("/feed/1/article/43");
+  await expect(dialog).toHaveCount(0);
+  expect(await page.evaluate(() => window.controlsFixture.summary.state(42))).toBeNull();
+  expect(await page.evaluate(() => window.controlsFixture.summary.requests()[0].aborted)).toBe(true);
+  await page.evaluate(() => window.controlsFixture.setArticle(42));
+  await expect(page.getByTestId("route")).toHaveText("/feed/1/article/42");
+  await expect(dialog).toHaveCount(0);
+  await openSummary(page);
+  expect(await page.evaluate(() => window.controlsFixture.summary.requests().length)).toBe(2);
+  await page.evaluate(() => {
+    window.controlsFixture.summary.chunk(1, "新请求的内容。");
+    window.controlsFixture.summary.chunk(0, "不应显示的晚到文本。");
+    window.controlsFixture.summary.done(0);
+    window.controlsFixture.summary.fail(0, "Late cancelled failure");
+  });
+  await expect(dialog.locator(".nextflux-summary-text")).toHaveText("新请求的内容。");
+  expect(await page.evaluate(() => window.controlsFixture.summary.state())).toEqual({ loading: true, summary: "新请求的内容。", error: null });
+  await page.evaluate(() => window.controlsFixture.summary.done(1));
+  await expect(dialog.getByRole("button", { name: "重新生成", exact: true })).toBeVisible();
+  expect(await page.evaluate(() => window.controlsFixture.summary.state(43).summary)).toBe("另一篇文章已有的摘要。");
+  await closeSummary(page);
+});
+
+for (const [width, theme, scale] of [[320, "light", 1.5], [820, "dark", 1]]) {
+  test(`AI summary long content scrolls inside its floating panel at ${width}px`, async ({ page }, info) => {
+    await open(page, width, theme, scale);
+    await page.evaluate(() => window.controlsFixture.summary.set(42, {
+      loading: false,
+      summary: Array.from({ length: 36 }, (_, index) => `${index + 1}. 这是摘要的重要内容，长段落与较大的字体仍应当在卡片内部滚动，不挤压文章正文。`).join("\n\n"),
+      error: null,
+    }));
+    const dialog = await openSummary(page);
+    const close = dialog.getByRole("button", { name: "关闭 AI 摘要", exact: true });
+    await expect(close).toBeVisible();
+    await expect.poll(async () => dialog.evaluate((element) => {
+      const bounds = element.getBoundingClientRect();
+      return bounds.left >= 0 && bounds.top >= 0 && bounds.right <= innerWidth + 1 && bounds.bottom <= innerHeight + 1;
+    })).toBe(true);
+    const before = await close.boundingBox();
+    const scroll = await dialog.locator(".nextflux-summary-text").evaluate((text) => {
+      const dialog = text.closest('[role="dialog"]');
+      for (let element = text; element && element !== dialog; element = element.parentElement) {
+        if (/(auto|scroll)/.test(getComputedStyle(element).overflowY) && element.scrollHeight > element.clientHeight + 1) {
+          element.scrollTop = element.scrollHeight;
+          return { top: element.scrollTop, height: element.clientHeight, width: element.clientWidth, contentWidth: element.scrollWidth };
+        }
+      }
+      return null;
+    });
+    expect(scroll, "summary has its own usable scroll area").not.toBeNull();
+    expect(scroll.top).toBeGreaterThan(0);
+    expect(scroll.height).toBeGreaterThan(40);
+    expect(scroll.contentWidth).toBeLessThanOrEqual(scroll.width + 1);
+    await expect(close).toBeVisible();
+    expect((await close.boundingBox()).y).toBeCloseTo(before.y, 0);
+    await info.attach(`ai-summary-${width}-${theme}.png`, { body: await page.screenshot(), contentType: "image/png" });
+    await closeSummary(page);
+    await expectUncovered(page);
+  });
+}
 
 for (const width of [393, 820]) {
   test(`shared modal and settings close controls ${width}px`, async ({ page }, info) => {
@@ -802,14 +967,14 @@ test("the full-text adapter can be cancelled while it is still reading", async (
 // AI read-aloud: "stop" must end every phase, nothing may restart afterwards,
 // and the page must keep taking taps. The native stream bridge is a fixture;
 // the speech controller, MiniMax client and player UI are production code.
-async function installSpeech(page, { holdRead }) {
+async function installSpeech(page, { holdRead, seconds = 6 }) {
   await page.addInitScript(() => {
     window.speechAudios = new Set();
     const play = HTMLMediaElement.prototype.play;
     HTMLMediaElement.prototype.play = function (...args) { window.speechAudios.add(this); return play.apply(this, args); };
   });
   await open(page, 393);
-  await page.evaluate((hold) => {
+  await page.evaluate(({ hold, seconds }) => {
     const wav = (seconds = 6, rate = 8000) => {
       const count = seconds * rate;
       const view = new DataView(new ArrayBuffer(44 + count));
@@ -822,7 +987,7 @@ async function installSpeech(page, { holdRead }) {
       return Array.from(new Uint8Array(view.buffer), (byte) => byte.toString(16).padStart(2, "0")).join("");
     };
     const body = new TextEncoder().encode(JSON.stringify({
-      data: { audio: wav(), status: 2 }, extra_info: { audio_length: 6000 }, base_resp: { status_code: 0 },
+      data: { audio: wav(seconds), status: 2 }, extra_info: { audio_length: seconds * 1000 }, base_resp: { status_code: 0 },
     }));
     const net = window.speechNet = { opened: 0, cancelled: 0 };
     const offsets = new Map();
@@ -838,7 +1003,7 @@ async function installSpeech(page, { holdRead }) {
       cancelStream: async () => { net.cancelled += 1; },
     } };
     window.controlsFixture.speech.configure();
-  }, holdRead);
+  }, { hold: holdRead, seconds });
 }
 
 async function expectSpeechStopped(page) {
@@ -877,6 +1042,36 @@ test("read-aloud stops while it is playing and the page stays interactive", asyn
   await page.getByRole("button", { name: "停止朗读", exact: true }).click();
   await expectSpeechStopped(page);
   expect(await page.evaluate(() => [...window.speechAudios].every((audio) => !audio.getAttribute("src")))).toBe(true);
+});
+
+test("AI summary shares the read-aloud floating surface without covering or stopping playback", async ({ page }, info) => {
+  await installSpeech(page, { holdRead: false, seconds: 30 });
+  await page.getByRole("button", { name: "朗读文章", exact: true }).click();
+  await expect.poll(() => page.evaluate(() => window.controlsFixture.speech.phase()), { timeout: 15_000 }).toBe("playing");
+  const player = page.getByRole("region", { name: "文章语音播放器", exact: true });
+  await expect(player).toBeVisible();
+  const before = await player.evaluate((element) => {
+    const surface = element.closest(".reader-speech-slot");
+    return { bottom: Math.round(surface.getBoundingClientRect().bottom), radius: getComputedStyle(surface).borderRadius };
+  });
+  const requests = await page.evaluate(() => window.speechNet.opened);
+  const dialog = await openSummary(page);
+  await expect(dialog.getByRole("region", { name: "文章语音播放器", exact: true })).toBeVisible();
+  await expect(player).toHaveCount(1);
+  await expect.poll(async () => dialog.evaluate((element) => ({
+    bottom: Math.round(element.getBoundingClientRect().bottom), radius: getComputedStyle(element).borderRadius,
+  }))).toEqual(before);
+  const content = await dialog.locator(".nextflux-summary-body").boundingBox();
+  const audio = await player.boundingBox();
+  expect(content.y + content.height).toBeLessThanOrEqual(audio.y + 1);
+  expect(await page.evaluate(() => window.controlsFixture.speech.phase())).toBe("playing");
+  await info.attach("ai-summary-with-speech.png", { body: await page.screenshot(), contentType: "image/png" });
+  await closeSummary(page);
+  await expect(player).toBeVisible();
+  expect(await page.evaluate(() => window.controlsFixture.speech.phase())).toBe("playing");
+  expect(await page.evaluate(() => window.speechNet.opened)).toBe(requests);
+  await page.getByRole("button", { name: "停止朗读", exact: true }).click();
+  await expectSpeechStopped(page);
 });
 
 // Overlay janitor: a layer left over the page after its close path broke is

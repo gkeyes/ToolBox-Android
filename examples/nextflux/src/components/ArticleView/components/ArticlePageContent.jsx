@@ -6,7 +6,6 @@ import { cancelGalleryRelease, releaseStuckGallery } from "@/toolbox/galleryRele
 import ArticleHeader from "@/components/ArticleView/components/ArticleHeader.jsx";
 import ProgressiveArticle from "@/components/ArticleView/components/ProgressiveArticle.jsx";
 import Attachments from "@/components/ArticleView/components/Attachments.jsx";
-import AISummary from "@/components/ArticleView/components/AISummary.jsx";
 import Iframe from "@/components/ArticleView/components/Iframe.jsx";
 import { MediaPlaybackContext } from "./MediaPlaybackContext.js";
 import { imageGalleryActive } from "@/stores/articlesStore.js";
@@ -58,8 +57,6 @@ const ArticlePageContent = forwardRef(function ArticlePageContent(
         onFeedClick={passive || !feedId ? undefined : () => navigate(`/feed/${feedId}`)}
       />
       <div className="nextflux-article-header-gap" aria-hidden="true" />
-
-      <AISummary articleId={article.id} passive={passive} paused={readingPaused || !foreground} />
 
       {mediaEnclosures.map((enclosure) => (
         <Iframe

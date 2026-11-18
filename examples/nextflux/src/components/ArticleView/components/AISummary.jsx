@@ -1,32 +1,30 @@
 import { useEffect, useState } from "react";
 import { useStore } from "@nanostores/react";
-import { aiSummaries, clearSummary } from "@/stores/aiStore.js";
-import { CloseButton, Spinner } from "@heroui/react";
-import {
-  AISummaryIcon as Sparkles,
-} from "@/components/ui/icons.jsx";
-import { useTranslation } from "react-i18next";
-import BorderBeam from "border-beam";
-import { currentThemeMode } from "@/stores/themeStore.js";
+import { Button, Modal, Spinner, Tooltip } from "@heroui/react";
+import { RotateCcw, Square } from "lucide-react";
+import { AISummaryIcon as Sparkles } from "@/components/ui/icons.jsx";
+import { aiSummaries } from "@/stores/aiStore.js";
+import { runtimeForeground } from "@/toolbox/foreground.js";
+import { ArticleSpeechBar } from "./ArticleSpeech.jsx";
+import "./AISummary.css";
 
 const TICK_MS = 16;
 const CHARS_STREAMING = 5;
 
-export default function AISummary({ articleId, passive = false, paused = false }) {
-  const { t } = useTranslation();
-  const $aiSummaries = useStore(aiSummaries);
-  const $currentThemeMode = useStore(currentThemeMode);
-  const state = $aiSummaries[articleId];
-
-  const [streamed, setStreamed] = useState({ articleId, text: "" });
+// Reuse the speech surface inside the existing accessible Modal primitive.
+// Its portal keeps summaries out of article layouts and passive previews.
+export default function AISummary({ article, open, onClose, onGenerate, onStop }) {
+  const articleId = article?.id;
+  const summaries = useStore(aiSummaries);
+  const foreground = useStore(runtimeForeground);
+  const state = summaries[articleId];
   const fullText = state?.summary || "";
-  const animateText = Boolean(state?.loading && !passive && !paused);
-  // Completed summaries keep identical geometry in the preview and real page.
-  // Only a visible live stream schedules character work; idle articles and
-  // offscreen previews have no polling timer or border animation.
+  const [streamed, setStreamed] = useState({ articleId, text: "" });
+  const animateText = Boolean(open && foreground && state?.loading);
   const displayedText = animateText
     ? (streamed.articleId === articleId ? streamed.text : "").slice(0, fullText.length)
     : fullText;
+
   useEffect(() => {
     if (!animateText || !fullText) {
       setStreamed((previous) => previous.articleId === articleId && previous.text === fullText
@@ -40,53 +38,52 @@ export default function AISummary({ articleId, passive = false, paused = false }
     return () => clearTimeout(timer);
   }, [articleId, animateText, fullText, displayedText.length]);
 
-  if (!state) return null;
-
-  const isTyping =
-    state.loading || displayedText.length < (state.summary?.length ?? 0);
-  const isWaiting = state.loading && !state.summary;
+  const action = state?.loading ? "停止生成" : state?.error ? "重试" : fullText ? "重新生成" : "生成摘要";
 
   return (
-    <BorderBeam
-      active={!passive && !paused && (isWaiting || isTyping)}
-      size="line"
-      theme={$currentThemeMode}
+    <Modal.Backdrop
+      variant="transparent"
+      className="nextflux-summary-backdrop"
+      isOpen={open}
+      onOpenChange={(next) => { if (!next) onClose(); }}
     >
-      <div className="ai-summary p-4">
-        <div className="flex min-h-[48px] items-center gap-2">
-          <div className="flex min-w-0 items-center gap-1">
-            <Sparkles className="size-4 text-accent shrink-0" />
-            <span className="nextflux-summary-title text-sm font-semibold text-accent">
-              {t("articleView.aiSummary")}
-            </span>
+      <Modal.Container placement="bottom" scroll="inside" className="action-buttons nextflux-summary-container">
+        <Modal.Dialog className="reader-speech-slot nextflux-summary-dialog" aria-label="AI 摘要">
+          <div className="nextflux-speech-bar ai-summary">
+            <Modal.Header className="nextflux-summary-header">
+              <Tooltip delay={0}>
+                <Button
+                  isIconOnly
+                  size="sm"
+                  variant="primary"
+                  className="nextflux-summary-primary size-10 min-w-10 rounded-full"
+                  aria-label={action}
+                  onPress={state?.loading ? onStop : onGenerate}
+                >
+                  {state?.loading ? <Square className="size-4" /> : fullText || state?.error
+                    ? <RotateCcw className="size-4" /> : <Sparkles className="size-4" />}
+                </Button>
+                <Tooltip.Content showArrow><Tooltip.Arrow />{action}</Tooltip.Content>
+              </Tooltip>
+              <div className="nextflux-summary-heading-group">
+                <Modal.Heading className="nextflux-summary-heading">AI 摘要</Modal.Heading>
+                <p className="nextflux-summary-article">{article?.titleText || article?.title}</p>
+              </div>
+              <Modal.CloseTrigger className="nextflux-close-button" aria-label="关闭 AI 摘要" />
+            </Modal.Header>
+            <Modal.Body className="nextflux-summary-body">
+              {state?.loading && <div className="nextflux-summary-status" role="status">
+                <Spinner size="sm" color="current" /><span>正在生成摘要…</span>
+              </div>}
+              {state?.error && <p className="ds-banner ds-tone-danger" role="alert">{state.error}</p>}
+              {displayedText && <div className="nextflux-summary-text">{displayedText}</div>}
+              {!state?.loading && !state?.error && !fullText && <p className="nextflux-summary-empty">点击生成按钮，提炼这篇文章的要点。</p>}
+            </Modal.Body>
           </div>
-          {!isTyping && (
-            <CloseButton
-              onPress={() => clearSummary(articleId)}
-              className="nextflux-close-button ml-auto"
-              aria-label={`${t("common.close")} ${t("articleView.aiSummary")}`}
-            />
-          )}
-        </div>
-
-        {isWaiting && (
-          <div className="flex items-center gap-2 text-sm text-muted py-2">
-            <Spinner size="sm" color="current" />
-            <span>{t("articleView.aiSummaryGenerating")}</span>
-          </div>
-        )}
-
-        {state.error && <p className="ds-banner ds-tone-danger">{state.error}</p>}
-
-        {displayedText && (
-          <div className="text-sm text-muted leading-relaxed">
-            {displayedText}
-            {animateText && isTyping && (
-              <span className="inline-block w-0.5 h-4 bg-accent ml-0.5 animate-pulse align-middle" />
-            )}
-          </div>
-        )}
-      </div>
-    </BorderBeam>
+          {/* Keep active audio controls in the same surface, without overlap. */}
+          {open && <ArticleSpeechBar article={article} />}
+        </Modal.Dialog>
+      </Modal.Container>
+    </Modal.Backdrop>
   );
 }

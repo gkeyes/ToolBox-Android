@@ -151,47 +151,51 @@ test("handoff keeps the target page until the real first screen is ready", async
   expect(errors).toEqual([]);
 });
 
-test("a completed AI summary is already complete on the real page's first ready frame", async ({ page }) => {
+test("cached AI summaries do not enter the article or continuous-preview layout", async ({ page }) => {
   const errors = await openArticle(page);
-  const summary = "这是一段已经生成并缓存的摘要，切换后应当保留完整文字和高度。".repeat(24);
-  await page.evaluate((summary) => window.navigationFixture.setSummary(2, { loading: false, summary, error: null }), summary);
-  await expect(page.locator(".nextflux-continuous-next-page .ai-summary .leading-relaxed")).toHaveText(summary);
+  await expect(page.locator(".nextflux-article-page")).toHaveAttribute("data-navigation-state", "idle");
+  const current = page.locator(".article-scroll-area .article-body p").first();
+  const preview = page.locator(".nextflux-continuous-next-page .article-body p").first();
+  await expect(preview).toBeAttached();
+  const before = [(await current.boundingBox()).y, await preview.evaluate((element) => element.getBoundingClientRect().y)];
+  const summary = "这是一段已经生成并缓存的摘要，应该只在用户打开弹窗时展示。".repeat(24);
+  await page.evaluate((summary) => {
+    for (const id of [1, 2]) window.navigationFixture.setSummary(id, { loading: false, summary, error: null });
+  }, summary);
+  await expect(page.locator(".ai-summary")).toHaveCount(0);
+  expect((await current.boundingBox()).y).toBeCloseTo(before[0], 0);
+  expect(await preview.evaluate((element) => element.getBoundingClientRect().y)).toBeCloseTo(before[1], 0);
   await page.locator(".article-scroll-area").evaluate((element) => { element.scrollTop = element.scrollHeight; });
   await touch(page, "touchstart", 150, 750);
   await touch(page, "touchmove", 151, 520);
-  const firstText = await page.evaluate(() => {
-    const viewport = document.querySelector(".article-scroll-area");
-    const point = new Touch({ identifier: 1, target: viewport, clientX: 151, clientY: 520 });
-    viewport.dispatchEvent(new TouchEvent("touchend", { touches: [], changedTouches: [point], bubbles: true, cancelable: true }));
-    return new Promise((resolve) => {
-      const started = performance.now();
-      const frame = () => {
-        const body = viewport.querySelector(".article-body");
-        if (body?.dataset.fontArticleId === "2" && body.dataset.readingReady === "true") {
-          resolve(viewport.querySelector(".ai-summary .leading-relaxed")?.textContent);
-        } else if (performance.now() - started > 3000) resolve(null);
-        else requestAnimationFrame(frame);
-      };
-      frame();
-    });
-  });
-  expect(firstText).toBe(summary);
+  await touch(page, "touchend", 151, 520);
+  await expect(page.getByTestId("route")).toHaveText("/article/2");
+  await expect(page.locator(".article-scroll-area .article-title")).toHaveText("文章 2");
   await expect(page.locator(".nextflux-continuous-layer")).toHaveAttribute("data-phase", "idle");
+  await expect(page.locator(".ai-summary")).toHaveCount(0);
+  await expect(page.getByRole("dialog", { name: "AI 摘要", exact: true })).toHaveCount(0);
+  expect(await page.locator(".article-scroll-area").evaluate((element) => element.scrollTop)).toBe(0);
   expect(errors).toEqual([]);
 });
 
-test("a visible AI stream catches up and a restarted stream clears its old summary", async ({ page }) => {
-  await openArticle(page);
-  const text = "这是正在生成的摘要文字，用于验证流式显示仍可追赶到最新内容。".repeat(3);
-  await page.evaluate((summary) => window.navigationFixture.setSummary(1, { loading: true, summary, error: null }), text);
-  const summary = page.locator(".article-scroll-area .ai-summary .leading-relaxed");
-  await expect(summary).toHaveText(text);
-  await page.evaluate(() => window.navigationFixture.setSummary(1, { loading: true, summary: "", error: null }));
-  await expect(summary).toHaveCount(0);
-  await page.evaluate(() => window.navigationFixture.setSummary(1, { loading: true, summary: "重新生成的新摘要", error: null }));
-  await expect(summary).toHaveText("重新生成的新摘要");
-  await page.evaluate(() => window.navigationFixture.setSummary(1, { loading: false, summary: "已完成的完整摘要", error: null }));
-  await expect(summary).toHaveText("已完成的完整摘要");
+test("AI stream updates never shift reading content or open a summary without its toolbar", async ({ page }) => {
+  const errors = await openArticle(page);
+  await expect(page.locator(".nextflux-article-page")).toHaveAttribute("data-navigation-state", "idle");
+  const firstParagraph = page.locator(".article-scroll-area .article-body p").first();
+  const before = await firstParagraph.boundingBox();
+  for (const state of [
+    { loading: true, summary: "这是正在生成的摘要文字。".repeat(12), error: null },
+    { loading: true, summary: "", error: null },
+    { loading: false, summary: "已完成的完整摘要。".repeat(24), error: null },
+  ]) {
+    await page.evaluate((state) => window.navigationFixture.setSummary(1, state), state);
+    await expect(page.locator(".ai-summary")).toHaveCount(0);
+    await expect(page.getByRole("dialog", { name: "AI 摘要", exact: true })).toHaveCount(0);
+    const after = await firstParagraph.boundingBox();
+    expect(after.y).toBeCloseTo(before.y, 0);
+    expect(after.height).toBeCloseTo(before.height, 0);
+  }
+  expect(errors).toEqual([]);
 });
 
 test("a delayed real-body worker cannot uncover or replace the frozen target", async ({ page }) => {

@@ -1,19 +1,19 @@
 import { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Button } from "@heroui/react";
-import { HashRouter, useLocation } from "react-router";
+import { HashRouter, useLocation, useNavigate } from "react-router";
 import i18n from "i18next";
 import { initReactI18next } from "react-i18next";
 import ActionButtons from "@/components/ArticleView/components/ActionButtons.jsx";
-import AISummary from "@/components/ArticleView/components/AISummary.jsx";
 import Settings from "@/components/Settings/Settings.jsx";
 import CustomModal from "@/components/ui/CustomModal.jsx";
 import CustomAlertDialog from "@/components/ui/CustomAlertDialog.jsx";
-import { aiSummaries } from "@/stores/aiStore.js";
+import { aiSummaries, clearSummary } from "@/stores/aiStore.js";
 import { settingsState as appSettings } from "@/stores/settingsStore.js";
 import { speechState } from "@/stores/speechStore.js";
 import { installOverlayJanitor } from "@/toolbox/overlayJanitor.js";
-import { calls, currentThemeMode, hasIntegrations, loadingOriginContent, settingsModalOpen, settingsState } from "./controls-state.js";
+import { installSystemBack } from "@/toolbox/systemBack.js";
+import { activeArticle, calls, currentThemeMode, hasIntegrations, loadingOriginContent, settingsModalOpen, settingsState, summaryBoundary } from "./controls-state.js";
 import "../../../src/index.css";
 import "../../../src/compact-controls.css";
 
@@ -33,6 +33,7 @@ aiSummaries.set({ 42: { loading: false, summary: "Fixture summary.", error: null
 
 function ControlsFixture() {
   const route = useLocation();
+  const navigate = useNavigate();
   const [modal, setModal] = useState(false);
   const [alert, setAlert] = useState(false);
   const [footerSheet, setFooterSheet] = useState(false);
@@ -46,6 +47,16 @@ function ControlsFixture() {
         configure: () => appSettings.set({ ...appSettings.get(), speechApiKey: "fixture-speech-key", speechRegion: "global", speechPrefetch: false }),
         phase: () => speechState.get().phase,
       },
+      summary: {
+        ...summaryBoundary,
+        clear: (id = 42) => clearSummary(id),
+        state: (id = 42) => aiSummaries.get()[id] ?? null,
+        set: (id, state) => aiSummaries.set({ ...aiSummaries.get(), [id]: state }),
+      },
+      setArticle: (id) => {
+        activeArticle.set({ ...activeArticle.get(), id, title: `Fixture article ${id}`, url: `https://example.invalid/article/${id}` });
+        navigate(`/feed/1/article/${id}`);
+      },
       calls,
       setIntegrations: (value) => hasIntegrations.set(value),
       setBusy: (value) => loadingOriginContent.set(value),
@@ -53,15 +64,14 @@ function ControlsFixture() {
       pending: null,
     };
     return () => { delete window.controlsFixture; };
-  }, []);
+  }, [navigate]);
 
   return <>
     {showingArticle ? <>
       <ActionButtons />
-      <main style={{ padding: 20 }}>
+      <main data-testid="reader-body" style={{ padding: 20 }}>
         <h1>NextFlux reading controls</h1>
         <p>Article text keeps its original size. Close, read, star, AI, full text and share use aligned controls.</p>
-        <AISummary articleId={42} />
       </main>
     </> : <p data-testid="article-list">Article list</p>}
     <output data-testid="route">{route.pathname}</output>
@@ -93,5 +103,6 @@ function ControlsFixture() {
 
 // Same janitor as the app (render.jsx); the fixture's only store-driven overlay is Settings.
 window.controlsOverlayJanitor = installOverlayJanitor({ isOverlayExpected: () => settingsModalOpen.get(), settleMs: 300 });
+window.controlsStopSystemBack = installSystemBack();
 
 createRoot(document.getElementById("root")).render(<HashRouter><ControlsFixture /></HashRouter>);
