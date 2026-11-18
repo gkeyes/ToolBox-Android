@@ -9,6 +9,7 @@ import { fetchWebDocument } from "@/reading/extractors/source.mjs";
 import { loadBestFullText } from "@/reading/fulltext.mjs";
 import { deriveArticleMetadata } from "@/toolbox/cache-metadata.js";
 import { imageGalleryActive } from "./stores.js";
+import { MediaPlaybackContext } from "@/components/ArticleView/components/MediaPlaybackContext.js";
 import { enableNativeMediaSessions, installNativeMediaFixture, pendingRequests, requestCount, respond, resumeReads, snapshot } from "./media-compat-network.js";
 import "react-photo-view/dist/react-photo-view.css";
 import "./style.css";
@@ -53,6 +54,7 @@ function MediaCompatibilityFixture() {
   const [article, setArticle] = useState({ html: "", baseUrl, generation: 0 });
   const [mounted, setMounted] = useState(true);
   const [cover, setCover] = useState(null);
+  const [playbackAllowed, setPlaybackAllowed] = useState(true);
   useEffect(() => {
     window.mediaCompatFixture = {
       renderArticle(html, resourceBaseUrl = baseUrl) {
@@ -66,6 +68,7 @@ function MediaCompatibilityFixture() {
         setMounted(true);
       },
       clearSessionMedia: clearMediaCache,
+      setPlaybackAllowed,
       enableNativeMediaSessions,
       extractWithDefuddle,
       loadBestFullText,
@@ -81,14 +84,14 @@ function MediaCompatibilityFixture() {
     };
     return () => { delete window.mediaCompatFixture; };
   }, []);
-  return <main data-testid="media-compat-surface" data-mounted={String(mounted)} style={{ padding: 20 }}>
+  return <MediaPlaybackContext.Provider value={playbackAllowed}><main data-testid="media-compat-surface" data-mounted={String(mounted)} style={{ padding: 20 }}>
     <PhotoProvider onVisibleChange={(visible) => imageGalleryActive.set(visible)}>
       {mounted && cover && <section data-testid="list-cover"><ArticleCardCover imageUrl={cover.coverUrl} imageSources={cover.coverSources} /></section>}
       <div className="article-content prose max-w-none">
         {mounted && <ArticleDocument key={article.generation} html={article.html} baseUrl={article.baseUrl} />}
       </div>
     </PhotoProvider>
-  </main>;
+  </main></MediaPlaybackContext.Provider>;
 }
 
 createRoot(document.getElementById("root")).render(<MediaCompatibilityFixture />);

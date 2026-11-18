@@ -453,4 +453,7 @@ for (const module of ['app', 'tool-runtime']) {
   }
 }
 console.log(`Host contract: ${methods.length} methods, ${capabilities.length} capabilities; bridge binary/text behavior and security entry checks passed.`);
-execFileSync(process.execPath, ['--test', resolve(root, 'tool-runtime/src/test/js/runtime-media-sdk.test.mjs')], { stdio: 'inherit' });
+execFileSync(process.execPath, ['--test',
+  resolve(root, 'tool-runtime/src/test/js/runtime-media-sdk.test.mjs'),
+  resolve(root, 'tool-runtime/src/test/js/runtime-embedded-sdk.test.mjs'),
+], { stdio: 'inherit' });

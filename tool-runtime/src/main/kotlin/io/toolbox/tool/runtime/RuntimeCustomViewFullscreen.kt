@@ -22,6 +22,8 @@ import android.window.OnBackInvokedDispatcher
 internal class RuntimeCustomViewFullscreen(
     private val webView: WebView,
     private val allowed: Boolean,
+    private val fullscreenContainer: () -> ViewGroup? = { webView.parent as? ViewGroup },
+    private val onExit: () -> Unit = {},
 ) {
     private var customView: View? = null
     private var callback: WebChromeClient.CustomViewCallback? = null
@@ -38,7 +40,7 @@ internal class RuntimeCustomViewFullscreen(
     val showing: Boolean get() = customView != null
 
     fun show(view: View, viewCallback: WebChromeClient.CustomViewCallback) {
-        val container = webView.parent as? ViewGroup
+        val container = fullscreenContainer()
         val activity = RuntimeJavaScriptDialogs.activity(webView.rootView.context)
             ?: container?.let { RuntimeJavaScriptDialogs.activity(it.context) }
         if (!allowed || showing || container == null || activity == null ||
@@ -88,5 +90,6 @@ internal class RuntimeCustomViewFullscreen(
         window = null
         hiddenTypes = 0
         callback?.also { callback = null }?.onCustomViewHidden()
+        onExit()
     }
 }

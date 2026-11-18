@@ -107,6 +107,7 @@ object HardenedRuntimeWebView {
         var webView: WebView? = null
         var runtimeClient: RuntimeWebViewClient? = null
         var network: RuntimeNetworkHandler? = null
+        var embeddedBrowser: RuntimeEmbeddedBrowserController? = null
         try {
             configureDebuggingOnce(context)
             val createdWebView = RuntimeWindowWebView(context)
@@ -172,7 +173,13 @@ object HardenedRuntimeWebView {
                     BundlePathHandler(runtime.privateFilesRoot, runtime.bundleRoot, runtime.securityProfile),
                 )
                 .build()
-            val bridgeConfiguration = bridgeProvider.create(runtime)
+            val baseConfiguration = bridgeProvider.create(runtime)
+            embeddedBrowser = RuntimeEmbeddedBrowserController(createdWebView, runtime.installedManifest.ui.allowFullscreen)
+            val bridgeConfiguration = baseConfiguration.copy(
+                systemHandlers = baseConfiguration.systemHandlers.copy(
+                    browserEmbedded = embeddedBrowser,
+                ),
+            )
             network = bridgeConfiguration.serviceHandlers.network
             runtimeClient = RuntimeWebViewClient(
                 runtime = runtime,
@@ -196,6 +203,7 @@ object HardenedRuntimeWebView {
             creationPermit.close()
             webView?.let(RuntimeWebViewLifecycle::destroyAndUnregister)
             runCatching { network?.close() }
+            embeddedBrowser?.release()
             return RuntimeWebViewCreationResult.Failed(
                 "工具运行环境创建失败，请返回工具列表后重试。",
             )

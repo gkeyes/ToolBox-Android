@@ -132,6 +132,7 @@ data class RuntimeSystemHandlers(
     val clipboardRead: RuntimeClipboardReadHandler? = null,
     val shareText: RuntimeShareTextHandler? = null,
     val browserOpen: RuntimeBrowserOpenHandler? = null,
+    val browserEmbedded: RuntimeEmbeddedBrowserHandler? = null,
     val files: RuntimeFilesHandler? = null,
     val shortcuts: RuntimeShortcutHandler? = null,
     val camera: RuntimeCameraHandler? = null,
@@ -189,8 +190,8 @@ class RuntimeRpcDispatcher(
         }
         val method = ToolBoxApiV1.method(request.method)
             ?: return failure(RuntimeRpcErrorCode.UNSUPPORTED, "Unknown ToolBox method")
-        // Cleanup remains callable after network access is revoked.
-        val mediaCleanup = method.name == "network.closeMedia"
+        // Resource cleanup remains callable after its capability is revoked or the tool is hidden.
+        val mediaCleanup = method.name in RuntimePresentationCoordinator.CLEANUP_METHODS
         val capability = try {
             lifecycle?.checkMethodAvailable(method.name)
             if (method.name == "files.read") {
@@ -231,7 +232,7 @@ class RuntimeRpcDispatcher(
         return try {
             // Existing grants authorize these effects. Require the current visible tool,
             // without a second permission or an arbitrary touch-screen countdown.
-            if (capability in FOREGROUND_INTERACTION_CAPABILITIES && method.name != "files.read") {
+            if (!mediaCleanup && capability in FOREGROUND_INTERACTION_CAPABILITIES && method.name != "files.read") {
                 foregroundInteractionGuard()
             }
             // Read a fresh authorization stage after admission and the foreground dispatch.
