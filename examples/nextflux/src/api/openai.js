@@ -1,5 +1,6 @@
 import { settingsState } from "@/stores/settingsStore.js";
 import { streamChatCompletion } from "../toolbox/ai-network.js";
+import { resolveSummaryPrompt } from "../toolbox/summary-prompt.mjs";
 
 const getPlainText = (html) => {
   const template = document.createElement("template");
@@ -79,7 +80,7 @@ export const summarizeArticleStream = async (article, { onChunk, onDone, onError
       body: {
         model: aiModel,
         messages: [
-          { role: "system", content: aiPrompt },
+          { role: "system", content: resolveSummaryPrompt(aiPrompt) },
           { role: "user", content: `Please summarize this article:\n\nTitle: ${title}\n\n${plainText}` },
         ],
         temperature: 0.3,

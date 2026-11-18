@@ -1,42 +1,25 @@
-import { useEffect, useState } from "react";
+import { useMemo } from "react";
 import { useStore } from "@nanostores/react";
 import { Button, Modal, Spinner, Tooltip } from "@heroui/react";
 import { RotateCcw, Square } from "lucide-react";
 import { AISummaryIcon as Sparkles } from "@/components/ui/icons.jsx";
 import { aiSummaries } from "@/stores/aiStore.js";
-import { runtimeForeground } from "@/toolbox/foreground.js";
+import { renderSummaryMarkdown } from "@/toolbox/summary-markdown.mjs";
 import { ArticleSpeechBar } from "./ArticleSpeech.jsx";
 import "./AISummary.css";
-
-const TICK_MS = 16;
-const CHARS_STREAMING = 5;
 
 // Reuse the speech surface inside the existing accessible Modal primitive.
 // Its portal keeps summaries out of article layouts and passive previews.
 export default function AISummary({ article, open, onClose, onGenerate, onStop }) {
   const articleId = article?.id;
   const summaries = useStore(aiSummaries);
-  const foreground = useStore(runtimeForeground);
   const state = summaries[articleId];
   const fullText = state?.summary || "";
-  const [streamed, setStreamed] = useState({ articleId, text: "" });
-  const animateText = Boolean(open && foreground && state?.loading);
-  const displayedText = animateText
-    ? (streamed.articleId === articleId ? streamed.text : "").slice(0, fullText.length)
-    : fullText;
-
-  useEffect(() => {
-    if (!animateText || !fullText) {
-      setStreamed((previous) => previous.articleId === articleId && previous.text === fullText
-        ? previous : { articleId, text: fullText });
-      return;
-    }
-    if (displayedText.length >= fullText.length) return;
-    const timer = setTimeout(() => {
-      setStreamed({ articleId, text: fullText.slice(0, displayedText.length + CHARS_STREAMING) });
-    }, TICK_MS);
-    return () => clearTimeout(timer);
-  }, [articleId, animateText, fullText, displayedText.length]);
+  // Network chunks are already frame-batched by ActionButtons. Render those
+  // updates directly instead of reparsing on a second per-character timer.
+  const formattedText = useMemo(() => open
+    ? renderSummaryMarkdown(fullText, article?.url) : null,
+  [open, fullText, article?.url]);
 
   const action = state?.loading ? "停止生成" : state?.error ? "重试" : fullText ? "重新生成" : "生成摘要";
 
@@ -76,7 +59,7 @@ export default function AISummary({ article, open, onClose, onGenerate, onStop }
                 <Spinner size="sm" color="current" /><span>正在生成摘要…</span>
               </div>}
               {state?.error && <p className="ds-banner ds-tone-danger" role="alert">{state.error}</p>}
-              {displayedText && <div className="nextflux-summary-text">{displayedText}</div>}
+              {fullText && <div className="nextflux-summary-text">{formattedText}</div>}
               {!state?.loading && !state?.error && !fullText && <p className="nextflux-summary-empty">点击生成按钮，提炼这篇文章的要点。</p>}
             </Modal.Body>
           </div>

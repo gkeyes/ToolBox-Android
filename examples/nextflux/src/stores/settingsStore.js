@@ -2,6 +2,7 @@ import { persistentAtom } from "@nanostores/persistent";
 import { deferPreferenceWrites, flushPreferences } from "../toolbox/preferences.js";
 import { DEFAULT_RECENT_CACHE_LIMIT, normalizeRecentCacheLimit } from "../toolbox/recent-cache.mjs";
 import { normalizeAiContextWindow } from "../toolbox/ai-context.mjs";
+import { DEFAULT_SUMMARY_PROMPT } from "../toolbox/summary-prompt.mjs";
 
 const defaultValue = {
   lineHeight: 1.8,
@@ -53,8 +54,7 @@ const defaultValue = {
   speechPlaybackRate: 1,
   speechReadTitle: true,
   speechPrefetch: true,
-  aiPrompt:
-    "You are a helpful assistant that summarizes articles concisely. Provide a clear, structured summary in the same language as the article. Format: just plain text, no markdown.",
+  aiPrompt: DEFAULT_SUMMARY_PROMPT,
 };
 
 // Settings › Appearance › Sidebar icons: classic, or one of the three sets from
