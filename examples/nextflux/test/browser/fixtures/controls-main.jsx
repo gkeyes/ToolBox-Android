@@ -13,6 +13,8 @@ import { settingsState as appSettings } from "@/stores/settingsStore.js";
 import { speechState } from "@/stores/speechStore.js";
 import { installOverlayJanitor } from "@/toolbox/overlayJanitor.js";
 import { installSystemBack } from "@/toolbox/systemBack.js";
+import { installLinkHandling } from "@/toolbox/actions.js";
+import { runtimeForeground } from "@/toolbox/foreground.js";
 import { activeArticle, calls, currentThemeMode, hasIntegrations, loadingOriginContent, settingsModalOpen, settingsState, summaryBoundary } from "./controls-state.js";
 import "../../../src/index.css";
 import "../../../src/compact-controls.css";
@@ -49,6 +51,8 @@ function ControlsFixture() {
       },
       summary: {
         ...summaryBoundary,
+        installLinks: installLinkHandling,
+        setForeground: (value) => runtimeForeground.set(value),
         clear: (id = 42) => clearSummary(id),
         state: (id = 42) => aiSummaries.get()[id] ?? null,
         set: (id, state) => aiSummaries.set({ ...aiSummaries.get(), [id]: state }),
