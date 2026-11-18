@@ -627,6 +627,7 @@ async function flushDraft() {
   await store?.idle();
   if (page === "editor" && editor?.snapshot && editor.isDirty()) await draftSlot.write({ savedAt: new Date().toISOString(), draft: editor.snapshot() });
   else if (page === "editor") await draftSlot?.clear();
+  else await draftSlot?.idle();
 }
 
 // The host flushes only on an orderly close; also keep the draft when the page is hidden, so a background kill does not lose it.
@@ -650,8 +651,14 @@ async function offerDraft() {
   const record = draftRecord(saved);
   if (!record || page !== "overview" || dialog.open) { if (!record) discard(); return; }
   showDialog("继续未保存的记录？", [h("p", { class: "small pre-wrap" }, `上次关闭工具时有一份未保存的${TYPES[record.type]}（${record.date} · ${record.items.length} 项）。草稿只在本机，尚未写入档案。`),
-    h("div", { class: "actions" }, button("丢弃草稿", async () => { await discard(); dialog.close(); }, "button danger"),
-      button("继续编辑", async () => { await discard(); dialog.close(); openEditor(record, "这是上次关闭前未保存的草稿，请核对后保存。", null, true); }, "button primary"))]);
+    h("div", { class: "actions" }, button("丢弃草稿", async () => {
+      const controls = dialogControls;
+      if (controls) controls.disabled = true;
+      try { await api.storage.remove(DRAFT_KEY); dialog.close(); }
+      catch (error) { toast(errorText(error)); }
+      finally { if (controls) controls.disabled = false; }
+    }, "button danger"),
+      button("继续编辑", () => { draftSlot.adoptStored(); dialog.close(); openEditor(record, "这是上次关闭前未保存的草稿，请核对后保存。", null, true); }, "button primary"))]);
 }
 
 async function start() {
