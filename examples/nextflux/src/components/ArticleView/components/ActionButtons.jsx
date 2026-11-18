@@ -2,6 +2,7 @@ import { shareText } from "@/toolbox/actions.js";
 import ArticleTitleFilterButton from "./ArticleTitleFilterButton.jsx";
 import FullTextAdaptButton from "./FullTextAdaptButton.jsx";
 import { ArticleSpeechBar, ArticleSpeechButton } from "./ArticleSpeech.jsx";
+import AISummary from "./AISummary.jsx";
 import {
   ArrowLeft,
   ArrowRight,
@@ -66,6 +67,8 @@ function ActionButtons() {
   const { aiApiKey, floatingSidebar } = useStore(settingsState);
   const $aiSummaries = useStore(aiSummaries);
   const currentSummaryState = $aiSummaries[$activeArticle?.id];
+  const [summaryArticleId, setSummaryArticleId] = useState(null);
+  const summaryOpen = summaryArticleId !== null && summaryArticleId === String($activeArticle?.id);
   const [moreOpen, setMoreOpen] = useState(false);
   const rootRef = useRef(null);
   // The title filter applies to the article's own feed.
@@ -119,24 +122,23 @@ function ActionButtons() {
   };
 
   const summaryController = useRef(null);
-  useEffect(() => () => {
-    const running = summaryController.current;
-    if (!running) return;
-    running.stopReason = "switch";
-    running.abort();
+  useEffect(() => {
+    setSummaryArticleId(null);
+    return () => summaryController.current?.stop("switch");
   }, [$activeArticle?.id]);
 
-  // 处理AI总结
-  const handleAISummarize = () => {
+  const stopAISummary = () => summaryController.current?.stop("user");
+  const closeAISummary = () => {
+    stopAISummary();
+    setSummaryArticleId(null);
+  };
+
+  const generateAISummary = () => {
     if (!$activeArticle) return;
     const articleId = $activeArticle.id;
-    if (currentSummaryState?.loading) {
-      if (summaryController.current) {
-        summaryController.current.stopReason = "user";
-        summaryController.current.abort();
-      }
-      return;
-    }
+    // Rapid presses and late callbacks must never create a second run or let
+    // an abandoned run overwrite a new summary for the same article.
+    if (summaryController.current) return;
     const controller = new AbortController();
     summaryController.current = controller;
     setSummaryLoading(articleId);
@@ -145,37 +147,56 @@ function ActionButtons() {
     let pendingText = "";
 
     const flush = () => {
-      if (pendingText) {
+      if (pendingText && summaryController.current === controller) {
         appendSummaryChunk(articleId, pendingText);
-        pendingText = "";
       }
+      pendingText = "";
       rafId = null;
+    };
+
+    controller.stop = (reason) => {
+      if (summaryController.current !== controller) return;
+      if (rafId) cancelAnimationFrame(rafId);
+      if (reason === "user") flush();
+      else { pendingText = ""; rafId = null; }
+      finishCancelledSummary(articleId, { keepPartial: reason === "user" });
+      summaryController.current = null;
+      controller.abort();
     };
 
     summarizeArticleStream($activeArticle, {
       signal: controller.signal,
       onChunk: (chunk) => {
+        if (controller.signal.aborted || summaryController.current !== controller) return;
         pendingText += chunk;
         if (!rafId) rafId = requestAnimationFrame(flush);
       },
       onDone: () => {
+        if (controller.signal.aborted || summaryController.current !== controller) return;
         if (rafId) cancelAnimationFrame(rafId);
         flush();
         setSummaryDone(articleId);
-        if (summaryController.current === controller) summaryController.current = null;
+        summaryController.current = null;
       },
       onError: (error) => {
+        if (summaryController.current !== controller) return;
         if (rafId) cancelAnimationFrame(rafId);
-        if (summaryController.current === controller) summaryController.current = null;
         if (error?.code === "CANCELLED" || controller.signal.aborted) {
-          flush();
-          finishCancelledSummary(articleId, { keepPartial: controller.stopReason === "user" });
+          controller.stop("switch");
           return;
         }
+        pendingText = "";
+        rafId = null;
+        summaryController.current = null;
         setSummaryError(articleId, error.message);
-        toast.error(error.message);
       },
     });
+  };
+
+  const openAISummary = () => {
+    if (!$activeArticle) return;
+    setSummaryArticleId(String($activeArticle.id));
+    if (!currentSummaryState) generateAISummary();
   };
 
   // 处理保存到第三方服务
@@ -359,11 +380,13 @@ function ActionButtons() {
             <Tooltip delay={0}>
               <Button
                 className="nextflux-toolbar-button"
-                onPress={handleAISummarize}
+                onPress={openAISummary}
                 variant="ghost"
                 isIconOnly
                 size="sm"
-                aria-label={currentSummaryState?.loading ? "停止 AI 摘要" : "AI 摘要"}
+                aria-label="AI 摘要"
+                aria-haspopup="dialog"
+                aria-expanded={summaryOpen}
               >
                 {currentSummaryState?.loading ? (
                   <Spinner color="current" size="sm" />
@@ -375,7 +398,7 @@ function ActionButtons() {
               </Button>
               <Tooltip.Content showArrow>
                 <Tooltip.Arrow />
-                {currentSummaryState?.loading ? "停止 AI 摘要" : t("articleView.aiSummarize")}
+                {t("articleView.aiSummarize")}
               </Tooltip.Content>
             </Tooltip>
           )}
@@ -414,8 +437,15 @@ function ActionButtons() {
       </div>
 
       <div className="reader-speech-slot">
-        <ArticleSpeechBar article={$activeArticle} />
+        {!summaryOpen && <ArticleSpeechBar article={$activeArticle} />}
       </div>
+      <AISummary
+        article={$activeArticle}
+        open={summaryOpen}
+        onClose={closeAISummary}
+        onGenerate={generateAISummary}
+        onStop={stopAISummary}
+      />
       <MobileSheet
         open={moreOpen}
         onOpenChange={setMoreOpen}

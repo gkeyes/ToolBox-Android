@@ -1,0 +1,73 @@
+/* The read-aloud glass surface; Modal supplies the portal, focus and dismissal. */
+.nextflux-summary-container.action-buttons {
+  inline-size: 100%;
+  max-inline-size: none;
+  block-size: var(--visual-viewport-height, 100dvh);
+  min-block-size: 0;
+  padding: 12px 12px calc(78px + env(safe-area-inset-bottom, 0px));
+}
+.nextflux-summary-container.action-buttons .nextflux-summary-dialog.reader-speech-slot {
+  position: relative;
+  inset: auto;
+  flex: 0 1 auto;
+  align-items: stretch;
+  inline-size: 100%;
+  max-inline-size: 640px;
+  max-block-size: min(70dvh, calc(var(--visual-viewport-height, 100dvh) - 140px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)));
+  margin: auto 0 0;
+  padding: 4px 6px;
+  border-radius: 24px;
+  isolation: isolate;
+  background: transparent;
+  box-shadow: var(--nf-glass-drop, var(--overlay-shadow));
+}
+.nextflux-summary-dialog.reader-speech-slot::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  pointer-events: none;
+  background: var(--nf-glass, var(--ds-raised));
+  box-shadow: var(--nf-glass-inset);
+  -webkit-backdrop-filter: var(--nf-lens, blur(12px)) var(--nf-glass-filter);
+  backdrop-filter: var(--nf-lens, blur(12px)) var(--nf-glass-filter);
+}
+.nextflux-summary-dialog .ai-summary {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-block-size: 0;
+  margin: 0;
+  background: transparent;
+  border-radius: 0;
+  box-shadow: none;
+}
+.nextflux-summary-dialog .nextflux-summary-header {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 8px;
+  margin: 0;
+  padding: 4px 2px 4px 6px;
+}
+.nextflux-summary-heading-group { flex: 1; min-inline-size: 0; }
+.nextflux-summary-dialog .nextflux-summary-heading { margin: 0; font-size: 1rem; font-weight: 600; line-height: 1.4; }
+.nextflux-summary-article { margin: 2px 0 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--ds-text-secondary, var(--muted)); font-size: .75rem; }
+.nextflux-summary-header .nextflux-close-button { position: static; flex-shrink: 0; margin: 0; }
+.nextflux-summary-dialog .nextflux-summary-body {
+  min-block-size: 0;
+  margin: 0;
+  padding: 4px 12px 14px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+.nextflux-summary-status { display: flex; align-items: center; gap: 8px; margin-block-end: 10px; color: var(--ds-text-secondary, var(--muted)); font-size: .8125rem; }
+.nextflux-summary-text { white-space: pre-wrap; overflow-wrap: anywhere; color: var(--ds-text-primary, var(--foreground)); font-size: .9375rem; line-height: 1.7; user-select: text; }
+.nextflux-summary-empty { color: var(--ds-text-secondary, var(--muted)); font-size: .875rem; }
+.nextflux-summary-dialog > .nextflux-speech-bar:not(.ai-summary) { flex-shrink: 0; border-block-start: .5px solid var(--ds-hairline); }
+@media (min-width: 768px) {
+  .nextflux-summary-container.action-buttons { padding: 24px; }
+}
