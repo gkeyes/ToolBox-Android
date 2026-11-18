@@ -11,8 +11,9 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { getArticleById } from "@/db/storage.js";
 import { settingsState } from "@/stores/settingsStore.js";
 import { board, boardReadState, boardStream, digest, markBoardAsRead, openBoard, refreshBoard, showBoardReport, showTodayBoard, writeDigest } from "@/toolbox/board/boardStore.js";
-import { generatePendingReport, initializeBoardHistory, reportHistory, retryPendingReport } from "@/toolbox/board/historyStore.js";
+import { generatePendingReport, initializeBoardHistory, markBoardReportSeen, reportHistory, retryPendingReport } from "@/toolbox/board/historyStore.js";
 import { boardArticleIds, digestArticleNumbers, parseDigest } from "@/toolbox/board/board.mjs";
+import { runtimeForeground } from "@/toolbox/foreground.js";
 import { openInBrowser } from "@/toolbox/actions.js";
 import { registerBackHandler } from "@/toolbox/systemBack.js";
 import "@/toolbox/board/board.css";
@@ -199,9 +200,12 @@ function ReportPicker({ reports, selected, busy, onChoose }) {
       <Select.Popover className="nf-board-report-popover">
         <ListBox aria-label="历史报告">
           {reports.map((report) => {
-            const label = `${report.unseen ? "新 · " : ""}${report.kind === "today" ? "今日总览 · " : ""}${periodLabel(report)} · ${report.total || 0} 篇`;
-            return <ListBox.Item key={report.id} id={report.id} textValue={label}>
-              <span className="nf-board-report-option">{label}</span><ListBox.ItemIndicator />
+            const label = `${report.kind === "today" ? "今日总览 · " : ""}${periodLabel(report)} · ${report.total || 0} 篇`;
+            return <ListBox.Item key={report.id} id={report.id} textValue={report.unseen ? `未读 · ${label}` : label}>
+              <span className="nf-board-report-option">
+                {report.unseen && <span className="nf-board-unread ds-tone-info">未读</span>}
+                {label}
+              </span><ListBox.ItemIndicator />
             </ListBox.Item>;
           })}
         </ListBox>
@@ -309,6 +313,7 @@ export default function BoardPage() {
   const state = useStore(board);
   const stream = useStore(boardStream);
   const history = useStore(reportHistory);
+  const foreground = useStore(runtimeForeground);
   const { articleListStyle, aiApiKey, autoBoardEnabled } = useStore(settingsState);
   const { articleId } = useParams();
   const navigate = useNavigate();
@@ -330,6 +335,17 @@ export default function BoardPage() {
   const done = visible && state.status === "done" && (isHistory || state.kind !== "interval");
   const includedCount = boardArticleIds(state.topics, state.articles).length;
   const unseenCount = reports.filter((report) => report.unseen).length;
+
+  const visibleUnreadId = foreground && !articleId && !choosing && done && selectedReport?.unseen
+    ? selectedReport.id : null;
+  useEffect(() => {
+    if (!visibleUnreadId) return;
+    let current = true;
+    markBoardReportSeen(visibleUnreadId).catch((error) => {
+      if (current) setActionError(error.message || "报告已读状态暂时无法保存。");
+    });
+    return () => { current = false; };
+  }, [visibleUnreadId]);
 
   // Reopening the board reuses its current report. Saved reports never start
   // another AI request, including when returning from their source articles.
@@ -468,7 +484,10 @@ export default function BoardPage() {
                 <Tabs.ListContainer>
                   <Tabs.List aria-label="看板范围">
                     <Tabs.Tab id="today"><Tabs.Indicator className="bg-accent" /><span>今日</span></Tabs.Tab>
-                    <Tabs.Tab id="reports"><Tabs.Indicator className="bg-accent" /><span>历史报告</span>{unseenCount > 0 && <span className="nf-board-history-dot" aria-label={`有 ${unseenCount} 份新报告`} />}</Tabs.Tab>
+                    <Tabs.Tab id="reports" aria-label={unseenCount ? `历史报告，${unseenCount} 份未读` : "历史报告"}>
+                      <Tabs.Indicator className="bg-accent" /><span>历史报告</span>
+                      {unseenCount > 0 && <span className="nf-board-unread ds-tone-info" aria-hidden="true">{unseenCount}</span>}
+                    </Tabs.Tab>
                   </Tabs.List>
                 </Tabs.ListContainer>
               </Tabs>

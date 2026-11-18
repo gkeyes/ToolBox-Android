@@ -225,6 +225,40 @@ test("automatic reports can be disabled, and a failed manual report retries with
   expect(await page.evaluate(() => window.__intervalTest.messages.length)).toBe(completed.calls);
 });
 
+test("history badges count unread reports and remember only those actually displayed", async ({ page }) => {
+  await prepareIntervals(page, { persistStorage: true });
+  await seedReport(page, { id: "oldest", topicCount: 1 });
+  await seedReport(page, { id: "middle", topicCount: 2, kind: "interval" });
+  await seedReport(page, { id: "latest", topicCount: 3 });
+  await page.evaluate(async () => {
+    const history = await import("/src/toolbox/board/historyStore.js");
+    await history.readBoardReport("oldest");
+    await history.saveBoardDigest("middle", "更新的报告正文");
+  });
+  await page.goto(`${PRODUCTION_URL}#/board`);
+  const tab = page.getByRole("tab", { name: /历史报告/ });
+  const picker = reportPicker(page);
+  const menu = page.getByRole("listbox", { name: "历史报告" });
+  await expect(picker).toContainText("4 篇");
+  await expect(tab).toHaveAccessibleName("历史报告，2 份未读");
+  await picker.click();
+  await expect(menu.getByText("未读", { exact: true })).toHaveCount(2);
+  await expect(menu.getByRole("option", { name: /4 篇/ })).not.toContainText("未读");
+  await page.keyboard.press("Escape");
+  await expect(tab).toHaveAccessibleName("历史报告，2 份未读");
+  await chooseSavedReport(page, /3 篇/);
+  await expect(tab).toHaveAccessibleName("历史报告，1 份未读");
+  await page.reload();
+  await expect(picker).toContainText("4 篇");
+  await expect(tab).toHaveAccessibleName("历史报告，1 份未读");
+  await picker.click();
+  await expect(menu.getByRole("option", { name: /2 篇/ })).toContainText("未读");
+  await expect(menu.getByRole("option", { name: /3 篇/ })).not.toContainText("未读");
+  await menu.getByRole("option", { name: /2 篇/ }).click();
+  await expect(picker).toContainText("2 篇");
+  await expect(tab).toHaveAccessibleName("历史报告");
+});
+
 test("saved daily reports survive reload, preview a cleaned source, and disappear at 48 hours while open", async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 800 });
   await page.clock.install();
@@ -421,7 +455,7 @@ test("board scope tabs keep one pill without overlap while touching, switching, 
   const navigation = page.locator(".nf-board-navigation");
   const today = navigation.getByRole("tab", { name: "今日", exact: true });
   const reports = navigation.getByRole("tab", { name: /历史报告/ });
-  await expect(navigation.locator(".nf-board-history-dot")).toBeVisible();
+  await expect(reports.getByText("1", { exact: true })).toBeVisible();
   const calls = await page.evaluate(() => window.__intervalTest.messages.length);
 
   const settled = () => expect.poll(() => navigation.evaluate((element) =>

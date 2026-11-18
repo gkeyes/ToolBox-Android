@@ -104,12 +104,13 @@ async function manualReport(retry) {
 export const generatePendingReport = () => manualReport(false);
 export const retryPendingReport = () => manualReport(true);
 export async function readBoardReport(id) { return (await initializeBoardHistory())?.readReport(id) ?? null; }
+export async function markBoardReportSeen(id) { await (await initializeBoardHistory())?.markReportSeen(id); }
 export async function deleteBoardReport(id) { await (await initializeBoardHistory())?.removeReport(id); }
 export async function saveBoardSnapshot(state, text = "") {
   const manager = await initializeBoardHistory();
   if (!manager) return null;
   const report = {
-    id: state.reportId || `today-${state.at}`, kind: state.kind || "today", unseen: false,
+    id: state.reportId || `today-${state.at}`, kind: state.kind || "today",
     periodStart: state.periodStart ?? state.day, periodEnd: state.periodEnd ?? state.at,
     completedAt: state.at, total: state.total, skipped: state.skipped || 0,
     includedCount: boardArticleIds(state.topics, state.articles).length,
@@ -121,8 +122,7 @@ export async function saveBoardSnapshot(state, text = "") {
 }
 export async function saveBoardDigest(id, text) {
   const manager = await initializeBoardHistory();
-  const report = await manager?.readReport(id);
-  if (report) await manager.saveReport({ ...report, digest: text });
+  await manager?.saveDigest(id, text);
 }
 export async function flushBoardHistory() {
   const failures = [];

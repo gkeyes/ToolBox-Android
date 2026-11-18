@@ -364,7 +364,8 @@ test("generating, opening and removing a report preserve all source read states 
   await f.initialize();
   await f.sync(ids(151));
   const published = f.manager.getReports()[0];
-  const report = await f.manager.readReport(published.id);
+  assert.equal((await f.manager.readReport(published.id)).unseen, true);
+  const report = await f.manager.markReportSeen(published.id);
   assert.equal(report.unseen, false);
   assert.deepEqual(report.topics.flatMap((topic) => topic.articles.map((number) => report.articles[number - 1].id)), [1]);
   assert.equal(report.articles.length, 151);
@@ -427,7 +428,7 @@ test("dispose during initialization or a history read suppresses its late result
   const readGate = deferred();
   const readStarted = deferred();
   f.hooks.readReport = async () => { readStarted.resolve(); await readGate.promise; };
-  const reading = f.manager.readReport(report.id);
+  const reading = f.manager.markReportSeen(report.id);
   await readStarted.promise;
   const publications = f.changes.length;
   const reportWrites = f.db.reportWrites.length;
@@ -614,7 +615,7 @@ test("a history result is suppressed when disposal happens during marking it see
   const gate = deferred();
   const entered = deferred();
   f.hooks.saveReport = async () => { entered.resolve(); await gate.promise; };
-  const reading = f.manager.readReport(report.id);
+  const reading = f.manager.markReportSeen(report.id);
   await entered.promise;
   const changes = f.changes.length;
   const disposal = f.manager.dispose();

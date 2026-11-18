@@ -311,25 +311,33 @@ export function createReportManager({ repository, selectArticles, recoverIds = a
   }
   async function readReport(id) {
     await ready;
-    if (disposed) return null;
-    const report = await repository.readReport(id);
-    if (disposed) return null;
-    if (!report) { await refresh(); return null; }
-    if (report.unseen !== false) await repository.saveReport({ ...report, unseen: false });
-    if (disposed) return null;
-    await refresh();
-    return disposed ? null : { ...report, unseen: false };
+    const report = disposed ? null : await repository.readReport(id);
+    if (!report && !disposed) await refresh();
+    return disposed ? null : report;
+  }
+  async function updateReport(id, patch) {
+    await ready;
+    // A digest finishing and a reader opening the same report must preserve both changes.
+    const result = await enqueue(async () => {
+      if (disposed) return null;
+      const report = await repository.readReport(id);
+      if (disposed || !report) return null;
+      if (Object.entries(patch).every(([key, value]) => report[key] === value)) return report;
+      return repository.saveReport({ ...report, ...patch });
+    });
+    if (!disposed) await refresh();
+    return disposed ? null : result;
   }
   async function saveReport(report) {
     await ready;
     if (disposed) throw aborted();
-    const saved = await repository.saveReport(report);
+    const saved = await enqueue(() => repository.saveReport(report));
     if (disposed) throw aborted();
     await refresh();
     if (disposed) throw aborted();
     return saved;
   }
-  async function removeReport(id) { await ready; if (disposed) return; await repository.removeReport(id); await refresh(); }
+  async function removeReport(id) { await ready; if (disposed) return; await enqueue(() => repository.removeReport(id)); await refresh(); }
   async function dispose({ clear = false } = {}) {
     suspended = true; disposed = true; controller?.abort();
     await running?.catch(() => {});
@@ -338,5 +346,7 @@ export function createReportManager({ repository, selectArticles, recoverIds = a
     else await repository.flush();
   }
   return { initialize, onSync, refresh, start, pause, resume, readReport, saveReport, removeReport, dispose,
+    markReportSeen: (id) => updateReport(id, { unseen: false }),
+    saveDigest: (id, digest) => updateReport(id, { digest }),
     getState: () => copy(state), getReports: () => copy(reports) };
 }

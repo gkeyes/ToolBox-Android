@@ -42,7 +42,17 @@
   white-space: normal;
   overflow-wrap: anywhere;
 }
-.nf-board-history-dot { flex: 0 0 6px; inline-size: 6px; block-size: 6px; border-radius: 50%; background: var(--danger); }
+.nf-board-unread {
+  display: inline-block;
+  padding-inline: 0.45em;
+  border-radius: var(--ds-radius-button);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  line-height: 1.5;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.nf-board-report-option .nf-board-unread { margin-inline-end: 0.45em; }
 .nf-board-auto { padding: 10px 12px; border-radius: 14px; background: color-mix(in srgb, var(--accent) 6%, transparent); }
 .nf-board-auto p { margin: 0; font-size: 0.75rem; line-height: 1.6; overflow-wrap: anywhere; }
 .nf-board-auto-status { display: flex; align-items: center; gap: 8px; color: var(--accent); }

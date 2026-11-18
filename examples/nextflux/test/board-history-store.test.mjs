@@ -285,6 +285,14 @@ test("a saved today snapshot retains its article settings for reuse after a rest
   assert.equal(saved.periodStart, day.getTime());
   assert.equal(saved.digest, "已写好的完整报告 [1]");
   assert.deepEqual(saved.articles, state.articles);
+  assert.equal(saved.unseen, true);
+  await Promise.all([
+    f.history.markBoardReportSeen(state.reportId),
+    f.history.saveBoardDigest(state.reportId, "更新后的完整报告 [1]"),
+  ]);
+  const reopened = await f.repository().readReport(state.reportId);
+  assert.equal(reopened.unseen, false);
+  assert.equal(reopened.digest, "更新后的完整报告 [1]");
   assert.deepEqual(f.aiCalls, [], "saving and restoring do not generate content");
 });
 
