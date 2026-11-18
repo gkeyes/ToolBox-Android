@@ -1,11 +1,14 @@
 import { streamChat } from "@/api/openai.js";
+import { measureMessages, validInputPolicy } from "../ai-context.mjs";
 import {
   MAX_BATCH_ARTICLES, MAX_TOPICS, PROMPT_BUDGET, batchArticles, batchTopics,
   expandTopics, mapBatchTopics, mergeTopicsMessages, parseTopics, readTopics,
   topicsMessages,
 } from "./board.mjs";
 
-const VERSION = 1;
+const LEGACY_VERSION = 1;
+const VERSION = 2;
+const MAX_CONTEXT_REDUCTIONS = 6;
 const NO_CHECKPOINT = async () => {};
 const integer = (value) => Number.isSafeInteger(value) && value >= 0;
 const positive = (value) => integer(value) && value > 0;
@@ -54,6 +57,30 @@ function validSizes(sizes, count, maximum = Infinity) {
     && sizes.reduce((total, size) => total + size, 0) === count;
 }
 
+const policyFor = (state) => state.version === VERSION ? state.inputPolicy : undefined;
+const fits = (messages, policy) => policy
+  ? measureMessages(messages, policy) <= policy.budget
+  : messages.reduce((total, message) => total + message.content.length, 0) <= PROMPT_BUDGET;
+
+// A rejected request teaches us a smaller size for this unfinished stage. Keep
+// the completed prefix exactly as saved, including its formerly larger batches.
+function splitRemaining(sizes, next, maximum) {
+  const result = sizes.slice(0, next);
+  for (const size of sizes.slice(next)) {
+    for (let remaining = size; remaining > 0; remaining -= maximum) result.push(Math.min(remaining, maximum));
+  }
+  return result;
+}
+
+function contextLimitError(reason) {
+  const error = new Error(reason === "single"
+    ? "AI 服务连单条内容也提示超过上下文限制，请检查 AI 设置里的模型与上下文容量后重试。"
+    : reason === "merge" ? "AI 服务允许的上下文过小，无法继续合并主题。已完成的进度已保留，请检查 AI 设置后重试。"
+    : "AI 服务仍提示超过上下文限制，已停止自动缩小请求。已完成的进度已保留，请检查 AI 设置后重试。");
+  error.code = "CONTEXT_LENGTH_EXCEEDED";
+  return error;
+}
+
 function validTopics(topics, allowed) {
   if (!Array.isArray(topics)) return false;
   const seen = new Set();
@@ -75,16 +102,26 @@ function restoreCheckpoint(saved, inputIds) {
   try { state = copy(saved); } catch { throw invalidCheckpoint(); }
   const sameIds = Array.isArray(state?.inputIds) && state.inputIds.length === inputIds.length
     && state.inputIds.every((id, index) => id === inputIds[index]);
-  if (!sameIds || state.version !== VERSION || !Array.isArray(state.articles)
+  if (!sameIds || ![LEGACY_VERSION, VERSION].includes(state.version)
+    || (state.version === VERSION && !validInputPolicy(state.inputPolicy)) || !Array.isArray(state.articles)
     || state.articles.length !== inputIds.length || typeof state.cut !== "boolean" || typeof state.done !== "boolean"
     || !state.articles.every((article, index) => article?.id === inputIds[index] && article.number === index + 1
       && typeof article.head === "string" && article.head.length <= 163
       && typeof article.excerpt === "string" && article.excerpt.length <= 280)
-    || !validSizes(state.batchSizes, inputIds.length, MAX_BATCH_ARTICLES)
+    || !validSizes(state.batchSizes, inputIds.length, state.version === LEGACY_VERSION ? MAX_BATCH_ARTICLES : Infinity)
     || !integer(state.nextArticleBatch) || state.nextArticleBatch > state.batchSizes.length) throw invalidCheckpoint();
+  // Original v1 checkpoints predate context-aware retries. Their plan still
+  // uses the old character budget, regardless of the caller's new settings.
+  if (state.version === LEGACY_VERSION && state.contextReductions === undefined) state.contextReductions = { articles: 0, merge: 0 };
+  if (!state.contextReductions || !["articles", "merge"].every((stage) =>
+    integer(state.contextReductions[stage]) && state.contextReductions[stage] <= MAX_CONTEXT_REDUCTIONS)) throw invalidCheckpoint();
+  // Older checkpoints have no learned width. Once a service rejects a merge,
+  // carry the smaller width through later rounds and interrupted runs too.
+  state.mergeBatchLimit ??= null;
+  if (state.mergeBatchLimit !== null && !positive(state.mergeBatchLimit)) throw invalidCheckpoint();
+  const policy = policyFor(state);
   const batches = partitions(state.articles, state.batchSizes);
-  if (batches.some((batch) => topicsMessages(batch, { brief: true })
-    .reduce((total, message) => total + message.content.length, 0) > PROMPT_BUDGET)) throw invalidCheckpoint();
+  if (batches.some((batch) => !fits(topicsMessages(batch, { brief: true }), policy))) throw invalidCheckpoint();
   const processed = state.batchSizes.slice(0, state.nextArticleBatch).reduce((total, size) => total + size, 0);
   const allowed = new Set(Array.from({ length: processed }, (_, index) => index + 1));
   if (!validTopics(state.topics, allowed) || (!state.topics.length && processed > 0)) throw invalidCheckpoint();
@@ -97,8 +134,9 @@ function restoreCheckpoint(saved, inputIds) {
       || !validTopics(merge.candidates, allowed) || merge.candidates.length <= 1
       || JSON.stringify(merge.candidates) !== JSON.stringify(state.topics)
       || !validSizes(merge.batchSizes, merge.candidates.length)
-      || JSON.stringify(merge.batchSizes) !== JSON.stringify(batchTopics(merge.candidates).map((batch) => batch.length))
       || !integer(merge.nextBatch) || merge.nextBatch >= merge.batchSizes.length) throw invalidCheckpoint();
+    if (state.mergeBatchLimit !== null && merge.batchSizes.slice(merge.nextBatch).some((size) => size > state.mergeBatchLimit)) throw invalidCheckpoint();
+    if (partitions(merge.candidates, merge.batchSizes).some((batch) => !fits(mergeTopicsMessages(batch, { brief: true }), policy))) throw invalidCheckpoint();
     const finished = merge.batchSizes.slice(0, merge.nextBatch).reduce((total, size) => total + size, 0);
     const mergedSources = new Set(merge.candidates.slice(0, finished).flatMap((topic) => topic.articles));
     if (!validTopics(merge.topics, mergedSources) || (!merge.topics.length && finished > 0)) throw invalidCheckpoint();
@@ -114,8 +152,10 @@ function startMerge(state, round) {
     state.merge = null;
     return;
   }
+  const sizes = batchTopics(state.topics, policyFor(state)).map((batch) => batch.length);
   state.merge = {
-    round, candidates: state.topics, batchSizes: batchTopics(state.topics).map((batch) => batch.length),
+    round, candidates: state.topics,
+    batchSizes: state.mergeBatchLimit === null ? sizes : splitRemaining(sizes, 0, state.mergeBatchLimit),
     nextBatch: 0, topics: [],
   };
 }
@@ -128,7 +168,7 @@ function startMerge(state, round) {
  */
 export async function generateBoard({
   articles: rawSnapshot, signal, onProgress = () => {}, checkpoint = null,
-  onCheckpoint = NO_CHECKPOINT, stream = streamChat,
+  onCheckpoint = NO_CHECKPOINT, stream = streamChat, inputPolicy,
 }) {
   checkAbort(signal);
   if (!Array.isArray(rawSnapshot) || rawSnapshot.some((article) => !positive(article?.id))) throw invalidCheckpoint();
@@ -137,10 +177,16 @@ export async function generateBoard({
   let state;
   if (checkpoint !== null) state = restoreCheckpoint(checkpoint, inputIds);
   else {
-    const { articles, batches } = batchArticles(copy(rawSnapshot));
+    if (inputPolicy !== undefined && !validInputPolicy(inputPolicy)) throw invalidCheckpoint();
+    const policy = inputPolicy === undefined ? undefined : copy(inputPolicy);
+    const { articles, batches } = batchArticles(copy(rawSnapshot), policy);
     state = {
-      version: VERSION, inputIds, articles, batchSizes: batches.map((batch) => batch.length),
+      version: policy ? VERSION : LEGACY_VERSION,
+      ...(policy ? { inputPolicy: policy } : {}),
+      inputIds, articles, batchSizes: batches.map((batch) => batch.length),
       nextArticleBatch: 0, topics: [], cut: false, merge: null, done: !articles.length,
+      contextReductions: { articles: 0, merge: 0 },
+      mergeBatchLimit: null,
     };
   }
   const save = async () => {
@@ -151,6 +197,20 @@ export async function generateBoard({
     checkAbort(signal);
   };
   await save();
+
+  const reduceContext = async (stage) => {
+    checkAbort(signal);
+    const plan = stage === "articles" ? state : state.merge;
+    const next = stage === "articles" ? state.nextArticleBatch : plan.nextBatch;
+    const size = plan.batchSizes[next];
+    if (size <= 1 || state.contextReductions[stage] >= MAX_CONTEXT_REDUCTIONS) throw contextLimitError(size <= 1 ? "single" : "retries");
+    const maximum = Math.ceil(size / 2);
+    if (stage === "merge") state.mergeBatchLimit = Math.min(state.mergeBatchLimit ?? maximum, maximum);
+    plan.batchSizes = splitRemaining(plan.batchSizes, next, stage === "merge" ? state.mergeBatchLimit : maximum);
+    state.contextReductions[stage] += 1;
+    // A failed or uncertain write must stop this run before another paid call.
+    await save();
+  };
 
   let activeAsk = null;
   const ask = async (items, messages, progress, first = null) => {
@@ -222,20 +282,27 @@ export async function generateBoard({
     }
   };
 
-  const batches = partitions(state.articles, state.batchSizes);
   let processed = state.batchSizes.slice(0, state.nextArticleBatch).reduce((total, size) => total + size, 0);
-  while (state.nextArticleBatch < batches.length) {
-    const batch = batches[state.nextArticleBatch];
-    const read = await readBatch(batch, topicsMessages, {
-      stage: "articles", batchIndex: state.nextArticleBatch + 1, batchCount: batches.length,
-      processed, total: state.articles.length,
-    });
+  while (state.nextArticleBatch < state.batchSizes.length) {
+    const batch = state.articles.slice(processed, processed + state.batchSizes[state.nextArticleBatch]);
+    let read;
+    try {
+      read = await readBatch(batch, topicsMessages, {
+        stage: "articles", batchIndex: state.nextArticleBatch + 1, batchCount: state.batchSizes.length,
+        processed, total: state.articles.length,
+      });
+    } catch (error) {
+      checkAbort(signal);
+      if (error?.code !== "CONTEXT_LENGTH_EXCEEDED") throw error;
+      await reduceContext("articles");
+      continue;
+    }
     checkAbort(signal);
     state.topics.push(...mapBatchTopics(read.topics, batch));
     state.cut ||= read.cut;
     state.nextArticleBatch += 1;
     processed += batch.length;
-    if (state.nextArticleBatch === batches.length) startMerge(state, 1);
+    if (state.nextArticleBatch === state.batchSizes.length) startMerge(state, 1);
     await save();
   }
   while (!state.done) {
@@ -244,17 +311,28 @@ export async function generateBoard({
     const candidates = groups[merge.nextBatch];
     if (groups.length > 1 && candidates.length === 1) merge.topics.push(...candidates);
     else {
-      const read = await readBatch(candidates, mergeTopicsMessages, {
-        stage: "merge", batchIndex: merge.nextBatch + 1, batchCount: groups.length,
-        round: merge.round, processed, total: state.articles.length,
-      });
+      let read;
+      try {
+        read = await readBatch(candidates, mergeTopicsMessages, {
+          stage: "merge", batchIndex: merge.nextBatch + 1, batchCount: groups.length,
+          round: merge.round, processed, total: state.articles.length,
+        });
+      } catch (error) {
+        checkAbort(signal);
+        if (error?.code !== "CONTEXT_LENGTH_EXCEEDED") throw error;
+        await reduceContext("merge");
+        continue;
+      }
       checkAbort(signal);
       merge.topics.push(...expandTopics(read.topics, candidates));
       state.cut ||= read.cut;
     }
     merge.nextBatch += 1;
     if (merge.nextBatch === groups.length) {
-      if (groups.length > 1 && merge.topics.length >= merge.candidates.length) throw new Error("AI 主题汇总未能收敛，请重新生成。");
+      if (groups.length > 1 && merge.topics.length >= merge.candidates.length) {
+        if (state.contextReductions.merge && merge.batchSizes.every((size) => size === 1)) throw contextLimitError("merge");
+        throw new Error("AI 主题汇总未能收敛，请重新生成。");
+      }
       state.topics = merge.topics;
       if (groups.length === 1) { state.done = true; state.merge = null; }
       else startMerge(state, merge.round + 1);

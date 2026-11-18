@@ -26,6 +26,8 @@ const answer = (options, numbers, title = "主题") => {
   return { finishReason: "stop" };
 };
 const allSources = async (messages, options) => answer(options, refs(messages));
+const largePolicy = { unit: "utf8", budget: 1000000 };
+const contextFailure = () => Object.assign(new Error("model input is too long"), { code: "CONTEXT_LENGTH_EXCEEDED" });
 
 test("input is durably frozen before any AI request, and saves are awaited between batches", async () => {
   const input = rows(181);
@@ -75,10 +77,14 @@ test("a resumed article stage skips every saved batch and keeps the frozen sourc
   }), /第三批网络中断/);
   assert.equal(saved.nextArticleBatch, 2);
   assert.equal(saved.done, false);
+  // The installed v1 generator did not yet store retry counters. A larger
+  // current setting must not reinterpret or repeat that original saved plan.
+  delete saved.contextReductions;
+  delete saved.mergeBatchLimit;
   const sent = [];
   const result = await generateBoard({
     articles: input.map((article) => ({ ...article, text: "现有缓存已经改变" })),
-    checkpoint: copy(saved),
+    checkpoint: copy(saved), inputPolicy: largePolicy,
     stream: async (messages, options) => {
       if (kind(messages) === "articles") sent.push(...[...messages[1].content.matchAll(/^\[\d+\] 源 · 文章 (\d+)$/gm)].map((match) => Number(match[1])));
       assert.doesNotMatch(messages[1].content, /现有缓存已经改变/);
@@ -310,4 +316,307 @@ test("empty snapshots complete without AI and the production transport default r
   globalThis.__boardGenerationDefault = allSources;
   assert.equal((await generateBoard({ articles: rows(1) })).total, 1);
   delete globalThis.__boardGenerationDefault;
+});
+
+for (const count of [168, 1000]) {
+  test(`${count} articles use one analysis and no merge when they fit the selected long context`, async () => {
+    const input = rows(count).map((article) => ({ ...article, text: "新闻原文预览".repeat(20) }));
+    const calls = [];
+    let saved;
+    const result = await generateBoard({
+      articles: input, inputPolicy: largePolicy,
+      onCheckpoint: async (value) => { saved = value; },
+      stream: async (messages, options) => {
+        calls.push(kind(messages));
+        assert.equal(refs(messages).length, count);
+        return allSources(messages, options);
+      },
+    });
+    assert.deepEqual(calls, ["articles"]);
+    assert.equal(saved.version, 2);
+    assert.deepEqual(saved.inputPolicy, largePolicy);
+    assert.deepEqual(saved.batchSizes, [count]);
+    assert.equal(saved.done, true);
+    assert.deepEqual(boardArticleIds(result.topics, result.articles), input.map((article) => article.id));
+    assert.equal(result.articles.at(-1).excerpt, input.at(-1).text);
+  });
+}
+
+test("v2 resume keeps its frozen input policy and prepared text when current settings change", async () => {
+  const input = rows(451);
+  const policy = { unit: "characters", budget: 4096 };
+  let saved;
+  await assert.rejects(generateBoard({
+    articles: input, inputPolicy: policy,
+    onCheckpoint: async (value) => { saved = value; },
+    stream: () => { throw new Error("offline before first batch"); },
+  }), /offline/);
+  const planned = [...saved.batchSizes];
+  assert.ok(planned.length > 1);
+  policy.budget = 1000000;
+  const sent = [];
+  const result = await generateBoard({
+    articles: input.map((article) => ({ ...article, text: "新的缓存预览" })),
+    checkpoint: saved, inputPolicy: largePolicy,
+    stream: async (messages, options) => {
+      if (kind(messages) === "articles") sent.push(refs(messages).length);
+      assert.doesNotMatch(messages[1].content, /新的缓存预览/);
+      return allSources(messages, options);
+    },
+  });
+  assert.deepEqual(saved.inputPolicy, { unit: "characters", budget: 4096 });
+  assert.deepEqual(sent, planned);
+  assert.equal(boardArticleIds(result.topics, result.articles).length, input.length);
+});
+
+test("explicit context errors shrink the unfinished plan and durably save it before retrying", async () => {
+  const events = [];
+  const sizes = [];
+  const snapshots = [];
+  const result = await generateBoard({
+    articles: rows(168), inputPolicy: largePolicy,
+    onCheckpoint: async (value) => {
+      events.push("saving");
+      await Promise.resolve();
+      snapshots.push(value);
+      events.push("saved");
+    },
+    stream: async (messages, options) => {
+      assert.equal(events.at(-1), "saved");
+      events.push("request");
+      if (kind(messages) === "articles") {
+        const size = refs(messages).length;
+        sizes.push(size);
+        if (size > 50) throw contextFailure();
+      }
+      return allSources(messages, options);
+    },
+  });
+  assert.deepEqual(sizes, [168, 84, 42, 42, 42, 42]);
+  assert.deepEqual(snapshots.slice(0, 3).map((state) => state.batchSizes), [[168], [84, 84], [42, 42, 42, 42]]);
+  assert.ok(snapshots.every((state) => state.inputPolicy.budget === largePolicy.budget));
+  assert.equal(snapshots.at(-1).contextReductions.articles, 2);
+  assert.equal(boardArticleIds(result.topics, result.articles).length, 168);
+});
+
+test("a failed context-plan save stops before retrying and leaves the previous saved plan intact", async () => {
+  let saved;
+  let calls = 0;
+  await assert.rejects(generateBoard({
+    articles: rows(168), inputPolicy: largePolicy,
+    onCheckpoint: async (value) => {
+      if (value.contextReductions.articles) throw new Error("缩小计划保存失败");
+      saved = value;
+    },
+    stream: async () => { calls += 1; throw contextFailure(); },
+  }), /缩小计划保存失败/);
+  assert.equal(calls, 1);
+  assert.deepEqual(saved.batchSizes, [168]);
+  assert.equal(saved.contextReductions.articles, 0);
+  const result = await generateBoard({ articles: rows(168), checkpoint: saved, stream: allSources });
+  assert.equal(result.total, 168);
+});
+
+test("a context downgrade after a completed batch resumes its smaller tail without repeating the large prefix", async () => {
+  const input = rows(1000);
+  const controller = new AbortController();
+  let saved;
+  let originalPlan;
+  let requests = 0;
+  await assert.rejects(generateBoard({
+    articles: input, inputPolicy: { unit: "characters", budget: 4096 }, signal: controller.signal,
+    onCheckpoint: async (value) => {
+      saved = value;
+      originalPlan ??= [...value.batchSizes];
+      if (value.contextReductions.articles === 1) controller.abort();
+    },
+    stream: async (messages, options) => {
+      if (++requests === 2) throw contextFailure();
+      return allSources(messages, options);
+    },
+  }), { name: "AbortError" });
+  assert.ok(originalPlan.length > 2);
+  assert.equal(saved.nextArticleBatch, 1);
+  assert.equal(saved.batchSizes[0], originalPlan[0]);
+  assert.ok(saved.batchSizes[1] < originalPlan[1]);
+  const finished = new Set(input.slice(0, originalPlan[0]).map((article) => article.id));
+  const seen = [];
+  const result = await generateBoard({
+    articles: input, checkpoint: saved, inputPolicy: largePolicy,
+    stream: async (messages, options) => {
+      if (kind(messages) === "articles") {
+        const ids = [...messages[1].content.matchAll(/^\[\d+\] 源 · 文章 (\d+)$/gm)].map((match) => Number(match[1]));
+        assert.ok(ids.every((id) => !finished.has(id)), "saved prefix was sent again");
+        seen.push(...ids);
+      }
+      return allSources(messages, options);
+    },
+  });
+  assert.deepEqual(seen, input.slice(originalPlan[0]).map((article) => article.id));
+  assert.equal(boardArticleIds(result.topics, result.articles).length, input.length);
+});
+
+test("context retries are bounded per stage and the limit survives a resume", async () => {
+  let saved;
+  let calls = 0;
+  await assert.rejects(generateBoard({
+    articles: rows(512), inputPolicy: largePolicy,
+    onCheckpoint: async (value) => { saved = value; },
+    stream: async () => { calls += 1; throw contextFailure(); },
+  }), (error) => error.code === "CONTEXT_LENGTH_EXCEEDED" && /已停止自动缩小请求/.test(error.message));
+  assert.equal(calls, 7, "one initial attempt and six saved reductions");
+  assert.equal(saved.contextReductions.articles, 6);
+  calls = 0;
+  await assert.rejects(generateBoard({
+    articles: rows(512), checkpoint: saved,
+    stream: async () => { calls += 1; throw contextFailure(); },
+  }), { code: "CONTEXT_LENGTH_EXCEEDED" });
+  assert.equal(calls, 1, "resuming must not reset the automatic retry allowance");
+  calls = 0;
+  await assert.rejects(generateBoard({
+    articles: rows(1), inputPolicy: largePolicy,
+    stream: async () => { calls += 1; throw contextFailure(); },
+  }), (error) => error.code === "CONTEXT_LENGTH_EXCEEDED" && /单条内容/.test(error.message));
+  assert.equal(calls, 1);
+});
+
+test("a saved smaller merge plan resumes its next group without repeating source analysis or completed groups", async () => {
+  const input = rows(1000);
+  const controller = new AbortController();
+  let saved;
+  let rejected = false;
+  let originalMergeSize;
+  await assert.rejects(generateBoard({
+    articles: input, inputPolicy: { unit: "characters", budget: 4096 }, signal: controller.signal,
+    onCheckpoint: async (value) => {
+      saved = value;
+      if (value.contextReductions.merge === 1 && value.merge?.nextBatch === 1) controller.abort();
+    },
+    stream: async (messages, options) => {
+      if (kind(messages) === "merge" && !rejected) {
+        rejected = true;
+        originalMergeSize = refs(messages).length;
+        throw contextFailure();
+      }
+      return allSources(messages, options);
+    },
+  }), { name: "AbortError" });
+  assert.equal(saved.contextReductions.merge, 1);
+  assert.equal(saved.merge.round, 1);
+  assert.equal(saved.merge.nextBatch, 1);
+  assert.equal(saved.merge.batchSizes.reduce((sum, size) => sum + size, 0), originalMergeSize);
+  const expectedFirstSize = saved.merge.batchSizes[1];
+  const calls = [];
+  const result = await generateBoard({
+    articles: input, checkpoint: saved, inputPolicy: largePolicy,
+    stream: async (messages, options) => {
+      assert.equal(kind(messages), "merge", "source analysis was already saved");
+      calls.push(refs(messages).length);
+      return allSources(messages, options);
+    },
+  });
+  assert.equal(calls[0], expectedFirstSize);
+  assert.equal(boardArticleIds(result.topics, result.articles).length, input.length);
+});
+
+test("a learned merge width survives recovery and every later round without exhausting retries again", async () => {
+  const input = rows(4096);
+  const controller = new AbortController();
+  let saved;
+  const rejected = { articles: 0, merge: 0 };
+  const sevenTopics = (messages, options) => {
+    const numbers = refs(messages);
+    const groups = Array.from({ length: Math.min(7, numbers.length) }, (_, index) => ({
+      title: `主题 ${index + 1}`, gist: "重点", summary: "摘要", articles: [],
+    }));
+    numbers.forEach((number, index) => groups[index % groups.length].articles.push(number));
+    options.onChunk(JSON.stringify({ topics: groups }));
+    return { finishReason: "stop" };
+  };
+  await assert.rejects(generateBoard({
+    articles: input, inputPolicy: largePolicy, signal: controller.signal,
+    onCheckpoint: async (value) => {
+      saved = value;
+      if (value.merge?.round === 2) controller.abort();
+    },
+    stream: async (messages, options) => {
+      const stage = kind(messages);
+      if (refs(messages).length > (stage === "articles" ? 100 : 20)) {
+        rejected[stage] += 1;
+        throw contextFailure();
+      }
+      return sevenTopics(messages, options);
+    },
+  }), { name: "AbortError" });
+  assert.deepEqual(rejected, { articles: 6, merge: 5 });
+  assert.equal(saved.mergeBatchLimit, 14);
+  assert.equal(saved.merge.round, 2);
+  assert.ok(saved.merge.batchSizes.every((size) => size <= 14));
+  const rounds = new Set();
+  let failedAgain = false;
+  const result = await generateBoard({
+    articles: input, checkpoint: saved,
+    onCheckpoint: async (value) => { saved = value; },
+    onProgress: (value) => { if (value.round) rounds.add(value.round); },
+    stream: async (messages, options) => {
+      assert.equal(kind(messages), "merge", "saved article analysis must not repeat");
+      if (refs(messages).length > 20) {
+        failedAgain = true;
+        throw contextFailure();
+      }
+      assert.ok(refs(messages).length <= 14, "a later round forgot the learned width");
+      return sevenTopics(messages, options);
+    },
+  });
+  assert.equal(failedAgain, false);
+  assert.ok(rounds.has(2) && rounds.has(3) && rounds.size >= 3);
+  assert.equal(saved.contextReductions.merge, 5, "later rounds must not spend the remaining retry allowance on known oversized requests");
+  assert.equal(saved.mergeBatchLimit, 14);
+  assert.equal(saved.done, true);
+  assert.equal(result.topics.length, 7);
+  assert.equal(boardArticleIds(result.topics, result.articles).length, input.length);
+});
+
+test("ordinary HTTP, quota and network errors never trigger a context downgrade", async () => {
+  for (const error of [
+    Object.assign(new Error("bad request"), { code: "HTTP_ERROR", status: 400 }),
+    Object.assign(new Error("unauthorized"), { code: "HTTP_ERROR", status: 401 }),
+    Object.assign(new Error("rate limited"), { code: "HTTP_ERROR", status: 429 }),
+    Object.assign(new Error("timed out"), { code: "NETWORK_TIMEOUT" }),
+  ]) {
+    let calls = 0;
+    let saved;
+    await assert.rejects(generateBoard({
+      articles: rows(168), inputPolicy: largePolicy,
+      onCheckpoint: async (value) => { saved = value; },
+      stream: async () => { calls += 1; throw error; },
+    }), (caught) => caught === error);
+    assert.equal(calls, 1);
+    assert.deepEqual(saved.batchSizes, [168]);
+    assert.deepEqual(saved.contextReductions, { articles: 0, merge: 0 });
+  }
+});
+
+test("v2 checkpoint validation rejects invalid frozen budgets and retry state before AI requests", async () => {
+  let saved;
+  await assert.rejects(generateBoard({
+    articles: rows(181), inputPolicy: largePolicy,
+    onCheckpoint: async (value) => { saved = value; },
+    stream: () => { throw new Error("offline"); },
+  }), /offline/);
+  for (const changes of [
+    { version: 3 },
+    { inputPolicy: { unit: "tokens", budget: 1000000 } },
+    { inputPolicy: { unit: "characters", budget: 4096 } },
+    { contextReductions: { articles: -1, merge: 0 } },
+    { contextReductions: { articles: 0, merge: 7 } },
+    { contextReductions: null },
+    { mergeBatchLimit: 0 },
+    { mergeBatchLimit: "14" },
+  ]) {
+    await assert.rejects(generateBoard({
+      articles: rows(181), checkpoint: { ...saved, ...changes },
+      stream: () => assert.fail("invalid checkpoint reached the provider"),
+    }), { code: "BOARD_CHECKPOINT_INVALID" });
+  }
 });

@@ -94,9 +94,11 @@ export const summarizeArticleStream = async (article, { onChunk, onDone, onError
 // Streams a chat completion for prepared messages (used by today's board).
 // The answer goes to onChunk; the model's thinking, from <think> tags or a
 // reasoning field, goes to onThink when given, and is dropped otherwise.
+// A multi-request job may pass its captured configuration so settings saved
+// while it runs apply only to the next job.
 // Resolves to { finishReason }.
-export const streamChat = async (messages, { onChunk, onThink, signal }) => {
-  const { aiApiKey, aiBaseUrl, aiModel } = settingsState.get();
+export const streamChat = async (messages, { onChunk, onThink, signal, configuration }) => {
+  const { aiApiKey, aiBaseUrl, aiModel } = configuration ?? settingsState.get();
   return streamChatCompletion({
     baseUrl: aiBaseUrl,
     apiKey: aiApiKey,

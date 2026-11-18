@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { arrivedAt, batchArticles, batchTopics, boardArticleIds, digestArticleNumbers, digestMessages, expandTopics, fitArticles, mapBatchTopics, MAX_BATCH_ARTICLES, MAX_TOPICS, mergeTopicsMessages, parseDigest, parseTopics, PROMPT_BUDGET, todaysUnread, topicsMessages } from "../src/toolbox/board/board.mjs";
+import { articleNumbers, arrivedAt, batchArticles, batchTopics, boardArticleIds, digestArticleNumbers, digestMessages, expandTopics, fitArticles, mapBatchTopics, MAX_BATCH_ARTICLES, MAX_TOPICS, mergeTopicsMessages, parseDigest, parseTopics, PROMPT_BUDGET, todaysUnread, topicsMessages } from "../src/toolbox/board/board.mjs";
+import { boardInputPolicy, measureMessages } from "../src/toolbox/ai-context.mjs";
 
 test("today's unread: arrived since local midnight, visible feeds, newest first", () => {
   const now = new Date(2026, 9, 16, 13, 0);
@@ -39,6 +40,64 @@ test("the prompt stays within its budget on a busy day, keeping the newest artic
 });
 
 const promptSize = (messages) => messages.reduce((sum, message) => sum + message.content.length, 0);
+
+test("long-context plans read 1000 Chinese previews together without a 150-article cap", () => {
+  const all = Array.from({ length: 1000 }, (_, index) => ({
+    id: index + 1, title: `今日新闻 ${index + 1}`, feedTitle: "新闻订阅",
+    text: "这是一段保留上下文的新闻预览。".repeat(30),
+  }));
+  const policy = boardInputPolicy({ aiContextWindow: "1000000" });
+  const { articles, batches } = batchArticles(all, policy);
+  assert.equal(batches.length, 1);
+  assert.equal(articles.length, 1000);
+  assert.equal(articles.at(-1).number, 1000);
+  assert.ok(articles.every((article) => article.excerpt.length >= 200), "larger inputs retain useful previews");
+  for (const brief of [false, true]) assert.ok(measureMessages(topicsMessages(batches[0], { brief }), policy) <= policy.budget);
+  assert.ok(all.every((article) => !Object.hasOwn(article, "number")), "preparing a plan does not mutate cached input");
+});
+
+test("model-aware batches bound complete multilingual prompts and preserve every source", () => {
+  const all = Array.from({ length: 1001 }, (_, index) => ({
+    id: index + 1, title: `新闻${index + 1}${"长标题😀".repeat(30)}`, feedTitle: "订阅源".repeat(20),
+    text: "中文与 English 🧑🏽‍🚀 多语新闻。".repeat(80),
+  }));
+  for (const policy of [boardInputPolicy({ aiContextWindow: "32000" }), boardInputPolicy({ aiModel: "unknown-proxy" })]) {
+    const { articles, batches } = batchArticles(all, policy);
+    assert.ok(batches.length > 1);
+    assert.deepEqual(articles.map((article) => article.id), all.map((article) => article.id));
+    assert.deepEqual(articles.map((article) => article.number), all.map((_, index) => index + 1));
+    assert.deepEqual(batches.flat(), articles);
+    for (const batch of batches) {
+      assert.ok(batch.every((article) => article.excerpt.length >= 39 && article.excerpt.length <= 280));
+      for (const brief of [false, true]) assert.ok(measureMessages(topicsMessages(batch, { brief }), policy) <= policy.budget);
+    }
+    const candidates = Array.from({ length: 100 }, (_, index) => ({ title: `主题 ${index}`, gist: "重点".repeat(40), summary: "事实摘要".repeat(100), articles: [index + 1] }));
+    const groups = batchTopics(candidates, policy);
+    assert.deepEqual(groups.flat(), candidates);
+    for (const group of groups) {
+      for (const brief of [false, true]) assert.ok(measureMessages(mergeTopicsMessages(group, { brief }), policy) <= policy.budget);
+    }
+  }
+  assert.throws(() => batchArticles(all, { unit: "utf8", budget: -1 }), /容量设置无效/);
+});
+
+test("unknown models keep the compatibility budget while short input is no longer split by article count", () => {
+  const policy = boardInputPolicy({ aiModel: "private-alias" });
+  const { batches } = batchArticles(Array.from({ length: 181 }, (_, index) => ({ id: index + 1, title: `文章 ${index}` })), policy);
+  assert.equal(batches.length, 1);
+  assert.equal(batches[0].length, 181);
+  assert.ok(measureMessages(topicsMessages(batches[0], { brief: true }), policy) <= policy.budget);
+});
+
+test("long-context citation ranges in the middle of the input preserve their real sources", () => {
+  const expected = Array.from({ length: 300 }, (_, index) => index + 501);
+  assert.deepEqual(articleNumbers("501-800", 1000), expected);
+  assert.deepEqual(articleNumbers("800-501", 1000), expected);
+  assert.deepEqual(articleNumbers("1-99999", 1000), []);
+  assert.deepEqual(articleNumbers("501-800", Infinity), [], "unknown input sizes retain a bounded expansion");
+  const topics = parseTopics(JSON.stringify({ topics: [{ title: "选中的事件", gist: "重点", summary: "事实", articles: ["501-800"] }] }), 1000);
+  assert.deepEqual(topics[0].articles, expected);
+});
 
 test("a day of more than 1000 articles is fully analysed in bounded requests, including brief retries", () => {
   const all = Array.from({ length: 1001 }, (_, index) => Object.freeze({

@@ -4,9 +4,10 @@
 // topics that cites its articles as [n].
 
 import { dedupeArticles } from "../dedupe.mjs";
+import { measureText, validInputPolicy } from "../ai-context.mjs";
 
-// A busy day is read in bounded requests, then its candidate topics are
-// combined. Instructions, titles, excerpts and numbering share this budget.
+// Legacy checkpoint and digest budget. New analysis requests use the frozen
+// model input policy instead of these old per-request limits.
 export const PROMPT_BUDGET = 24000;
 // Per article: "[n] ", the line break before the excerpt and the blank line after.
 const ARTICLE_OVERHEAD = 10;
@@ -73,11 +74,14 @@ export function fitArticles(articles, budget = PROMPT_BUDGET - PROMPT_OVERHEAD) 
 
 // Freeze the day's order once. Each request numbers its own articles locally;
 // the saved number maps that reply back to this complete, immutable order.
-export function batchArticles(all) {
+export function batchArticles(all, policy) {
+  if (policy !== undefined && !validInputPolicy(policy)) throw new Error("AI 输入容量设置无效。");
   const articles = [];
   const batches = [];
   for (let offset = 0; offset < all.length;) {
-    const fitted = fitArticles(all.slice(offset, offset + MAX_BATCH_ARTICLES)).articles;
+    const fitted = policy
+      ? fitArticlesToPolicy(all, offset, policy)
+      : fitArticles(all.slice(offset, offset + MAX_BATCH_ARTICLES)).articles;
     if (!fitted.length) throw new Error("文章无法放入 AI 请求，请缩短文章预览后重试。");
     const batch = fitted.map((article, index) => ({ ...article, number: offset + index + 1 }));
     articles.push(...batch);
@@ -107,6 +111,48 @@ const TOPICS_PROMPT = [
 const BRIEF = "上一次的回答太长被截断了。这次回答要短：最多 5 个主题，summary 只写一句话，不超过 40 个字，直接输出 JSON。";
 // Reserve the retry instructions too, plus the opening line and separators.
 const PROMPT_OVERHEAD = TOPICS_PROMPT.length + BRIEF.length + 65;
+
+// Keep the original preview limits, but let the configured model read as many
+// articles as fit. Every article retains its title and at least the first 40
+// characters of its available preview; spare capacity extends those previews.
+// UTF-8 sizing is a conservative estimate, not a provider tokenizer.
+function fitArticlesToPolicy(all, offset, policy) {
+  const size = (text) => measureText(text, policy.unit);
+  const overhead = size(`${TOPICS_PROMPT}\n${BRIEF}`) + size(`本批未读文章共 ${Number.MAX_SAFE_INTEGER} 篇：\n\n`) + 32;
+  const chosen = [];
+  let heads = 0;
+  let minimum = 0;
+  for (let index = offset; index < all.length; index += 1) {
+    const article = all[index];
+    const head = `${tidy(article.feedTitle, 40)} · ${tidy(article.title, TITLE_MAX) || "（无标题）"}`;
+    const excerpt = tidy(article.text, EXCERPT_MAX);
+    const least = size(excerpt.slice(0, 40));
+    const cost = size(`[${chosen.length + 1}] ${head}\n\n\n`);
+    if (overhead + heads + cost + minimum + least > policy.budget) break;
+    chosen.push({ article, head, excerpt, least });
+    heads += cost;
+    minimum += least;
+  }
+  const extra = chosen.length ? Math.floor((policy.budget - overhead - heads - minimum) / chosen.length) : 0;
+  return chosen.map(({ article, head, excerpt, least }) => ({
+    ...article, head, excerpt: trimMeasured(excerpt, least + extra, policy.unit),
+  }));
+}
+
+function trimMeasured(text, budget, unit) {
+  if (measureText(text, unit) <= budget) return text;
+  let low = 0;
+  let high = text.length;
+  while (low < high) {
+    const middle = Math.ceil((low + high) / 2);
+    if (measureText(text.slice(0, middle), unit) <= budget) low = middle;
+    else high = middle - 1;
+  }
+  // Do not cut an emoji (or another surrogate pair) in half.
+  if (low > 0 && /[\uD800-\uDBFF]/.test(text[low - 1])) low -= 1;
+  return text.slice(0, low);
+}
+
 export function topicsMessages(articles, { brief = false } = {}) {
   return [
     { role: "system", content: brief ? `${TOPICS_PROMPT}\n${BRIEF}` : TOPICS_PROMPT },
@@ -154,17 +200,22 @@ const candidateLine = (topic, number) => `[${number}] ${clean(topic.title, 40)}�
 // Candidate text is bounded by the same field limits as readTopics. A full
 // request therefore holds far more than MAX_TOPICS candidates, so repeated
 // merging always makes progress. Provenance arrays never enter the prompt.
-export function batchTopics(candidates) {
+export function batchTopics(candidates, policy) {
+  if (policy !== undefined && !validInputPolicy(policy)) throw new Error("AI 输入容量设置无效。");
+  const sizeOf = (text) => policy ? measureText(text, policy.unit) : text.length;
+  const room = policy
+    ? policy.budget - sizeOf(`${MERGE_PROMPT}\n${BRIEF}`) - sizeOf(`候选主题共 ${Number.MAX_SAFE_INTEGER} 个：\n\n`) - 32
+    : PROMPT_BUDGET - MERGE_OVERHEAD;
   const batches = [];
   let batch = [];
   let used = 0;
   for (const candidate of candidates) {
-    let size = candidateLine(candidate, batch.length + 1).length + (batch.length ? 2 : 0);
-    if (batch.length && used + size > PROMPT_BUDGET - MERGE_OVERHEAD) {
+    let size = sizeOf(candidateLine(candidate, batch.length + 1)) + (batch.length ? 2 : 0);
+    if (batch.length && used + size > room) {
       batches.push(batch);
       batch = [];
       used = 0;
-      size = candidateLine(candidate, 1).length;
+      size = sizeOf(candidateLine(candidate, 1));
     }
     batch.push(candidate);
     used += size;
@@ -227,7 +278,8 @@ function looseJson(text) {
 // full-width "３", a list "1,2" / "1、2" / "1 2" / "1,2-3", or a range "1-3"
 // (also reversed "3-1", "1〜3", "1−3"). A range running a little past the
 // last article is trimmed to it; one longer than the board has articles, by
-// more than one ("1-50" of 12), or than MAX_RANGE ("1-99999") is junk and
+// more than one ("1-50" of 12), or than MAX_RANGE when no input size is known,
+// is junk and
 // names no article, nor does anything else. Numbers a range names are also
 // added to `ranged`, when given, so a topic can tell how much its ranges
 // cover (see catchAll).
@@ -244,8 +296,9 @@ export function articleNumbers(value, count, ranged = null) {
     const range = part.match(RANGE);
     if (range) {
       const [a, b] = [Number(range[1]), Number(range[2])];
-      // A range from the first article may name the whole board, however big.
-      const limit = Number.isFinite(count) ? (Math.min(a, b) === 1 ? count + 1 : Math.min(MAX_RANGE, count + 1)) : MAX_RANGE;
+      // Long-context requests can legitimately cite more than 100 consecutive
+      // sources in the middle of the snapshot too (for example 501-800).
+      const limit = Number.isFinite(count) ? count + 1 : MAX_RANGE;
       if (Math.abs(a - b) + 1 > limit) return [];
       const from = Math.max(1, Math.min(a, b));
       const to = Math.min(Math.max(a, b), Number.isFinite(count) ? count : Infinity);

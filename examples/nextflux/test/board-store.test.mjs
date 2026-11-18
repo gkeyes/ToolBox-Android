@@ -533,12 +533,14 @@ test("a sync during the first snapshot read waits for the next manual update", a
   assert.match(css, /\.article-list-title > \.article-list-caption \{ max-inline-size: 100%; \}/);
 });
 
-function boardFixture(t, count, reply) {
+function boardFixture(t, count, reply, { contextWindow, previewRepeat = 1 } = {}) {
   const previousStream = globalThis.__board.stream;
   const previousMark = globalThis.__board.markRead;
+  const previousSettings = settingsState.get();
+  if (contextWindow) settingsState.set({ ...previousSettings, aiContextWindow: contextWindow });
   authState.set({ userId: authState.get().userId + 1 });
   rows = Array.from({ length: count }, (_, index) => ({
-    ...article(index + 1), previewText: `保存的原文 ${index + 1}，用于看板与摘要。`,
+    ...article(index + 1), previewText: `保存的原文 ${index + 1}，用于看板与摘要。`.repeat(previewRepeat),
   }));
   globalThis.__board.stream = reply;
   globalThis.__board.markRead = async (ids) => {
@@ -553,6 +555,7 @@ function boardFixture(t, count, reply) {
   t.after(() => {
     globalThis.__board.stream = previousStream;
     globalThis.__board.markRead = previousMark;
+    if (contextWindow) settingsState.set(previousSettings);
   });
 }
 
@@ -560,6 +563,45 @@ function answerTopics(options, articles, { title = "主题", summary = "摘要" 
   options.onChunk(JSON.stringify({ topics: [{ title, gist: "重点", summary, articles }] }));
   return { finishReason: "stop" };
 }
+
+test("a 1M daily overview analyzes 1000 sources in one request and capacity changes do not regenerate it", async (t) => {
+  let requests = 0;
+  boardFixture(t, 1000, async (messages, options) => {
+    requests += 1;
+    assert.equal(boardStream.get().stage, "articles");
+    assert.equal(boardStream.get().batchCount, 1);
+    const numbers = [...messages[1].content.matchAll(/^\[(\d+)\] /gm)].map((match) => Number(match[1]));
+    assert.equal(numbers.length, 1000);
+    return answerTopics(options, [numbers.at(-1)]);
+  }, { contextWindow: "1000000", previewRepeat: 8 });
+  await refreshBoard();
+  assert.equal(board.get().status, "done", board.get().error);
+  assert.equal(board.get().total, 1000);
+  assert.equal(requests, 1);
+  assert.deepEqual(boardArticleIds(board.get().topics, board.get().articles), [1]);
+  const at = board.get().at;
+  settingsState.set({ ...settingsState.get(), aiContextWindow: "32000" });
+  await openBoard();
+  await tick();
+  assert.equal(board.get().at, at);
+  assert.equal(requests, 1, "a context preference is not a request to regenerate today's saved result");
+});
+
+test("saving a different AI service during analysis leaves every remaining batch on its captured configuration", async (t) => {
+  let requests = 0;
+  let captured;
+  boardFixture(t, 241, async (_messages, options) => {
+    captured ??= options.configuration;
+    assert.deepEqual(options.configuration, captured);
+    if (++requests === 1) settingsState.set({ ...settingsState.get(), aiModel: "new-model", aiBaseUrl: "https://new.example/v1", aiApiKey: "new-key", aiContextWindow: "1000000" });
+    return answerTopics(options, [1]);
+  }, { contextWindow: "32000", previewRepeat: 4 });
+  await refreshBoard();
+  assert.equal(board.get().status, "done", board.get().error);
+  assert.ok(requests >= 3, "both analysis batches and the merge use the same provider");
+  assert.equal(captured.aiContextWindow, "32000");
+  assert.notEqual(captured.aiApiKey, "new-key");
+});
 
 test("every article on a 1201-article day is analyzed, including through multiple bounded merge levels", async (t) => {
   const sent = [];
@@ -586,7 +628,7 @@ test("every article on a 1201-article day is analyzed, including through multipl
     assert.equal(progress.processed, 1201);
     rounds.add(progress.round);
     return answerTopics(options, progress.sent.map((_, index) => index + 1));
-  });
+  }, { contextWindow: "32000", previewRepeat: 4 });
   await refreshBoard();
   assert.equal(board.get().status, "done", board.get().error);
   assert.equal(board.get().total, 1201);
@@ -600,10 +642,10 @@ test("every article on a 1201-article day is analyzed, including through multipl
 });
 
 test("a failed later batch keeps the previous board without claiming partial input was a complete day", async (t) => {
-  boardFixture(t, 2, async (_messages, options) => answerTopics(options, [1]));
+  boardFixture(t, 2, async (_messages, options) => answerTopics(options, [1]), { contextWindow: "32000" });
   await refreshBoard();
   const previous = board.get();
-  rows = Array.from({ length: 320 }, (_, index) => article(index + 1));
+  rows = Array.from({ length: 320 }, (_, index) => ({ ...article(index + 1), previewText: "足够长的原文预览".repeat(40) }));
   const stages = [];
   globalThis.__board.stream = async (_messages, options) => {
     const progress = boardStream.get();
@@ -624,7 +666,7 @@ test("a failed later batch keeps the previous board without claiming partial inp
 test("a later batch gets its own one-time short retry without losing the day's tail", async (t) => {
   let retried = false;
   let retryCount = 0;
-  boardFixture(t, 181, async (messages, options) => {
+  boardFixture(t, 241, async (messages, options) => {
     const progress = boardStream.get();
     assert.ok(messages.reduce((total, message) => total + message.content.length, 0) <= PROMPT_BUDGET);
     if (progress.stage === "articles" && progress.batchIndex === 2 && !retried) {
@@ -638,7 +680,7 @@ test("a later batch gets its own one-time short retry without losing the day's t
       assert.match(messages[0].content, /这次回答要短/);
     }
     return answerTopics(options, [progress.sent.length]);
-  });
+  }, { contextWindow: "32000", previewRepeat: 4 });
   await refreshBoard();
   assert.equal(board.get().status, "done", board.get().error);
   assert.equal(retryCount, 1);
@@ -658,7 +700,7 @@ test("changing accounts during a later batch cancels publication and never start
       await new Promise((resolve) => { release = resolve; });
     }
     return answerTopics(options, [1]);
-  });
+  }, { contextWindow: "32000", previewRepeat: 4 });
   const running = refreshBoard();
   await pending;
   authState.set({ userId: authState.get().userId + 1 });

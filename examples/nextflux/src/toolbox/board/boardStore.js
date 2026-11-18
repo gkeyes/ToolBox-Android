@@ -7,6 +7,7 @@ import { markArticlesAsRead } from "@/stores/articlesStore.js";
 import { streamChat } from "@/api/openai.js";
 import { boardArticleIds, digestMessages, startOfDay, todaysUnread } from "./board.mjs";
 import { generateBoard } from "./generate-board.js";
+import { boardInputPolicy } from "../ai-context.mjs";
 import { runtimeClosing } from "../foreground.js";
 import { initializeBoardHistory, readBoardReport, reportHistory, saveBoardDigest, saveBoardSnapshot } from "./historyStore.js";
 
@@ -113,6 +114,9 @@ export function refreshBoard({ onlyIfNew = false } = {}) {
 }
 
 async function generateTodayBoard({ onlyIfNew }) {
+  // The capacity and provider belong to this run. Saving AI settings while a
+  // batch is streaming must not route its remaining work to a different model.
+  const aiConfiguration = { ...settingsState.get() };
   const previous = board.get().historical ? todaySnapshot || { ...EMPTY } : board.get();
   // A visible refresh supersedes pending navigation. Restarting a hidden
   // day task for changed settings must leave the reader's history choice.
@@ -134,7 +138,7 @@ async function generateTodayBoard({ onlyIfNew }) {
   const failed = previous.status === "error" && previous.day === today && previous.filter === filter;
   let all = [];
   try {
-    if (!aiReady()) throw new Error("先在 NextFlux 设置里填好 AI 服务，才能生成今日看板。");
+    if (!aiConfiguration.aiApiKey) throw new Error("先在 NextFlux 设置里填好 AI 服务，才能生成今日看板。");
     all = await todaysArticles();
     if (!live()) return;
     const known = new Set(keep || failed ? previous.ids : []);
@@ -152,7 +156,8 @@ async function generateTodayBoard({ onlyIfNew }) {
     if (!keep) clearTodayDigest();
     publishToday(keep ? { ...previous, updating: true, error: "" } : { ...EMPTY, status: "loading", day: today, filter });
     const { articles, topics, cut } = await generateBoard({
-      articles: all, signal: controller.signal,
+      articles: all, signal: controller.signal, inputPolicy: boardInputPolicy(aiConfiguration),
+      stream: (messages, options) => streamChat(messages, { ...options, configuration: aiConfiguration }),
       onProgress: (progress) => { if (live()) boardStream.set(progress); },
     });
     if (!live()) return;

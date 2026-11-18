@@ -662,6 +662,16 @@ fieldset, .fieldset { min-inline-size: 0; max-inline-size: 100%; }
 .article-list-scoped-tabs :is(.article-list-tabs, .tabs, .tabs__list-container, .tabs__list) { inline-size: 100%; }
 .article-list-scoped-tabs .tabs__tab { flex: 1 1 0; justify-content: center; }
 
+/* Board scopes share one selected glass pill. The global touch treatment
+   paints and enlarges an unselected tab while the finger is down; beside the
+   current indicator that looked like two overlapping selections. Keep these
+   segments in their own bounds and use text opacity for the held feedback. */
+.nf-board-page .nf-board-navigation .article-list-tabs .tabs__tab { scale: 1; }
+.nf-board-page .nf-board-navigation .article-list-tabs .tabs__tab:not([aria-selected="true"]):is(:active, [data-pressed="true"], [data-nf-pressed="true"]) {
+  background: transparent;
+  opacity: 0.7;
+}
+
 /* Card meta at large text: the feed icon and a few characters of the feed name
    always stay, ending in an ellipsis; when that and the time don't fit on one
    line, the time moves to the next line instead of being cut. */

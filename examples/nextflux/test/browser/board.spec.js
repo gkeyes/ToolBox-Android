@@ -3,16 +3,16 @@ import { PRODUCTION_URL, STORED_SETTINGS, installNativeBoundary } from "./fixtur
 
 // Exercise the production board, cache, account queue and Miniflux adapter.
 // Only the native network boundary is synthetic; no AI/provider request leaves
-// this test. Each analysis batch nominates its last article, then the merge
-// keeps only its last candidate. Earlier candidates must remain unread too.
-async function prepareBoard(page, { count = 181, holdRead = false, failRead = false, persistStorage = false } = {}) {
+// this test. A single long-context request nominates the last article. If the
+// provider rejects its size, smaller batches merge their local references.
+async function prepareBoard(page, { count = 181, holdRead = false, failRead = false, persistStorage = false, rejectAbove = null, contextWindow = "1000000" } = {}) {
   await installNativeBoundary(page, {
     persistStorage,
     auth: {
       serverUrl: "https://miniflux.xiaochen.win", username: "board-test-user", password: "", userId: 7,
       token: "fixed-synthetic-test-token", authType: "token",
     },
-    settings: { ...STORED_SETTINGS, syncInterval: "0", hideDuplicateArticles: false, markAsReadOnScroll: false },
+    settings: { ...STORED_SETTINGS, syncInterval: "0", hideDuplicateArticles: false, markAsReadOnScroll: false, aiContextWindow: contextWindow },
     cacheRoot: {
       version: 3, revision: 1, account: { serverUrl: "https://miniflux.xiaochen.win", userId: "7" },
       transaction: null, lastSyncTime: null,
@@ -22,7 +22,7 @@ async function prepareBoard(page, { count = 181, holdRead = false, failRead = fa
   await page.goto(PRODUCTION_URL);
   await expect(page.locator(".article-list-inline-tabs .tabs__list")).toBeVisible();
   await expect.poll(() => page.evaluate(async () => (await import("/src/stores/syncStore.js")).isSyncing.get())).toBe(false);
-  await page.evaluate(async ({ count, holdRead, failRead }) => {
+  await page.evaluate(async ({ count, holdRead, failRead, rejectAbove }) => {
     const db = await import("/src/db/storage.js");
     const now = new Date().toISOString();
     await db.addFeeds([{ id: 1, title: "测试订阅", categoryId: 1, hide_globally: false }]);
@@ -48,14 +48,19 @@ async function prepareBoard(page, { count = 181, holdRead = false, failRead = fa
       const writing = !merging && messages[1].content.startsWith("主题");
       const references = [...messages[1].content.matchAll(/^\[(\d+)\] /gm)].map((match) => Number(match[1]));
       const kind = writing ? "digest" : merging ? "merge" : "articles";
-      state.messages.push({ kind, messages, references });
+      const rejected = rejectAbove !== null && kind === "articles" && references.length > rejectAbove;
+      state.messages.push({ kind, messages, references, rejected });
+      const streamId = `board-test-${state.messages.length}`;
+      if (rejected) {
+        state.streams.set(streamId, JSON.stringify({ error: { code: "context_length_exceeded", message: "Synthetic smaller provider context" } }));
+        return { status: 400, streamId };
+      }
       const reply = writing
         ? `## 全日重点\n这是最后一篇文章的内容。[${count}] 无效来源不应成为链接。[1][99999]`
         : JSON.stringify({ topics: [{
-          title: merging ? "全日重点" : "批次重点", gist: "今天值得关注的事情", summary: "主题来自本批最后一篇文章。",
+          title: "全日重点", gist: "今天值得关注的事情", summary: "主题来自本次输入的最后一篇文章。",
           articles: [references.at(-1)],
         }] });
-      const streamId = `board-test-${state.messages.length}`;
       state.streams.set(streamId, `data: ${JSON.stringify({ choices: [{ delta: { content: reply }, finish_reason: "stop" }] })}\n\ndata: [DONE]\n\n`);
       return { status: 200, streamId };
     };
@@ -66,7 +71,7 @@ async function prepareBoard(page, { count = 181, holdRead = false, failRead = fa
     };
     network.cancelStream = async (streamId) => { state.streams.delete(streamId); };
     location.hash = "#/board";
-  }, { count, holdRead, failRead });
+  }, { count, holdRead, failRead, rejectAbove });
   await expect(page.locator(".nf-board-summary")).toContainText(`今日 ${count} 篇未读已全部参与分析`);
   await expect(page.locator(".nf-board-summary")).toContainText("收录 1 篇文章");
 }
@@ -77,17 +82,17 @@ test("today's whole input is analyzed and one-click read changes only final boar
   await prepareBoard(page, { holdRead: true });
   const input = await page.evaluate(() => window.__boardTest.messages);
   const batches = input.filter((message) => message.kind === "articles");
-  expect(batches.length).toBeGreaterThan(1);
+  expect(batches).toHaveLength(1);
   expect(batches.reduce((total, batch) => total + batch.references.length, 0)).toBe(181);
   const sent = batches.map((batch) => batch.messages[1].content).join("\n");
   for (let id = 1; id <= 181; id += 1) expect(sent).toContain(`今日文章 ${id}\n`);
-  expect(input.some((message) => message.kind === "merge")).toBe(true);
-  for (const { messages } of input) expect(messages.reduce((sum, message) => sum + message.content.length, 0)).toBeLessThanOrEqual(24_000);
+  expect(input.some((message) => message.kind === "merge")).toBe(false);
+  for (const { messages } of input) expect(messages.reduce((sum, message) => sum + new TextEncoder().encode(message.content).length, 0)).toBeLessThanOrEqual(798_976);
   await expect(page.getByRole("tablist", { name: "看板范围" })).toHaveCount(1);
   await expect(page.getByRole("tab", { name: "今日", exact: true })).toHaveAttribute("aria-selected", "true");
   await expect(page.locator(".nf-board-card h3")).toHaveText("全日重点");
   await expect(page.locator(".nf-board-card-head > .nf-board-rank")).toHaveText("1");
-  // The final batch's local reference must resolve to the global oldest ID.
+  // The last local reference must still resolve to the global oldest ID.
   await expect(page.locator('.nf-board-chip[href="#/board/article/1"]')).toHaveText("测试订阅 · 今日文章 1");
   await expect(page.locator(".nf-board-read-help")).toHaveText("仅处理看板收录的 1 篇，其余未读保留。");
   const mark = page.getByRole("button", { name: "看板文章一键已读", exact: true });
@@ -131,6 +136,60 @@ test("today's whole input is analyzed and one-click read changes only final boar
   await complete.click();
   await expect(page.locator(".nf-board-digest h4 > span:last-child")).toHaveText("全日重点");
   expect(await page.evaluate(() => window.__boardTest.messages.length)).toBe(completedCalls);
+  expect(errors).toEqual([]);
+});
+
+test("a thousand-article overview uses one long-context request in the production app", async ({ page }) => {
+  const errors = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await prepareBoard(page, { count: 1000 });
+  const calls = await page.evaluate(() => window.__boardTest.messages);
+  expect(calls).toHaveLength(1);
+  expect(calls[0].kind).toBe("articles");
+  expect(calls[0].references).toHaveLength(1000);
+  await expect(page.locator('.nf-board-chip[href="#/board/article/1"]')).toHaveText("测试订阅 · 今日文章 1");
+  await expect(page.locator(".nf-board-read-help")).toHaveText("仅处理看板收录的 1 篇，其余未读保留。");
+  expect(errors).toEqual([]);
+});
+
+test("a provider context rejection splits only pending input and still maps the final source correctly", async ({ page }) => {
+  await prepareBoard(page, { rejectAbove: 100 });
+  const calls = await page.evaluate(() => window.__boardTest.messages);
+  expect(calls.map((call) => ({ kind: call.kind, size: call.references.length, rejected: call.rejected }))).toEqual([
+    { kind: "articles", size: 181, rejected: true },
+    { kind: "articles", size: 91, rejected: false },
+    { kind: "articles", size: 90, rejected: false },
+    { kind: "merge", size: 2, rejected: false },
+  ]);
+  await expect(page.locator('.nf-board-chip[href="#/board/article/1"]')).toBeVisible();
+  await page.getByRole("button", { name: "看板文章一键已读", exact: true }).click();
+  await expect(page.locator(".nf-board-read-result")).toContainText("已将 1 篇");
+  expect(await page.evaluate(() => window.__boardTest.reads.map((read) => read.body))).toEqual([{ entry_ids: [1], status: "read" }]);
+});
+
+test("context capacity uses the settings menu, saves its draft, and does not regenerate a finished overview", async ({ page }, testInfo) => {
+  const errors = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await prepareBoard(page, { contextWindow: "auto" });
+  const before = await page.evaluate(() => window.__boardTest.messages.length);
+  await page.evaluate(async () => (await import("/src/stores/modalStore.js")).settingsModalOpen.set(true));
+  const dialog = page.getByRole("dialog");
+  await dialog.getByRole("button", { name: /AI/ }).first().click();
+  const context = dialog.getByRole("button").filter({ hasText: "模型上下文" });
+  await expect(context).toContainText("未识别模型");
+  await context.click();
+  await expect(page.getByRole("menu", { name: /模型上下文/ })).toBeVisible();
+  await expect(page.getByRole("menuitemradio")).toHaveCount(6);
+  await page.getByRole("menuitemradio", { name: "1M", exact: true }).click();
+  await expect(context).toContainText("按 1M tokens");
+  expect(await page.evaluate(async () => (await import("/src/stores/settingsStore.js")).settingsState.get().aiContextWindow)).toBe("auto");
+  await dialog.getByRole("button", { name: /保存|Save/ }).click();
+  await expect.poll(() => page.evaluate(() => JSON.parse(window.__startupNative.persistedPreferences().settings).aiContextWindow)).toBe("1000000");
+  await context.scrollIntoViewIfNeeded();
+  await page.screenshot({ path: testInfo.outputPath("ai-context-settings-phone.png") });
+  await dialog.getByRole("button", { name: /关闭|Close/ }).first().click();
+  await expect(page.locator(".nf-board-summary")).toContainText("今日 181 篇未读已全部参与分析");
+  expect(await page.evaluate(() => window.__boardTest.messages.length)).toBe(before);
   expect(errors).toEqual([]);
 });
 

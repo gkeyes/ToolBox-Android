@@ -98,6 +98,31 @@ test("150 articles stay pending and the 151st new eligible article starts exactl
   assert.equal(f.digestCalls.length, 1);
 });
 
+test("analysis and digest share one ephemeral AI configuration without storing its transport", async () => {
+  const firstStream = () => "first";
+  const nextStream = () => "next";
+  const firstPolicy = { unit: "utf8", budget: 798976 };
+  const f = fixture({
+    generate: async ({ articles, stream, inputPolicy }) => {
+      assert.equal(stream, firstStream);
+      assert.deepEqual(inputPolicy, firstPolicy);
+      f.config.stream = nextStream;
+      f.config.inputPolicy = { unit: "utf8", budget: 24576 };
+      return resultFor(articles);
+    },
+    writeDigest: async (_result, _signal, _publish, stream) => {
+      assert.equal(stream, firstStream, "the report body uses the same service as its analysis");
+      return "## 已保存\n本期报告。";
+    },
+  });
+  f.config.stream = firstStream;
+  f.config.inputPolicy = firstPolicy;
+  await f.initialize();
+  await f.sync(ids(151));
+  assert.equal(f.manager.getReports().length, 1);
+  assert.ok(f.db.saves.every((saved) => !Object.hasOwn(saved.job || {}, "stream")), "cloning saved state succeeds because no function or credential is persisted");
+});
+
 test("small successful refreshes accumulate, while failures, status-only updates and duplicate IDs do not count", async () => {
   const f = fixture();
   await f.initialize();

@@ -8,6 +8,7 @@ import { runtimeClosing, runtimeForeground } from "../foreground.js";
 import { dedupeArticles } from "../dedupe.mjs";
 import { arrivedAt, boardArticleIds, digestMessages } from "./board.mjs";
 import { generateBoard } from "./generate-board.js";
+import { boardInputPolicy } from "../ai-context.mjs";
 import { createReportManager } from "./report-manager.mjs";
 import { createReportStorage } from "./report-storage.mjs";
 
@@ -19,8 +20,10 @@ let retired = Promise.resolve();
 const syncEvents = new Set();
 
 function config() {
-  const s = settingsState.get();
+  const s = { ...settingsState.get() };
   return { enabled: s.autoBoardEnabled !== false, aiReady: Boolean(s.aiApiKey),
+    inputPolicy: boardInputPolicy(s),
+    stream: (messages, options) => streamChat(messages, { ...options, configuration: s }),
     fingerprint: JSON.stringify(["board-v2", s.aiBaseUrl, s.aiModel, Boolean(s.showHiddenFeeds),
       s.hideDuplicateArticles !== false, s.duplicateMatch || "either"]) };
 }
@@ -67,9 +70,9 @@ export async function initializeBoardHistory() {
       recoverIds: async (through) => (await getCachedArticleMetadata({ filter: "unread" }))
         .filter((row) => Date.parse(row.created_at || "") > through).map((row) => row.id),
       generate: generateBoard,
-      writeDigest: async (result, signal, publish) => {
+      writeDigest: async (result, signal, publish, stream) => {
         let text = "";
-        await streamChat(digestMessages(result.topics, result.articles), {
+        await stream(digestMessages(result.topics, result.articles), {
           signal, onChunk: (chunk) => { text += chunk; publish(text); },
         });
         return text;
@@ -166,9 +169,15 @@ syncCommitted.listen((event) => {
   syncEvents.add(observing);
   void observing.catch((error) => reportError(error, key)).finally(() => syncEvents.delete(observing));
 });
-let lastConfig = JSON.stringify(config());
+// Capacity is frozen in each generation checkpoint. Changing it should affect
+// the next report, not abort and replay an in-flight provider request.
+const lifecycleConfig = () => {
+  const { enabled, aiReady, fingerprint } = config();
+  return JSON.stringify({ enabled, aiReady, fingerprint });
+};
+let lastConfig = lifecycleConfig();
 settingsState.listen(() => {
-  const value = JSON.stringify(config());
+  const value = lifecycleConfig();
   if (value === lastConfig) return;
   lastConfig = value;
   const current = context;
