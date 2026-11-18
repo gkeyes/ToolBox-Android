@@ -261,14 +261,170 @@ test("AI summary switches articles without reopening or accepting a cancelled ru
   await closeSummary(page);
 });
 
+test("AI summary Markdown renders cached formatting and reopens without another AI request", async ({ page }, info) => {
+  await open(page, 393, "dark");
+  const markdown = [
+    "# 今日摘要", "", "**核心结论**与*补充说明*。", "", "## 主要进展", "",
+    "- 第一项进展", "- 第二项进展", "", "### 影响", "", "1. 第一项影响", "2. 第二项影响", "",
+    "#### 背景", "", "> 需要保留的引用。", "", "##### 示例", "", "使用 `cache` 保存结果。", "",
+    "```js", "const value = 42;", "```", "", "###### 注意", "", "~~已过时的说法~~", "",
+    "| 项目 | 结果 |", "| --- | --- |", "| 摘要 | 已完成 |",
+  ].join("\n");
+  await page.evaluate((summary) => window.controlsFixture.summary.set(42, { loading: false, summary, error: null }), markdown);
+  const dialog = await openSummary(page);
+  const content = dialog.locator(".nextflux-summary-text");
+  for (const [index, title] of ["今日摘要", "主要进展", "影响", "背景", "示例", "注意"].entries()) {
+    await expect(content.getByRole("heading", { level: index + 1 })).toHaveText(title);
+  }
+  await expect(content.locator("strong")).toHaveText("核心结论");
+  await expect(content.locator("em")).toHaveText("补充说明");
+  await expect(content.locator("ul > li")).toHaveText(["第一项进展", "第二项进展"]);
+  await expect(content.locator("ol > li")).toHaveText(["第一项影响", "第二项影响"]);
+  await expect(content.locator("blockquote")).toHaveText("需要保留的引用。");
+  await expect(content.locator("p code")).toHaveText("cache");
+  await expect(content.locator("pre code")).toContainText("const value = 42;");
+  await expect(content.locator("del")).toHaveText("已过时的说法");
+  await expect(content.getByRole("table").getByRole("columnheader")).toHaveText(["项目", "结果"]);
+  await expect(content.getByRole("table").getByRole("cell")).toHaveText(["摘要", "已完成"]);
+  await info.attach("ai-summary-markdown-dark.png", { body: await page.screenshot(), contentType: "image/png" });
+  await closeSummary(page);
+  expect(await page.evaluate(() => window.controlsFixture.summary.state().summary)).toBe(markdown);
+  await openSummary(page);
+  await expect(content.getByRole("heading", { level: 1 })).toHaveText("今日摘要");
+  await expect(content.locator("strong")).toHaveText("核心结论");
+  expect(await page.evaluate(() => window.controlsFixture.summary.requests())).toEqual([]);
+  await closeSummary(page);
+});
+
+test("AI summary Markdown handles split syntax, stopped partial output and a completed stream", async ({ page }) => {
+  await open(page);
+  await page.evaluate(() => { window.controlsFixture.summary.clear(); window.controlsFixture.summary.hold(true); });
+  const dialog = await openSummary(page);
+  const content = dialog.locator(".nextflux-summary-text");
+  const first = "## 分析要点\n\n**关键";
+  const second = "结论**：保持耐心。\n\n- 第一项\n- 第二项\n\n```js\nconst answer = 42;";
+  await page.evaluate((text) => window.controlsFixture.summary.chunk(0, text), first);
+  await expect(content.getByRole("heading", { level: 2 })).toHaveText("分析要点");
+  await expect(content).toContainText("关键");
+  await page.evaluate((text) => window.controlsFixture.summary.chunk(0, text), second);
+  await expect(content.locator("strong")).toHaveText("关键结论");
+  await expect(content.locator("ul > li")).toHaveText(["第一项", "第二项"]);
+  await expect(content.locator("pre code")).toContainText("const answer = 42;");
+  await dialog.getByRole("button", { name: "停止生成", exact: true }).click();
+  expect(await page.evaluate(() => window.controlsFixture.summary.state())).toEqual({ loading: false, summary: first + second, error: null });
+  await closeSummary(page);
+  await openSummary(page);
+  await expect(content.locator("strong")).toHaveText("关键结论");
+  await expect(content.locator("pre code")).toContainText("const answer = 42;");
+  expect(await page.evaluate(() => window.controlsFixture.summary.requests().length)).toBe(1);
+  await dialog.getByRole("button", { name: "重新生成", exact: true }).click();
+  await expect(content).toHaveCount(0);
+  await page.evaluate(() => window.controlsFixture.summary.chunk(1, "# 完成结果\n\n**完"));
+  await expect(content.getByRole("heading", { level: 1 })).toHaveText("完成结果");
+  await page.evaluate(() => {
+    window.controlsFixture.summary.chunk(1, "整结论**\n\n> 最终引用\n\n```js\nconst answer = 43;\n```");
+    window.controlsFixture.summary.done(1);
+  });
+  await expect(content.locator("strong")).toHaveText("完整结论");
+  await expect(content.locator("blockquote")).toHaveText("最终引用");
+  await expect(content.locator("pre code")).toContainText("const answer = 43;");
+  await expect(dialog.getByRole("button", { name: "重新生成", exact: true })).toBeVisible();
+  await closeSummary(page);
+});
+
+test("AI summary Markdown keeps wide tables and code locally scrollable on a 320px large-text phone", async ({ page }, info) => {
+  await open(page, 320, "light", 1.5);
+  const wide = "abcdefghijklmnopqrstuvwxyz0123456789".repeat(6);
+  const markdown = [
+    "## 代码与表格", "", "```js", `const value = \"${wide}\";`, "```", "",
+    "| 项目 | 当前内容 | 下一步 | 备注 |", "| --- | --- | --- | --- |",
+    `| 原始记录 | ${wide} | ${wide} | ${wide} |`,
+  ].join("\n");
+  await page.evaluate((summary) => window.controlsFixture.summary.set(42, { loading: false, summary, error: null }), markdown);
+  const dialog = await openSummary(page);
+  const content = dialog.locator(".nextflux-summary-text");
+  for (const selector of ["pre", "table"]) {
+    const scroll = await content.locator(selector).evaluate((target) => {
+      const root = target.closest(".nextflux-summary-text");
+      for (let element = target; element && element !== root; element = element.parentElement) {
+        if (/(auto|scroll)/.test(getComputedStyle(element).overflowX) && element.scrollWidth > element.clientWidth + 1) {
+          element.scrollLeft = element.scrollWidth;
+          return { left: element.scrollLeft, width: element.clientWidth, contentWidth: element.scrollWidth };
+        }
+      }
+      return null;
+    });
+    expect(scroll, `${selector} has its own horizontal scroller`).not.toBeNull();
+    expect(scroll.left).toBeGreaterThan(0);
+    expect(scroll.contentWidth).toBeGreaterThan(scroll.width);
+  }
+  const dimensions = await dialog.evaluate((element) => {
+    const content = element.querySelector(".nextflux-summary-text");
+    const body = element.querySelector(".nextflux-summary-body");
+    const rect = element.getBoundingClientRect();
+    return { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom, contentWidth: content.scrollWidth, contentBox: content.clientWidth, bodyWidth: body.scrollWidth, bodyBox: body.clientWidth };
+  });
+  expect(dimensions.left).toBeGreaterThanOrEqual(0);
+  expect(dimensions.right).toBeLessThanOrEqual(321);
+  expect(dimensions.top).toBeGreaterThanOrEqual(0);
+  expect(dimensions.bottom).toBeLessThanOrEqual(851);
+  expect(dimensions.contentWidth).toBeLessThanOrEqual(dimensions.contentBox + 1);
+  expect(dimensions.bodyWidth).toBeLessThanOrEqual(dimensions.bodyBox + 1);
+  await expect(dialog.getByRole("button", { name: "关闭 AI 摘要", exact: true })).toBeVisible();
+  await info.attach("ai-summary-markdown-320-large-text.png", { body: await page.screenshot(), contentType: "image/png" });
+  await closeSummary(page);
+});
+
+test("AI summary Markdown treats HTML as text and sends only safe links through ToolBox", async ({ page }) => {
+  await open(page);
+  await page.evaluate(() => {
+    window.summaryScriptExecuted = 0;
+    window.summaryOpenedLinks = [];
+    window.ToolBox = { ...window.ToolBox, browser: { open: async (url) => { window.summaryOpenedLinks.push(url); } } };
+    window.controlsFixture.summary.installLinks();
+    window.controlsFixture.summary.set(42, { loading: false, error: null, summary: [
+      '<script>window.summaryScriptExecuted = 1</script>',
+      '<img src="https://summary.example.invalid/tracker" onerror="window.summaryScriptExecuted = 2">',
+      '<iframe src="https://summary.example.invalid/frame"></iframe>',
+      '<svg onload="window.summaryScriptExecuted = 3"></svg>',
+      '', '[脚本链接](javascript:alert(1))', '', '[数据链接](data:text/html,unsafe)', '',
+      '[有效来源](https://summary.example.invalid/report?x=1&y=2#section)', '', '[相对来源](../source?via=summary)',
+    ].join("\n") });
+  });
+  const dialog = await openSummary(page);
+  const content = dialog.locator(".nextflux-summary-text");
+  await expect(content.locator("script, img, iframe, svg, object, embed, [onclick], [onerror], [onload]")).toHaveCount(0);
+  await expect(content).toContainText("<script>");
+  await expect(content).toContainText("脚本链接");
+  await expect(content.getByRole("link", { name: "脚本链接", exact: true })).toHaveCount(0);
+  await expect(content.getByRole("link", { name: "数据链接", exact: true })).toHaveCount(0);
+  expect(await page.evaluate(() => window.summaryScriptExecuted)).toBe(0);
+  const before = page.url();
+  const source = content.getByRole("link", { name: "有效来源", exact: true });
+  await expect(source).toHaveAttribute("href", "https://summary.example.invalid/report?x=1&y=2#section");
+  await source.click();
+  const relative = content.getByRole("link", { name: "相对来源", exact: true });
+  await expect(relative).toHaveAttribute("href", "https://example.invalid/source?via=summary");
+  await relative.click();
+  expect(await page.evaluate(() => window.summaryOpenedLinks)).toEqual([
+    "https://summary.example.invalid/report?x=1&y=2#section", "https://example.invalid/source?via=summary",
+  ]);
+  expect(page.url()).toBe(before);
+  await expect(dialog).toBeVisible();
+  await closeSummary(page);
+});
+
 for (const [width, theme, scale] of [[320, "light", 1.5], [820, "dark", 1]]) {
   test(`AI summary long content scrolls inside its floating panel at ${width}px`, async ({ page }, info) => {
     await open(page, width, theme, scale);
-    await page.evaluate(() => window.controlsFixture.summary.set(42, {
-      loading: false,
-      summary: Array.from({ length: 36 }, (_, index) => `${index + 1}. 这是摘要的重要内容，长段落与较大的字体仍应当在卡片内部滚动，不挤压文章正文。`).join("\n\n"),
-      error: null,
-    }));
+    await page.evaluate(() => {
+      window.controlsFixture.summary.setForeground(true);
+      window.controlsFixture.summary.set(42, {
+        loading: false,
+        summary: Array.from({ length: 36 }, (_, index) => `${index + 1}. 这是摘要的重要内容，长段落与较大的字体仍应当在卡片内部滚动，不挤压文章正文。`).join("\n\n"),
+        error: null,
+      });
+    });
     const dialog = await openSummary(page);
     const close = dialog.getByRole("button", { name: "关闭 AI 摘要", exact: true });
     await expect(close).toBeVisible();
@@ -291,6 +447,24 @@ for (const [width, theme, scale] of [[320, "light", 1.5], [820, "dark", 1]]) {
     expect(scroll.top).toBeGreaterThan(0);
     expect(scroll.height).toBeGreaterThan(40);
     expect(scroll.contentWidth).toBeLessThanOrEqual(scroll.width + 1);
+    for (const foreground of [false, true]) {
+      // Let React commit each host foreground update before probing the live
+      // element; reading a detached old scroller could hide a remount/reset.
+      await page.evaluate(async (value) => {
+        window.controlsFixture.summary.setForeground(value);
+        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      }, foreground);
+      const text = dialog.locator(".nextflux-summary-text");
+      await expect(text).toContainText("这是摘要的重要内容");
+      const top = await text.evaluate((text) => {
+        const dialog = text.closest('[role="dialog"]');
+        for (let element = text; element && element !== dialog; element = element.parentElement) {
+          if (/(auto|scroll)/.test(getComputedStyle(element).overflowY) && element.scrollHeight > element.clientHeight + 1) return element.scrollTop;
+        }
+        return null;
+      });
+      expect(top, `foreground=${foreground} preserves the summary reading position`).toBe(scroll.top);
+    }
     await expect(close).toBeVisible();
     expect((await close.boundingBox()).y).toBeCloseTo(before.y, 0);
     await info.attach(`ai-summary-${width}-${theme}.png`, { body: await page.screenshot(), contentType: "image/png" });

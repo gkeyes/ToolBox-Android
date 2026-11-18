@@ -6,6 +6,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { ItemWrapper, MenuRow, SwitchItem } from "@/components/ui/settingItem.jsx";
 import { AI_CONTEXT_OPTIONS, normalizeAiContextWindow, resolveAiContextWindow } from "@/toolbox/ai-context.mjs";
+import { resolveSummaryPrompt } from "@/toolbox/summary-prompt.mjs";
 
 export default function AI() {
   const { t } = useTranslation();
@@ -14,7 +15,7 @@ export default function AI() {
   const [localBaseUrl, setLocalBaseUrl] = useState(aiBaseUrl);
   const [localModel, setLocalModel] = useState(aiModel);
   const [localContextWindow, setLocalContextWindow] = useState(() => normalizeAiContextWindow(aiContextWindow));
-  const [localPrompt, setLocalPrompt] = useState(aiPrompt);
+  const [localPrompt, setLocalPrompt] = useState(() => resolveSummaryPrompt(aiPrompt));
   const [saving, setSaving] = useState(false);
   const contextCapacity = resolveAiContextWindow({ aiModel: localModel, aiContextWindow: localContextWindow });
   const capacityLabel = contextCapacity === null ? "" : contextCapacity >= 1000000 ? "1M" : `${contextCapacity / 1000}K`;

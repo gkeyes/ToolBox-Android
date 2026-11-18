@@ -188,3 +188,14 @@ test("a draft flushed by a cancelled close is cleared when the editor is later s
   await new Promise((resolve) => setImmediate(resolve)); releaseSet(); await kept;
   assert.deepEqual(data.get("draft"), { draft: 2 }, "an actual close keeps the flushed draft");
 });
+
+test("resuming an existing draft leaves a recoverable copy until saved or discarded", async () => {
+  const storage = memoryStorage();
+  storage.data.set("draft", { draft: "previous session" });
+  const slot = createDraftSlot(storage, "draft");
+  slot.adoptStored();
+  assert.deepEqual(await storage.get("draft"), { draft: "previous session" });
+  slot.clear();
+  await slot.idle();
+  assert.equal(storage.data.has("draft"), false);
+});
