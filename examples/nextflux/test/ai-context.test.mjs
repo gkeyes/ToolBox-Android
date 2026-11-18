@@ -5,6 +5,7 @@ import {
   normalizeAiContextWindow, resolveAiContextWindow, validInputPolicy,
 } from "../src/toolbox/ai-context.mjs";
 import { decodeSettings, settingsState } from "../src/stores/settingsStore.js";
+import { getPreference } from "../src/toolbox/preferences.js";
 
 test("context selections normalise persisted numbers without coercing arbitrary data", () => {
   assert.deepEqual(AI_CONTEXT_OPTIONS.map(({ value }) => value), ["auto", "32000", "64000", "128000", "256000", "1000000"]);
@@ -85,4 +86,16 @@ test("stored settings migrate to auto and retain valid manual capacity", () => {
   for (const value of [128000, "128000"]) {
     assert.equal(decodeSettings(JSON.stringify({ aiModel: "custom", aiContextWindow: value })).aiContextWindow, "128000");
   }
+});
+
+test("manual capacities are encoded while switching back to auto removes the optional field", () => {
+  const previous = settingsState.get();
+  try {
+    settingsState.set({ ...previous, aiContextWindow: "1000000" });
+    assert.equal(JSON.parse(getPreference("settings")).aiContextWindow, "1000000");
+    settingsState.set({ ...previous, aiContextWindow: "auto" });
+    const saved = getPreference("settings");
+    assert.equal(Object.hasOwn(JSON.parse(saved), "aiContextWindow"), false);
+    assert.equal(decodeSettings(saved).aiContextWindow, "auto");
+  } finally { settingsState.set(previous); }
 });

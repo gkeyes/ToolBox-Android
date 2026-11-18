@@ -25,8 +25,10 @@ function reportFailure() {
 // Settings are flat JSON values. Mounting a store may only reorder its fields.
 function sameSettings(previous, next) {
   if (!previous) return false;
-  const before = JSON.parse(previous);
-  const after = JSON.parse(next);
+  // Backups may explicitly store auto; it is equivalent to the omitted field
+  // used by older preferences and the current canonical encoding.
+  const before = { aiContextWindow: "auto", ...JSON.parse(previous) };
+  const after = { aiContextWindow: "auto", ...JSON.parse(next) };
   const keys = Object.keys(after);
   return keys.length === Object.keys(before).length && keys.every((key) => before[key] === after[key]);
 }

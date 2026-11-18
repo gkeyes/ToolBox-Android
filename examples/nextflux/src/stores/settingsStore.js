@@ -82,6 +82,9 @@ export const settingsState = persistentAtom("settings", defaultValue, {
   encode: (value) => {
     const filteredValue = Object.keys(value).reduce((acc, key) => {
       if (key in defaultValue) {
+        // Missing means auto. Keep upgraded preferences byte-compatible and
+        // avoid a native write just from mounting the new default field.
+        if (key === "aiContextWindow" && value[key] === "auto") return acc;
         acc[key] = value[key];
       }
       return acc;
