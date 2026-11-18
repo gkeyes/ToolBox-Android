@@ -13,6 +13,55 @@ function documentFor(source) {
   return { html, tags: (name) => nodes.filter((node) => node.name === name), nodes };
 }
 
+function textOf(node) {
+  return node.type === "text" ? node.data : (node.children || []).map(textOf).join("");
+}
+
+test("Chinese summary emphasis handles punctuation and the screenshot's spaced closing markers", () => {
+  const { html, tags } = documentFor([
+    "> **疗程完成度不等于因果证据。 **能完成 ≥5 个周期的患者。",
+    ">",
+    "> **PEACE-3 回答的是“在恩扎卢胺基础上加用 Ra-223 有何收益”，不是“Ra-223 应排在化疗之前还是之后”。 **对既往 ARPi 治疗后进展的患者。",
+    "", "前文**“重点”**后文，**中文句号。**接着说明。",
+  ].join("\n"));
+  assert.equal(tags("blockquote").length, 1);
+  assert.deepEqual(tags("strong").map(textOf), [
+    "疗程完成度不等于因果证据。 ",
+    "PEACE-3 回答的是“在恩扎卢胺基础上加用 Ra-223 有何收益”，不是“Ra-223 应排在化疗之前还是之后”。 ",
+    "“重点”", "中文句号。",
+  ]);
+  assert.ok(!html.includes("**"));
+  assert.match(html, /<\/strong>能完成/);
+  assert.match(html, /<\/strong>接着说明/);
+});
+
+test("Chinese emphasis preserves code, escaped stars, standard nesting and paragraph boundaries", () => {
+  const literal = "**中文句号。 **接着说明";
+  const { tags, nodes } = documentFor([
+    `\`${literal}\``, "", "```md", literal, "```", "",
+    "\\*\\*中文句号。 \\*\\*接着说明", "",
+    "**bold with *italic* inside** and __strong__ and *italic*", "",
+    "**未完成的段落", "", "另一段。**保持分开",
+  ].join("\n"));
+  assert.deepEqual(tags("code").map(textOf), [literal, `${literal}\n`]);
+  assert.deepEqual(tags("strong").map(textOf), ["bold with italic inside", "strong"]);
+  assert.deepEqual(tags("em").map(textOf), ["italic", "italic"]);
+  assert.ok(nodes.some((node) => node.type === "text" && node.data === literal));
+  assert.ok(tags("p").some((node) => textOf(node) === "**未完成的段落"));
+  assert.ok(tags("p").some((node) => textOf(node) === "另一段。**保持分开"));
+});
+
+test("streamed Chinese emphasis stays readable until the closing marker and following text arrive", () => {
+  for (const source of ["**中文句号。 ", "**中文句号。 *", "**中文句号。 **"]) {
+    const { tags } = documentFor(source);
+    assert.equal(tags("strong").length, 0);
+    assert.equal(textOf(tags("p")[0]), source);
+  }
+  const { tags } = documentFor("**中文句号。 **接着说明");
+  assert.deepEqual(tags("strong").map(textOf), ["中文句号。 "]);
+  assert.equal(textOf(tags("p")[0]), "中文句号。 接着说明");
+});
+
 test("Markdown links use the article base and reject active schemes after entity decoding", () => {
   const { tags } = documentFor([
     "[relative](../source?x=1&y=2)", "[HTTPS](https://safe.example/report#section)",

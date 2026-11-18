@@ -296,6 +296,62 @@ test("AI summary Markdown renders cached formatting and reopens without another 
   await closeSummary(page);
 });
 
+test("AI summary Markdown bold renders cached Chinese quotes with padded closing markers", async ({ page }, info) => {
+  await open(page, 393, "light");
+  const first = "疗程完成度不等于因果证据。";
+  const second = "PEACE-3 回答的是“在恩扎卢胺基础上加用 Ra-223 有何收益”，不是“Ra-223 应排在化疗之前还是之后”。";
+  const markdown = [
+    `> **${first} **能完成 ≥5 个周期的患者，往往本就有更好的体能、骨髓储备，且必须存活到后续给药时间点。真实世界数据支持尽早评估治疗窗口，但不能单凭这些关联断定前移用药或增加周期本身带来了全部生存差异。`,
+    ">",
+    `> **${second} **对既往 ARPi 治疗后进展的患者，不能把联合方案的生存增益直接外推为优先使用 Ra-223 的依据。`,
+    "", "中文**“相邻标点”**也应正常加粗。",
+  ].join("\n");
+  await page.evaluate((summary) => window.controlsFixture.summary.set(42, { loading: false, summary, error: null }), markdown);
+  const dialog = await openSummary(page);
+  const content = dialog.locator(".nextflux-summary-text");
+  await expect(content.locator("blockquote strong")).toHaveText([first, second]);
+  await expect(content.locator("strong")).toHaveText([first, second, "“相邻标点”"]);
+  await expect(content).not.toContainText("**");
+  const weights = await content.locator("strong").evaluateAll((elements) => elements.map((element) => Number(getComputedStyle(element).fontWeight)));
+  expect(weights.every((weight) => weight >= 600), "parsed bold text must also have a visibly bold font weight").toBe(true);
+  await info.attach("ai-summary-bold-chinese-393-light.png", { body: await page.screenshot(), contentType: "image/png" });
+  await closeSummary(page);
+  await openSummary(page);
+  await expect(content.locator("blockquote strong")).toHaveText([first, second]);
+  expect(await page.evaluate(() => window.controlsFixture.summary.state().summary)).toBe(markdown);
+  expect(await page.evaluate(() => window.controlsFixture.summary.requests())).toEqual([]);
+  await closeSummary(page);
+});
+
+test("AI summary Markdown bold completes streamed closing markers without changing code or escaped stars", async ({ page }) => {
+  await open(page, 393, "dark");
+  await page.evaluate(() => { window.controlsFixture.summary.clear(); window.controlsFixture.summary.hold(true); });
+  const dialog = await openSummary(page);
+  const content = dialog.locator(".nextflux-summary-text");
+  const first = "> **流式结论。 *";
+  const second = [
+    "*后续说明。", "", "`**代码里的星号。 **`", "",
+    "```md", "**代码块里的星号。 **", "```", "", String.raw`\*\*转义星号。 \*\*`,
+  ].join("\n");
+  await page.evaluate((text) => window.controlsFixture.summary.chunk(0, text), first);
+  await expect(content).toContainText("流式结论。");
+  await expect(content.locator("strong")).toHaveCount(0);
+  await page.evaluate((text) => {
+    window.controlsFixture.summary.chunk(0, text);
+    window.controlsFixture.summary.done(0);
+  }, second);
+  await expect(content.locator("strong")).toHaveText("流式结论。");
+  await expect(content.locator("blockquote")).toContainText("后续说明。");
+  await expect(content.locator("blockquote")).not.toContainText("**");
+  await expect(content.locator("p code")).toHaveText("**代码里的星号。 **");
+  await expect(content.locator("pre code")).toHaveText("**代码块里的星号。 **\n");
+  await expect(content).toContainText("**转义星号。 **");
+  await expect(dialog.getByRole("button", { name: "重新生成", exact: true })).toBeVisible();
+  expect(await page.evaluate(() => window.controlsFixture.summary.state().summary)).toBe(first + second);
+  expect(await page.evaluate(() => window.controlsFixture.summary.requests().length)).toBe(1);
+  await closeSummary(page);
+});
+
 test("AI summary Markdown handles split syntax, stopped partial output and a completed stream", async ({ page }) => {
   await open(page);
   await page.evaluate(() => { window.controlsFixture.summary.clear(); window.controlsFixture.summary.hold(true); });
