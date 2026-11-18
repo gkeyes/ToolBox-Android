@@ -1,4 +1,4 @@
-import { startTransition, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { startTransition, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Button, Drawer, cn } from "@heroui/react";
 import { hadPointerDownFor } from "@/toolbox/touch-drag.js";
 
@@ -77,6 +77,19 @@ export default function MobileSheet({
 }) {
   const dialogRef = useRef(null);
   const dragRef = useRef(null);
+  const attachDialog = useCallback((dialog) => {
+    dialogRef.current = dialog;
+    if (!dialog) return;
+    // React Aria can defer autofocus until the entrance animation finishes.
+    // During a hand-off the old button is gone; Escape must reach the new sheet.
+    requestAnimationFrame(() => {
+      const doc = dialog.ownerDocument;
+      if (dialog.isConnected && !dialog.closest("[inert], [data-exiting]") &&
+          !dialog.contains(doc.activeElement)) {
+        dialog.focus({ preventScroll: true });
+      }
+    });
+  }, []);
   // A drag dismissal parks the sheet off-screen before asking the owner to
   // close. The owner may refuse (a pending save or AI run), or reopen the
   // sheet while its exit is still running (React Aria then reuses the same
@@ -250,7 +263,7 @@ export default function MobileSheet({
       <Drawer.Backdrop className="nextflux-modal-backdrop" isOpen={open} onOpenChange={onOpenChange}>
         <Drawer.Content>
           <Drawer.Dialog
-            ref={dialogRef}
+            ref={attachDialog}
             data-nf-locked={locked || undefined}
             className={cn(
               "nextflux-modal-surface nextflux-mobile-sheet nextflux-floating-sheet p-0",
