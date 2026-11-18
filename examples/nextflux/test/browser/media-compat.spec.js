@@ -2,6 +2,12 @@ import { test as base, expect } from "@playwright/test";
 import { readFileSync } from "node:fs";
 
 const streamingFixture = JSON.parse(readFileSync(new URL("./fixtures/streaming-media.json", import.meta.url), "utf8"));
+const productionRuntimeSdk = readFileSync(new URL("../../../../tool-runtime/src/main/assets/toolbox-runtime/runtime-sdk.js", import.meta.url), "utf8")
+  .replaceAll("__TOOLBOX_BRIDGE_OBJECT__", "inlinePlayerTestBridge")
+  .replaceAll("__TOOLBOX_NONCE__", JSON.stringify("inline-player-dom-test"))
+  .replaceAll("__TOOLBOX_TOOL_ID__", JSON.stringify("nextflux-dom-test"))
+  .replaceAll("__TOOLBOX_VERSION_CODE__", "1")
+  .replaceAll("__TOOLBOX_GENERATION__", "1");
 
 const PRIMARY = "https://media.example.invalid/images/primary";
 const FALLBACK = "https://media.example.invalid/images/fallback.png?signature=fixture";
@@ -11,6 +17,7 @@ const ORIGIN = "https://origin.example.invalid/full.png";
 const TRANSPARENT_GIF = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
 const HLS = "https://media.example.invalid/video/playlist.m3u8";
 const MP4 = "https://media.example.invalid/video/movie.mp4";
+const YOUTUBE = "https://www.youtube-nocookie.com/embed/y8-kOYgmNdA";
 
 const test = base.extend({
   page: async ({ page }, use, testInfo) => {
@@ -31,6 +38,9 @@ const test = base.extend({
         const state = window.mediaCompatFixture.snapshot();
         return [state.activeStreams, state.waitingReads, state.activeObjectUrls.length];
       }), { message: "native streams and Blob URLs are released after the article is disposed" }).toEqual([0, 0, 0]);
+      await expect.poll(() => page.evaluate(() => (window.embeddedPlayers || []).every((player) => !player.resolved || player.closed)), {
+        message: "inline player sessions are closed after the article is disposed",
+      }).toBe(true);
     }
     await testInfo.attach("browser-diagnostics", {
       body: JSON.stringify({ pageErrors, externalRequests, nativeState }), contentType: "application/json",
@@ -48,6 +58,40 @@ async function openFixture(page) {
 async function openArticle(page, html) {
   await openFixture(page);
   await page.evaluate((value) => window.mediaCompatFixture.renderArticle(value), html);
+}
+
+async function openYouTubeArticle(page, { delayed = false, failure = null, source = YOUTUBE, native = true } = {}) {
+  await openFixture(page);
+  await page.evaluate(({ delayed, failure, native }) => {
+    window.opened = [];
+    window.embeddedPlayers = [];
+    window.ToolBox.browser = { async open(url) { window.opened.push(url); } };
+    if (!native) return;
+    window.ToolBox.browser.openEmbedded = (url, element, { signal } = {}) => {
+      const player = { url, connected: element.isConnected, aborted: false, closed: false, resolved: false, initialBounds: element.getBoundingClientRect().toJSON() };
+      window.embeddedPlayers.push(player);
+      let notifyClosed;
+      const closed = new Promise((resolve) => { notifyClosed = resolve; });
+      const handle = {
+        id: `embed-${window.embeddedPlayers.length}`,
+        closed,
+        async close() { player.closed = true; notifyClosed(); },
+      };
+      player.close = handle.close;
+      signal.addEventListener("abort", () => { player.aborted = true; }, { once: true });
+      return new Promise((resolve, reject) => {
+        player.resolve = () => { player.resolved = true; resolve(handle); };
+        player.reject = (code) => reject(Object.assign(new Error("Fixture player failure"), { code }));
+        if (failure) player.reject(failure);
+        else if (!delayed) player.resolve();
+      });
+    };
+  }, { delayed, failure, native });
+  await page.evaluate((url) => window.mediaCompatFixture.renderArticle(`<p>视频前的正文。</p><iframe src="${url}"></iframe><p>视频后的正文。</p>`), source);
+}
+
+async function embeddedState(page) {
+  return page.evaluate(() => window.embeddedPlayers.map(({ url, connected, aborted, closed, resolved, initialBounds }) => ({ url, connected, aborted, closed, resolved, initialBounds })));
 }
 
 async function pending(page, source) {
@@ -353,8 +397,8 @@ test("video links can be copied or shared without starting a media download", as
   await expect(page.locator("video")).toHaveCount(0);
 });
 
-test("an embed that only plays in the browser opens it from its play button (recheck-142 D)", async ({ page }) => {
-  const embed = "https://www.youtube.com/embed/fixture";
+test("an unsupported provider keeps its explicit browser playback fallback", async ({ page }) => {
+  const embed = "https://player.example.invalid/embed/fixture";
   await openArticle(page, `<iframe src="${embed}"></iframe>`);
   await page.evaluate(() => {
     window.opened = [];
@@ -363,6 +407,180 @@ test("an embed that only plays in the browser opens it from its play button (rec
   await page.getByRole("button", { name: "在浏览器中播放视频", exact: true }).click();
   await expect.poll(() => page.evaluate(() => window.opened)).toEqual([embed]);
   expect((await snapshot(page)).requests).toHaveLength(0);
+});
+
+test("YouTube starts inside its article stage only after tapping play and closes in place", async ({ page }) => {
+  await openYouTubeArticle(page);
+  expect(await embeddedState(page)).toEqual([]);
+  const stage = page.locator(".article-video-stage");
+  const before = await stage.boundingBox();
+  await page.getByRole("button", { name: "播放视频", exact: true }).click();
+  await expect(page.getByRole("group", { name: "YouTube 视频播放器" })).toBeVisible();
+  await expect.poll(async () => (await embeddedState(page)).length).toBe(1);
+  const [player] = await embeddedState(page);
+  expect(player.url).toBe(YOUTUBE);
+  expect(player.connected).toBe(true);
+  expect(player.initialBounds.width).toBeCloseTo(before.width, 1);
+  expect(player.initialBounds.height).toBeCloseTo(before.height, 1);
+  expect(await page.evaluate(() => window.opened)).toEqual([]);
+  expect((await snapshot(page)).requests).toHaveLength(0);
+  await page.getByRole("button", { name: "关闭媒体", exact: true }).click();
+  await expect(page.getByRole("group", { name: "YouTube 视频播放器" })).toHaveCount(0);
+  await expect.poll(async () => (await embeddedState(page))[0].closed).toBe(true);
+  await expect(page.getByRole("button", { name: "播放视频", exact: true })).toBeVisible();
+  expect((await stage.boundingBox()).height).toBeCloseTo(before.height, 1);
+  await page.getByRole("button", { name: "播放视频", exact: true }).click();
+  await expect.poll(async () => (await embeddedState(page)).length).toBe(2);
+});
+
+test("production SDK measures the real article anchor, clips scrolling and hides behind a DOM dialog", async ({ page }, testInfo) => {
+  await openFixture(page);
+  await page.evaluate((source) => {
+    window.inlinePlayerRpc = [];
+    window.inlinePlayerTestBridge = {
+      postMessage(encoded) {
+        const request = JSON.parse(encoded);
+        window.inlinePlayerRpc.push(request);
+        const result = request.method === "ready"
+          ? { runtimeState: { generation: 1, revision: 1, foreground: true, closing: false } }
+          : request.method === "browser.openEmbedded"
+            ? { id: `embedded-${crypto.randomUUID().replaceAll("-", "")}` }
+            : {};
+        queueMicrotask(() => window.inlinePlayerTestBridge.onmessage({ data: JSON.stringify({ id: request.id, ok: true, result }) }));
+      },
+    };
+    // Run the production SDK unchanged except for its normal host substitutions.
+    // The native boundary returns session IDs only: it does not draw a fake video.
+    delete window.ToolBox;
+    (0, eval)(source);
+  }, productionRuntimeSdk);
+  await page.evaluate((url) => window.mediaCompatFixture.renderArticle(`<p>视频前的正文。</p><iframe src="${url}"></iframe><p>视频后的正文。</p>`), YOUTUBE);
+  await expect(page.getByRole("button", { name: "播放视频", exact: true })).toBeVisible();
+  const stage = await page.locator(".article-video-stage").boundingBox();
+  await page.getByRole("button", { name: "播放视频", exact: true }).click();
+  await expect(page.getByRole("group", { name: "YouTube 视频播放器" })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => window.inlinePlayerRpc.filter(({ method }) => method === "browser.openEmbedded").length)).toBe(1);
+  const opened = await page.evaluate(() => window.inlinePlayerRpc.find(({ method }) => method === "browser.openEmbedded").params);
+  expect(opened.url).toBe(YOUTUBE);
+  expect(opened.width).toBeCloseTo(stage.width, 1);
+  expect(opened.height).toBeCloseTo(stage.height, 1);
+  expect(opened.clipTop + opened.clipBottom).toBeLessThan(opened.height);
+  expect(opened.clipLeft + opened.clipRight).toBeLessThan(opened.width);
+  expect(await page.evaluate(() => window.inlinePlayerRpc.some(({ method }) => method === "browser.open"))).toBe(false);
+
+  // Clip and scroll the existing portal container without moving React-owned DOM.
+  await page.evaluate(() => {
+    const container = document.querySelector(".article-video-card").parentElement;
+    Object.assign(container.style, { height: "140px", overflowY: "auto" });
+    container.scrollTop = 40;
+  });
+  const latestUpdate = () => page.evaluate(() => window.inlinePlayerRpc.filter(({ method }) => method === "browser.updateEmbedded").at(-1)?.params);
+  await expect.poll(async () => {
+    const update = await latestUpdate();
+    return Boolean(update && update.clipTop > 0 && update.clipBottom > 0 && update.clipTop + update.clipBottom < update.height);
+  }).toBe(true);
+  const clipped = await latestUpdate();
+  expect(clipped.y).not.toBe(opened.y);
+
+  await page.evaluate(() => {
+    const dialog = document.createElement("dialog");
+    dialog.id = "inline-player-test-dialog";
+    dialog.textContent = "测试对话框";
+    Object.assign(dialog.style, { position: "fixed", inset: "0", width: "100vw", height: "100vh", maxWidth: "none", maxHeight: "none", margin: "0", padding: "0", border: "0" });
+    document.body.append(dialog);
+    dialog.showModal();
+  });
+  await expect.poll(async () => {
+    const update = await latestUpdate();
+    return Boolean(update && update.clipTop === update.height);
+  }).toBe(true);
+  await page.evaluate(() => document.getElementById("inline-player-test-dialog").remove());
+  await expect.poll(async () => {
+    const update = await latestUpdate();
+    return Boolean(update && update.clipTop + update.clipBottom < update.height);
+  }).toBe(true);
+
+  await page.evaluate(() => window.mediaCompatFixture.unmountArticle());
+  await expect.poll(() => page.evaluate(() => window.inlinePlayerRpc.filter(({ method }) => method === "browser.closeEmbedded").length)).toBe(1);
+  await expect(page.getByRole("group", { name: "YouTube 视频播放器" })).toHaveCount(0);
+  await testInfo.attach("inline-player-dom-rpc", {
+    body: JSON.stringify(await page.evaluate(() => window.inlinePlayerRpc.filter(({ method }) => method.startsWith("browser.")))),
+    contentType: "application/json",
+  });
+});
+
+test("an older host explains inline playback support and opens a normal watch page only on request", async ({ page }) => {
+  await openYouTubeArticle(page, { native: false, source: `${YOUTUBE}?start=90` });
+  await expect(page.getByText("更新 ToolBox 后可在正文播放", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "播放视频", exact: true })).toHaveCount(0);
+  expect(await page.evaluate(() => window.opened)).toEqual([]);
+  await page.getByRole("button", { name: "在浏览器中观看", exact: true }).click();
+  expect(await page.evaluate(() => window.opened)).toEqual(["https://www.youtube.com/watch?v=y8-kOYgmNdA&t=90s"]);
+});
+
+test("YouTube loading failure leaves retry and manual watch fallback without navigating automatically", async ({ page }) => {
+  await openYouTubeArticle(page, { failure: "NETWORK_UNAVAILABLE" });
+  await page.getByRole("button", { name: "播放视频", exact: true }).click();
+  await expect(page.getByRole("status")).toHaveText("播放器加载失败，请重试，或在浏览器中观看。");
+  await expect(page.getByRole("button", { name: "播放视频", exact: true })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "在浏览器中观看", exact: true })).toBeVisible();
+  expect(await page.evaluate(() => window.opened)).toEqual([]);
+});
+
+test("cancelling a pending inline player closes its late handle instead of reviving it", async ({ page }) => {
+  await openYouTubeArticle(page, { delayed: true });
+  await page.getByRole("button", { name: "播放视频", exact: true }).click();
+  await expect.poll(async () => (await embeddedState(page)).length).toBe(1);
+  await page.getByRole("button", { name: "取消加载", exact: true }).click();
+  await expect.poll(async () => (await embeddedState(page))[0].aborted).toBe(true);
+  await page.evaluate(() => window.embeddedPlayers[0].resolve());
+  await expect.poll(async () => (await embeddedState(page))[0].closed).toBe(true);
+  await expect(page.getByRole("group", { name: "YouTube 视频播放器" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "播放视频", exact: true })).toBeVisible();
+});
+
+test("article playback context stops cached portals and requires another tap after returning", async ({ page }) => {
+  await openYouTubeArticle(page);
+  await page.getByRole("button", { name: "播放视频", exact: true }).click();
+  await expect.poll(async () => (await embeddedState(page)).length).toBe(1);
+  await page.evaluate(() => window.mediaCompatFixture.setPlaybackAllowed(false));
+  await expect.poll(async () => (await embeddedState(page))[0].closed).toBe(true);
+  await expect(page.getByRole("button", { name: "播放视频", exact: true })).toBeDisabled();
+  await page.evaluate(() => window.mediaCompatFixture.setPlaybackAllowed(true));
+  await expect(page.getByRole("button", { name: "播放视频", exact: true })).toBeEnabled();
+  expect((await embeddedState(page)).length).toBe(1);
+  await expect(page.getByRole("group", { name: "YouTube 视频播放器" })).toHaveCount(0);
+});
+
+test("switching articles and a host-initiated close both release the inline player", async ({ page }) => {
+  await openYouTubeArticle(page);
+  await page.getByRole("button", { name: "播放视频", exact: true }).click();
+  await expect.poll(async () => (await embeddedState(page)).length).toBe(1);
+  await page.evaluate(() => window.embeddedPlayers[0].close());
+  await expect(page.getByRole("button", { name: "播放视频", exact: true })).toBeVisible();
+  await expect(page.getByRole("group", { name: "YouTube 视频播放器" })).toHaveCount(0);
+  await page.getByRole("button", { name: "播放视频", exact: true }).click();
+  await expect.poll(async () => (await embeddedState(page)).length).toBe(2);
+  await page.evaluate(() => window.mediaCompatFixture.renderArticle("<p>下一篇文章</p>"));
+  await expect.poll(async () => (await embeddedState(page))[1].closed).toBe(true);
+  await expect(page.getByText("下一篇文章", { exact: true })).toBeVisible();
+});
+
+test("hiding the document closes its YouTube session without resuming on visibility", async ({ page }) => {
+  await openYouTubeArticle(page);
+  await page.getByRole("button", { name: "播放视频", exact: true }).click();
+  await expect.poll(async () => (await embeddedState(page)).length).toBe(1);
+  await page.evaluate(() => {
+    Object.defineProperty(document, "hidden", { configurable: true, value: true });
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+  await expect.poll(async () => (await embeddedState(page))[0].closed).toBe(true);
+  await page.evaluate(() => {
+    delete document.hidden;
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+  await expect(page.getByRole("button", { name: "播放视频", exact: true })).toBeVisible();
+  expect((await embeddedState(page)).length).toBe(1);
 });
 
 for (const width of [320, 900]) test(`the video card fits a ${width}px reader without a poster`, async ({ page }) => {

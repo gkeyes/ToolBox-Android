@@ -223,6 +223,10 @@ audio/video 播放使用 `network.openMedia({ url, kind? }, { signal? })`，将�
 
 播放器停止、切换媒体或组件卸载时调用 `network.closeMedia(sessionId)`。已经取消的 AbortSignal 不会打开会话；等待打开期间取消会立即以 `CANCELLED` 拒绝，并清理迟到的会话。打开后取消、页面离开、导航、撤权和运行环境结束也会释放媒体连接。关闭会话在 network 权限撤销后仍可调用。
 
+YouTube 文内播放使用 `browser.openEmbedded(url, element, { signal? })`。先检查该方法是否存在，再在用户点击后传入当前文档里有尺寸的占位元素和 HTTPS 的 YouTube `/embed/VIDEO_ID` 地址。仅接受真实 YouTube / YouTube-nocookie 主机和 11 字符视频 ID，支持非负整数 `start` / `end` 秒数。宿主在独立、没有 ToolBox bridge 的 WebView 中加载官方播放器，使用真实应用包名声明来源身份；小工具本身的 CSP 和远程网络限制保持不变。此接口使用独立的 `browser` 权限，不走 MP4 下载或 network 媒体代理。
+
+SDK 会跟踪元素位置、滚动容器裁切和视口尺寸；元素被页面弹层遮住时暂时隐藏播放器。每个运行环境同时只有一个嵌入播放器，打开新的会关闭旧的。返回句柄的 `close()` 可重复调用，`closed` Promise 在主动或宿主关闭时完成；组件卸载、切换文章或阅读预览失活时应关闭句柄或取消 AbortSignal。页面隐藏、离开前台、导航、运行环境结束及锚点被移除也会关闭。全屏按钮仅在工具清单的 `ui.allowFullscreen` 开启时可用，默认播放位置仍在正文卡片内。旧宿主或播放失败时由工具显示明确的备用入口，不自动跳转。
+
 网络未指定 timeoutMs 时不施加宿主总时限；0 表示关闭调用时限。调用方明确指定的超时用于该次请求。request 返回完整正文，files.read 返回完整 Uint8Array；这两种一次性返回仍须能够放入当前可用内存，并不意味着可以一次读取任意大的文件。超出实际资源时应显示错误。网络可改用 openStream 分块；files.read 暂无文件分块接口，应选择可放入内存的文件，或由工具自行提供分页数据。
 
 安装支持 ZIP32 和 ZIP64；复制、目录扫描、解压、哈希及暂存复制均分块处理，依据目标卷可用空间、当前可用堆和系统内存压力检查资源，暂存占用也计入。高压缩比本身不会导致拒绝；CRC、中央目录、本地头、数据描述符及实际输出须一致。integrity.json 流式逐项核对文件集合和原始字节哈希；重复键、路径碰撞或篡改会失败，签名仍针对完整性文件原始字节验证。
@@ -445,6 +449,9 @@ export type ToolBoxMethodName =
   | "clipboard.readText"
   | "share.text"
   | "browser.open"
+  | "browser.openEmbedded"
+  | "browser.updateEmbedded"
+  | "browser.closeEmbedded"
   | "files.open"
   | "files.read"
   | "files.save"
@@ -582,6 +589,19 @@ export interface NotificationOpenEvent {
   /** The id passed to notifications.post/update, or the background notify task's key. */
   readonly id: string;
   readonly openedAt: number;
+}
+
+export interface EmbeddedBrowserOptions {
+  /** Cancels pending creation and closes an opened or late native player. */
+  readonly signal?: AbortSignal;
+}
+
+export interface EmbeddedBrowserHandle {
+  readonly id: string;
+  /** Resolves when closed by this document, replaced, or released by the host. */
+  readonly closed: Promise<void>;
+  /** Idempotent cleanup; remains available when browser permission is revoked. */
+  close(): Promise<void>;
 }
 
 export type LiveNotificationTone = "neutral" | "positive" | "negative" | "warning";
@@ -821,6 +841,11 @@ export interface ToolBoxApi {
   browser: {
     /** Opens an absolute HTTP/HTTPS URL (without credentials or control characters) in ToolBox's isolated in-app browser. Requires the separate, default-off browser capability and the current visible foreground tool. No per-minute allowance, browsing deadline, or fixed page-size quota applies. No network capability or Android runtime permission is required. Resolves when the browser Activity starts, not when the page loads. Website cookies are shared across browser sessions and tools, separate from tool storage, until expiry or explicit browser-data clearing. Remote pages have no ToolBox bridge. File inputs open Android's document picker (direct camera capture is not implemented); HTTP(S) downloads go to the system download manager after confirmation (generated blob/data downloads are not transferable); camera, microphone, location and MIDI requests are asked per website and name it. The menu also offers an explicit system-browser fallback. */
     open(url: string): Promise<void>;
+    /** Mounts a supported YouTube embed at an attached local element after a user action.
+     * Requires browser permission and the visible foreground tool; remote content has no ToolBox bridge.
+     * Tracks anchor geometry and clipping, and closes on backgrounding, document exit, or anchor removal.
+     * Feature-detect this method on older hosts; one player per runtime. */
+    openEmbedded(url: string, element: HTMLElement, options?: EmbeddedBrowserOptions): Promise<EmbeddedBrowserHandle>;
   };
   files: {
     open(mimeTypes?: string[]): Promise<FileToken | null>;

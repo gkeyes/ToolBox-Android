@@ -20,8 +20,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsNode
 import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isRoot
@@ -30,6 +32,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.printToString
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.style.TextOverflow
@@ -391,13 +394,28 @@ class LayoutScreenshotTest(private val fontScale: Float) {
         CatalogGroupFolderOverlay(groups[0], tools.filter { it.toolId in groups[0].members }, editing = false, {}, {}, {}, {})
     }
 
-    @Test fun softwareUpdate() = render("update") {
+    @Test fun softwareUpdate() = render("update") { SoftwareUpdate() }
+
+    @Test fun softwareUpdateCheckingKeepsCachedFeed() {
+        render("update_checking") { SoftwareUpdate(loading = true) }
+        assertShows("正在检查更新…")
+        val refresh = compose.onNodeWithTag("update_refresh").assertIsNotEnabled().fetchSemanticsNode()
+        assertEquals("正在检查更新", refresh.config.getOrNull(SemanticsProperties.StateDescription))
+        assertEquals(ProgressBarRangeInfo.Indeterminate, refresh.config.getOrNull(SemanticsProperties.ProgressBarRangeInfo))
+        compose.onNodeWithTag("update_page").performScrollToNode(hasText("最新测试版"))
+        assertShows("最新测试版", "有新版本")
+    }
+
+    @Composable private fun SoftwareUpdate(loading: Boolean = false) {
         val asset = ReleaseAsset("toolbox-v0.8.32-dev.apk", "https://example.invalid/a.apk", 12_000_000, null)
         val tool = { slug: String -> ToolPackage(slug, "1.4.3", asset.copy(name = "$slug-v1.4.3.tbx")) }
         UpdateContent(
             state = UpdateUiState(
                 installed = InstalledBuild("0.8.32", 65, 18_412_345_678),
                 channel = UpdateChannel.TEST,
+                loading = loading,
+                completedChecks = 1,
+                lastCheckedAt = now,
                 feed = ChannelFeed(
                     UpdateChannel.TEST,
                     AppPackage("0.8.33", 66, "95bfa0f", 18_419_876_543, "2026-10-13T16:49:00Z", "修正首页分组弹层透明", asset),

@@ -113,6 +113,9 @@
     runtimeState = Object.freeze({ generation: state.generation, revision: state.revision, foreground: state.foreground, closing: state.closing });
     closeToken = state.closing ? state.closeToken : null;
     stateListeners.forEach((_, listener) => replayState(listener));
+    if (!state.foreground || state.closing) {
+      for (const player of embeddedPlayers) player.close().catch(() => undefined);
+    }
     if (!state.closing || typeof closeToken !== 'string' || closeToken === handledCloseToken) return;
     const ticket = closeToken;
     handledCloseToken = ticket;
@@ -318,6 +321,201 @@
       }
     });
   };
+  // The remote player lives in a separate native WebView, without this SDK or bridge.
+  // Only its trusted local anchor is measured here. Keep at most one player per tool.
+  const embeddedPlayers = new Set();
+  let embeddedOpenQueue = Promise.resolve();
+  let embeddedEventsSubscribed = false;
+  const embeddedCancelled = () => runtimeError('CANCELLED', 'Embedded playback was closed');
+  const embeddedBounds = element => {
+    const doc = globalThis.document;
+    if (!element || element.nodeType !== 1 || element.ownerDocument !== doc || !element.isConnected) {
+      throw runtimeError('CANCELLED', 'The playback anchor is no longer in this document');
+    }
+    const view = doc.defaultView || globalThis;
+    const rect = element.getBoundingClientRect();
+    const viewport = view.visualViewport;
+    const viewportWidth = viewport?.width || view.innerWidth || doc.documentElement.clientWidth;
+    const viewportHeight = viewport?.height || view.innerHeight || doc.documentElement.clientHeight;
+    const offsetX = viewport?.offsetLeft || 0, offsetY = viewport?.offsetTop || 0;
+    if (![rect.left, rect.top, rect.width, rect.height, viewportWidth, viewportHeight].every(Number.isFinite) ||
+        rect.width <= 0 || rect.height <= 0 || viewportWidth <= 0 || viewportHeight <= 0) {
+      throw runtimeError('CANCELLED', 'The playback anchor has no visible layout');
+    }
+    let left = Math.max(rect.left, offsetX), top = Math.max(rect.top, offsetY);
+    let right = Math.min(rect.left + rect.width, offsetX + viewportWidth);
+    let bottom = Math.min(rect.top + rect.height, offsetY + viewportHeight);
+    let hidden = Boolean(doc.hidden);
+    for (let node = element; node; node = node.parentElement) {
+      const style = view.getComputedStyle(node);
+      if (style.display === 'none' || style.visibility === 'hidden' || style.visibility === 'collapse' ||
+          style.contentVisibility === 'hidden' || style.opacity === '0') hidden = true;
+      if (node === element) continue;
+      const clipsX = /^(auto|scroll|hidden|clip)$/.test(style.overflowX || style.overflow);
+      const clipsY = /^(auto|scroll|hidden|clip)$/.test(style.overflowY || style.overflow);
+      if (clipsX || clipsY) {
+        const box = node.getBoundingClientRect();
+        const scaleX = node.offsetWidth > 0 ? box.width / node.offsetWidth : 1;
+        const scaleY = node.offsetHeight > 0 ? box.height / node.offsetHeight : 1;
+        const x = box.left + (node.clientLeft || 0) * scaleX;
+        const y = box.top + (node.clientTop || 0) * scaleY;
+        if (clipsX) {
+          left = Math.max(left, x);
+          right = Math.min(right, x + (node.clientWidth ?? box.width) * scaleX);
+        }
+        if (clipsY) {
+          top = Math.max(top, y);
+          bottom = Math.min(bottom, y + (node.clientHeight ?? box.height) * scaleY);
+        }
+      }
+    }
+    // A native child cannot be painted behind an HTML dialog. Hide it when the
+    // local document puts another element over any part of the visible anchor.
+    if (!hidden && right > left && bottom > top && typeof doc.elementFromPoint === 'function') {
+      const inset = Math.min(2, (right - left) / 4, (bottom - top) / 4);
+      const points = [[(left + right) / 2, (top + bottom) / 2],
+        [left + inset, top + inset], [right - inset, top + inset],
+        [left + inset, bottom - inset], [right - inset, bottom - inset]];
+      hidden = points.some(([x, y]) => {
+        const hit = doc.elementFromPoint(x - offsetX, y - offsetY);
+        // Rounded clipping can expose an ancestor at the card's corners. That
+        // background is not a dialog covering the player.
+        return hit && hit !== element && !element.contains(hit) && !hit.contains?.(element);
+      });
+    }
+    const clamp = (value, max) => Math.max(0, Math.min(max, value));
+    const round = value => Math.round(value * 100) / 100;
+    return Object.fromEntries(Object.entries({
+      x: rect.left - offsetX, y: rect.top - offsetY,
+      width: rect.width, height: rect.height, viewportWidth,
+      clipTop: hidden ? rect.height : clamp(top - rect.top, rect.height),
+      clipRight: clamp(rect.left + rect.width - right, rect.width),
+      clipBottom: clamp(rect.top + rect.height - bottom, rect.height),
+      clipLeft: clamp(left - rect.left, rect.width),
+    }).map(([key, value]) => [key, round(value)]));
+  };
+  const openEmbedded = (url, element, options = {}) => {
+    if (disposed) return Promise.reject(runtimeError('SESSION_ENDED', 'The tool document has ended'));
+    if (options.signal?.aborted) return Promise.reject(embeddedCancelled());
+    if (runtimeState && (!runtimeState.foreground || runtimeState.closing)) {
+      return Promise.reject(runtimeError('SESSION_ENDED', 'Open the tool in the foreground before playing video'));
+    }
+    let initial;
+    try { initial = embeddedBounds(element); } catch (error) { return Promise.reject(error); }
+    for (const old of embeddedPlayers) old.close().catch(() => undefined);
+    if (!embeddedEventsSubscribed) {
+      embeddedEventsSubscribed = true;
+      subscribe('browser.embeddedClosed', data => {
+        if (typeof data?.id !== 'string') return;
+        for (const player of embeddedPlayers) {
+          if (player.id === data.id) player.close().catch(() => undefined);
+          else if (!player.id) player.endedBeforeOpen.add(data.id);
+        }
+      });
+    }
+    return new Promise((resolve, reject) => {
+      const doc = element.ownerDocument;
+      const view = doc.defaultView || globalThis;
+      let closedResolve, observer = null, frame = null, inFlight = false, nextBounds = null;
+      let lastKey = JSON.stringify(initial), sampledAt = -Infinity, rejectOpen = reject;
+      let closePromise = null;
+      const closed = new Promise(done => { closedResolve = done; });
+      const player = {
+        id: null, cancelled: false, endedBeforeOpen: new Set(),
+        close: () => {
+          if (!player.cancelled) {
+            player.cancelled = true;
+            embeddedPlayers.delete(player);
+            options.signal?.removeEventListener('abort', abort);
+            doc.removeEventListener('visibilitychange', visibility);
+            view.removeEventListener('scroll', schedule, true);
+            view.removeEventListener('resize', schedule);
+            view.visualViewport?.removeEventListener('scroll', schedule);
+            view.visualViewport?.removeEventListener('resize', schedule);
+            observer?.disconnect();
+            if (frame !== null) view.cancelAnimationFrame(frame);
+            frame = null;
+            nextBounds = null;
+            rejectOpen?.(embeddedCancelled());
+            rejectOpen = null;
+            closedResolve();
+          }
+          if (player.id && !closePromise) {
+            closePromise = call('browser.closeEmbedded', { id: player.id }).then(() => undefined);
+          }
+          return closePromise || Promise.resolve();
+        },
+      };
+      const abort = () => { player.close().catch(() => undefined); };
+      const visibility = () => { if (doc.hidden) abort(); else schedule(); };
+      const fail = error => {
+        if (rejectOpen) { rejectOpen(error); rejectOpen = null; }
+        player.close().catch(() => undefined);
+      };
+      const update = () => {
+        if (player.cancelled || !player.id || inFlight || !nextBounds) return;
+        const bounds = nextBounds;
+        nextBounds = null;
+        inFlight = true;
+        call('browser.updateEmbedded', { id: player.id, ...bounds }).catch(fail).finally(() => {
+          inFlight = false;
+          if (nextBounds && !player.cancelled) update();
+        });
+      };
+      const measure = timestamp => {
+        frame = null;
+        if (player.cancelled) return;
+        if (!Number.isFinite(timestamp) || timestamp - sampledAt >= 32) {
+          sampledAt = Number.isFinite(timestamp) ? timestamp : sampledAt;
+          try {
+            const bounds = embeddedBounds(element);
+            const key = JSON.stringify(bounds);
+            if (key !== lastKey) { lastKey = key; nextBounds = bounds; update(); }
+          } catch (error) { fail(error); return; }
+        }
+        schedule();
+      };
+      function schedule() {
+        if (!player.cancelled && frame === null) frame = view.requestAnimationFrame(measure);
+      }
+      embeddedPlayers.add(player);
+      options.signal?.addEventListener('abort', abort, { once: true });
+      doc.addEventListener('visibilitychange', visibility);
+      view.addEventListener('scroll', schedule, { capture: true, passive: true });
+      view.addEventListener('resize', schedule, { passive: true });
+      view.visualViewport?.addEventListener('scroll', schedule, { passive: true });
+      view.visualViewport?.addEventListener('resize', schedule, { passive: true });
+      if (typeof view.ResizeObserver === 'function') {
+        observer = new view.ResizeObserver(schedule);
+        observer.observe(element);
+      }
+      if (options.signal?.aborted) abort();
+      // A cancelled native open must settle and be closed before a later open can
+      // replace it; otherwise an old authorization reply can displace a new video.
+      embeddedOpenQueue = embeddedOpenQueue.catch(() => undefined).then(async () => {
+        if (player.cancelled) return;
+        try {
+          initial = embeddedBounds(element);
+          lastKey = JSON.stringify(initial);
+          const opened = await call('browser.openEmbedded', { url, ...initial });
+          if (!opened || typeof opened.id !== 'string' || !opened.id) {
+            throw runtimeError('INVALID_RESPONSE', 'The host did not return a player session');
+          }
+          player.id = opened.id;
+          if (player.cancelled || player.endedBeforeOpen.has(opened.id)) {
+            await player.close();
+            return;
+          }
+          rejectOpen = null;
+          schedule();
+          resolve(Object.freeze({ id: opened.id, close: player.close, closed }));
+        } catch (error) { fail(error); }
+      });
+    });
+  };
+  globalThis.addEventListener('pagehide', () => {
+    for (const player of embeddedPlayers) player.close().catch(() => undefined);
+  });
   const subscribe = (name, listener) => {
     if (typeof listener !== 'function') throw new TypeError('listener must be a function');
     if (lostEvents.has(name)) throw runtimeError('EVENT_BACKLOG_OVERFLOW', 'Some early events were lost', { event: name, droppedCount: lostEvents.get(name) });
@@ -392,7 +590,7 @@
       onTimer: listener => subscribe('background.timer', listener)
     },
     share: { text: text => call('share.text', { text }) },
-    browser: { open: url => call('browser.open', { url }).then(() => undefined) },
+    browser: { open: url => call('browser.open', { url }).then(() => undefined), openEmbedded },
     files: {
       open: mimeTypes => call('files.open', mimeTypes === undefined ? {} : { mimeTypes }),
       save: (suggestedName, mimeType, content) => call('files.save', { suggestedName, mimeType, content: bytes(content) }),

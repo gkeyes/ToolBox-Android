@@ -106,6 +106,7 @@ class RuntimeBridgeSession internal constructor(
     )
     private val sessionCleanup = systemHandlers.sessionCleanup
     private val network = serviceHandlers.network
+    private val embeddedBrowser = systemHandlers.browserEmbedded
 
     private class ReplyDelivery(val epoch: Long, encoded: String, completed: () -> Unit) {
         private val message = AtomicReference<String?>(encoded)
@@ -191,7 +192,7 @@ class RuntimeBridgeSession internal constructor(
                 return@launch
             }
             val survivesNavigation = request.method in RuntimePresentationCoordinator.WRITE_METHODS ||
-                request.method == "runtime.flushComplete" || request.method == "network.closeMedia"
+                request.method == "runtime.flushComplete" || request.method in RuntimePresentationCoordinator.CLEANUP_METHODS
             val currentJob = currentCoroutineContext().job
             if (request.method !in RuntimePresentationCoordinator.WRITE_METHODS) releaseWrite()
             if (!survivesNavigation) {
@@ -217,7 +218,7 @@ class RuntimeBridgeSession internal constructor(
                     RuntimeInboundContext(exactSourceOrigin, isMainFrame),
                     beforeInvoke = { method ->
                         if (method !in RuntimePresentationCoordinator.WRITE_METHODS &&
-                            method != "runtime.flushComplete" && method != "network.closeMedia" &&
+                            method != "runtime.flushComplete" && method !in RuntimePresentationCoordinator.CLEANUP_METHODS &&
                             navigationEpoch.get() != epoch
                         ) throw RuntimeHandlerException(RuntimeRpcErrorCode.CANCELLED, "The tool document navigated")
                     },
@@ -260,6 +261,7 @@ class RuntimeBridgeSession internal constructor(
         val currentEpoch = navigationEpoch.get()
         pendingDeliveries.filter { it.epoch < currentEpoch }.forEach(ReplyDelivery::finish)
         runCatching { network?.cancelStreams() }
+        runCatching { embeddedBrowser?.resetForNavigation() }
     }
 
     internal fun close(webView: WebView) {
@@ -272,6 +274,7 @@ class RuntimeBridgeSession internal constructor(
         events.close()
         pendingState.set(null)
         runCatching { network?.close() }
+        runCatching { embeddedBrowser?.release() }
         runCatching { sessionCleanup?.close() }
         inFlightIds.clear()
         nonWriteJobs.clear()
@@ -289,6 +292,7 @@ class RuntimeBridgeSession internal constructor(
     }
 
     internal fun setForeground(webView: WebView, foreground: Boolean) {
+        if (active.get()) embeddedBrowser?.setForeground(foreground)
         if (active.get() && presentation.setForeground(foreground)) queuePresentation(webView)
     }
 
@@ -296,6 +300,7 @@ class RuntimeBridgeSession internal constructor(
         if (!active.get()) return false
         val ticket = presentation.beginClose(timeoutMillis)
         network?.cancelStreams()
+        embeddedBrowser?.setForeground(false)
         queuePresentation(webView)
         suspend fun drain(): Boolean {
             if (!ticket.result.await()) return false

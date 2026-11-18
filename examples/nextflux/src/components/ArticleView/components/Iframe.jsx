@@ -1,21 +1,28 @@
-import { useEffect, useRef, useState } from "react";
-import { Link2, LoaderCircle, Play, Share2, Video, X } from "lucide-react";
+import { useCallback, useContext, useEffect, useRef, useState } from "react";
+import { ExternalLink, Link2, LoaderCircle, Play, Share2, Video, X } from "lucide-react";
 import { imageSourceCandidates, safeContentUrl } from "@/toolbox/content.js";
 import { approvedImageSource, loadProxyMedia, useSafeImage } from "@/toolbox/media.js";
 import { isHlsPlaylist, isMediaPlaylist, mediaPosterSources, mediaSourceCandidates } from "@/reading/media-sources.mjs";
 import StreamingMedia, { keepMediaInline } from "./StreamingMedia.jsx";
+import EmbeddedVideo from "./EmbeddedVideo.jsx";
+import { MediaPlaybackContext } from "./MediaPlaybackContext.js";
+import { youtubeEmbedSource } from "@/reading/embedded-video.mjs";
 import "./Iframe.css";
 
 export default function Iframe({ domNode, sources, posterSources }) {
   const [status, setStatus] = useState("");
   const [media, setMedia] = useState(null);
   const [stream, setStream] = useState(null);
+  const [embedded, setEmbedded] = useState(false);
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState(null);
   const source = domNode?.attribs?.["data-media-url"] || domNode?.attribs?.src;
   const url = safeContentUrl(source);
   const kind = domNode?.attribs?.["data-media-kind"] || domNode?.name;
   const label = kind === "audio" ? "音频" : "视频";
+  const playbackAllowed = useContext(MediaPlaybackContext);
+  const youtube = kind === "iframe" ? youtubeEmbedSource(url) : null;
+  const canEmbed = Boolean(youtube && typeof window.ToolBox?.browser?.openEmbedded === "function");
   const candidates = mediaSourceCandidates(sources?.length ? {} : { url }, Array.isArray(sources) ? sources : []);
   const hlsSources = candidates.filter(isHlsPlaylist);
   const directSources = candidates.filter((item) => !isMediaPlaylist(item) && approvedImageSource(item.url)?.kind === "proxy" && (!item.type || item.type.toLowerCase().startsWith(`${kind}/`) || /^(?:application\/octet-stream|binary\/octet-stream)$/i.test(item.type)));
@@ -24,7 +31,7 @@ export default function Iframe({ domNode, sources, posterSources }) {
   const posters = kind === "audio" ? [] : posterSources?.length
     ? imageSourceCandidates({ "data-image-candidates": JSON.stringify(posterSources) }, url)
     : mediaPosterSources(domNode?.attribs, url);
-  const { containerRef: posterRef, url: posterUrl, onError: posterError } = useSafeImage(posters, false, Boolean(media || stream));
+  const { containerRef: posterRef, url: posterUrl, onError: posterError } = useSafeImage(posters, false, Boolean(media || stream || embedded));
   const handleRef = useRef(null);
   const controllerRef = useRef(null);
   const loadingRef = useRef(false);
@@ -33,6 +40,7 @@ export default function Iframe({ domNode, sources, posterSources }) {
     generation.current += 1;
     setMedia(null);
     setStream(null);
+    setEmbedded(false);
     setLoading(false);
     setStatus("");
     setProgress(null);
@@ -72,20 +80,36 @@ export default function Iframe({ domNode, sources, posterSources }) {
       if (generation.current === currentGeneration) { loadingRef.current = false; setLoading(false); setProgress(null); controllerRef.current = null; }
     }
   };
-  const close = () => {
+  const close = useCallback(() => {
     generation.current += 1;
     controllerRef.current?.abort(); controllerRef.current = null;
     handleRef.current?.release(); handleRef.current = null;
     loadingRef.current = false;
-    setMedia(null); setStream(null); setLoading(false); setProgress(null); setStatus("");
-  };
+    setMedia(null); setStream(null); setEmbedded(false); setLoading(false); setProgress(null); setStatus("");
+  }, []);
+  useEffect(() => { if (!playbackAllowed) close(); }, [playbackAllowed, close]);
   const start = () => {
-    if (loadingRef.current) return;
+    if (loadingRef.current || !playbackAllowed) return;
+    if (canEmbed) {
+      generation.current += 1;
+      loadingRef.current = true;
+      setEmbedded(true); setLoading(true); setStatus(""); setProgress(null);
+      return;
+    }
     if (!hlsSources.length) { void load(); return; }
     generation.current += 1;
     loadingRef.current = true;
     setLoading(true); setStatus(""); setProgress(null);
     setStream({ source: hlsSources[0].url, index: 0, generation: generation.current });
+  };
+  const embeddedFailure = (error) => {
+    loadingRef.current = false;
+    setEmbedded(false); setLoading(false);
+    setStatus(["PERMISSION_DENIED", "NOT_DECLARED"].includes(error?.code)
+      ? "请在小工具权限中开启浏览器权限后重试。"
+      : error?.code === "UNSUPPORTED"
+        ? "请更新 ToolBox 后在正文播放，也可在浏览器中观看。"
+        : "播放器加载失败，请重试，或在浏览器中观看。");
   };
   const streamFailure = (error) => {
     if (!stream || stream.generation !== generation.current) return;
@@ -109,7 +133,8 @@ export default function Iframe({ domNode, sources, posterSources }) {
       if (!link) throw new Error("媒体地址无效。");
       if (action === "open") {
         if (!window.ToolBox?.browser?.open) throw new Error("browser unavailable");
-        await window.ToolBox.browser.open(link);
+        close();
+        await window.ToolBox.browser.open(youtube?.watchUrl || link);
       } else if (action === "copy") {
         if (!window.ToolBox?.clipboard?.writeText) throw new Error("clipboard unavailable");
         await window.ToolBox.clipboard.writeText(link);
@@ -124,7 +149,9 @@ export default function Iframe({ domNode, sources, posterSources }) {
     <div ref={posterRef} className="article-video-card not-prose">
       <div className="article-video-stage">
         {posterUrl && <img className="article-video-poster" src={posterUrl} alt="" decoding="async" onError={() => posterError(posterUrl)} />}
-        {stream ? (
+        {embedded && playbackAllowed && canEmbed ? (
+          <EmbeddedVideo source={youtube.embedUrl} onReady={() => { loadingRef.current = false; setLoading(false); }} onFailure={embeddedFailure} onClose={close} />
+        ) : stream ? (
           <div className="article-video-player"><StreamingMedia source={stream.source} kind={kind} poster={posterUrl || undefined} autoPlay onReady={() => { if (stream.generation === generation.current) { loadingRef.current = false; setLoading(false); } }} onFailure={streamFailure} /></div>
         ) : media ? (
           <video controls playsInline autoPlay preload="metadata" className="article-video-player" poster={posterUrl || undefined} src={media.url} onError={playbackError} ref={keepMediaInline} />
@@ -132,10 +159,10 @@ export default function Iframe({ domNode, sources, posterSources }) {
           <>
             <span className="article-video-shade" aria-hidden="true" />
             <span className="article-video-badge"><Video aria-hidden="true" />视频</span>
-            {canLoad ? <button type="button" className="article-video-launch" disabled={loading} onClick={start} aria-label={loading ? "正在加载视频" : "播放视频"}>
+            {canLoad || canEmbed ? <button type="button" className="article-video-launch" disabled={loading || !playbackAllowed} onClick={start} aria-label={loading ? "正在加载视频" : "播放视频"}>
               <span className="article-video-play">{loading ? <LoaderCircle className="article-video-spinner" aria-hidden="true" /> : <Play fill="currentColor" aria-hidden="true" />}</span>
               <span className="article-video-caption">{loading ? "正在加载…" : "播放视频"}</span>
-            </button> : url ? <button type="button" className="article-video-launch" onClick={() => act("open")} aria-label="在浏览器中播放视频">
+            </button> : youtube ? <div className="article-video-unavailable"><Video aria-hidden="true" /><span>更新 ToolBox 后可在正文播放</span></div> : url ? <button type="button" className="article-video-launch" disabled={!playbackAllowed} onClick={() => act("open")} aria-label="在浏览器中播放视频">
               <span className="article-video-play"><Play fill="currentColor" aria-hidden="true" /></span>
               <span className="article-video-caption">在浏览器中播放</span>
             </button> : <div className="article-video-unavailable"><Video aria-hidden="true" /><span>暂无可用视频</span></div>}
@@ -143,10 +170,12 @@ export default function Iframe({ domNode, sources, posterSources }) {
         )}
       </div>
       {url && <div className="article-video-actions">
-        {(loading || media || stream) && <button type="button" className="article-video-close" onClick={close} aria-label={loading ? "取消加载" : "关闭媒体"}><X aria-hidden="true" />{loading ? "取消" : "收起"}</button>}
+        {(loading || media || stream || embedded) && <button type="button" className="article-video-close" onClick={close} aria-label={loading ? "取消加载" : "关闭媒体"}><X aria-hidden="true" />{loading ? "取消" : "收起"}</button>}
+        {youtube && <button type="button" disabled={!playbackAllowed} onClick={() => act("open")}><ExternalLink aria-hidden="true" />在浏览器中观看</button>}
         <button type="button" onClick={() => act("copy")}><Link2 aria-hidden="true" />复制链接</button>
         <button type="button" onClick={() => act("share")}><Share2 aria-hidden="true" />分享链接</button>
       </div>}
+      {embedded && loading && <p role="status" className="article-video-status">正在加载播放器…</p>}
       {loading && progress && <p role="status" className="article-video-status">已下载 {(progress.receivedBytes / 1048576).toFixed(1)} MB{progress.totalBytes ? ` / ${(progress.totalBytes / 1048576).toFixed(1)} MB` : ""}</p>}
       {status && <p role="status" className="article-video-status">{status}</p>}
     </div>

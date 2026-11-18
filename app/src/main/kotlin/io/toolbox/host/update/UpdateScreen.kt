@@ -19,6 +19,7 @@ import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -29,9 +30,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.LiveRegionMode
-import androidx.compose.ui.semantics.liveRegion
-import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.progressBarRangeInfo
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -47,6 +51,7 @@ import io.toolbox.core.ui.component.ToolBoxSecondaryButton
 import io.toolbox.core.ui.component.ToolBoxText
 import io.toolbox.core.ui.component.ToolBoxTextButton
 import io.toolbox.core.ui.component.ToolBoxTone
+import io.toolbox.core.ui.component.ToolBoxToasts
 import io.toolbox.core.ui.component.rememberToolBoxHaptics
 import io.toolbox.core.ui.component.toolBoxPressFeedback
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
@@ -63,11 +68,21 @@ import io.toolbox.host.ui.ContentSectionHeader
 import io.toolbox.host.ui.mergePadding
 import io.toolbox.host.ui.rememberTitleBoundListState
 import io.toolbox.host.ui.toolVisual
+import java.text.DateFormat
+import java.util.Date
 
 @Composable
 internal fun UpdateScreen(viewModel: UpdateViewModel, onBack: () -> Unit, onReady: () -> Unit) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    var announcedChecks by remember(viewModel) { mutableLongStateOf(state.completedChecks) }
+    LaunchedEffect(state.completedChecks) {
+        // A fast check may finish between frames, and its feed may be unchanged. Still acknowledge it.
+        if (state.completedChecks > announcedChecks) {
+            (state.error ?: state.checkSummary)?.let { ToolBoxToasts.show(context, it, long = state.error != null) }
+        }
+        announcedChecks = state.completedChecks
+    }
     var canInstall by remember { mutableStateOf(ApkInstaller.canInstall(context)) }
     // The user may grant "install unknown apps" in system settings and come back.
     LifecycleResumeEffect(context) {
@@ -118,15 +133,24 @@ internal fun UpdateContent(
         title = "软件更新",
         onBack = onBack,
         actions = { glassState ->
-            // Refresh is disabled while a check is already running.
-            ToolBoxGlassIconButton(
-                icon = ToolBoxIconKey.Refresh,
-                contentDescription = "重新检查",
-                onClick = onRefresh,
-                glassState = glassState,
-                modifier = Modifier.testTag("update_refresh"),
-                enabled = !state.loading,
-            )
+            Box(contentAlignment = Alignment.Center) {
+                ToolBoxGlassIconButton(
+                    icon = ToolBoxIconKey.Refresh,
+                    contentDescription = if (state.loading) "正在检查更新" else "重新检查",
+                    onClick = onRefresh,
+                    glassState = glassState,
+                    modifier = Modifier.testTag("update_refresh").then(
+                        if (state.loading) Modifier.semantics {
+                            stateDescription = "正在检查更新"
+                            progressBarRangeInfo = ProgressBarRangeInfo.Indeterminate
+                        } else Modifier,
+                    ),
+                    enabled = !state.loading,
+                    iconTint = if (state.loading) Color.Transparent else null,
+                )
+                // Keep the glass footprint; this shared spinner remains legible outside the disabled button.
+                if (state.loading) ToolBoxBusyIndicator(Modifier.size(20.dp))
+            }
         },
     ) { padding ->
         LazyColumn(
@@ -134,6 +158,31 @@ internal fun UpdateContent(
             modifier = Modifier.fillMaxSize().testTag("update_page"),
             contentPadding = mergePadding(padding, PaddingValues(spacing.md)),
         ) {
+            val feedback = when {
+                state.loading -> "正在检查更新…"
+                state.error != null -> state.error
+                else -> state.checkSummary
+            }
+            if (feedback != null) {
+                item("check-feedback") {
+                    Column(Modifier.padding(bottom = spacing.md).semantics { liveRegion = LiveRegionMode.Polite }) {
+                        val checkedAt = state.lastCheckedAt?.takeUnless { state.loading }?.let {
+                            DateFormat.getTimeInstance(DateFormat.MEDIUM).format(Date(it))
+                        }
+                        ToolBoxBanner(
+                            if (checkedAt != null) "$feedback\n检查时间 $checkedAt" else feedback,
+                            if (state.error != null) ToolBoxTone.Danger else ToolBoxTone.Info,
+                            modifier = Modifier.testTag("update_check_feedback"),
+                            icon = when {
+                                state.loading -> ToolBoxIconKey.Refresh
+                                state.error == null -> ToolBoxIconKey.Check
+                                else -> null
+                            },
+                        )
+                        if (state.error != null) ToolBoxTextButton("重试", onRefresh, enabled = !state.loading, outlined = false)
+                    }
+                }
+            }
             item("channel-title") { GroupHeader("更新渠道", first = true) }
             item("channel") {
                 ToolBoxGroupedSurface(Modifier.selectableGroup()) {
@@ -169,21 +218,6 @@ internal fun UpdateContent(
                             icon = if (message.success) ToolBoxIconKey.Check else null,
                         )
                         ToolBoxTextButton("知道了", onDismissMessage, outlined = false)
-                    }
-                }
-            }
-            state.error?.let { error ->
-                item("error") {
-                    Column(Modifier.padding(top = 16.dp)) {
-                        ToolBoxBanner(error, ToolBoxTone.Danger, Modifier.semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite })
-                        ToolBoxTextButton("重试", onRefresh, outlined = false)
-                    }
-                }
-            }
-            if (state.loading && state.feed == null) {
-                item("loading") {
-                    Box(Modifier.fillMaxWidth().padding(spacing.lg), contentAlignment = Alignment.Center) {
-                        ToolBoxBusyIndicator(Modifier.size(24.dp))
                     }
                 }
             }

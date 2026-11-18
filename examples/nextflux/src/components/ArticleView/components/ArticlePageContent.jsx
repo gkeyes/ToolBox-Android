@@ -7,6 +7,7 @@ import ArticleHeader from "@/components/ArticleView/components/ArticleHeader.jsx
 import ProgressiveArticle from "@/components/ArticleView/components/ProgressiveArticle.jsx";
 import Attachments from "@/components/ArticleView/components/Attachments.jsx";
 import Iframe from "@/components/ArticleView/components/Iframe.jsx";
+import { MediaPlaybackContext } from "./MediaPlaybackContext.js";
 import { imageGalleryActive } from "@/stores/articlesStore.js";
 import { settingsState } from "@/stores/settingsStore.js";
 import { currentThemeMode, themeState } from "@/stores/themeStore.js";
@@ -41,6 +42,7 @@ const ArticlePageContent = forwardRef(function ArticlePageContent(
   const isStoneTheme = lightTheme === "stone" && currentMode === "light";
 
   return (
+    <MediaPlaybackContext.Provider value={!passive && !readingPaused && foreground}>
     <div
       ref={ref}
       className={cn(
@@ -105,6 +107,7 @@ const ArticlePageContent = forwardRef(function ArticlePageContent(
         </div>
       </PhotoProvider>
     </div>
+    </MediaPlaybackContext.Provider>
   );
 });
 
