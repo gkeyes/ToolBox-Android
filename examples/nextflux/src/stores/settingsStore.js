@@ -1,6 +1,7 @@
 import { persistentAtom } from "@nanostores/persistent";
 import { deferPreferenceWrites, flushPreferences } from "../toolbox/preferences.js";
 import { DEFAULT_RECENT_CACHE_LIMIT, normalizeRecentCacheLimit } from "../toolbox/recent-cache.mjs";
+import { normalizeAiContextWindow } from "../toolbox/ai-context.mjs";
 
 const defaultValue = {
   lineHeight: 1.8,
@@ -43,6 +44,7 @@ const defaultValue = {
   aiApiKey: "",
   aiBaseUrl: "https://api.openai.com/v1",
   aiModel: "gpt-4o-mini",
+  aiContextWindow: "auto",
   autoBoardEnabled: true,
   speechApiKey: "",
   speechRegion: "global",
@@ -71,6 +73,7 @@ export function decodeSettings(str) {
   return {
     ...defaultValue, ...storedValue,
     recentCacheLimit: String(normalizeRecentCacheLimit(storedValue.recentCacheLimit)),
+    aiContextWindow: normalizeAiContextWindow(storedValue.aiContextWindow),
     autoBoardEnabled: storedValue.autoBoardEnabled !== false,
   };
 }
@@ -79,6 +82,9 @@ export const settingsState = persistentAtom("settings", defaultValue, {
   encode: (value) => {
     const filteredValue = Object.keys(value).reduce((acc, key) => {
       if (key in defaultValue) {
+        // Missing means auto. Keep upgraded preferences byte-compatible and
+        // avoid a native write just from mounting the new default field.
+        if (key === "aiContextWindow" && value[key] === "auto") return acc;
         acc[key] = value[key];
       }
       return acc;

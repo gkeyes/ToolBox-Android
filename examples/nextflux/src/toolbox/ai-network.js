@@ -18,11 +18,13 @@ function safeError(code, status) {
     INVALID_RESPONSE: "AI 服务返回的数据格式无效。",
     INCOMPLETE_STREAM: "AI 响应意外中断，请重新生成。",
     NETWORK_BLOCKED: "AI 服务连接失败，请检查 HTTPS 地址。",
+    CONTEXT_LENGTH_EXCEEDED: "本次输入超过 AI 服务的上下文容量，请调低模型上下文设置后重试。",
   };
-  const error = new Error(status ?
+  const contextLimit = code === "CONTEXT_LENGTH_EXCEEDED";
+  const error = new Error(status && !contextLimit ?
     (status === 401 ? "AI API Key 无效，请检查设置。" : `AI 服务请求失败（HTTP ${status}），请稍后重试。`) :
     messages[code] || "无法连接 AI 服务，请检查网络和设置后重试。");
-  error.code = status ? "HTTP_ERROR" : (Object.hasOwn(messages, code) ? code : "NETWORK_UNAVAILABLE");
+  error.code = status && !contextLimit ? "HTTP_ERROR" : (Object.hasOwn(messages, code) ? code : "NETWORK_UNAVAILABLE");
   if (status) error.status = status;
   return error;
 }
@@ -48,6 +50,69 @@ function waitForRead(promise, signal) {
     signal.addEventListener("abort", abort, { once: true });
     promise.then(resolve, reject).finally(() => signal.removeEventListener("abort", abort));
   });
+}
+
+// Keep provider errors private. Only this narrow category permits the board
+// to split an input and try again; a generic 400, quota or rate-limit failure
+// must never turn into more AI requests.
+function isContextLimit(value) {
+  const error = value?.error;
+  if (!error || typeof error !== "object" || Array.isArray(error)) return false;
+  if (error.code === "context_length_exceeded") return true;
+  if (error.code != null && ![400, 413, 422, "invalid_request_error", "invalid_argument"].includes(error.code)) return false;
+  if (error.type && error.type !== "invalid_request_error") return false;
+  if (error.status && error.status !== "INVALID_ARGUMENT") return false;
+  const message = typeof error.message === "string" ? error.message : "";
+  const number = (text) => Number(text.replaceAll(",", ""));
+  // OpenAI / compatible gateways: compare requested tokens to the stated
+  // context length instead of matching the word "context" alone.
+  const openai = message.match(/maximum context length (?:is|of) ([\d,]+) tokens\b[\s\S]{0,200}?(?:you requested(?: about)?|your messages resulted in) ([\d,]+) tokens\b/i);
+  if (openai && number(openai[2]) > number(openai[1])) return true;
+  // Gemini's INVALID_ARGUMENT response names both the input count and limit.
+  const gemini = message.match(/input token count \(([\d,]+)\) exceeds the maximum number of tokens allowed \(([\d,]+)\)/i);
+  return Boolean(gemini && number(gemini[1]) > number(gemini[2]));
+}
+
+const ERROR_BODY_BYTES = 16 * 1024;
+const ERROR_BODY_TIMEOUT = 2000;
+async function httpError(network, streamId, status, signal) {
+  const fallback = safeError(null, status);
+  if (![400, 413, 422].includes(status) || !streamId) return fallback;
+  let timer;
+  let abort;
+  let accepting = true;
+  const stopped = new Promise((resolve, reject) => {
+    timer = setTimeout(() => resolve(false), ERROR_BODY_TIMEOUT);
+    abort = () => reject(safeError("CANCELLED"));
+    signal?.addEventListener("abort", abort, { once: true });
+    if (signal?.aborted) abort();
+  });
+  const inspect = async () => {
+    const decoder = new TextDecoder("utf-8", { fatal: true });
+    let remaining = ERROR_BODY_BYTES;
+    let text = "";
+    // Bound immediate empty chunks too: a broken bridge must not starve the
+    // deadline timer by resolving reads forever without yielding any bytes.
+    for (let reads = 0; accepting && !signal?.aborted && remaining > 0 && reads < 64; reads += 1) {
+      const chunk = await network.readStream(streamId, { expectedChunkBytes: remaining });
+      if (!accepting || signal?.aborted) return false;
+      const bytes = chunk?.data || new Uint8Array();
+      if (!(bytes instanceof Uint8Array) || bytes.byteLength > remaining) return false;
+      remaining -= bytes.byteLength;
+      text += decoder.decode(bytes, { stream: !chunk.done });
+      if (chunk.done) return isContextLimit(JSON.parse(text));
+    }
+    return false;
+  };
+  try {
+    const limited = await Promise.race([inspect().catch(() => false), stopped]);
+    if (signal?.aborted) throw safeError("CANCELLED");
+    return limited ? safeError("CONTEXT_LENGTH_EXCEEDED", status) : fallback;
+  } finally {
+    accepting = false;
+    clearTimeout(timer);
+    signal?.removeEventListener("abort", abort);
+  }
 }
 
 function textFragments(value, depth = 0) {
@@ -108,7 +173,7 @@ export async function streamChatCompletion({ baseUrl, apiKey, body, signal, onDe
     catch (error) { throw safeError(signal?.aborted ? "CANCELLED" : error?.code); }
     streamId = response.streamId;
     if (signal?.aborted) throw safeError("CANCELLED");
-    if (response.status < 200 || response.status >= 300) throw safeError(null, response.status);
+    if (response.status < 200 || response.status >= 300) throw await httpError(network, streamId, response.status, signal);
     const decoder = new TextDecoder("utf-8", { fatal: true });
     let pending = "";
     let eventLines = [];
@@ -125,7 +190,7 @@ export async function streamChatCompletion({ baseUrl, apiKey, body, signal, onDe
       if (event.trim() === "[DONE]") { complete = true; return; }
       let json;
       try { json = JSON.parse(event); } catch { throw safeError("INVALID_RESPONSE"); }
-      if (json.error) throw safeError("INVALID_RESPONSE");
+      if (json.error) throw safeError(isContextLimit(json) ? "CONTEXT_LENGTH_EXCEEDED" : "INVALID_RESPONSE");
       const choice = json.choices?.[0];
       const reasoning = extractReasoningText(choice);
       if (reasoning && typeof onReasoning === "function") onReasoning(reasoning);

@@ -163,8 +163,13 @@ export function createReportManager({ repository, selectArticles, recoverIds = a
     const operation = (async () => {
       await ready;
       let jobId = null;
+      // Optional input policy and transport are captured with the fingerprint
+      // once per run. They stay in memory: never persist credentials or a
+      // transport closure in the durable job/checkpoint.
+      let runConfig;
       await change(async (next) => {
         const config = configuration();
+        runConfig = config;
         if (!config.aiReady || (!config.enabled && !force)) return;
         if (next.job) {
           if (next.job.status === "error" && !retry) return;
@@ -208,6 +213,7 @@ export function createReportManager({ repository, selectArticles, recoverIds = a
         if (!published) {
           if (state.job.phase === "analysis") {
             const result = await generate({ articles: copy(state.job.articles), signal: abort.signal,
+              inputPolicy: runConfig.inputPolicy, stream: runConfig.stream,
               checkpoint: copy(state.job.checkpoint),
               onProgress: (value) => { if (live()) { progress = value; publish(); } },
               onCheckpoint: (value) => change((next) => {
@@ -221,7 +227,7 @@ export function createReportManager({ repository, selectArticles, recoverIds = a
             progress = { stage: "digest", total: state.job.articles.length, text: "" }; publish();
             const digest = await writeDigest(state.job.result, abort.signal, (text) => {
               if (live()) { progress = { ...progress, text }; publish(); }
-            });
+            }, runConfig.stream);
             check();
             if (!String(digest || "").trim()) throw new Error("AI 没有返回报告正文，请重试。");
             await change((next) => {

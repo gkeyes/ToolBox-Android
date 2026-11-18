@@ -93,6 +93,36 @@ test("production startup restores persisted settings and secure keys without wri
   expect(pageErrors).toEqual([]);
 });
 
+for (const contextWindow of ["auto", "1000000"]) {
+  test(`context preference ${contextWindow} restores without writes and a deliberate change survives reload`, async ({ page }) => {
+    await installNativeBoundary(page, { persistStorage: true, settings: { ...STORED_SETTINGS, aiContextWindow: contextWindow } });
+    await page.goto(PRODUCTION_URL);
+    await expect(page.getByRole("heading", { name: "NextFlux" })).toBeVisible();
+    const restored = await page.evaluate(async () => {
+      await window.__startupNative.flush();
+      return { context: (await import("/src/stores/settingsStore.js")).settingsState.get().aiContextWindow, writes: window.__startupNative.writes };
+    });
+    expect(restored).toEqual({ context: contextWindow, writes: [] });
+    const next = contextWindow === "auto" ? "1000000" : "auto";
+    const updated = await page.evaluate(async (value) => {
+      await (await import("/src/stores/settingsStore.js")).updateSettings({ aiContextWindow: value });
+      await window.__startupNative.flush();
+      return { stored: JSON.parse(window.__startupNative.persistedPreferences().settings), writes: window.__startupNative.writes };
+    }, next);
+    expect(updated.writes).toHaveLength(1);
+    expect(updated.writes[0]).toMatchObject({ operation: "storage.set", changedSettingsFields: ["aiContextWindow"], plainSecretLeak: false });
+    if (next === "auto") expect(updated.stored).not.toHaveProperty("aiContextWindow");
+    else expect(updated.stored.aiContextWindow).toBe(next);
+    await page.reload();
+    await expect(page.getByRole("heading", { name: "NextFlux" })).toBeVisible();
+    const reloaded = await page.evaluate(async () => {
+      await window.__startupNative.flush();
+      return { context: (await import("/src/stores/settingsStore.js")).settingsState.get().aiContextWindow, writes: window.__startupNative.writes };
+    });
+    expect(reloaded).toEqual({ context: next, writes: [] });
+  });
+}
+
 test("secure-storage permission denial reports the denied permission, not device space", async ({ page }) => {
   await installNativeBoundary(page, { denySecure: true });
   await page.goto(PRODUCTION_URL);

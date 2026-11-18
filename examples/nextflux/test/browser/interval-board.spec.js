@@ -132,12 +132,13 @@ test("151 new unread items start a silent report, with later arrivals kept for t
   await expect.poll(() => page.evaluate(async () => (await import("/src/toolbox/board/historyStore.js")).reportHistory.get().reports.length)).toBe(1);
   const completed = await page.evaluate(async () => {
     const history = (await import("/src/toolbox/board/historyStore.js")).reportHistory.get();
-    return { history, calls: window.__intervalTest.messages.length, reads: window.__intervalTest.reads };
+    return { history, calls: window.__intervalTest.messages.length, stages: window.__intervalTest.messages.map((call) => call.kind), reads: window.__intervalTest.reads };
   });
   expect(completed.history.pendingCount).toBe(10);
   expect(completed.history.reports[0]).toMatchObject({ kind: "interval", total: 151, includedCount: 1, unseen: true });
   expect(completed.history.reports[0].expiresAt - completed.history.reports[0].completedAt).toBe(48 * 60 * 60 * 1000);
   expect(completed.reads).toEqual([]);
+  expect(completed.stages).toEqual(["articles", "digest"], "the period needs one analysis and one written report, without an unnecessary merge");
   await expect(page.locator(".nf-board-summary")).toHaveCount(0);
 
   // Completion adds a report to the picker. Choosing it and reading its
@@ -402,5 +403,124 @@ test("saved report menus follow the theme, fit large phone text, and keep readin
   expect(await page.evaluate(() => window.__intervalTest.messages.length)).toBe(initialCalls);
   expect(await page.evaluate(() => window.__intervalTest.reads)).toEqual([]);
   expect(await page.evaluate(async () => (await (await import("/src/db/storage.js")).getCachedArticleMetadata({ filter: "unread" })).map((article) => article.id).sort())).toEqual([9001, 9002, 9003, 9004]);
+  expect(errors).toEqual([]);
+});
+
+test("board scope tabs keep one pill without overlap while touching, switching, and using large text", async ({ page }, testInfo) => {
+  const errors = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await prepareIntervals(page);
+  await page.evaluate(() => { location.hash = "#/board"; });
+  await expect(page.getByText("今天还没有未读文章。", { exact: true })).toBeVisible();
+  await seedReport(page, { id: "scope-style-report", kind: "interval" });
+  await page.evaluate(async () => {
+    const manager = await (await import("/src/toolbox/board/historyStore.js")).initializeBoardHistory();
+    const report = await manager.readReport("scope-style-report");
+    await manager.saveReport({ ...report, unseen: true });
+  });
+  const navigation = page.locator(".nf-board-navigation");
+  const today = navigation.getByRole("tab", { name: "今日", exact: true });
+  const reports = navigation.getByRole("tab", { name: /历史报告/ });
+  await expect(navigation.locator(".nf-board-history-dot")).toBeVisible();
+  const calls = await page.evaluate(() => window.__intervalTest.messages.length);
+
+  const settled = () => expect.poll(() => navigation.evaluate((element) =>
+    element.getAnimations({ subtree: true }).some((animation) => animation.playState === "running"))).toBe(false);
+  const onePill = async () => {
+    await expect(navigation.locator('.tabs__tab[aria-selected="true"]')).toHaveCount(1);
+    await expect(navigation.locator(".tabs__indicator")).toHaveCount(1);
+    const layout = await navigation.evaluate((element) => {
+      const box = (node) => {
+        const rect = node.getBoundingClientRect();
+        return { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom,
+          height: rect.height, overflow: node.scrollWidth > node.clientWidth + 1 };
+      };
+      return {
+        viewport: innerWidth, pageOverflow: document.documentElement.scrollWidth > innerWidth + 1,
+        tabs: [...element.querySelectorAll('[role="tab"]')].map(box),
+        selected: box(element.querySelector('[role="tab"][aria-selected="true"]')),
+        indicator: box(element.querySelector(".tabs__indicator")),
+        tabPaint: [...element.querySelectorAll('[role="tab"]')].map((node) => {
+          const style = getComputedStyle(node);
+          return { image: style.backgroundImage, color: style.backgroundColor, scale: style.scale };
+        }),
+      };
+    });
+    expect(layout.pageOverflow).toBe(false);
+    expect(layout.tabs[0].right).toBeLessThanOrEqual(layout.tabs[1].left + 1);
+    for (const tab of layout.tabs) {
+      expect(tab.left).toBeGreaterThanOrEqual(0);
+      expect(tab.right).toBeLessThanOrEqual(layout.viewport);
+      expect(tab.height).toBeGreaterThanOrEqual(44);
+      expect(tab.overflow).toBe(false);
+    }
+    expect(layout.indicator.left).toBeGreaterThanOrEqual(layout.selected.left - 1);
+    expect(layout.indicator.right).toBeLessThanOrEqual(layout.selected.right + 1);
+    expect(layout.indicator.top).toBeGreaterThanOrEqual(layout.selected.top - 1);
+    expect(layout.indicator.bottom).toBeLessThanOrEqual(layout.selected.bottom + 1);
+    expect(layout.tabPaint).toEqual([
+      { image: "none", color: "rgba(0, 0, 0, 0)", scale: "1" },
+      { image: "none", color: "rgba(0, 0, 0, 0)", scale: "1" },
+    ]);
+  };
+
+  for (const view of [
+    { name: "phone-light", theme: "light", width: 400, fontSize: "16px" },
+    { name: "phone-dark", theme: "dark", width: 400, fontSize: "16px" },
+    { name: "large-light", theme: "light", width: 320, fontSize: "24px" },
+    { name: "large-dark", theme: "dark", width: 320, fontSize: "24px" },
+  ]) {
+    await test.step(view.name, async () => {
+      await page.setViewportSize({ width: view.width, height: 900 });
+      await page.evaluate(async ({ theme, fontSize }) => {
+        (await import("/src/stores/themeStore.js")).setTheme(theme);
+        document.documentElement.style.fontSize = fontSize;
+      }, view);
+      await today.click();
+      await expect(today).toHaveAttribute("aria-selected", "true");
+      await settled();
+      await onePill();
+
+      // React Aria commits touch selection on release. Holding the other tab
+      // must not paint a second blue pill beside the existing white one.
+      const bounds = await reports.boundingBox();
+      const pointer = { pointerId: 71, pointerType: "touch", isPrimary: true, button: 0,
+        clientX: bounds.x + bounds.width / 2, clientY: bounds.y + bounds.height / 2,
+        width: 8, height: 8, pressure: 0.5, detail: 1 };
+      await reports.dispatchEvent("pointerdown", { ...pointer, buttons: 1 });
+      await expect(reports).toHaveAttribute("data-nf-pressed", "true");
+      await expect(today).toHaveAttribute("aria-selected", "true");
+      await expect(reports).toHaveAttribute("aria-selected", "false");
+      await onePill();
+      await navigation.screenshot({ path: testInfo.outputPath(`board-scope-held-${view.name}.png`) });
+      await reports.dispatchEvent("pointerup", { ...pointer, buttons: 0, pressure: 0 });
+      await reports.dispatchEvent("click", { detail: 1, button: 0 });
+      await expect(reports).toHaveAttribute("aria-selected", "true");
+      await expect(reports).not.toHaveAttribute("data-nf-pressed", "true");
+      await settled();
+      await onePill();
+
+      await reports.focus();
+      await page.keyboard.press("ArrowLeft");
+      await expect(today).toHaveAttribute("aria-selected", "true");
+      await expect(today).toBeFocused();
+      await settled();
+
+      // Some Android WebViews expose only touch events to the glass helper.
+      // Exercise that supported path without fabricating selected CSS flags.
+      await reports.evaluate((element) => {
+        const rect = element.getBoundingClientRect();
+        const touch = new Touch({ identifier: 72, target: element,
+          clientX: rect.left + rect.width / 2, clientY: rect.top + rect.height / 2 });
+        element.dispatchEvent(new TouchEvent("touchstart", { bubbles: true, touches: [touch], targetTouches: [touch], changedTouches: [touch] }));
+      });
+      await expect(reports).toHaveAttribute("data-nf-pressed", "true");
+      await onePill();
+      await reports.dispatchEvent("touchcancel", { touches: [], targetTouches: [], changedTouches: [] });
+      await expect(reports).not.toHaveAttribute("data-nf-pressed", "true");
+    });
+  }
+  expect(await page.evaluate(() => window.__intervalTest.messages.length)).toBe(calls);
+  expect(await page.evaluate(() => window.__intervalTest.reads)).toEqual([]);
   expect(errors).toEqual([]);
 });

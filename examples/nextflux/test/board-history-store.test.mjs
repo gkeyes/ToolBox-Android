@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { register } from "node:module";
 import { atom } from "nanostores";
+import { boardInputPolicy } from "../src/toolbox/ai-context.mjs";
 
 // Exercise the real history binding, manager, document storage and generator.
 // Only the external account/RSS/runtime inputs and AI/native transports are
@@ -192,6 +193,79 @@ test("turning automatic reports off keeps arrivals journaled and the manual acti
   const completed = await f.repository().loadState();
   assert.deepEqual(completed.pendingIds, []);
   assert.equal(completed.job, null);
+});
+
+test("changing capacity leaves the active report intact and applies only to the next period without persisting its transport or key", { timeout: 5000 }, async (t) => {
+  const f = await fixture(t, { automatic: true });
+  f.settingsState.set({ ...f.settingsState.get(), aiContextWindow: "1000000" });
+  const originalPolicy = boardInputPolicy(f.settingsState.get());
+  await f.history.initializeBoardHistory();
+  const firstEntered = deferred();
+  const firstGate = f.gate();
+  const secondEntered = deferred();
+  const secondGate = f.gate();
+  const calls = [];
+  let analyses = 0;
+  let firstSignal;
+  const transport = f.stream;
+  f.stream = async (messages, options) => {
+    const digest = messages[1].content.startsWith("主题：");
+    calls.push({ digest, context: options.configuration.aiContextWindow });
+    if (!digest && ++analyses === 1) {
+      firstSignal = options.signal;
+      firstEntered.resolve();
+      await firstGate.promise;
+    } else if (!digest && analyses === 2) {
+      secondEntered.resolve();
+      await secondGate.promise;
+    }
+    return transport(messages, options);
+  };
+  const completed = deferred();
+  const stopListening = f.history.reportHistory.listen((state) => {
+    if (state.reports.length === 2 && !state.job) completed.resolve();
+  });
+  t.after(stopListening);
+  f.addArticles(ids(151));
+  f.emit(f.event(ids(151)));
+  await firstEntered.promise;
+  const firstState = await f.repository().loadState();
+  assert.deepEqual(firstState.job.checkpoint.inputPolicy, originalPolicy);
+  f.settingsState.set({ ...f.settingsState.get(), aiContextWindow: "32000" });
+  const nextPolicy = boardInputPolicy(f.settingsState.get());
+  await tick();
+  await tick();
+  assert.equal(firstSignal.aborted, false, "capacity changes must not cancel a paid request");
+  assert.equal(calls.length, 1, "capacity changes must not repeat an unfinished analysis");
+  const unchanged = await f.repository().loadState();
+  assert.equal(unchanged.job.id, firstState.job.id);
+  assert.deepEqual(unchanged.job.checkpoint.inputPolicy, originalPolicy);
+
+  // A second period accumulates while the first provider call is still held.
+  const accumulated = deferred();
+  f.hooks.publish = async (_account, state) => {
+    if (state?.pendingIds.length === 151 && state.job?.id === firstState.job.id) accumulated.resolve();
+  };
+  f.addArticles(ids(151, 152));
+  f.emit(f.event(ids(151, 152)));
+  await accumulated.promise;
+  firstGate.resolve();
+  await secondEntered.promise;
+  assert.deepEqual(calls, [
+    { digest: false, context: "1000000" },
+    { digest: true, context: "1000000" },
+    { digest: false, context: "32000" },
+  ]);
+  const secondState = await f.repository().loadState();
+  assert.notEqual(secondState.job.id, firstState.job.id);
+  assert.deepEqual(secondState.job.checkpoint.inputPolicy, nextPolicy);
+  assert.equal(firstSignal.aborted, false);
+  secondGate.resolve();
+  await completed.promise;
+  assert.equal(calls.length, 4, "each period needs one analysis and one digest");
+  assert.equal(analyses, 2);
+  const stored = JSON.stringify(await f.storage.getMany(await f.storage.keys()));
+  assert.doesNotMatch(stored, /fixture-key|aiApiKey|\bstream\b|\bconfiguration\b/);
 });
 
 test("a saved today snapshot retains its article settings for reuse after a restart", async (t) => {

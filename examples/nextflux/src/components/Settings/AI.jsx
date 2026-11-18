@@ -1,19 +1,28 @@
 import { useStore } from "@nanostores/react";
 import { settingsState, updateSettings } from "@/stores/settingsStore.js";
-import { Button, Description, Input, Label, Spinner, TextArea, TextField } from "@heroui/react";
+import { Button, Description, Dropdown, Input, Label, Spinner, TextArea, TextField } from "@heroui/react";
 import { useTranslation } from "react-i18next";
 import { useState } from "react";
 import { toast } from "sonner";
-import { ItemWrapper, SwitchItem } from "@/components/ui/settingItem.jsx";
+import { ItemWrapper, MenuRow, SwitchItem } from "@/components/ui/settingItem.jsx";
+import { AI_CONTEXT_OPTIONS, normalizeAiContextWindow, resolveAiContextWindow } from "@/toolbox/ai-context.mjs";
 
 export default function AI() {
   const { t } = useTranslation();
-  const { aiApiKey, aiBaseUrl, aiModel, aiPrompt, autoBoardEnabled } = useStore(settingsState);
+  const { aiApiKey, aiBaseUrl, aiModel, aiContextWindow, aiPrompt, autoBoardEnabled } = useStore(settingsState);
   const [localApiKey, setLocalApiKey] = useState(aiApiKey);
   const [localBaseUrl, setLocalBaseUrl] = useState(aiBaseUrl);
   const [localModel, setLocalModel] = useState(aiModel);
+  const [localContextWindow, setLocalContextWindow] = useState(() => normalizeAiContextWindow(aiContextWindow));
   const [localPrompt, setLocalPrompt] = useState(aiPrompt);
   const [saving, setSaving] = useState(false);
+  const contextCapacity = resolveAiContextWindow({ aiModel: localModel, aiContextWindow: localContextWindow });
+  const capacityLabel = contextCapacity === null ? "" : contextCapacity >= 1000000 ? "1M" : `${contextCapacity / 1000}K`;
+  const contextDescription = localContextWindow === "auto"
+    ? contextCapacity === null
+      ? "未识别模型，沿用每次约 2.4 万字符；可按服务商说明选择容量。"
+      : `自动识别为 ${capacityLabel} tokens，能一次分析就一次。`
+    : `按 ${capacityLabel} tokens 的容量安排看板输入。`;
 
   const handleSave = async () => {
     setSaving(true);
@@ -22,6 +31,7 @@ export default function AI() {
         aiApiKey: localApiKey,
         aiBaseUrl: localBaseUrl,
         aiModel: localModel,
+        aiContextWindow: localContextWindow,
         aiPrompt: localPrompt,
       });
       toast.success(t("common.success"));
@@ -34,7 +44,7 @@ export default function AI() {
 
   return (
     <>
-      <ItemWrapper title="OpenAI">
+      <ItemWrapper title="OpenAI" footer="上下文容量按保守方式估算输入，并预留回答空间。保存后用于新任务，已有报告不会重新生成。">
         <div className="nf-field-row">
           <TextField className="nf-field">
             <Label>{t("settings.ai.apiKey")}</Label>
@@ -69,6 +79,22 @@ export default function AI() {
             />
           </TextField>
         </div>
+        <MenuRow
+          label="模型上下文"
+          description={contextDescription}
+          value={AI_CONTEXT_OPTIONS.find(({ value }) => value === localContextWindow).label}
+          ariaLabel="模型上下文容量"
+          selectedKeys={new Set([localContextWindow])}
+          disallowEmptySelection
+          onSelectionChange={(keys) => setLocalContextWindow(normalizeAiContextWindow(keys.currentKey ?? [...keys][0]))}
+        >
+          {AI_CONTEXT_OPTIONS.map(({ value, label }) => (
+            <Dropdown.Item id={value} key={value} textValue={label}>
+              <Dropdown.ItemIndicator />
+              <Label>{label}</Label>
+            </Dropdown.Item>
+          ))}
+        </MenuRow>
         <div className="nf-field-row">
           <TextField className="nf-field">
             <Label>{t("settings.ai.prompt")}</Label>
