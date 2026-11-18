@@ -3,7 +3,8 @@ name: Android CI
 # Every push and pull request runs the contract checks and script tests. Lint, both APK builds and every
 # JVM unit test run on every push to main, and on a pull request whose changes Gradle compiles or packages
 # (scripts/ci/pr_scope.py; a PR that only touches CI scripts, docs or the version number skips them).
-# Emulator behavior tests are opt-in from a manual run. Pushes to the default branch also build the
+# Emulator behavior tests are opt-in from a manual run; browser-filter PRs run their targeted WebView
+# persistence regressions automatically. Pushes to the default branch also build the
 # signed release and cold-start it on an emulator before uploading it. On the default branch the APK version
 # is computed first from the changelog fragments in changes/ (scripts/ci/app_version.py); pull requests never
 # edit it. A push that only adds a fragment (changes/*.md) still runs, so a follow-up fragment for a change
@@ -135,6 +136,7 @@ jobs:
         env:
           RUN_ANDROID_UI: ${{ inputs.run_android_ui_tests == true }}
           ANDROID_TEST_FILTER: ${{ inputs.android_test_filter || '' }}
+          CHECK_BROWSER_FILTER: ${{ steps.pr.outputs.browser_filter == 'true' }}
         run: |
           set -euo pipefail
           if [ -n "$ANDROID_TEST_FILTER" ]; then
@@ -143,10 +145,14 @@ jobs:
             checks=selected
           elif [ "$RUN_ANDROID_UI" = true ]; then
             checks=full
+          elif [ "$CHECK_BROWSER_FILTER" = true ]; then
+            checks=selected
+            ANDROID_TEST_FILTER=app=io.toolbox.host.browser.BrowserFilterPersistenceTest
           else
             checks=build_and_unit_only
           fi
           echo "checks=$checks" >> "$GITHUB_OUTPUT"
+          echo "android_test_filter=$ANDROID_TEST_FILTER" >> "$GITHUB_OUTPUT"
           echo "Android emulator behavior checks: \`$checks\`" >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
@@ -195,7 +201,7 @@ jobs:
         id: emulator
         uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d
         env:
-          TOOLBOX_ANDROID_TEST_FILTER: ${{ inputs.android_test_filter || '' }}
+          TOOLBOX_ANDROID_TEST_FILTER: ${{ steps.scope.outputs.android_test_filter }}
         with:
           api-level: 36
           target: google_apis

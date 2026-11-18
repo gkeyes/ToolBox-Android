@@ -117,7 +117,7 @@ fun BrowserFilterSheet(filters: BrowserFilterController, canPick: Boolean, resum
             ToolBoxActionSheetHeader {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     if (screen != "home" || editing != null || resetConfirm) ToolBoxGlassIconButton(ToolBoxIconKey.Back, "返回过滤设置", closeOrBack)
-                    ToolBoxText(if (editing != null) "编辑规则" else if (screen == "all") "全部规则" else if (screen == "site") "此网站的规则" else "广告过滤",
+                    ToolBoxText(if (editing != null) "编辑规则" else if (screen == "all") "全部自定义规则" else if (screen == "site") "此网站的规则" else "广告过滤",
                         Modifier.weight(1f), style = ToolBoxThemeTokens.textStyles.title)
                     ToolBoxGlassIconButton(ToolBoxIconKey.Close, "关闭广告过滤", { filters.sheet = false })
                 }
@@ -174,11 +174,11 @@ fun BrowserFilterSheet(filters: BrowserFilterController, canPick: Boolean, resum
                             ToolBoxSettingRow(
                                 "此网站的规则",
                                 modifier = Modifier.padding(horizontal = 12.dp),
-                                summary = "${siteRules.size} 条 · 点选与手动规则",
+                                summary = "${siteRules.size} 条自定义规则 · 点选与手动添加",
                                 onClick = { screen = "site" },
                             )
                             ToolBoxSettingRow(
-                                "全部规则",
+                                "全部自定义规则",
                                 modifier = Modifier.padding(horizontal = 12.dp),
                                 summary = "${state.rules.size} 条 · 按网站管理",
                                 onClick = { screen = "all" },
@@ -188,7 +188,7 @@ fun BrowserFilterSheet(filters: BrowserFilterController, canPick: Boolean, resum
                                 state.builtIn,
                                 { value -> filters.change { it.copy(builtIn = value) } },
                                 modifier = Modifier.padding(horizontal = 12.dp),
-                                summary = "阻止常见广告资源主机",
+                                summary = "${BrowserFilterSnapshot.builtInRuleCount} 条内置域名规则，含其子域名",
                                 enabled = state.enabled,
                             )
                         }
@@ -197,7 +197,7 @@ fun BrowserFilterSheet(filters: BrowserFilterController, canPick: Boolean, resum
                         ToolBoxTextButton("添加规则", { editing = BrowserFilterRule(site = site, value = "") }, Modifier.fillMaxWidth(), outlined = false)
                         val rows = if (screen == "site") siteRules else state.rules
                         if (rows.isEmpty()) {
-                            ToolBoxText("还没有规则。可以返回网页点选广告位，也可以手动添加。")
+                            ToolBoxText("还没有自定义规则。可以返回网页点选广告位，也可以手动添加；基础广告拦截使用独立的内置规则。")
                         } else if (screen == "site") {
                             ToolBoxText(
                                 site,

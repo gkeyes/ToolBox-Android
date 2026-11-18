@@ -30,6 +30,15 @@ WEBVIEW_PATHS = {
     "scripts/ci/install-emulator.sh",
     "scripts/ci/webview-debugging-connected.sh",
 }
+BROWSER_FILTER_PATHS = {
+    "app/src/main/kotlin/io/toolbox/host/browser/BrowserFilterController.kt",
+    "app/src/main/kotlin/io/toolbox/host/browser/BrowserFilterStore.kt",
+    "app/src/main/kotlin/io/toolbox/host/browser/BrowserFilterRules.kt",
+    "app/src/main/kotlin/io/toolbox/host/browser/BrowserFilterUi.kt",
+    "app/src/main/kotlin/io/toolbox/host/browser/BrowserWebViewFactory.kt",
+    "app/src/main/assets/browser/element-picker.js",
+    "app/src/androidTest/kotlin/io/toolbox/host/browser/BrowserFilterPersistenceTest.kt",
+}
 # Kotlin decimal literals have no leading zeros, and versionCode must be positive.
 VERSION_LINE = re.compile(r'^\s*(versionCode\s*=\s*(?P<code>[1-9]\d{0,9})|versionName\s*=\s*"\d+\.\d+\.\d+")\s*$')
 # Google Play's ceiling for versionCode, well inside the Int that Gradle assigns it to.
@@ -88,6 +97,7 @@ def scope(changed, read_base, read_head):
     return {
         "gradle": any(needs_gradle(path, bundled) for path in relevant),
         "webview": any(path in WEBVIEW_PATHS for path in relevant),
+        "browser_filter": any(path in BROWSER_FILTER_PATHS for path in relevant),
     }
 
 

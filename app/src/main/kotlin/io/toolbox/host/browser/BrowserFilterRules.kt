@@ -43,6 +43,7 @@ data class BrowserFilterSnapshot(
     companion object {
         // Deliberately small first-party-maintained baseline, not an EasyList compatibility claim.
         private val BUILT_IN_HOSTS = setOf("doubleclick.net", "googlesyndication.com", "googleadservices.com", "adservice.google.com")
+        val builtInRuleCount: Int get() = BUILT_IN_HOSTS.size
 
         private fun containsHostOrParent(blocked: Set<String>, host: String): Boolean {
             if (host in blocked) return true
