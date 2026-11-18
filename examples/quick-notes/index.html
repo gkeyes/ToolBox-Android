@@ -15,8 +15,9 @@
       <div class="editor-actions"><span id="editor-state" aria-live="polite">新笔记</span><span class="editor-buttons"><button id="cancel-edit" class="cancel" type="button" hidden>取消</button><button type="submit">保存笔记</button></span></div>
     </form>
     <p id="save-error" role="alert"></p>
+    <button id="retry-load" class="text-button" type="button" hidden>重新读取笔记</button>
     <div id="undo-bar" class="undo-bar" role="status" hidden><span id="undo-text">笔记已删除</span><button id="undo" class="text-button" type="button">撤销</button></div>
-    <p id="empty" class="empty">还没有笔记，先写下一条吧。</p>
+    <p id="empty" class="empty" hidden>还没有笔记，先写下一条吧。</p>
     <section id="notes" class="notes" aria-label="已保存的笔记"></section>
   </main>
   <template id="note-template">

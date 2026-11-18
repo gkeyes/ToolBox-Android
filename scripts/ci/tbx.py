@@ -259,7 +259,7 @@ def run_selected_tests(name, test_filter, browser=False):
     else:
         for path in selected:
             source = ROOT if path.startswith("scripts/") else ROOT / "examples" / name
-            command = ["node"] + (["--import", "tsx"] if name == "socialcoach" else []) + ["--test"]
+            command = ["node"] + (["--import", "tsx"] if name == "socialcoach" else []) + ["--test", "--test-reporter=tap"]
             if path in name_patterns:
                 command += ["--test-name-pattern", name_patterns[path]]
             command.append(path)

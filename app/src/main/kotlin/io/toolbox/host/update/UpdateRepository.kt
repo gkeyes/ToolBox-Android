@@ -75,44 +75,47 @@ internal class UpdateRepository(
     /** Downloads [asset] into the private update cache and verifies its published SHA-256 when one is known. */
     suspend fun download(asset: ReleaseAsset, onProgress: (Float?) -> Unit = {}): File = withContext(Dispatchers.IO) {
         val directory = File(context.cacheDir, UpdateCacheDirectory).apply { mkdirs() }
-        val target = File(directory, asset.name)
-        val partial = File(directory, "${asset.name}.part")
-        partial.delete()
-        val digest = MessageDigest.getInstance("SHA-256")
-        client.newCall(Request.Builder().url(asset.url).build()).execute().use { response ->
-            if (response.code == 404) throw StaleAssetException("文件已被新构建替换，请重新检查更新。")
-            if (!response.isSuccessful) throw UpdateCheckException("下载失败（HTTP ${response.code}）。")
-            val body = response.body
-            val total = body.contentLength().takeIf { it > 0 } ?: asset.size.takeIf { it > 0 }
-            body.byteStream().use { input ->
-                partial.outputStream().use { output ->
-                    val buffer = ByteArray(64 * 1024)
-                    var received = 0L
-                    while (true) {
-                        ensureActive()
-                        val read = input.read(buffer)
-                        if (read < 0) break
-                        output.write(buffer, 0, read)
-                        digest.update(buffer, 0, read)
-                        received += read
-                        onProgress(total?.let { (received.toFloat() / it).coerceIn(0f, 1f) })
+        // The installer may still be reading an earlier download of the same asset.
+        val target = File.createTempFile("download-", "-${asset.name}", directory)
+        var verified = false
+        try {
+            val digest = MessageDigest.getInstance("SHA-256")
+            client.newCall(Request.Builder().url(asset.url).build()).execute().use { response ->
+                if (response.code == 404) throw StaleAssetException("文件已被新构建替换，请重新检查更新。")
+                if (!response.isSuccessful) throw UpdateCheckException("下载失败（HTTP ${response.code}）。")
+                val body = response.body
+                val total = body.contentLength().takeIf { it > 0 } ?: asset.size.takeIf { it > 0 }
+                body.byteStream().use { input ->
+                    target.outputStream().use { output ->
+                        val buffer = ByteArray(64 * 1024)
+                        var received = 0L
+                        while (true) {
+                            ensureActive()
+                            val read = input.read(buffer)
+                            if (read < 0) break
+                            output.write(buffer, 0, read)
+                            digest.update(buffer, 0, read)
+                            received += read
+                            onProgress(total?.let { (received.toFloat() / it).coerceIn(0f, 1f) })
+                        }
                     }
                 }
             }
+            if (asset.size > 0 && target.length() != asset.size) {
+                throw StaleAssetException("文件大小与发布记录不符，请重新检查更新。")
+            }
+            val actual = digest.digest().joinToString("") { "%02x".format(it) }
+            if (asset.sha256 != null && asset.sha256 != actual) {
+                throw StaleAssetException("文件校验失败，请重新检查更新后再试。")
+            }
+            ensureActive()
+            verified = true
+            target
+        } finally {
+            if (!verified) target.delete()
         }
-        val actual = digest.digest().joinToString("") { "%02x".format(it) }
-        if (asset.sha256 != null && asset.sha256 != actual) {
-            partial.delete()
-            throw StaleAssetException("文件校验失败，请重新检查更新后再试。")
-        }
-        if (!partial.renameTo(target)) {
-            target.delete()
-            if (!partial.renameTo(target)) throw UpdateCheckException("无法保存下载的文件。")
-        }
-        target
     }
 
-    /** Removes downloaded files that are no longer needed. */
     /** APKs from the last hour stay: the system installer may still be reading one it was handed. */
     suspend fun clearDownloads() = withContext(Dispatchers.IO) {
         val cutoff = System.currentTimeMillis() - HandedOffApkGraceMillis

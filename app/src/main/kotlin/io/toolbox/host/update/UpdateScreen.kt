@@ -24,9 +24,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.LifecycleResumeEffect
@@ -138,6 +142,7 @@ internal fun UpdateContent(
                         ChannelRow(
                             channel = channel,
                             selected = channel == state.channel,
+                            enabled = state.canSwitchChannel,
                             onSelect = { onSelectChannel(channel) },
                             modifier = Modifier.testTag(
                                 if (channel == UpdateChannel.STABLE) "update_channel_stable" else "update_channel_test",
@@ -148,7 +153,7 @@ internal fun UpdateContent(
             }
             item("channel-footer") {
                 SettingsFooter(
-                    when (state.channel) {
+                    if (!state.canSwitchChannel) "当前安装任务结束后可切换渠道。" else when (state.channel) {
                         UpdateChannel.STABLE -> "来自 GitHub 发布的正式版本。"
                         UpdateChannel.TEST -> "来自 main 分支最新一次通过 CI 的构建，可能不稳定。"
                     },
@@ -157,7 +162,12 @@ internal fun UpdateContent(
             state.message?.let { message ->
                 item("message") {
                     Column(Modifier.padding(top = 16.dp)) {
-                        ToolBoxBanner(message, ToolBoxTone.Info, icon = ToolBoxIconKey.Check)
+                        ToolBoxBanner(
+                            message.text,
+                            if (message.success) ToolBoxTone.Success else ToolBoxTone.Danger,
+                            modifier = Modifier.semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite },
+                            icon = if (message.success) ToolBoxIconKey.Check else null,
+                        )
                         ToolBoxTextButton("知道了", onDismissMessage, outlined = false)
                     }
                 }
@@ -165,7 +175,7 @@ internal fun UpdateContent(
             state.error?.let { error ->
                 item("error") {
                     Column(Modifier.padding(top = 16.dp)) {
-                        ToolBoxBanner(error, ToolBoxTone.Danger)
+                        ToolBoxBanner(error, ToolBoxTone.Danger, Modifier.semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite })
                         ToolBoxTextButton("重试", onRefresh, outlined = false)
                     }
                 }
@@ -245,7 +255,7 @@ private fun GroupHeader(title: String, first: Boolean = false) {
 
 /** iOS Settings choice row: coloured tile, title and summary, accent checkmark when chosen. */
 @Composable
-private fun ChannelRow(channel: UpdateChannel, selected: Boolean, onSelect: () -> Unit, modifier: Modifier = Modifier) {
+private fun ChannelRow(channel: UpdateChannel, selected: Boolean, enabled: Boolean, onSelect: () -> Unit, modifier: Modifier = Modifier) {
     val colors = ToolBoxThemeTokens.colors
     val haptics = rememberToolBoxHaptics()
     val interactionSource = remember { MutableInteractionSource() }
@@ -254,9 +264,11 @@ private fun ChannelRow(channel: UpdateChannel, selected: Boolean, onSelect: () -
         modifier = modifier
             .fillMaxWidth()
             .heightIn(min = 60.dp)
+            .alpha(if (enabled || selected) 1f else 0.55f)
             .toolBoxPressFeedback(interactionSource, scale = ToolBoxMotion.RowPressScale)
             .selectable(
                 selected = selected,
+                enabled = enabled,
                 interactionSource = interactionSource,
                 indication = null,
                 role = Role.RadioButton,

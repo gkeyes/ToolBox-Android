@@ -14,8 +14,7 @@
   // Draft writes/clears run one at a time, after any in-flight notes write, so a just-saved or just-deleted text is never kept as a draft.
   const queueDraft = (step) => (draftChain = draftChain.catch(() => {}).then(async () => { await saveWork?.catch(() => {}); return step(); }));
   const toolbox = () => window.ToolBox;
-  let readyWork = null;
-  const whenReady = () => (readyWork ||= Promise.resolve().then(() => toolbox()?.ready?.()).catch(() => {}));
+  const whenReady = () => toolbox()?.ready?.();
 
   async function notify(message) { try { await whenReady(); await toolbox()?.ui?.toast?.(message); } catch (_) {} }
   function safeNotes(value) {
@@ -50,6 +49,7 @@
     });
   }
   async function restore() {
+    $("retry-load").hidden = true;
     let saved = null, draft = null;
     try {
       await whenReady();
@@ -58,7 +58,11 @@
       notes = safeNotes(saved).sort((a, b) => b.updatedAt - a.updatedAt);
       try { draft = await toolbox().storage.get("draft"); } catch (_) {}
       loaded = true;
-    } catch (_) { showError("笔记读取失败，请检查存储权限后重新打开；当前输入会保留。"); }
+      showError("");
+    } catch (_) {
+      showError("笔记读取失败。请检查存储权限后重试，当前输入会保留。");
+      $("retry-load").hidden = false;
+    }
     if (draft && typeof draft === "object" && typeof draft.text === "string") {
       draftStored = true;
       if (!$("note-input").value) {
@@ -69,19 +73,21 @@
     }
     render();
   }
+  const timeFormatter = new Intl.DateTimeFormat("zh-CN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
   function formatTime(timestamp) {
-    return new Intl.DateTimeFormat("zh-CN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(timestamp));
+    const date = new Date(timestamp);
+    return Number.isNaN(date.getTime()) ? "更新时间未知" : `更新于 ${timeFormatter.format(date)}`;
   }
   function render() {
     const container = $("notes");
     container.replaceChildren();
-    $("empty").hidden = notes.length > 0;
+    $("empty").hidden = !loaded || notes.length > 0;
     notes.forEach((note) => {
       const fragment = $("note-template").content.cloneNode(true);
       const item = fragment.querySelector(".note");
       item.dataset.id = note.id;
       fragment.querySelector(".note-body").textContent = note.text;
-      fragment.querySelector(".note-time").textContent = `更新于 ${formatTime(note.updatedAt)}`;
+      fragment.querySelector(".note-time").textContent = formatTime(note.updatedAt);
       container.append(fragment);
     });
   }
@@ -106,7 +112,7 @@
     const input = $("note-input").value;
     const text = input.trim();
     if (!text) { await notify("请输入笔记内容"); return; }
-    if (!loaded || saving) { if (!loaded) showError("笔记尚未读取成功，请检查存储权限后重新打开。"); return; }
+    if (!loaded || saving) { if (!loaded) showError("请先重新读取笔记，再保存当前输入。"); return; }
     const timestamp = Date.now();
     const editing = editingId && notes.some((note) => note.id === editingId);
     const next = editing
@@ -192,7 +198,12 @@
   $("cancel-edit").addEventListener("click", cancelEdit);
   $("undo").addEventListener("click", undoDelete);
   $("notes").addEventListener("click", act);
-  const restoring = restore();
+  let restoring = restore();
+  $("retry-load").addEventListener("click", () => {
+    if ($("retry-load").hidden) return;
+    restoring = restore();
+    return restoring;
+  });
   // Registered before restoration settles so a close during startup still waits for it and keeps what was typed meanwhile.
   try { toolbox()?.runtime?.registerFlushHandler?.(async () => { await restoring; await writeDraft(); }); } catch (_) {}
   // The host flushes only on an orderly close; also keep the draft when the page is hidden, so a background kill does not lose it.
