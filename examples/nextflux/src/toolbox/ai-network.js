@@ -1,3 +1,4 @@
+import { isGpt62Model } from "./ai-context.mjs";
 
 export function assertAiUrl(baseUrl) {
   let url;
@@ -9,7 +10,13 @@ export function assertAiUrl(baseUrl) {
   return url.href;
 }
 
-function safeError(code, status) {
+const SAFE_PARAMETERS = new Set([
+  "model", "messages", "temperature", "top_p", "logprobs", "top_logprobs",
+  "max_tokens", "max_completion_tokens", "reasoning_effort", "response_format", "stream", "stream_options",
+]);
+
+function safeError(code, status, parameter) {
+  const param = SAFE_PARAMETERS.has(parameter) ? parameter : "请求";
   const messages = {
     CANCELLED: "AI 请求已停止。",
     PERMISSION_DENIED: "请在小工具权限中开启网络访问。",
@@ -19,12 +26,19 @@ function safeError(code, status) {
     INCOMPLETE_STREAM: "AI 响应意外中断，请重新生成。",
     NETWORK_BLOCKED: "AI 服务连接失败，请检查 HTTPS 地址。",
     CONTEXT_LENGTH_EXCEEDED: "本次输入超过 AI 服务的上下文容量，请调低模型上下文设置后重试。",
+    UNSUPPORTED_PARAMETER: `当前模型不支持 ${param} 参数，请检查 AI 模型配置或更新应用。`,
+    UNSUPPORTED_VALUE: `当前模型不接受 ${param} 的参数值，请检查 AI 模型配置或更新应用。`,
+    MODEL_NOT_FOUND: "模型不存在或当前 API Key 无权使用，请检查模型名称和账号权限。",
   };
-  const contextLimit = code === "CONTEXT_LENGTH_EXCEEDED";
-  const error = new Error(status && !contextLimit ?
-    (status === 401 ? "AI API Key 无效，请检查设置。" : `AI 服务请求失败（HTTP ${status}），请稍后重试。`) :
+  const classified = ["CONTEXT_LENGTH_EXCEEDED", "UNSUPPORTED_PARAMETER", "UNSUPPORTED_VALUE", "MODEL_NOT_FOUND"].includes(code);
+  const httpMessage = status === 401 ? "AI API Key 无效，请检查设置。"
+    : status === 400 || status === 422 ? `AI 服务未接受请求（HTTP ${status}），请检查模型名称、请求参数和接口兼容性。`
+    : status === 404 ? "AI 服务地址或模型不可用（HTTP 404），请检查服务地址和模型设置。"
+    : status === 429 ? "AI 服务限流或可用额度不足（HTTP 429），请检查额度或稍后重试。"
+    : `AI 服务请求失败（HTTP ${status}），请稍后重试。`;
+  const error = new Error(status && !classified ? httpMessage :
     messages[code] || "无法连接 AI 服务，请检查网络和设置后重试。");
-  error.code = status && !contextLimit ? "HTTP_ERROR" : (Object.hasOwn(messages, code) ? code : "NETWORK_UNAVAILABLE");
+  error.code = status && !classified ? "HTTP_ERROR" : (Object.hasOwn(messages, code) ? code : "NETWORK_UNAVAILABLE");
   if (status) error.status = status;
   return error;
 }
@@ -32,8 +46,14 @@ function safeError(code, status) {
 function payload({ baseUrl, apiKey, body }) {
   const url = assertAiUrl(baseUrl);
   if (typeof apiKey !== "string" || !apiKey.trim()) throw new Error("请先填写 AI API Key。");
+  const request = { ...body };
+  // GPT-6.2 Chat Completions rejects these options. Keep all AI entry points
+  // compatible without changing a caller's frozen input or other models.
+  if (isGpt62Model(request.model)) {
+    for (const name of ["temperature", "top_p", "logprobs", "top_logprobs"]) delete request[name];
+  }
   return { url, method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
-    body: JSON.stringify(body) };
+    body: JSON.stringify(request) };
 }
 
 function bridge() {
@@ -73,16 +93,29 @@ function isContextLimit(value) {
   return Boolean(gemini && number(gemini[1]) > number(gemini[2]));
 }
 
+function providerError(value, status) {
+  const error = value?.error;
+  if (!error || typeof error !== "object" || Array.isArray(error)) return null;
+  // A 404 cannot be turned into a context retry by an unrelated response body.
+  if (status !== 404 && isContextLimit(value)) return safeError("CONTEXT_LENGTH_EXCEEDED", status);
+  if (error.code === "model_not_found") return safeError("MODEL_NOT_FOUND", status);
+  if (SAFE_PARAMETERS.has(error.param)) {
+    if (error.code === "unsupported_parameter") return safeError("UNSUPPORTED_PARAMETER", status, error.param);
+    if (error.code === "unsupported_value") return safeError("UNSUPPORTED_VALUE", status, error.param);
+  }
+  return null;
+}
+
 const ERROR_BODY_BYTES = 16 * 1024;
 const ERROR_BODY_TIMEOUT = 2000;
 async function httpError(network, streamId, status, signal) {
   const fallback = safeError(null, status);
-  if (![400, 413, 422].includes(status) || !streamId) return fallback;
+  if (![400, 404, 413, 422].includes(status) || !streamId) return fallback;
   let timer;
   let abort;
   let accepting = true;
   const stopped = new Promise((resolve, reject) => {
-    timer = setTimeout(() => resolve(false), ERROR_BODY_TIMEOUT);
+    timer = setTimeout(() => resolve(null), ERROR_BODY_TIMEOUT);
     abort = () => reject(safeError("CANCELLED"));
     signal?.addEventListener("abort", abort, { once: true });
     if (signal?.aborted) abort();
@@ -95,19 +128,19 @@ async function httpError(network, streamId, status, signal) {
     // deadline timer by resolving reads forever without yielding any bytes.
     for (let reads = 0; accepting && !signal?.aborted && remaining > 0 && reads < 64; reads += 1) {
       const chunk = await network.readStream(streamId, { expectedChunkBytes: remaining });
-      if (!accepting || signal?.aborted) return false;
+      if (!accepting || signal?.aborted) return null;
       const bytes = chunk?.data || new Uint8Array();
-      if (!(bytes instanceof Uint8Array) || bytes.byteLength > remaining) return false;
+      if (!(bytes instanceof Uint8Array) || bytes.byteLength > remaining) return null;
       remaining -= bytes.byteLength;
       text += decoder.decode(bytes, { stream: !chunk.done });
-      if (chunk.done) return isContextLimit(JSON.parse(text));
+      if (chunk.done) return providerError(JSON.parse(text), status);
     }
-    return false;
+    return null;
   };
   try {
-    const limited = await Promise.race([inspect().catch(() => false), stopped]);
+    const classified = await Promise.race([inspect().catch(() => null), stopped]);
     if (signal?.aborted) throw safeError("CANCELLED");
-    return limited ? safeError("CONTEXT_LENGTH_EXCEEDED", status) : fallback;
+    return classified || fallback;
   } finally {
     accepting = false;
     clearTimeout(timer);
@@ -190,7 +223,7 @@ export async function streamChatCompletion({ baseUrl, apiKey, body, signal, onDe
       if (event.trim() === "[DONE]") { complete = true; return; }
       let json;
       try { json = JSON.parse(event); } catch { throw safeError("INVALID_RESPONSE"); }
-      if (json.error) throw safeError(isContextLimit(json) ? "CONTEXT_LENGTH_EXCEEDED" : "INVALID_RESPONSE");
+      if (json.error) throw providerError(json) || safeError("INVALID_RESPONSE");
       const choice = json.choices?.[0];
       const reasoning = extractReasoningText(choice);
       if (reasoning && typeof onReasoning === "function") onReasoning(reasoning);

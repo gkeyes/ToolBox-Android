@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  AI_CONTEXT_OPTIONS, boardInputPolicy, measureMessages, measureText,
+  AI_CONTEXT_OPTIONS, boardInputPolicy, isGpt62Model, measureMessages, measureText,
   normalizeAiContextWindow, resolveAiContextWindow, validInputPolicy,
 } from "../src/toolbox/ai-context.mjs";
 import { decodeSettings, settingsState } from "../src/stores/settingsStore.js";
@@ -21,6 +21,7 @@ test("context selections normalise persisted numbers without coercing arbitrary 
 
 test("known context families include documented variants and explicit provider prefixes", () => {
   const known = new Map([
+    [1050000, ["gpt-6.2-sol", "gpt-6.2-astra", "openai/gpt-6.2-sol", " GPT-6.2-SOL "]],
     [1047576, ["gpt-4.1", "gpt-4.1-mini", "gpt-4.1-nano", "gpt-4.1-mini-2025-04-14", "openai/gpt-4.1", "openai/gpt-4.1-nano-2025-04-14"]],
     [128000, ["gpt-4o", "gpt-4o-mini", "gpt-4o-2024-08-06", "openai/gpt-4o-mini-2024-07-18", " GPT-4O-MINI "]],
     [1048576, ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.5-flash-lite", "google/gemini-2.5-pro", "google/gemini-2.5-flash-lite"]],
@@ -30,6 +31,20 @@ test("known context families include documented variants and explicit provider p
       assert.equal(resolveAiContextWindow({ aiModel }), context, aiModel);
       assert.deepEqual(boardInputPolicy({ aiModel }), { unit: "utf8", budget: Math.floor(context * 0.8) - 1024 }, aiModel);
     }
+  }
+});
+
+test("GPT-6.2 compatibility uses exact model names and stays within the documented input limit", () => {
+  for (const aiModel of ["gpt-6.2-sol", "gpt-6.2-astra", "openai/gpt-6.2-sol", "openai/gpt-6.2-astra"]) {
+    assert.equal(isGpt62Model(aiModel), true);
+    const policy = boardInputPolicy({ aiModel });
+    assert.ok(validInputPolicy(policy));
+    assert.ok(policy.budget < 922000, "leave room below the 922K maximum input as well as the total context limit");
+    assert.deepEqual(boardInputPolicy({ aiModel, aiContextWindow: "32000" }), { unit: "utf8", budget: 24576 });
+  }
+  for (const aiModel of [undefined, null, {}, "gpt-6.2", "gpt-6.2-sol-custom", "prefix-gpt-6.2-sol", "google/gpt-6.2-sol", "gpt-6.2-sol:free"]) {
+    assert.equal(isGpt62Model(aiModel), false);
+    assert.equal(resolveAiContextWindow({ aiModel }), null);
   }
 });
 
