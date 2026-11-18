@@ -102,3 +102,16 @@ test("an explicitly supplied configuration never borrows a key from another acti
   await assert.rejects(f.run({ configuration: { ...A, aiApiKey: "" } }), /请先填写 AI API Key/);
   assert.equal(f.requests.length, 0);
 });
+
+test("GPT-6.2 uses the captured configuration without the unsupported sampling parameter", async (t) => {
+  const f = fixture(t);
+  const configuration = { ...A, aiBaseUrl: "https://api.openai.com/v1", aiModel: "gpt-6.2-sol" };
+  settingsState.set({ ...B });
+  const result = await f.run({ configuration });
+  assert.equal(result.content, "完成分析");
+  assert.equal(f.requests[0].url, "https://api.openai.com/v1/chat/completions");
+  assert.equal(f.requests[0].headers.Authorization, `Bearer ${configuration.aiApiKey}`);
+  assert.deepEqual(JSON.parse(f.requests[0].body), { model: "gpt-6.2-sol", messages, stream: true });
+  assert.deepEqual(settingsState.get(), B);
+  assert.deepEqual(f.cancelled, ["configuration-1"]);
+});

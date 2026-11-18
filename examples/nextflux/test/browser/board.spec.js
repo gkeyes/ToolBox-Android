@@ -5,14 +5,14 @@ import { PRODUCTION_URL, STORED_SETTINGS, installNativeBoundary } from "./fixtur
 // Only the native network boundary is synthetic; no AI/provider request leaves
 // this test. A single long-context request nominates the last article. If the
 // provider rejects its size, smaller batches merge their local references.
-async function prepareBoard(page, { count = 181, holdRead = false, failRead = false, persistStorage = false, rejectAbove = null, contextWindow = "1000000" } = {}) {
+async function prepareBoard(page, { count = 181, holdRead = false, failRead = false, persistStorage = false, rejectAbove = null, contextWindow = "1000000", aiModel = STORED_SETTINGS.aiModel } = {}) {
   await installNativeBoundary(page, {
     persistStorage,
     auth: {
       serverUrl: "https://miniflux.xiaochen.win", username: "board-test-user", password: "", userId: 7,
       token: "fixed-synthetic-test-token", authType: "token",
     },
-    settings: { ...STORED_SETTINGS, syncInterval: "0", hideDuplicateArticles: false, markAsReadOnScroll: false, aiContextWindow: contextWindow },
+    settings: { ...STORED_SETTINGS, syncInterval: "0", hideDuplicateArticles: false, markAsReadOnScroll: false, aiContextWindow: contextWindow, aiModel },
     cacheRoot: {
       version: 3, revision: 1, account: { serverUrl: "https://miniflux.xiaochen.win", userId: "7" },
       transaction: null, lastSyncTime: null,
@@ -43,13 +43,14 @@ async function prepareBoard(page, { count = 181, holdRead = false, failRead = fa
       return { status: 204, headers: {}, body: "" };
     };
     network.openStream = async (payload) => {
-      const { messages } = JSON.parse(payload.body);
+      const body = JSON.parse(payload.body);
+      const { messages } = body;
       const merging = messages[0].content.includes("候选主题");
       const writing = !merging && messages[1].content.startsWith("主题");
       const references = [...messages[1].content.matchAll(/^\[(\d+)\] /gm)].map((match) => Number(match[1]));
       const kind = writing ? "digest" : merging ? "merge" : "articles";
       const rejected = rejectAbove !== null && kind === "articles" && references.length > rejectAbove;
-      state.messages.push({ kind, messages, references, rejected });
+      state.messages.push({ kind, messages, references, rejected, body });
       const streamId = `board-test-${state.messages.length}`;
       if (rejected) {
         state.streams.set(streamId, JSON.stringify({ error: { code: "context_length_exceeded", message: "Synthetic smaller provider context" } }));
@@ -75,6 +76,59 @@ async function prepareBoard(page, { count = 181, holdRead = false, failRead = fa
   await expect(page.locator(".nf-board-summary")).toContainText(`今日 ${count} 篇未读已全部参与分析`);
   await expect(page.locator(".nf-board-summary")).toContainText("收录 1 篇文章");
 }
+
+test("GPT-6.2 auto context and all AI entry points omit unsupported sampling fields", async ({ page }) => {
+  await prepareBoard(page, { count: 181, contextWindow: "auto", aiModel: "gpt-6.2-sol" });
+  const board = await page.evaluate(() => window.__boardTest.messages);
+  expect(board).toHaveLength(1);
+  expect(board[0].references).toHaveLength(181);
+  expect(board[0].body.model).toBe("gpt-6.2-sol");
+  for (const key of ["temperature", "top_p", "logprobs", "top_logprobs"]) expect(board[0].body).not.toHaveProperty(key);
+
+  const actions = await page.evaluate(async () => {
+    const requests = [];
+    const streams = new Map();
+    let reply = "这是生成的文章摘要。";
+    window.ToolBox.network.openStream = async (payload) => {
+      const body = JSON.parse(payload.body);
+      requests.push(body);
+      const id = `gpt62-actions-${requests.length}`;
+      // Retaining a sampling parameter reproduces the provider's HTTP 400.
+      if (["temperature", "top_p", "logprobs", "top_logprobs"].some(key => key in body)) {
+        streams.set(id, JSON.stringify({ error: { code: "unsupported_parameter", param: "temperature" } }));
+        return { status: 400, streamId: id };
+      }
+      streams.set(id, `data: ${JSON.stringify({ choices: [{ delta: { content: reply }, finish_reason: "stop" }] })}\n\ndata: [DONE]\n\n`);
+      return { status: 200, streamId: id };
+    };
+    window.ToolBox.network.readStream = async id => ({ data: new TextEncoder().encode(streams.get(id) || ""), done: true });
+    window.ToolBox.network.cancelStream = async id => { streams.delete(id); };
+    const api = await import("/src/api/openai.js");
+    let summary = "", summaryError = null, summaryDone = false;
+    await api.summarizeArticleStream({ title: "测试文章", content: "<p>真实 DOM 提取的文章正文。</p>" }, {
+      onChunk: text => { summary += text; }, onDone: () => { summaryDone = true; }, onError: error => { summaryError = error.message; },
+    });
+    reply = '<scraper_rule>article .content</scraper_rule><confidence>0.9</confidence><reason>正文容器</reason>';
+    const { suggestScraperRule } = await import("/src/toolbox/fulltext-adapter/fulltext-ai.mjs");
+    const settings = (await import("/src/stores/settingsStore.js")).settingsState.get();
+    const rule = await suggestScraperRule({
+      article: { title: "测试文章", url: "https://article.example.test/story" }, feed: { title: "测试订阅" },
+      structure: "<article><div class=content>文章正文</div></article>", settings,
+    });
+    return { requests, summary, summaryError, summaryDone, rule: rule.rule, streamsRemaining: streams.size };
+  });
+  expect(actions.summaryError).toBeNull();
+  expect(actions.summaryDone).toBe(true);
+  expect(actions.summary).toBe("这是生成的文章摘要。");
+  expect(actions.rule).toBe("article .content");
+  expect(actions.requests).toHaveLength(2);
+  expect(actions.streamsRemaining).toBe(0);
+  for (const body of actions.requests) {
+    expect(body.model).toBe("gpt-6.2-sol");
+    expect(body.stream).toBe(true);
+    for (const key of ["temperature", "top_p", "logprobs", "top_logprobs"]) expect(body).not.toHaveProperty(key);
+  }
+});
 
 test("today's whole input is analyzed and one-click read changes only final board sources", async ({ page }) => {
   const errors = [];

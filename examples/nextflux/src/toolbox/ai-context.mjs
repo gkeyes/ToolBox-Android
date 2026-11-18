@@ -12,6 +12,10 @@ export const AI_CONTEXT_OPTIONS = [
 
 const contextValues = new Set(AI_CONTEXT_OPTIONS.map(({ value }) => value));
 
+export function isGpt62Model(model) {
+  return typeof model === "string" && /^(?:openai\/)?gpt-6\.2-(?:sol|astra)$/.test(model.trim().toLowerCase());
+}
+
 export function normalizeAiContextWindow(value) {
   const selected = typeof value === "string" ? value.trim() : typeof value === "number" ? String(value) : "auto";
   return contextValues.has(selected) ? selected : "auto";
@@ -19,10 +23,11 @@ export function normalizeAiContextWindow(value) {
 
 // Only documented model families and explicit provider prefixes are matched.
 // Proxies may impose smaller limits; explicit user settings take precedence.
-// OpenAI: developers.openai.com/api/docs/models/gpt-4.1 and /gpt-4o-mini
+// OpenAI: developers.openai.com/api/docs/models/gpt-4.1, /gpt-4o-mini and /gpt-6.2-sol
 // Google: ai.google.dev/gemini-api/docs/models/gemini-2.5-pro (also flash / flash-lite)
 function recognisedContext(model) {
   const name = typeof model === "string" ? model.trim().toLowerCase() : "";
+  if (isGpt62Model(name)) return 1050000;
   if (/^(?:openai\/)?gpt-4\.1(?:-(?:mini|nano))?(?:-\d{4}-\d{2}-\d{2})?$/.test(name)) return 1047576;
   if (/^(?:openai\/)?gpt-4o(?:-mini)?(?:-\d{4}-\d{2}-\d{2})?$/.test(name)) return 128000;
   if (/^(?:google\/)?gemini-2\.5-(?:pro|flash(?:-lite)?)(?:-\d{4}-\d{2}-\d{2})?$/.test(name)) return 1048576;
