@@ -23,7 +23,7 @@ def run(changed, base_build=None, head_build=None):
 
 class PrScopeTest(unittest.TestCase):
     def test_ci_scripts_docs_and_unbundled_tools_skip_gradle(self):
-        self.assertEqual({"gradle": False, "webview": False},
+        self.assertEqual({"gradle": False, "webview": False, "browser_filter": False},
                          run([".github/workflows/version-bump.yml", "scripts/ci/version_bump.py",
                               "scripts/tests/test_version_bump.py", "CHANGELOG.md", "CONTRIBUTING.md",
                               "examples/nextflux/src/App.jsx", "examples/quick-notes/tests/app.test.cjs"]))
@@ -36,7 +36,7 @@ class PrScopeTest(unittest.TestCase):
 
     def test_a_version_bump_alone_needs_neither_build_nor_emulator(self):
         result = run(["app/build.gradle.kts", "CHANGELOG.md"], head_build=gradle(67, "0.9.0"))
-        self.assertEqual({"gradle": False, "webview": False}, result)
+        self.assertEqual({"gradle": False, "webview": False, "browser_filter": False}, result)
 
     def test_registry_changes_need_gradle(self):
         self.assertTrue(run(["scripts/ci/tbx-targets.json"])["gradle"])
@@ -58,12 +58,18 @@ class PrScopeTest(unittest.TestCase):
 
     def test_other_build_file_changes_need_both(self):
         head = gradle(67, "0.9.0", '        minSdk = 30\n')
-        self.assertEqual({"gradle": True, "webview": True}, run(["app/build.gradle.kts"], head_build=head))
+        self.assertEqual({"gradle": True, "webview": True, "browser_filter": False}, run(["app/build.gradle.kts"], head_build=head))
 
     def test_webview_files_need_the_emulator_check(self):
         result = run(["tool-runtime/src/main/kotlin/io/toolbox/tool/runtime/RuntimeWebViewDebugging.kt"])
-        self.assertEqual({"gradle": True, "webview": True}, result)
-        self.assertEqual({"gradle": False, "webview": True}, run([".github/workflows/webview-debugging.yml"]))
+        self.assertEqual({"gradle": True, "webview": True, "browser_filter": False}, result)
+        self.assertEqual({"gradle": False, "webview": True, "browser_filter": False}, run([".github/workflows/webview-debugging.yml"]))
+
+    def test_browser_filter_changes_run_the_real_webview_save_regressions(self):
+        for path in pr_scope.BROWSER_FILTER_PATHS:
+            with self.subTest(path=path):
+                self.assertEqual({"gradle": True, "webview": False, "browser_filter": True}, run([path]))
+        self.assertFalse(run(["app/src/main/kotlin/io/toolbox/host/browser/BrowserToolbar.kt"])["browser_filter"])
 
 
 if __name__ == "__main__":

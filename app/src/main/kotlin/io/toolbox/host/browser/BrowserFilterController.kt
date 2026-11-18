@@ -36,6 +36,7 @@ class BrowserFilterController(context: Context, private val scope: CoroutineScop
     @Volatile private var page: WebView? = null
     private var generation = 0
     private var pickerEpoch = 0
+    private var pickerRequested = false
     private var pollPending = false
     private var filterEngineInstalled = false
     var saving by mutableStateOf(false)
@@ -70,6 +71,7 @@ class BrowserFilterController(context: Context, private val scope: CoroutineScop
         page?.evaluateJavascript("window[${JSONObject.quote(key)}]?.stop()", null)
         generation++
         pickerEpoch++
+        pickerRequested = false
         pollPending = false
         key = newKey()
         filterEngineInstalled = false
@@ -91,6 +93,7 @@ class BrowserFilterController(context: Context, private val scope: CoroutineScop
         if (page !== view) return
         // The renderer may already be gone; do not evaluate script while disposing it.
         pickerEpoch++
+        pickerRequested = false
         pollPending = false
         picker = PickerState()
         filterEngineInstalled = false
@@ -113,6 +116,7 @@ class BrowserFilterController(context: Context, private val scope: CoroutineScop
                 }
                 if (read == null || revision == null || !engine.isCurrent(revision)) return@launch
                 snapshot = read
+                if (pickerRequested && !read.active(site)) stopPicker()
                 applyToPage()
             } finally {
                 engine.release()
@@ -158,7 +162,9 @@ class BrowserFilterController(context: Context, private val scope: CoroutineScop
 
         val state = snapshot
         val selectors = state.selectors(host)
-        if (!forceInstall && selectors.isEmpty()) {
+        // A late page-finished/refresh callback must not destroy the inspector while a first
+        // rule is being picked or saved, including the interval before start() replies.
+        if (!forceInstall && !pickerRequested && !saving && selectors.isEmpty()) {
             if (!filterEngineInstalled) {
                 after?.invoke(true)
                 return
@@ -193,14 +199,23 @@ class BrowserFilterController(context: Context, private val scope: CoroutineScop
         sheet = false
         notice = null
         val epoch = ++pickerEpoch
+        pickerRequested = true
         applyToPage(forceInstall = true) { applied ->
-            if (applied && epoch == pickerEpoch) command("start")
-            else notice = "当前页面暂不能点选，请加载完成后重试。"
+            if (epoch != pickerEpoch) {
+                applyToPage()
+                return@applyToPage
+            }
+            if (applied) command("start")
+            else {
+                pickerRequested = false
+                notice = "当前页面暂不能点选，请加载完成后重试。"
+            }
         }
     }
 
     fun stopPicker() {
         pickerEpoch++
+        pickerRequested = false
         pollPending = false
         page?.evaluateJavascript("window[${JSONObject.quote(key)}]?.stop()", null)
         picker = PickerState()
@@ -224,7 +239,8 @@ class BrowserFilterController(context: Context, private val scope: CoroutineScop
         evaluate(method, args) { data ->
             if (epoch != pickerEpoch) return@evaluate
             if (method == "state") pollPending = false
-            if (data == null) { picker = PickerState(); return@evaluate }
+            if (data == null) { pickerRequested = false; picker = PickerState(); return@evaluate }
+            pickerRequested = data.optBoolean("active")
             picker = PickerState(
                 active = data.optBoolean("active"), selector = data.optString("selector").take(1024),
                 count = data.optInt("count").coerceIn(0, 100000), warning = data.optString("warning").take(160),
@@ -278,7 +294,9 @@ class BrowserFilterController(context: Context, private val scope: CoroutineScop
             result(null)
         }
         if (rule.kind == BrowserFilterKind.Cosmetic && rule.site == site) {
-            applyToPage { applied ->
+            // Validation needs inspect() even before this site has a saved selector. The ordinary
+            // page-apply path skips an empty engine, or destroys the picker's engine before saving.
+            applyToPage(forceInstall = true) { applied ->
                 if (finished) return@applyToPage
                 if (!applied) { result("页面暂不可用，请加载完成后重试。"); return@applyToPage }
                 evaluate("inspect", JSONObject.quote(rule.value)) { checked ->

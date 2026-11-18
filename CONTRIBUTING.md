@@ -12,7 +12,7 @@
 | `webview-debugging.yml` | 相关文件的 PR，手动 | 在用户版系统镜像上验证 Debug / Release 的 WebView 调试状态。镜像自带 WebView 的已知原生崩溃（`scripts/ci/webview-debugging-connected.sh` 里写明的特征）会让这项测试重跑一次，其它失败不重跑。 `app/build.gradle.kts` 只改版本号时跳过（宿主版本号现由 CI 计算，PR 不再改它）。 |
 | `release.yml` | 手动 | 取一次成功的 Android CI 签名产物发布 GitHub Release 并设为最新正式版。新标签必须按版本号严格高于当前的 `releases/latest`。每个登记的小工具都按该次构建所在提交里清单的版本附上 `.tbx`：先从 `dev` 取（按 GitHub 记录的 SHA-256 校验），`dev` 已经换成更新版本时再从 `reuse_tbx_from` 指定的旧版 Release 取（按它的 `SHA256SUMS.txt` 校验）；包内清单的 ID 和版本也要一致，哪个工具找不到对应版本就整个发布失败，不会带上旧包（`scripts/ci/stable_release.py`）。 |
 
-编译、JVM 单测和 TBX 打包通过，不等于设备运行通过。
+编译、JVM 单测和 TBX 打包通过，不等于设备运行通过。浏览器广告过滤相关改动的 PR 会自动在模拟器上验证首次保存、重新打开和网络拦截；其它行为测试仍按工作流参数选择。
 
 ## 版本号
 
