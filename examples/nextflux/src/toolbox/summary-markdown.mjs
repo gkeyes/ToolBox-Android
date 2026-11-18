@@ -1,5 +1,6 @@
 import { createElement } from "react";
 import { Marked } from "marked";
+import markedCjkFriendly from "marked-cjk-friendly";
 import { parseDocument } from "htmlparser2";
 import { cleanAttributes, safeContentUrl } from "./content.js";
 
@@ -12,7 +13,7 @@ const markdown = new Marked({
   gfm: true,
   breaks: true,
   renderer: { html: ({ text }) => escapeHtml(text) },
-});
+}, markedCjkFriendly());
 const TAGS = new Set([
   "p", "br", "hr", "h1", "h2", "h3", "h4", "h5", "h6", "blockquote",
   "ul", "ol", "li", "strong", "em", "del", "pre", "code", "a",
