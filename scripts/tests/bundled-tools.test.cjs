@@ -176,7 +176,7 @@ test('position calculator rejects a huge pasted mantissa without building BigInt
 const NOTE_TEMPLATE = ['article', 'note', [['p', 'note-body'], ['p', 'note-time'], ['div', 'note-actions', [
   ['button', 'text-button edit'], ['button', 'text-button copy'], ['button', 'text-button danger delete']]]]];
 
-function quickNotes(initial = {}, { beforeSet, ready, confirm } = {}) {
+function quickNotes(initial = {}, { beforeSet, beforeGet, ready, confirm } = {}) {
   const store = new Map(Object.entries(initial));
   const writes = [];
   const handlers = new Set();
@@ -185,7 +185,7 @@ function quickNotes(initial = {}, { beforeSet, ready, confirm } = {}) {
     ui: { toast: async () => {} },
     runtime: { registerFlushHandler: (handler) => { handlers.add(handler); return () => handlers.delete(handler); } },
     storage: {
-      get: async (key) => store.has(key) ? structuredClone(store.get(key)) : null,
+      get: async (key) => { await beforeGet?.(key); return store.has(key) ? structuredClone(store.get(key)) : null; },
       set: async (key, value) => { if (beforeSet) await beforeSet(key); writes.push(key); store.set(key, structuredClone(value)); },
       remove: async (key) => { store.delete(key); },
     },
@@ -199,6 +199,40 @@ function quickNotes(initial = {}, { beforeSet, ready, confirm } = {}) {
   return { ...tool, store, writes, flush };
 }
 const noteButton = (tool, index, kind) => tool.$('notes').children[index].querySelector(`.${kind}`);
+
+test('quick notes retries a failed read without replacing input or existing notes', async () => {
+  let offline = true;
+  const retry = defer();
+  const original = { id: 'old', text: 'saved', updatedAt: 15 };
+  const tool = quickNotes({ notes: [original], draft: { text: 'older draft' } }, {
+    beforeGet: async (key) => {
+      if (offline) throw Error('storage unavailable');
+      if (key === 'notes') await retry.promise;
+    },
+  });
+  await settle();
+  assert.equal(tool.$('empty').hidden, true);
+  assert.equal(tool.$('retry-load').hidden, false);
+  tool.$('note-input').value = 'new draft typed during failure';
+  await tool.$('editor').fire('submit');
+  assert.deepEqual(tool.store.get('notes'), [original]);
+  offline = false;
+  const loading = tool.$('retry-load').fire('click');
+  const closing = tool.flush();
+  retry.resolve();
+  await Promise.all([loading, closing]);
+  assert.equal(tool.$('save-error').textContent, '');
+  assert.equal(tool.$('retry-load').hidden, true);
+  assert.equal(tool.$('notes').children.length, 1);
+  assert.equal(tool.store.get('draft').text, 'new draft typed during failure');
+});
+
+test('quick notes renders imported text even when its finite timestamp is outside the Date range', async () => {
+  const tool = quickNotes({ notes: [{ id: 'old', text: 'still readable', updatedAt: 1e18 }] });
+  await settle();
+  assert.equal(tool.$('notes').children[0].querySelector('.note-body').textContent, 'still readable');
+  assert.equal(tool.$('notes').children[0].querySelector('.note-time').textContent, '更新时间未知');
+});
 
 test('quick notes delete can be undone', async () => {
   const tool = quickNotes({ notes: [{ id: 'a', text: 'keep me', updatedAt: 2 }, { id: 'b', text: 'other', updatedAt: 1 }] });

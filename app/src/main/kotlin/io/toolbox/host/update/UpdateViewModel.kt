@@ -34,6 +34,8 @@ internal const val AppProgressKey = "toolbox-app"
 private const val StaleRetryAttempts = 3
 private const val StaleRetryDelayMs = 5_000L
 
+internal data class UpdateMessage(val text: String, val success: Boolean = false)
+
 internal data class UpdateUiState(
     val installed: InstalledBuild,
     val channel: UpdateChannel = UpdateChannel.STABLE,
@@ -47,12 +49,12 @@ internal data class UpdateUiState(
     val tools: List<ToolUpdateRow> = emptyList(),
     /** In-flight downloads/installs by tool slug or [AppProgressKey]; a null value means indeterminate. */
     val progress: Map<String, Float?> = emptyMap(),
-    val message: String? = null,
+    val message: UpdateMessage? = null,
     val pendingApk: File? = null,
 ) {
     val appState: AppUpdateState? get() = feed?.app?.let { UpdateFeedParser.appState(it, installed) }
     val updatableTools: List<ToolUpdateRow> get() = tools.filter { it.state == ToolRowState.UPDATE }
-    val busy: Boolean get() = progress.isNotEmpty()
+    val canSwitchChannel: Boolean get() = progress.isEmpty() && pendingApk == null
     val checkSummary: String? get() {
         if (loading || error != null || feed == null || completedChecks == 0L) return null
         val app = when (appState) {
@@ -143,8 +145,8 @@ internal class UpdateViewModel(
     }
 
     fun selectChannel(channel: UpdateChannel) {
-        if (channel == mutableState.value.channel) return
-        mutableState.update { it.copy(channel = channel, feed = null, tools = emptyList(), error = null) }
+        if (channel == mutableState.value.channel || !mutableState.value.canSwitchChannel) return
+        mutableState.update { it.copy(channel = channel, feed = null, tools = emptyList(), error = null, message = null) }
         viewModelScope.launch { repository.setChannel(channel) }
         refresh()
     }
@@ -176,7 +178,7 @@ internal class UpdateViewModel(
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Exception) {
-                mutableState.update { it.copy(message = error.userMessage("下载失败，请重试。")) }
+                mutableState.update { it.copy(message = UpdateMessage(error.userMessage("下载失败，请重试。"))) }
             } finally {
                 clearProgress(AppProgressKey)
             }
@@ -186,9 +188,9 @@ internal class UpdateViewModel(
     fun apkHandedOff() = mutableState.update { it.copy(pendingApk = null) }
 
     /** The system installer could not be opened; drop the APK hand-off so it is not retried silently. */
-    fun apkHandOffFailed() = mutableState.update { it.copy(pendingApk = null, message = "无法打开系统安装程序") }
+    fun apkHandOffFailed() = mutableState.update { it.copy(pendingApk = null, message = UpdateMessage("无法打开系统安装程序")) }
 
-    fun installSettingsUnavailable() = mutableState.update { it.copy(message = "无法打开“安装未知应用”设置") }
+    fun installSettingsUnavailable() = mutableState.update { it.copy(message = UpdateMessage("无法打开“安装未知应用”设置")) }
 
     fun installTool(slug: String) {
         val row = mutableState.value.tools.firstOrNull { it.available.slug == slug } ?: return
@@ -197,7 +199,9 @@ internal class UpdateViewModel(
         setProgress(slug, null)
         viewModelScope.launch {
             val message = installOne(channel, row)
-            if (message != null) mutableState.update { it.copy(message = message) }
+            mutableState.update {
+                it.copy(message = if (message == null) UpdateMessage("${row.name} 已安装", success = true) else UpdateMessage(message))
+            }
         }
     }
 
@@ -209,7 +213,12 @@ internal class UpdateViewModel(
         viewModelScope.launch {
             val failures = rows.mapNotNull { row -> installOne(channel, row)?.let { "${row.name}：$it" } }
             mutableState.update {
-                it.copy(message = if (failures.isEmpty()) "已更新 ${rows.size} 个小工具" else failures.joinToString("\n"))
+                val result = if (failures.isEmpty()) {
+                    UpdateMessage("已更新 ${rows.size} 个小工具", success = true)
+                } else {
+                    UpdateMessage("已更新 ${rows.size - failures.size}/${rows.size} 个小工具\n" + failures.joinToString("\n"))
+                }
+                it.copy(message = result)
             }
         }
     }
