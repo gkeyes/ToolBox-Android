@@ -178,6 +178,8 @@ export default {
     },
   },
   articleView: {
+    wordCount_one: "{{count, number}} word",
+    wordCount_other: "{{count, number}} words",
     imageError: "Error loading image",
     videoError: "Error loading video",
     stopPlay: "STOP",

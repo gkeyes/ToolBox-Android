@@ -149,6 +149,8 @@ export default {
     },
   },
   articleView: {
+    wordCount_one: "{{count, number}} kelime",
+    wordCount_other: "{{count, number}} kelime",
     imageError: "Resim yüklemede hata",
     videoError: "Video yüklemede hata",
     stopPlay: "DUR",

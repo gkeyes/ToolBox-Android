@@ -17,7 +17,7 @@ const hasSentencePunctuation = (text) => /[。！？!?]|\.(?=\s|$|["'”’」�
 // Pulling one bounded batch at a time also bounds the worker/main-thread queue.
 export function createReadingParser(html, baseUrl) {
   const source = typeof html === "string" ? html : "";
-  const analysis = analyzeArticle(source);
+  const analysis = analyzeArticle(source, { countWords: true });
   const normalization = createNormalizationPlan(analysis);
   let offset = 0, nextId = 1, ended = false;
   const pending = [];

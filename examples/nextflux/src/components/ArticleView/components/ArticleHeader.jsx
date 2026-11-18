@@ -17,6 +17,7 @@ function feedTitleOf(article, fallback) {
 
 export default function ArticleHeader({
   article,
+  wordCount,
   onFeedClick,
   interactive = true,
   className,
@@ -88,6 +89,11 @@ export default function ArticleHeader({
         <time dateTime={article.published_at} key={t.language}>
           {generateReadableDate(article.published_at)}
         </time>
+        {wordCount != null && (
+          <span className="nextflux-article-word-count">
+            {t("articleView.wordCount", { count: wordCount })}
+          </span>
+        )}
       </div>
     </header>
   );

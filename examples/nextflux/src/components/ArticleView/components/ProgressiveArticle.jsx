@@ -47,7 +47,7 @@ function ReadingPortal({ item, highlights }) {
   return createPortal(content, item.target, String(item.id));
 }
 
-function ProgressiveArticle({ articleId, html, baseUrl, title, shownOriginal, preview = false, paused = false }) {
+function ProgressiveArticle({ articleId, html, baseUrl, title, shownOriginal, onWordCount, preview = false, paused = false }) {
   const rootRef = useRef(null);
   const domRef = useRef(null);
   const requestRef = useRef(null);
@@ -93,7 +93,7 @@ function ProgressiveArticle({ articleId, html, baseUrl, title, shownOriginal, pr
       root.dataset.readingReady = "true";
       setState((previous) => ({ ...previous, ready: true }));
     };
-    const request = startProgressiveReading({ html, baseUrl, title,
+    const request = startProgressiveReading({ html, baseUrl, title, onWordCount,
       maxOperations: () => modeRef.current.preview || modeRef.current.paused ? 12 : 48,
       shouldPause: () => modeRef.current.paused || (modeRef.current.preview && firstScreenReady),
       apply: (operation) => dom.apply(operation),
@@ -126,7 +126,7 @@ function ProgressiveArticle({ articleId, html, baseUrl, title, shownOriginal, pr
       if (domRef.current === dom) domRef.current = null;
       notify([], { removed: true });
     };
-  }, [articleId, html, baseUrl, title, shownOriginal, attempt]);
+  }, [articleId, html, baseUrl, title, shownOriginal, onWordCount, attempt]);
   useEffect(() => { requestRef.current?.resume(); }, [preview, paused]);
   return <>
     <div ref={rootRef} className="article-body article-content" data-font-reading-root="" data-font-article-id={articleId} data-font-block="" data-reading-ready={String(state.ready)} data-reading-complete={String(state.complete)} onClick={(event) => {
@@ -141,4 +141,4 @@ function ProgressiveArticle({ articleId, html, baseUrl, title, shownOriginal, pr
 }
 
 export default memo(ProgressiveArticle, (previous, next) => sameReadingSource(previous, next) &&
-  previous.preview === next.preview && previous.paused === next.paused);
+  previous.onWordCount === next.onWordCount && previous.preview === next.preview && previous.paused === next.paused);

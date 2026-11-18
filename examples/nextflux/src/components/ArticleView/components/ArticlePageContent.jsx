@@ -1,4 +1,4 @@
-import { forwardRef, useMemo } from "react";
+import { forwardRef, useCallback, useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 import { useStore } from "@nanostores/react";
 import { PhotoProvider } from "react-photo-view";
@@ -36,6 +36,16 @@ const ArticlePageContent = forwardRef(function ArticlePageContent(
     [article?.enclosures],
   );
 
+  const articleId = article?.id;
+  const html = article?.content;
+  const title = article?.titleText ?? article?.title;
+  const baseUrl = (article?.shownOriginal && article?.fullTextBaseUrl) || article?.url;
+  const shownOriginal = Boolean(article?.shownOriginal);
+  const source = useMemo(() => ({ articleId, html, title, baseUrl, shownOriginal }),
+    [articleId, html, title, baseUrl, shownOriginal]);
+  const [counted, setCounted] = useState(null);
+  const onWordCount = useCallback((value) => setCounted({ source, value }), [source]);
+
   if (!article) return null;
 
   const feedId = article?.feed?.id ?? article?.feedId ?? article?.feed_id;
@@ -53,6 +63,7 @@ const ArticlePageContent = forwardRef(function ArticlePageContent(
     >
       <ArticleHeader
         article={article}
+        wordCount={counted?.source === source ? counted.value : null}
         interactive={!passive}
         onFeedClick={passive || !feedId ? undefined : () => navigate(`/feed/${feedId}`)}
       />
@@ -97,11 +108,8 @@ const ArticlePageContent = forwardRef(function ArticlePageContent(
           <ProgressiveArticle
             preview={passive}
             paused={readingPaused || !foreground}
-            articleId={article.id}
-            html={article.content}
-            baseUrl={article.shownOriginal && article.fullTextBaseUrl || article.url}
-            title={article.titleText ?? article.title}
-            shownOriginal={Boolean(article.shownOriginal)}
+            {...source}
+            onWordCount={onWordCount}
           />
           <Attachments article={article} />
         </div>

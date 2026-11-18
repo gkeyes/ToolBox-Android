@@ -96,6 +96,35 @@ test("next-page preparation mounts only a bounded first screen", async ({ page }
   expect(errors).toEqual([]);
 });
 
+test("article length appears beside the date and follows the displayed body", async ({ page }) => {
+  await page.setViewportSize({ width: 360, height: 800 });
+  await installReadingMessageHold(page);
+  await openArticle(page);
+  const date = page.locator(".article-scroll-area .nextflux-article-date time");
+  const badge = date.locator("+ .nextflux-article-word-count");
+  const preview = page.locator(".nextflux-continuous-next-page");
+  // All 240 paragraphs count, including those the preview has yet to mount.
+  const total = (6 + 5 * "这是用于检验文章转场和正文分批渲染的测试内容".length) * 240;
+  const formatted = total.toLocaleString("zh-CN") + " 字";
+  await expect(badge).toHaveText(formatted);
+  await expect(badge).toBeInViewport();
+  await expect(preview.locator(".nextflux-article-word-count")).toHaveText(formatted);
+  await expect(preview.locator(".article-body")).toHaveAttribute("data-reading-complete", "false");
+  const timeBox = await date.boundingBox();
+  const badgeBox = await badge.boundingBox();
+  expect(badgeBox.x).toBeGreaterThanOrEqual(timeBox.x + timeBox.width);
+  expect(badgeBox.y).toBeLessThan(timeBox.y + timeBox.height);
+  await page.evaluate(() => {
+    window.holdReadingMessages = true;
+    window.navigationFixture.showFullText("<p>中文 NextFlux</p>");
+  });
+  await expect(badge).toHaveCount(0);
+  await releaseReadingMessages(page);
+  await expect(badge).toHaveText("3 字");
+  await page.evaluate(() => window.navigationFixture.showFullText(null));
+  await expect(badge).toHaveText(formatted);
+});
+
 test("the next page follows the first pull before the release threshold", async ({ page }) => {
   await openArticle(page);
   await page.locator(".article-scroll-area").evaluate((element) => { element.scrollTop = element.scrollHeight; });

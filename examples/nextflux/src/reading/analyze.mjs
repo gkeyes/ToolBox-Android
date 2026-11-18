@@ -1,11 +1,34 @@
 import { Parser } from "htmlparser2";
-import { BLOCKISH_TAGS, DROP_CONTENT, HEADING_RE, PROTECTED_TAGS, STANDALONE_NOISE_RE } from "./schema.mjs";
+import { ALLOWED_TAGS, BLOCK_TAGS, BLOCKISH_TAGS, DROP_CONTENT, HEADING_RE, PROTECTED_TAGS, STANDALONE_NOISE_RE } from "./schema.mjs";
+import { shouldRemoveStandaloneNoise } from "./normalize.mjs";
+
+const CHARACTER_SCRIPTS = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u;
+const WORD_CHAR = /[\p{L}\p{N}]/u;
+const COMBINING_MARK = /\p{M}/u;
+const MEDIA_TAGS = new Set(["img", "iframe", "audio", "video"]);
+const WORD_BREAK_TAGS = new Set([...BLOCK_TAGS, "br", "hr", ...MEDIA_TAGS]);
+
+// Keep word boundaries across inline markup and decoded entity callbacks.
+function addWords(counter, text) {
+  for (const character of text) {
+    if (CHARACTER_SCRIPTS.test(character)) {
+      counter.count++;
+      counter.inWord = false;
+    } else if (WORD_CHAR.test(character)) {
+      if (!counter.inWord) counter.count++;
+      counter.inWord = true;
+    } else if (!COMBINING_MARK.test(character)) {
+      counter.inWord = false;
+    }
+  }
+}
 
 const compact = (value) => String(value || "").replace(/\s+/g, " ").trim();
 const visibleLength = (value) => compact(value).length;
 const meaningfulBreaks = (value) => Math.max(0, String(value || "").split(/\r?\n/).map(v=>v.trim()).filter(Boolean).length - 1);
 
-export function analyzeArticle(html) {
+export function analyzeArticle(html, { countWords = false } = {}) {
+  const words = { count: 0, inWord: false };
   const source=String(html||"");
   const metrics={
     textChars:0, paragraphs:0, breaks:0, listItems:0, headings:0, divs:0, textualDivs:0,
@@ -19,6 +42,13 @@ export function analyzeArticle(html) {
       const parent=stack.at(-1);
       const blocked=parent.blocked||DROP_CONTENT.has(tag);
       const entry={tag,blocked,protected:parent.protected||PROTECTED_TAGS.has(tag),textLength:0,preview:"",link:parent.link||tag==="a"};
+      if (countWords) {
+        entry.skipWords = parent.skipWords || blocked || MEDIA_TAGS.has(tag) || tag === "head";
+        entry.hasMedia = MEDIA_TAGS.has(tag);
+        if (!parent.skipWords && WORD_BREAK_TAGS.has(tag)) words.inWord = false;
+        entry.startWords = words.count;
+        entry.startedInWord = words.inWord;
+      }
       stack.push(entry);
       if(blocked)return;
       if(tag==="p")metrics.paragraphs++;
@@ -37,6 +67,7 @@ export function analyzeArticle(html) {
     ontext(text){
       const leaf=stack.at(-1);
       if(leaf.blocked||!text)return;
+      if (countWords && !leaf.skipWords) addWords(words, text);
       const len=visibleLength(text);
       metrics.textChars+=len;
       if(stack.length===1)metrics.topLevelTextChars+=len;
@@ -54,6 +85,18 @@ export function analyzeArticle(html) {
     onclosetag(){
       if(stack.length<=1)return;
       const entry=stack.pop();
+      if (countWords) {
+        if (entry.hasMedia) stack.at(-1).hasMedia = true;
+        // Discard labels that the renderer removes, including nested formatting.
+        if (!entry.skipWords && entry.textLength <= 24 && ALLOWED_TAGS.has(entry.tag) && shouldRemoveStandaloneNoise({
+          tag: entry.tag, text: entry.preview, textLength: entry.textLength,
+          hasMedia: entry.hasMedia, plan: { removeStandaloneNoise: true },
+        })) {
+          words.count = entry.startWords;
+          words.inWord = entry.startedInWord;
+        }
+        if (!entry.skipWords && WORD_BREAK_TAGS.has(entry.tag)) words.inWord = false;
+      }
       if(entry.blocked)return;
       if(entry.tag==="div"&&entry.textLength>=40)metrics.textualDivs++;
       if(BLOCKISH_TAGS.has(entry.tag)){
@@ -63,6 +106,7 @@ export function analyzeArticle(html) {
     }
   },{decodeEntities:true,lowerCaseTags:true,lowerCaseAttributeNames:true,xmlMode:false});
   parser.end(source);
+  if (countWords) metrics.wordCount = words.count;
   const semanticBlocks=metrics.paragraphs+metrics.breaks+metrics.listItems+metrics.headings+metrics.blockquotes+metrics.tables+metrics.preformatted+metrics.figures+metrics.captions;
   const averageDivText=metrics.textualDivs?metrics.textChars/metrics.textualDivs:metrics.textChars;
   const linkDensity=metrics.textChars?metrics.linkTextChars/metrics.textChars:0;

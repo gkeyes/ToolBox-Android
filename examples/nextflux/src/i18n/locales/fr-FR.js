@@ -150,6 +150,8 @@ export default {
     },
   },
   articleView: {
+    wordCount_one: "{{count, number}} mot",
+    wordCount_other: "{{count, number}} mots",
     imageError: "Erreur de chargement de l'image",
     videoError: "Erreur de chargement de la vidéo",
     stopPlay: "STOP",

@@ -7,6 +7,7 @@ self.addEventListener("message", ({ data }) => {
     else if (data.type !== "reading:next") return;
     if (!current || data.id !== current.id) return;
     const batch = current.parser.next();
+    if (data.type === "reading:start") batch.wordCount = current.parser.analysis.wordCount;
     self.postMessage({ type: "reading:batch", id: current.id, ...batch });
     if (batch.done) current = null;
   } catch {

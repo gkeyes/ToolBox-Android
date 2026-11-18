@@ -177,6 +177,7 @@ export default {
     },
   },
   articleView: {
+    wordCount_other: "{{count, number}} 字",
     imageError: "加载图片失败",
     videoError: "加载视频失败",
     stopPlay: "停止播放",

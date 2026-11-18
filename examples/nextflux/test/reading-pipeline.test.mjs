@@ -12,6 +12,14 @@ function operationsFor(html){
   for(;;){const batch=parser.next();operations.push(...batch.operations);if(batch.done)return {operations,analysis:parser.analysis,normalization:parser.normalization};}
 }
 
+test("first-pass word count uses body text, block boundaries and mixed scripts", () => {
+  const html = `<p>阅&#x8bfb;𠮷，Next<b>Fl</b>ux中文 &amp; cafe&#x301; 2026！</p><p>new<br>line</p>
+    <p><em>广告</em></p><script>skip me</script><video>fallback</video><img alt="not body text">`;
+  const { parser } = createReadingPipeline({ html });
+  assert.equal(parser.analysis.wordCount, 10);
+  assert.equal(createReadingParser('<img alt="caption"><iframe>fallback</iframe>').analysis.wordCount, 0);
+});
+
 test("structured content scores above flattened content",()=>{
   const structured=Array.from({length:8},(_,i)=>`<p>第${i+1}段 ${"正文".repeat(45)}</p>`).join("");
   const flat=`<div>${"正文".repeat(360)}</div>`;
