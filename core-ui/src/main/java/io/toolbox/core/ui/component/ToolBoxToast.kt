@@ -30,6 +30,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.platform.LocalAccessibilityManager
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
@@ -84,6 +85,7 @@ internal class ToolBoxToastRequest(val message: String, val durationMs: Long)
 @Composable
 fun ToolBoxToastHost(modifier: Modifier = Modifier) {
     val view = LocalView.current
+    val accessibility = LocalAccessibilityManager.current
     val activity = remember(view) { view.context.findActivity() }
     var request by remember { mutableStateOf<ToolBoxToastRequest?>(null) }
     var visible by remember { mutableStateOf(false) }
@@ -94,13 +96,17 @@ fun ToolBoxToastHost(modifier: Modifier = Modifier) {
         if (activity != null) ToolBoxToasts.register(activity, host)
         onDispose { if (activity != null) ToolBoxToasts.unregister(activity, host) }
     }
-    LaunchedEffect(request) {
+    LaunchedEffect(request, accessibility) {
         val shown = request ?: return@LaunchedEffect
         // Copy the page before the capsule shows: the capsule refracts that copy.
         // A toast that arrives while the last one animates out keeps that copy, which has no capsule in it.
         if (realBlur && !glass.ready) glass.capture(view)
         visible = true
-        delay(shown.durationMs)
+        val duration = accessibility?.calculateRecommendedTimeoutMillis(
+            originalTimeoutMillis = shown.durationMs,
+            containsText = true, containsIcons = false, containsControls = false,
+        ) ?: shown.durationMs
+        delay(duration)
         visible = false
         // Let the capsule animate out on the copy, then drop the full-screen bitmap.
         delay(ToolBoxToastExitMs)

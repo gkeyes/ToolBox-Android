@@ -28,6 +28,9 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.LifecycleResumeEffect
@@ -162,6 +165,7 @@ internal fun UpdateContent(
                         ToolBoxBanner(
                             message.text,
                             if (message.success) ToolBoxTone.Success else ToolBoxTone.Danger,
+                            modifier = Modifier.semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite },
                             icon = if (message.success) ToolBoxIconKey.Check else null,
                         )
                         ToolBoxTextButton("知道了", onDismissMessage, outlined = false)
@@ -171,7 +175,7 @@ internal fun UpdateContent(
             state.error?.let { error ->
                 item("error") {
                     Column(Modifier.padding(top = 16.dp)) {
-                        ToolBoxBanner(error, ToolBoxTone.Danger)
+                        ToolBoxBanner(error, ToolBoxTone.Danger, Modifier.semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite })
                         ToolBoxTextButton("重试", onRefresh, outlined = false)
                     }
                 }
