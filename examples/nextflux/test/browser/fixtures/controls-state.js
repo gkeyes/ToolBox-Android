@@ -18,7 +18,29 @@ export const handleMarkRead = (article) => calls.push(["read", article.id]);
 export const handleToggleStar = (article) => calls.push(["star", article.id]);
 export const handleToggleContent = (article) => calls.push(["content", article.id]);
 export const shareText = async (text) => calls.push(["share", text]);
-export const summarizeArticleStream = (_, { onChunk, onDone }) => { onChunk("Fixture summary."); onDone(); };
+// The UI owns cancellation and stale-run protection. Keep callbacks available
+// after abort so tests can deliver a late provider event without masking a bug.
+const summaryRequests = [];
+let holdSummaries = false;
+export const summaryBoundary = {
+  hold: (value) => { holdSummaries = value; },
+  requests: () => summaryRequests.map(({ articleId, aborted }) => ({ articleId, aborted })),
+  chunk: (index, text) => summaryRequests[index].callbacks.onChunk(text),
+  done: (index) => summaryRequests[index].callbacks.onDone(),
+  fail: (index, message) => summaryRequests[index].callbacks.onError(new Error(message)),
+};
+export const summarizeArticleStream = (article, callbacks) => {
+  const request = { articleId: article.id, callbacks, aborted: false };
+  summaryRequests.push(request);
+  callbacks.signal?.addEventListener("abort", () => {
+    request.aborted = true;
+    callbacks.onError(Object.assign(new Error("Synthetic cancelled summary"), { code: "CANCELLED" }));
+  }, { once: true });
+  if (!holdSummaries) {
+    callbacks.onChunk("Fixture summary.");
+    callbacks.onDone();
+  }
+};
 export default {
   saveToThirdParty: async (id) => calls.push(["save", id]),
   // No server here: the full-text adapter fails fast unless a test holds the read.

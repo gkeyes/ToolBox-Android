@@ -346,13 +346,6 @@ div.force-dark-code-theme .shiki span {
 .article-content figure img,
 .article-content > p > img { border-radius: var(--ds-radius-small, 10px); }
 
-/* AI summary: tonal accent card that sits in the reading flow. */
-.ai-summary {
-  border-radius: var(--ds-radius-card, 24px);
-  background: color-mix(in srgb, var(--accent) 7%, var(--ds-reader, var(--background)));
-}
-.ai-summary .leading-relaxed { color: var(--ds-text-primary, var(--foreground)); line-height: 1.7; }
-
 /* Speech player: raised control card. */
 .nextflux-speech-bar {
   border-radius: var(--ds-radius-row, 16px);
