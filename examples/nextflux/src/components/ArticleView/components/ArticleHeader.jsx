@@ -31,6 +31,7 @@ export default function ArticleHeader({
   const title = article.titleText ?? article.title ?? "";
   const safeUrl = safeContentUrl(article.url);
   const alignCenter = titleAlignType === "center";
+  const suggestSummary = wordCount > 500;
   const sharedTitle = sharedArticleTitleProps(article.id);
 
   return (
@@ -90,7 +91,10 @@ export default function ArticleHeader({
           {generateReadableDate(article.published_at)}
         </time>
         {wordCount != null && (
-          <span className="nextflux-article-word-count">
+          <span
+            className={cn("nextflux-article-word-count", suggestSummary ? "ds-tone-success" : "bg-[var(--ds-state-layer)]")}
+            title={suggestSummary ? t("articleView.aiSummary") : undefined}
+          >
             {t("articleView.wordCount", { count: wordCount })}
           </span>
         )}

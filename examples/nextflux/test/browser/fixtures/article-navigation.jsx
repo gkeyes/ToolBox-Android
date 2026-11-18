@@ -10,7 +10,7 @@ import { rows, activeArticle, filteredArticles, settingsState, isModalOpen, imag
 import "../../../src/index.css";
 
 await i18n.use(initReactI18next).init({ lng: "zh-CN", fallbackLng: "zh", resources: { zh: { translation: {
-  articleView: { wordCount_other: zhCN.articleView.wordCount_other, continuousReading: { nextUnread: "上拉阅读下一篇", dockReady: "松开阅读", end: "已读完" } },
+  articleView: { wordCount_other: zhCN.articleView.wordCount_other, aiSummary: zhCN.articleView.aiSummary, continuousReading: { nextUnread: "上拉阅读下一篇", dockReady: "松开阅读", end: "已读完" } },
   articleList: { emptyPlaceholder: "请选择文章" },
 } } }, interpolation: { escapeValue: false } });
 document.documentElement.dataset.theme = "light";

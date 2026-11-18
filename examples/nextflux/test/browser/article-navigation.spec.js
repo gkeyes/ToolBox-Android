@@ -108,6 +108,7 @@ test("article length appears beside the date and follows the displayed body", as
   const formatted = total.toLocaleString("zh-CN") + " 字";
   await expect(badge).toHaveText(formatted);
   await expect(badge).toBeInViewport();
+  await expect(preview.locator(".nextflux-article-word-count")).toHaveClass(/ds-tone-success/);
   await expect(preview.locator(".nextflux-article-word-count")).toHaveText(formatted);
   await expect(preview.locator(".article-body")).toHaveAttribute("data-reading-complete", "false");
   const timeBox = await date.boundingBox();
@@ -121,6 +122,16 @@ test("article length appears beside the date and follows the displayed body", as
   await expect(badge).toHaveCount(0);
   await releaseReadingMessages(page);
   await expect(badge).toHaveText("3 字");
+  await expect(badge).not.toHaveClass(/ds-tone-success/);
+  for (const length of [500, 501, 499]) {
+    await page.evaluate((length) => window.navigationFixture.showFullText("文".repeat(length)), length);
+    await expect(badge).toHaveText(length + " 字");
+    if (length === 501) {
+      await expect(badge).toHaveClass(/ds-tone-success/);
+    } else {
+      await expect(badge).not.toHaveClass(/ds-tone-success/);
+    }
+  }
   await page.evaluate(() => window.navigationFixture.showFullText(null));
   await expect(badge).toHaveText(formatted);
 });

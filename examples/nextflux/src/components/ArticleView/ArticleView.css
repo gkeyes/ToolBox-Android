@@ -315,7 +315,6 @@ div.force-dark-code-theme .shiki span {
   margin-inline-start: var(--ds-space-xs);
   padding: 0 var(--ds-space-xs);
   border-radius: var(--ds-radius-button);
-  background: var(--ds-state-layer);
   font-size: var(--ds-text-section);
   font-weight: 500;
   line-height: 1.5;
