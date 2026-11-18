@@ -39,6 +39,9 @@ internal data class UpdateUiState(
     val channel: UpdateChannel = UpdateChannel.STABLE,
     val checkOnLaunch: Boolean = true,
     val loading: Boolean = false,
+    /** Counts completed checks, including repeated checks whose feed or error text did not change. */
+    val completedChecks: Long = 0,
+    val lastCheckedAt: Long? = null,
     val error: String? = null,
     val feed: ChannelFeed? = null,
     val tools: List<ToolUpdateRow> = emptyList(),
@@ -50,6 +53,18 @@ internal data class UpdateUiState(
     val appState: AppUpdateState? get() = feed?.app?.let { UpdateFeedParser.appState(it, installed) }
     val updatableTools: List<ToolUpdateRow> get() = tools.filter { it.state == ToolRowState.UPDATE }
     val busy: Boolean get() = progress.isNotEmpty()
+    val checkSummary: String? get() {
+        if (loading || error != null || feed == null || completedChecks == 0L) return null
+        val app = when (appState) {
+            AppUpdateState.NEWER -> "ToolBox 新版本"
+            AppUpdateState.OTHER_BUILD -> "ToolBox 的同版本其他构建"
+            else -> null
+        }
+        val tools = updatableTools.size.takeIf { it > 0 }?.let { "$it 个小工具更新" }
+        val available = listOfNotNull(app, tools)
+        return if (available.isEmpty()) "检查完成，未发现可用更新。"
+        else "检查完成，发现${available.joinToString("和")}。"
+    }
 }
 
 internal fun toolRows(feed: ChannelFeed?, installed: List<InstalledTool>): List<ToolUpdateRow> =
@@ -107,11 +122,20 @@ internal class UpdateViewModel(
             } catch (error: Exception) {
                 Result.failure(error)
             }
+            val checkedAt = System.currentTimeMillis()
             mutableState.update { current ->
                 if (current.channel != channel) return@update current.copy(loading = false)
                 result.fold(
-                    onSuccess = { feed -> current.copy(loading = false, feed = feed, tools = toolRows(feed, installedTools)) },
-                    onFailure = { error -> current.copy(loading = false, error = error.userMessage("检查更新失败，请检查网络后重试。")) },
+                    onSuccess = { feed -> current.copy(
+                        loading = false, completedChecks = current.completedChecks + 1,
+                        lastCheckedAt = checkedAt,
+                        feed = feed, tools = toolRows(feed, installedTools),
+                    ) },
+                    onFailure = { error -> current.copy(
+                        loading = false, completedChecks = current.completedChecks + 1,
+                        lastCheckedAt = checkedAt,
+                        error = error.userMessage("检查更新失败，请检查网络后重试。"),
+                    ) },
                 )
             }
             if (mutableState.value.channel != channel) refresh()

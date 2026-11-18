@@ -44,6 +44,8 @@ class RuntimeEmbeddedBrowserControllerTest {
         container.layout(0, 0, 400, 800)
         owner.layout(0, 0, 400, 800)
         assertTrue(owner.isAttachedToWindow)
+        assertEquals(400, owner.width)
+        assertEquals(800, owner.height)
         controller = RuntimeEmbeddedBrowserController(owner, allowFullscreen = true) { context ->
             PlayerWebView(context).also(created::add)
         }
@@ -187,7 +189,23 @@ class RuntimeEmbeddedBrowserControllerTest {
         assertEquals(120f, owner.touches.first().second.second, 0.01f)
     }
 
-    private class OwnerWebView(context: Context) : WebView(context) {
+    /** ShadowWebView's no-op Chromium provider does not implement its measure/frame delegates. */
+    private open class FramedWebView(context: Context) : WebView(context) {
+        override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+            setMeasuredDimension(View.MeasureSpec.getSize(widthMeasureSpec), View.MeasureSpec.getSize(heightMeasureSpec))
+        }
+
+        override fun setFrame(left: Int, top: Int, right: Int, bottom: Int): Boolean {
+            val changed = this.left != left || this.top != top || this.right != right || this.bottom != bottom
+            this.left = left
+            this.top = top
+            this.right = right
+            this.bottom = bottom
+            return changed
+        }
+    }
+
+    private class OwnerWebView(context: Context) : FramedWebView(context) {
         val touches = mutableListOf<Pair<Int, Pair<Float, Float>>>()
         override fun hasWindowFocus(): Boolean = true
         override fun onTouchEvent(event: MotionEvent): Boolean {
@@ -196,7 +214,7 @@ class RuntimeEmbeddedBrowserControllerTest {
         }
     }
 
-    private class PlayerWebView(context: Context) : WebView(context) {
+    private class PlayerWebView(context: Context) : FramedWebView(context) {
         var loadedUrl: String? = null
         var loadedHeaders: Map<String, String>? = null
         var pauseCount = 0
