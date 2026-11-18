@@ -42,7 +42,7 @@ class RuntimeEmbeddedBrowserControllerTest {
         lifecycle.start().resume().visible()
         container.measure(View.MeasureSpec.makeMeasureSpec(400, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(800, View.MeasureSpec.EXACTLY))
         container.layout(0, 0, 400, 800)
-        owner.layout(0, 0, 400, 800)
+        owner.layoutForTest(0, 0, 400, 800)
         assertTrue(owner.isAttachedToWindow)
         assertEquals(400, owner.width)
         assertEquals(800, owner.height)
@@ -163,7 +163,7 @@ class RuntimeEmbeddedBrowserControllerTest {
         val player = created.single()
         val surface = player.parent as FrameLayout
         surface.layout(20, 80, 340, 260)
-        player.layout(0, 0, 320, 180)
+        player.layoutForTest(0, 0, 320, 180)
         fun touch(action: Int, x: Float, y: Float) {
             MotionEvent.obtain(0L, 10L, action, x, y, 0).also { surface.dispatchTouchEvent(it); it.recycle() }
         }
@@ -195,13 +195,14 @@ class RuntimeEmbeddedBrowserControllerTest {
             setMeasuredDimension(View.MeasureSpec.getSize(widthMeasureSpec), View.MeasureSpec.getSize(heightMeasureSpec))
         }
 
-        override fun setFrame(left: Int, top: Int, right: Int, bottom: Int): Boolean {
-            val changed = this.left != left || this.top != top || this.right != right || this.bottom != bottom
+        fun layoutForTest(left: Int, top: Int, right: Int, bottom: Int) {
+            layout(left, top, right, bottom)
+            // View.setFrame is hidden from the Android SDK, and ShadowWebView's
+            // provider does not set these public bounds during layout.
             this.left = left
             this.top = top
             this.right = right
             this.bottom = bottom
-            return changed
         }
     }
 
