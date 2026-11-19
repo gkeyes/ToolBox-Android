@@ -181,6 +181,8 @@ SDK 自动注入，不要把类型声明放进 script 标签。四个内置范�
 
 `files.open(["image/*"])` 优先打开 Android 系统照片选择器，以图片缩略图选择一张照片或截图；AndroidX 在系统不支持时回退到文档选择器。仍使用 `files.open` 权限和原有单次读取 token，不需要读取整个相册的权限。指定多个精确 MIME（如 `["image/png", "image/jpeg"]`）、混合类型或省略过滤器时仍使用文档选择器，以保留原有文件类型过滤语义。取消选择返回 `null`。照片选择器可能返回 HEIC 等图片，工具应检查自己的解码能力并提示不支持的格式。
 
+`files.openMultiple(maxItems?)` 一次选择多张图片，沿用 `files.open` 权限。一次可选 1–16 张，默认最多 16 张。取消返回 `null`。支持顺序选择的 Android 系统相册按点击顺序返回列表（`ordered: true`）。`ordered: false` 时请展示列表并允许用户核对顺序。每张图仍使用独立的单次读取 token，按需调用 `files.read`。发布给旧版宿主时，检查 `typeof ToolBox.files.openMultiple === "function"` 后再调用。
+
 网络通过 ToolBox 原生 HTTPS 接口访问；TLS 验证和跨源重定向凭据剥离继续生效。外部网页、iframe 和 Worker 不获得 ToolBox bridge。
 
 ### 页面状态与关闭保存（0.8.28 起）
@@ -453,6 +455,7 @@ export type ToolBoxMethodName =
   | "browser.updateEmbedded"
   | "browser.closeEmbedded"
   | "files.open"
+  | "files.openMultiple"
   | "files.read"
   | "files.save"
   | "shortcuts.pin"
@@ -634,6 +637,11 @@ export interface FileToken {
   name: string;
   mimeType: string;
   size: number;
+}
+
+export interface FileSelection {
+  files: FileToken[];
+  ordered: boolean;
 }
 
 export interface FileReadResult {
@@ -849,6 +857,7 @@ export interface ToolBoxApi {
   };
   files: {
     open(mimeTypes?: string[]): Promise<FileToken | null>;
+    openMultiple(maxItems?: number): Promise<FileSelection | null>;
     read(token: string): Promise<Uint8Array>;
     /** Checks current available process heap for the complete response; use chunked APIs for large files. */
     save(suggestedName: string, mimeType: string, content: string | Uint8Array): Promise<FileToken | null>;

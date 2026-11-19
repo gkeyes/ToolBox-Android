@@ -10,8 +10,14 @@ data class RuntimeFileToken(
     val size: Long,
 )
 
+data class RuntimeFileSelection(
+    val files: List<RuntimeFileToken>,
+    val ordered: Boolean,
+)
+
 interface RuntimeFilesHandler {
     suspend fun open(mimeTypes: List<String>): RuntimeFileToken?
+    suspend fun openMultiple(maxItems: Int): RuntimeFileSelection?
     suspend fun save(suggestedName: String, mimeType: String, content: ByteArray): RuntimeFileToken?
     suspend fun capabilityFor(token: String): ToolBoxCapabilityId
     suspend fun consume(token: String, maxBytes: Int): ByteArray
@@ -26,6 +32,22 @@ internal suspend fun RuntimeRpcDispatcher.invokeFiles(
         .open(params.optionalMimeTypes())
         ?.toRpcValue()
         ?: RpcValue.Null
+    "files.openMultiple" -> {
+        params.requireOnly("maxItems")
+        val maxItems = params.optionalInt("maxItems", 1, MAX_OPEN_FILES) ?: MAX_OPEN_FILES
+        val selection = requireHandler(systemHandlers.files).openMultiple(maxItems)
+        if (selection == null) {
+            RpcValue.Null
+        } else {
+            require(selection.files.size in 1..maxItems)
+            RpcValue.ObjectValue(
+                mapOf(
+                    "files" to RpcValue.ArrayValue(selection.files.map(RuntimeFileToken::toRpcValue)),
+                    "ordered" to RpcValue.Bool(selection.ordered),
+                ),
+            )
+        }
+    }
     "files.save" -> {
         params.requireOnly("suggestedName", "mimeType", "content")
         requireHandler(systemHandlers.files).save(
@@ -95,5 +117,6 @@ internal fun runtimeFileReadRawBudget(requestId: String, maxResponseBytes: Int):
 }
 
 private const val FILE_READ_RESPONSE_FIXED_BYTES = 42
+private const val MAX_OPEN_FILES = 16
 
 private val MIME_TYPE = Regex("^[a-zA-Z0-9!#$&^_.+-]+/[a-zA-Z0-9!#$&^_.+*\\-]+$")

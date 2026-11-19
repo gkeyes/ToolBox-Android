@@ -593,6 +593,7 @@
     browser: { open: url => call('browser.open', { url }).then(() => undefined), openEmbedded },
     files: {
       open: mimeTypes => call('files.open', mimeTypes === undefined ? {} : { mimeTypes }),
+      openMultiple: maxItems => call('files.openMultiple', maxItems === undefined ? {} : { maxItems }),
       save: (suggestedName, mimeType, content) => call('files.save', { suggestedName, mimeType, content: bytes(content) }),
       read: token => call('files.read', { token }).then(result => fromBase64(result.base64))
     },

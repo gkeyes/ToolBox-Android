@@ -1,8 +1,10 @@
 package io.toolbox.host.runtime
 
 import android.Manifest
+import android.app.Activity
 import android.content.ClipDescription
 import android.content.ClipboardManager
+import android.content.ContentResolver
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -12,10 +14,14 @@ import android.database.Cursor
 import android.graphics.drawable.Icon
 import android.location.LocationManager
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.CancellationSignal
+import android.os.ext.SdkExtensions
+import android.provider.MediaStore
 import android.provider.OpenableColumns
 import androidx.activity.ComponentActivity
+import androidx.activity.result.ActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContract
 import androidx.activity.result.contract.ActivityResultContracts
@@ -25,6 +31,7 @@ import io.toolbox.host.MainActivity
 import io.toolbox.host.R
 import io.toolbox.tool.runtime.RuntimeCameraHandler
 import io.toolbox.tool.runtime.RuntimeClipboardReadHandler
+import io.toolbox.tool.runtime.RuntimeFileSelection
 import io.toolbox.tool.runtime.RuntimeFileToken
 import io.toolbox.tool.runtime.RuntimeFilesHandler
 import io.toolbox.tool.runtime.RuntimeHandlerException
@@ -43,6 +50,7 @@ import java.security.MessageDigest
 import java.security.SecureRandom
 import java.util.Base64
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -91,6 +99,12 @@ internal class RuntimeFileSessionResources(
         handles[token] = handle
     }
 
+    fun registerAll(batch: Map<String, RuntimeFileHandle>) = synchronized(lock) {
+        ensureOpen()
+        check(batch.keys.none(handles::containsKey))
+        handles.putAll(batch)
+    }
+
     fun capabilityFor(token: String): ToolBoxCapabilityId? = synchronized(lock) { handles[token]?.capability }
 
     fun take(token: String): RuntimeFileHandle? = synchronized(lock) { handles.remove(token) }
@@ -121,6 +135,7 @@ internal fun locationResult(value: android.location.Location?): Result<android.l
 internal object PendingForegroundRequests {
     val mutex = Mutex()
     var open: CompletableDeferred<Uri?>? = null
+    var openMultiple: CompletableDeferred<ActivityResult>? = null
     var save: CompletableDeferred<Uri?>? = null
     var camera: CompletableDeferred<Boolean>? = null
     var cameraFile: File? = null
@@ -128,10 +143,12 @@ internal object PendingForegroundRequests {
     /** Ends every waiting request and returns the camera file left to delete. */
     fun fail(failure: Throwable): File? {
         open?.completeExceptionally(failure)
+        openMultiple?.completeExceptionally(failure)
         save?.completeExceptionally(failure)
         camera?.completeExceptionally(failure)
         val file = cameraFile
         open = null
+        openMultiple = null
         save = null
         camera = null
         cameraFile = null
@@ -156,6 +173,11 @@ internal class ForegroundCapabilityBroker private constructor(
     private val cameraLauncher = activity.registerForActivityResult(ActivityResultContracts.TakePicture()) { saved ->
         PendingForegroundRequests.camera?.complete(saved)
         PendingForegroundRequests.camera = null
+    }
+    private val openMultipleLauncher = activity.registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        val pending = PendingForegroundRequests.openMultiple
+        PendingForegroundRequests.openMultiple = null
+        pending?.complete(result)
     }
 
     init {
@@ -362,6 +384,48 @@ internal class ForegroundCapabilityBroker private constructor(
         }
     }
 
+    private suspend fun openImages(maxItems: Int, requireForegroundRuntime: () -> Unit): PickedImages? = PendingForegroundRequests.mutex.withLock {
+        ensureActive()
+        val intent = if (maxItems == 1) {
+            ActivityResultContracts.PickVisualMedia().createIntent(
+                activity,
+                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+            )
+        } else {
+            ActivityResultContracts.PickMultipleVisualMedia().createIntent(
+                activity,
+                PickVisualMediaRequest.Builder()
+                    .setMediaType(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                    .setMaxItems(maxItems)
+                    .build(),
+            )
+        }
+        // The platform picker promises tap order from API 35 / R Extension 12.
+        // Document and OEM fallback providers may return a different order.
+        val ordered = maxItems == 1 || intent.enableOrderedImageSelection()
+        val deferred = CompletableDeferred<ActivityResult>()
+        PendingForegroundRequests.openMultiple = deferred
+        try {
+            requireForegroundRuntime()
+            openMultipleLauncher.launch(intent)
+            val result = deferred.await()
+            if (result.resultCode != Activity.RESULT_OK) return@withLock null
+            val uris = selectedImageUris(result.data, maxItems)
+            if (uris.isEmpty()) null else PickedImages(uris, ordered)
+        } finally {
+            if (PendingForegroundRequests.openMultiple === deferred) PendingForegroundRequests.openMultiple = null
+        }
+    }
+
+    private fun Intent.enableOrderedImageSelection(): Boolean {
+        if (action != MediaStore.ACTION_PICK_IMAGES) return false
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.VANILLA_ICE_CREAM &&
+            SdkExtensions.getExtensionVersion(Build.VERSION_CODES.R) < 12
+        ) return false
+        putExtra(MediaStore.EXTRA_PICK_IMAGES_IN_ORDER, true)
+        return true
+    }
+
     private suspend fun saveDocument(name: String, mimeType: String, requireForegroundRuntime: () -> Unit): Uri? = PendingForegroundRequests.mutex.withLock {
         ensureActive()
         val deferred = CompletableDeferred<Uri?>()
@@ -396,6 +460,20 @@ internal class ForegroundCapabilityBroker private constructor(
                 } ?: throw RuntimeHandlerException(RuntimeRpcErrorCode.NOT_FOUND, "The selected file cannot be opened")
             }
             return fileToken(uri, capability = ToolBoxCapabilityId.FILES_OPEN)
+        }
+
+        override suspend fun openMultiple(maxItems: Int): RuntimeFileSelection? {
+            resources.ensureOpen()
+            val selection = withForeground(requireForegroundRuntime) { it.openImages(maxItems, requireForegroundRuntime) } ?: return null
+            val files = withContext(Dispatchers.IO) {
+                selection.uris.mapIndexed { index, uri ->
+                    pickerImageToken(uri, "image-${index + 1}")
+                }
+            }
+            resources.registerAll(files.zip(selection.uris).associate { (file, uri) ->
+                file.token to RuntimeFileHandle(uri, ToolBoxCapabilityId.FILES_OPEN, null)
+            })
+            return RuntimeFileSelection(files, selection.ordered)
         }
 
         override suspend fun save(
@@ -459,13 +537,7 @@ internal class ForegroundCapabilityBroker private constructor(
             capability: ToolBoxCapabilityId,
             temporaryFile: File? = null,
         ): RuntimeFileToken = withContext(Dispatchers.IO) {
-            val metadata = context.contentResolver.query(
-                uri,
-                arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE),
-                null,
-                null,
-                null,
-            )?.use(::readMetadata)
+            val metadata = readFileMetadata(uri)
             val token = randomToken()
             resources.register(token, RuntimeFileHandle(uri, capability, temporaryFile))
             RuntimeFileToken(
@@ -474,6 +546,39 @@ internal class ForegroundCapabilityBroker private constructor(
                 mimeType = context.contentResolver.getType(uri) ?: fallbackMimeType,
                 size = metadata?.second ?: fallbackSize,
             )
+        }
+
+        private fun readFileMetadata(uri: Uri): Pair<String, Long>? =
+            context.contentResolver.query(
+                uri,
+                arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE),
+                null,
+                null,
+                null,
+            )?.use(::readMetadata)
+
+        private fun pickerImageToken(uri: Uri, fallbackName: String): RuntimeFileToken {
+            // An image provider may decline a metadata query or report only
+            // some fields. Keep each selected URI so the caller can still
+            // try a bounded read and report individual image failures.
+            val metadata = optionalPickerMetadata { readFileMetadata(uri) }
+            val mimeType = optionalPickerMetadata { context.contentResolver.getType(uri) }
+                ?.lowercase()
+                ?.takeIf(IMAGE_MIME_TYPE::matches)
+            return RuntimeFileToken(
+                token = randomToken(),
+                name = metadata?.first?.takeIf { it.isNotBlank() && it.none(Char::isISOControl) } ?: fallbackName,
+                mimeType = mimeType ?: "application/octet-stream",
+                size = metadata?.second?.coerceIn(0L, 9_007_199_254_740_991L) ?: 0L,
+            )
+        }
+
+        private inline fun <T> optionalPickerMetadata(read: () -> T): T? = try {
+            read()
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: RuntimeException) {
+            null
         }
 
         private fun readBounded(input: java.io.InputStream, maxBytes: Int): ByteArray {
@@ -529,6 +634,7 @@ internal class ForegroundCapabilityBroker private constructor(
     }
 
     private data class CreateDocumentRequest(val name: String, val mimeType: String)
+    private data class PickedImages(val uris: List<Uri>, val ordered: Boolean)
     private data class ShortcutRoute(val token: String, val shortcutId: String)
 
     internal data class ShortcutLabels(val short: String, val long: String)
@@ -549,6 +655,7 @@ internal class ForegroundCapabilityBroker private constructor(
         private const val SHORTCUT_PREFERENCES = "toolbox_shortcut_routes"
         private const val CAPTURE_DIRECTORY = "toolbox-captures"
         private const val STATE_CAMERA_FILE = "io.toolbox.host.pendingCameraFile"
+        private val IMAGE_MIME_TYPE = Regex("image/[a-z0-9!#$&^_.+*\\-]+")
         private val companionLock = Any()
         private var activeBroker = WeakReference<ForegroundCapabilityBroker>(null)
         private val random = SecureRandom()
@@ -651,4 +758,23 @@ internal class ForegroundCapabilityBroker private constructor(
             .take(12)
             .joinToString("") { "%02x".format(it) }
     }
+}
+
+internal fun selectedImageUris(data: Intent?, maxItems: Int): List<Uri> {
+    if (data == null) return emptyList()
+    val uris = linkedSetOf<Uri>()
+    val clips = data.clipData
+    if (clips != null) {
+        for (index in 0 until clips.itemCount) {
+            val uri = clips.getItemAt(index).uri ?: continue
+            if (uri.scheme == ContentResolver.SCHEME_CONTENT) uris.add(uri)
+            if (uris.size > maxItems) {
+                throw RuntimeHandlerException(RuntimeRpcErrorCode.QUOTA_EXCEEDED, "The picker returned more than $maxItems images")
+            }
+        }
+    }
+    // ClipData is the authoritative ordered list. Some pickers also put an
+    // arbitrary member in data; only use data for a standalone selection.
+    data.data?.takeIf { uris.isEmpty() && it.scheme == ContentResolver.SCHEME_CONTENT }?.let(uris::add)
+    return uris.toList()
 }

@@ -2,12 +2,19 @@ package io.toolbox.host.runtime
 
 import android.app.Activity
 import android.app.Application
+import android.content.ClipData
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.os.Looper
 import android.provider.MediaStore
 import androidx.activity.ComponentActivity
+import io.toolbox.tool.api.ToolBoxCapabilityId
+import io.toolbox.tool.runtime.RuntimeFileSelection
+import io.toolbox.tool.runtime.RuntimeFilesHandler
+import io.toolbox.tool.runtime.RuntimeHandlerException
+import io.toolbox.tool.runtime.RuntimeRpcErrorCode
+import java.io.ByteArrayInputStream
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -17,6 +24,7 @@ import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -108,6 +116,86 @@ class ForegroundCapabilityBrokerTest {
     }
 
     @Test
+    @Config(sdk = [35])
+    fun orderedPhotoPickerKeepsTheTapOrderAndUsesSingleReadTokensAfterActivityRecreation() {
+        val first = resumedActivityWithBroker()
+        val files = foregroundFiles()
+        val pending = openImagePicker(files, maxItems = 3)
+        val launch = shadowOf(first.get()).nextStartedActivityForResult
+        assertEquals(MediaStore.ACTION_PICK_IMAGES, launch.intent.action)
+        assertEquals("image/*", launch.intent.type)
+        assertEquals(3, launch.intent.getIntExtra(MediaStore.EXTRA_PICK_IMAGES_MAX, 0))
+        assertTrue(launch.intent.getBooleanExtra(MediaStore.EXTRA_PICK_IMAGES_IN_ORDER, false))
+
+        val saved = Bundle()
+        first.pause().saveInstanceState(saved).stop()
+        broker!!.close(keepPendingRequests = true)
+        first.destroy()
+        assertFalse(pending.isCompleted)
+
+        val second = Robolectric.buildActivity(ComponentActivity::class.java).create(saved)
+        broker = ForegroundCapabilityBroker.attach(second.get())
+        second.start().resume()
+        val firstPick = Uri.parse("content://io.toolbox.test/3")
+        val secondPick = Uri.parse("content://io.toolbox.test/1")
+        val resolver = shadowOf(app.contentResolver)
+        resolver.registerInputStream(firstPick, ByteArrayInputStream(byteArrayOf(3)))
+        resolver.registerInputStream(secondPick, ByteArrayInputStream(byteArrayOf(1)))
+        second.get().activityResultRegistry.dispatchResult(
+            launch.requestCode,
+            Activity.RESULT_OK,
+            multiPick(firstPick, secondPick).setData(secondPick),
+        )
+        awaitCall()
+        assertTrue(pending.isCompleted)
+
+        val selection = checkNotNull(runBlocking { pending.await().getOrThrow() })
+        assertTrue(selection.ordered)
+        assertEquals(2, selection.files.size)
+        assertEquals(listOf(3, 1), runBlocking {
+            selection.files.map { file ->
+                assertEquals(ToolBoxCapabilityId.FILES_OPEN, files.capabilityFor(file.token))
+                files.consume(file.token, 16).single().toInt()
+            }
+        })
+        assertEquals(RuntimeRpcErrorCode.NOT_FOUND, assertThrows(RuntimeHandlerException::class.java) {
+            runBlocking { files.consume(selection.files.first().token, 16) }
+        }.errorCode)
+    }
+
+    @Test
+    @Config(sdk = [34])
+    fun imagePickerWithOneRemainingSlotCanBeCancelled() {
+        val controller = resumedActivityWithBroker()
+        val pending = openImagePicker(foregroundFiles(), maxItems = 1)
+        val launch = shadowOf(controller.get()).nextStartedActivityForResult
+        assertEquals(MediaStore.ACTION_PICK_IMAGES, launch.intent.action)
+        assertFalse(launch.intent.hasExtra(MediaStore.EXTRA_PICK_IMAGES_MAX))
+        controller.get().activityResultRegistry.dispatchResult(launch.requestCode, Activity.RESULT_CANCELED, null)
+        awaitCall()
+
+        assertTrue(pending.isCompleted)
+        assertEquals(null, runBlocking { pending.await().getOrThrow() })
+        assertEquals(null, PendingForegroundRequests.openMultiple)
+        assertFalse(PendingForegroundRequests.mutex.isLocked)
+    }
+
+    @Test
+    fun clipDataOrderWinsAndDuplicateOrNonContentUrisDoNotConsumeSlots() {
+        val first = Uri.parse("content://io.toolbox.test/z")
+        val second = Uri.parse("content://io.toolbox.test/a")
+        val invalid = Uri.parse("file:///test")
+        val data = multiPick(first, invalid, second, first).setData(second)
+
+        assertEquals(listOf(first, second), selectedImageUris(data, 2))
+        assertEquals(listOf(second), selectedImageUris(Intent().setData(second), 1))
+        assertEquals(emptyList<Uri>(), selectedImageUris(Intent().setData(invalid), 1))
+        assertEquals(RuntimeRpcErrorCode.QUOTA_EXCEEDED, assertThrows(RuntimeHandlerException::class.java) {
+            selectedImageUris(data, 1)
+        }.errorCode)
+    }
+
+    @Test
     fun closingTheActivityForGoodEndsThePendingRequest() {
         resumedActivityWithBroker()
         val pending = openPicker()
@@ -143,9 +231,24 @@ class ForegroundCapabilityBrokerTest {
     }
 
     private fun openPicker(mimeTypes: List<String> = listOf("text/plain")): CompletableDeferred<Uri?> {
-        val files = ForegroundCapabilityBroker.activeHandlers(app, "demo.tool", "Demo", requireForegroundRuntime = {}).files!!
+        val files = foregroundFiles()
         call = scope.launch { runCatching { files.open(mimeTypes) } }
         return checkNotNull(PendingForegroundRequests.open) { "The picker did not start" }
+    }
+
+    private fun foregroundFiles(): RuntimeFilesHandler =
+        ForegroundCapabilityBroker.activeHandlers(app, "demo.tool", "Demo", requireForegroundRuntime = {}).files!!
+
+    private fun openImagePicker(files: RuntimeFilesHandler, maxItems: Int): CompletableDeferred<Result<RuntimeFileSelection?>> {
+        val pending = CompletableDeferred<Result<RuntimeFileSelection?>>()
+        call = scope.launch { pending.complete(runCatching { files.openMultiple(maxItems) }) }
+        return pending
+    }
+
+    private fun multiPick(first: Uri, vararg others: Uri): Intent = Intent().apply {
+        clipData = ClipData.newRawUri("selection", first).also { clips ->
+            others.forEach { uri -> clips.addItem(ClipData.Item(uri)) }
+        }
     }
 
     private fun awaitCall() {

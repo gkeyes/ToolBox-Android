@@ -111,6 +111,7 @@ object ToolBoxApiV1 {
         MethodDescriptor("browser.updateEmbedded", ToolBoxCapabilityId.BROWSER, "BrowserEmbeddedUpdateRequest", "void"),
         MethodDescriptor("browser.closeEmbedded", ToolBoxCapabilityId.BROWSER, "BrowserEmbeddedCloseRequest", "void"),
         MethodDescriptor("files.open", ToolBoxCapabilityId.FILES_OPEN, "FileOpenRequest", "FileToken | null"),
+        MethodDescriptor("files.openMultiple", ToolBoxCapabilityId.FILES_OPEN, "FileOpenMultipleRequest", "FileSelection | null"),
         MethodDescriptor("files.read", null, "FileTokenRequest", "FileReadResult"),
         MethodDescriptor("files.save", ToolBoxCapabilityId.FILES_SAVE, "FileSaveRequest", "FileToken | null"),
         MethodDescriptor("shortcuts.pin", ToolBoxCapabilityId.SHORTCUTS, "ShortcutPinRequest", "ShortcutPinResult"),

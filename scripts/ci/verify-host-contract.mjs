@@ -147,6 +147,21 @@ function runtimeHarness(respond = () => ({ ok: true, result: {} })) {
     setPerformanceStep: step => { performanceStep = step; measured = 0; } };
 }
 
+const selectedImages = [
+  { token: 'z', name: 'z.png', mimeType: 'image/png', size: 15 },
+  { token: 'a', name: 'a.jpg', mimeType: 'image/jpeg', size: 20 },
+];
+const pickerHarness = runtimeHarness(request => ({
+  ok: true,
+  result: request.params.maxItems === 2 ? { files: selectedImages, ordered: true } : null,
+}));
+const picked = await pickerHarness.page.ToolBox.files.openMultiple(2);
+assert.equal(picked.ordered, true);
+assert.deepEqual(Array.from(picked.files, file => file.token), ['z', 'a'], 'SDK preserves picker order');
+assert.deepEqual(pickerHarness.sent.findLast(request => request.method === 'files.openMultiple').params, { maxItems: 2 });
+assert.equal(await pickerHarness.page.ToolBox.files.openMultiple(), null);
+assert.deepEqual(pickerHarness.sent.findLast(request => request.method === 'files.openMultiple').params, {});
+
 const stateHarness = runtimeHarness(request => ({ ok: true,
   result: request.method === 'runtime.getState'
     ? { generation: 'generation', revision: 1, foreground: true, closing: false } : {} }));
