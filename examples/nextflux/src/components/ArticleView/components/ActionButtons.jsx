@@ -444,13 +444,14 @@ function ActionButtons() {
       <div className="reader-speech-slot">
         {!summaryOpen && <ArticleSpeechBar article={$activeArticle} />}
       </div>
-      <AISummary
+      {/* A dismissed summary must release its glass layer and hit targets even
+          when the WebView suspends CSS animations. */}
+      {summaryOpen && <AISummary
         article={$activeArticle}
-        open={summaryOpen}
         onClose={closeAISummary}
         onGenerate={generateAISummary}
         onStop={stopAISummary}
-      />
+      />}
       <MobileSheet
         open={moreOpen}
         onOpenChange={setMoreOpen}

@@ -169,30 +169,53 @@ test("toolbar actions work and closing an AI summary preserves its cached result
   await closeSummary(page);
 });
 
-test("touch dismissal never paints a header-only AI summary", async ({ page }) => {
-  await open(page, 393, "dark");
-  const trigger = page.getByRole("button", { name: "AI 摘要", exact: true });
-  await trigger.tap();
-  const dialog = page.getByRole("dialog", { name: "AI 摘要" });
-  await expect(dialog.locator(".nextflux-summary-text")).toHaveText("Fixture summary.");
-  await expect(page.locator('.nextflux-summary-container[data-entering]')).toHaveCount(0);
-  await page.evaluate(() => {
-    window.summaryHeaderObserved = new Promise(resolve => {
-      const inspect = () => {
-        const panel = document.querySelector(".nextflux-summary-dialog");
-        if (!panel) return resolve(false);
-        if (panel.querySelector(".nextflux-summary-header") &&
-            !panel.querySelector(".nextflux-summary-text")?.textContent) return resolve(true);
-        requestAnimationFrame(inspect);
-      };
-      requestAnimationFrame(inspect);
+for (const method of ["close button", "backdrop", "system back"]) {
+  test(`AI summary clears its entire overlay on ${method} even if the WebView pauses animations`, async ({ page }) => {
+    await open(page, 393, "dark");
+    const trigger = page.getByRole("button", { name: "AI 摘要", exact: true });
+    await trigger.tap();
+    const dialog = page.getByRole("dialog", { name: "AI 摘要" });
+    await expect(dialog.locator(".nextflux-summary-text")).toHaveText("Fixture summary.");
+    await expect(page.locator(".nextflux-summary-container[data-entering]")).toHaveCount(0);
+    await page.addStyleTag({ content: `
+      :is(.nextflux-summary-backdrop, .nextflux-summary-container)[data-exiting] {
+        animation-play-state: paused !important;
+      }` });
+    // Inspect physical portal elements, including visually present aria-hidden nodes.
+    await page.evaluate(() => {
+      const button = document.querySelector('.reader-dock [aria-label="AI 摘要"]');
+      window.firstClosedFrame = new Promise(resolve => {
+        function sample() {
+          if (button.getAttribute("aria-expanded") !== "false") return requestAnimationFrame(sample);
+          const layers = document.querySelectorAll(".nextflux-summary-backdrop, .nextflux-summary-container, .nextflux-summary-dialog");
+          resolve(Array.from(layers, layer => layer.dataset.slot));
+        }
+        requestAnimationFrame(sample);
+      });
     });
+    if (method === "close button") await dialog.getByRole("button", { name: "关闭 AI 摘要" }).tap();
+    if (method === "backdrop") await page.touchscreen.tap(5, 5);
+    if (method === "system back") {
+      expect(await page.evaluate(() => !window.dispatchEvent(new Event("toolboxback", { cancelable: true })))).toBe(true);
+    }
+    expect(await page.evaluate(() => window.firstClosedFrame)).toEqual([]);
+    await expect(trigger).toBeFocused();
+    await expect(page.getByRole("tooltip")).toHaveCount(0);
+    await trigger.tap();
+    await expect(dialog.locator(".nextflux-summary-text")).toHaveText("Fixture summary.");
+    expect(await page.evaluate(() => window.controlsFixture.summary.requests())).toEqual([]);
   });
-  await dialog.getByRole("button", { name: "关闭 AI 摘要" }).tap();
-  await expect(dialog).toHaveCount(0);
-  expect(await page.evaluate(() => window.summaryHeaderObserved)).toBe(false);
-  await expect(trigger).toBeFocused();
-  await expect(page.getByRole("tooltip")).toHaveCount(0);
+}
+
+test("system back closes the AI summary in one press with its regenerate tooltip open", async ({ page }) => {
+  await open(page);
+  const dialog = await openSummary(page);
+  await dialog.getByRole("button", { name: "关闭 AI 摘要" }).focus();
+  await page.keyboard.press("Shift+Tab");
+  await expect(page.getByRole("tooltip", { name: "重新生成" })).toBeVisible();
+  expect(await page.evaluate(() => !window.dispatchEvent(new Event("toolboxback", { cancelable: true })))).toBe(true);
+  await expect(page.locator(".nextflux-summary-backdrop")).toHaveCount(0);
+  await expect(page.getByTestId("route")).toHaveText("/feed/1/article/42");
 });
 
 test("system back after touch returns to an unadorned AI summary button; keyboard focus remains visible", async ({ page }) => {

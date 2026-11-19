@@ -100,9 +100,11 @@ export function closeTopLayer({ doc = document, win = window } = {}) {
       // the reader. Alerts are busy when their × is disabled; sheets say so
       // with data-nf-locked (CustomModal's locked prop).
       if (dialog.closest("[data-nf-locked='true']") || dialog.querySelector("[data-nf-locked='true']")) return false;
-      // Alerts ignore Escape; back is their close (×) button.
-      if (dialog.getAttribute("role") === "alertdialog") {
-        const close = dialog.querySelector("[slot='close'], .nextflux-close-button");
+      // A tooltip inside the summary can consume Escape. Use its own close
+      // button for native back, as we do for alerts that ignore Escape.
+      const backClose = dialog.querySelector("[data-nf-back-close]");
+      if (backClose || dialog.getAttribute("role") === "alertdialog") {
+        const close = backClose || dialog.querySelector("[slot='close'], .nextflux-close-button");
         if (!close || close.disabled || close.getAttribute("aria-disabled") === "true") return false;
         close.click();
       } else {
