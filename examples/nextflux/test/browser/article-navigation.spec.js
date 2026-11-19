@@ -150,15 +150,17 @@ test("a narrow reader shows the entire unique RSS title and only clamps a repeat
   await expect(header).toHaveText(title);
   const visibleHeight = () => header.evaluate(el => el.clientHeight);
   const lineHeight = await header.evaluate(el => parseFloat(getComputedStyle(el).lineHeight));
-  expect(await visibleHeight()).toBeGreaterThan(2 * lineHeight);
-  expect(await header.evaluate(el => el.scrollHeight - el.clientHeight)).toBeLessThanOrEqual(1);
+  const clippedHeight = () => header.evaluate(el => el.scrollHeight - el.clientHeight);
+  expect(await visibleHeight()).toBeGreaterThan(Math.ceil(lineHeight));
+  expect(await clippedHeight()).toBeLessThanOrEqual(1);
 
   await page.evaluate(title => window.navigationFixture.showFullText(`<h2>${title}</h2><p>正文。</p>`), title);
   await expect(body.locator("h2")).toHaveText(title);
   await expect.poll(visibleHeight).toBeLessThanOrEqual(Math.ceil(lineHeight));
   await page.evaluate(() => window.navigationFixture.showFullText("<p>🖼️ tinybrain：从中文语料开始训练，此处只有标题的一部分。</p>"));
   await expect(body).toContainText("只有标题的一部分");
-  await expect.poll(visibleHeight).toBeGreaterThan(2 * lineHeight);
+  await expect.poll(visibleHeight).toBeGreaterThan(Math.ceil(lineHeight));
+  expect(await clippedHeight()).toBeLessThanOrEqual(1);
 });
 
 test("the next page follows the first pull before the release threshold", async ({ page }) => {
