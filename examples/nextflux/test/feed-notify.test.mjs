@@ -460,3 +460,20 @@ test("the carried count is cleared once a notice includes it", async () => {
   server.add(12, 1006, "下一篇");
   assert.deepEqual(await notifier.check({ syncId: "c" }), [{ feedId: 12, outcome: "notified", count: 1 }]);
 });
+
+test("empty watches skip catalog reads and unchanged cursors skip native writes", async () => {
+  const { notifier, server, toolbox, posted } = world();
+  let reads = 0, writes = 0;
+  const options = { loadKnownFeedIds: async () => { reads++; return new Set([12]); } };
+  const save = toolbox.storage.set;
+  toolbox.storage.set = async (...args) => { writes++; await save(...args); };
+  await notifier.check(options);
+  assert.deepEqual([reads, writes], [0, 0]);
+  await notifier.setWatched(12, true);
+  for (let syncId = 1; syncId <= 8; syncId++) await notifier.check({ ...options, syncId });
+  assert.deepEqual([reads, writes], [8, 1]);
+  server.add(12, 1, "新文章");
+  await notifier.check({ ...options, syncId: 9 });
+  assert.equal(writes, 2);
+  assert.equal(posted.length, 1);
+});

@@ -71,9 +71,10 @@ export async function forgetFeedNotification(feedId) {
 export async function checkWatchedFeeds(options = {}) {
   if (!toolbox()?.notifications || !toolbox()?.storage) return [];
   // The committed catalog in the cache, not the sidebar store, which a background-only page may not load.
-  const catalog = await getFeeds().catch(() => null);
-  const knownFeedIds = Array.isArray(catalog) ? new Set(catalog.map((feed) => Number(feed.id))) : null;
-  const results = await current().check({ ...options, knownFeedIds });
+  const results = await current().check({ ...options, loadKnownFeedIds: async () => {
+    const catalog = await getFeeds().catch(() => null);
+    return Array.isArray(catalog) ? new Set(catalog.map((feed) => Number(feed.id))) : null;
+  } });
   if (results.some((result) => result.outcome === "removed")) watchedFeeds.set(await current().watchedFeedIds());
   return results;
 }

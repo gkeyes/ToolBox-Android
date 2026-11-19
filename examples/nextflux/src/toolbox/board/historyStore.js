@@ -43,7 +43,7 @@ async function selectArticles(ids) {
     .map((row) => ({ id: row.id, title: row.titleText || row.title || "", feedTitle: feeds.get(row.feedId)?.title || "",
       url: row.url || "", text: row.previewText || "", published_at: row.published_at, created_at: row.created_at }));
 }
-export async function initializeBoardHistory() {
+export async function initializeBoardHistory({ refresh = true } = {}) {
   const key = accountKey();
   if (!key) return null;
   if (context?.key === key && context.failed) {
@@ -55,7 +55,7 @@ export async function initializeBoardHistory() {
     const current = context;
     await current.ready;
     if (context !== current || accountKey() !== key) return null;
-    await current.manager.refresh();
+    if (refresh) await current.manager.refresh();
     return context === current && accountKey() === key ? current.manager : null;
   }
   const current = { key, manager: null, ready: null };
@@ -165,7 +165,7 @@ authState.listen(() => {
 syncCommitted.listen((event) => {
   if (!event || !accountKey()) return;
   const key = accountKey();
-  const observing = initializeBoardHistory().then((manager) => {
+  const observing = initializeBoardHistory({ refresh: false }).then((manager) => {
     if (accountKey() === key) return manager?.onSync(event);
   });
   syncEvents.add(observing);

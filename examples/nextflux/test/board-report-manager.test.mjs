@@ -41,7 +41,11 @@ function fixture({ generate, writeDigest, initialState = null, initialReports = 
       for (const [id, report] of db.reports) if (report.completedAt <= clock - 48 * HOURS) db.reports.delete(id);
       await hooks.prune?.();
     },
-    async listReports() { db.calls.push("listReports"); await hooks.listReports?.(); return copy([...db.reports.values()]); },
+    async listReports() {
+      db.calls.push("listReports"); await hooks.listReports?.();
+      for (const [id, report] of db.reports) if (report.completedAt <= clock - 48 * HOURS) db.reports.delete(id);
+      return copy([...db.reports.values()]);
+    },
     async readReport(id) { db.calls.push("readReport"); await hooks.readReport?.(id); return copy(db.reports.get(id) || null); },
     async saveReport(report) {
       db.calls.push("saveReport"); await hooks.saveReport?.(report);
@@ -670,3 +674,17 @@ for (const failFirstPause of [false, true]) {
     assert.equal(f.digestCalls.length, 0);
   });
 }
+
+test("eight idle half-hour syncs persist all recovery checkpoints without retrying empty jobs or scanning storage", async () => {
+  const f = fixture();
+  await f.initialize();
+  f.db.calls.length = 0;
+  for (let round = 0; round < 8; round++) {
+    f.advance(HOURS / 2 - 1000);
+    await f.sync([]);
+    assert.equal(f.db.state.observedThrough, f.now() - 20);
+  }
+  assert.equal(f.db.calls.filter(call => call === "saveState").length, 8);
+  assert.equal(f.db.calls.filter(call => call === "prune").length, 0);
+  assert.equal(f.generationCalls.length, 0);
+});

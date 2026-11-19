@@ -38,7 +38,7 @@ export function createReportManager({ repository, selectArticles, recoverIds = a
     writes = operation;
     return operation;
   };
-  const change = (update) => enqueue(async () => {
+  const change = (update, shouldRun = () => true) => enqueue(async () => {
     if (disposed) throw aborted();
     if (stateNeedsReload) {
       // A lost native commit acknowledgement can follow a durable write.
@@ -47,12 +47,15 @@ export function createReportManager({ repository, selectArticles, recoverIds = a
       const saved = await repository.loadState();
       if (disposed) throw aborted();
       validate(saved);
-      if (unsavedJobStatus?.id === saved.job?.id) Object.assign(saved.job, unsavedJobStatus);
+      if (unsavedJobStatus && unsavedJobStatus.id === saved.job?.id) Object.assign(saved.job, unsavedJobStatus);
       state = saved;
       stateNeedsReload = false;
     }
+    // Decide inside the writer, after uncertain commits have been read back.
+    if (!unsavedJobStatus && !shouldRun(state)) return;
     const next = copy(state);
-    await update(next);
+    const changed = await update(next);
+    if (changed === false && !unsavedJobStatus) return;
     if (disposed) throw aborted();
     try { await repository.saveState(next); }
     catch (failure) {
@@ -137,8 +140,7 @@ export function createReportManager({ repository, selectArticles, recoverIds = a
     if (disposed) return;
     await enqueue(async () => {
       if (disposed) return;
-      await repository.prune();
-      if (disposed) return;
+      // Listing already expires reports; startup and recovery handle orphan scans.
       reports = await repository.listReports();
       publish();
     });
@@ -170,9 +172,9 @@ export function createReportManager({ repository, selectArticles, recoverIds = a
       await change(async (next) => {
         const config = configuration();
         runConfig = config;
-        if (!config.aiReady || (!config.enabled && !force)) return;
+        if (!config.aiReady || (!config.enabled && !force)) return false;
         if (next.job) {
-          if (next.job.status === "error" && !retry) return;
+          if (next.job.status === "error" && !retry) return false;
           if (next.job.fingerprint !== config.fingerprint) {
             if (!retry) {
               next.job.status = "error";
@@ -189,8 +191,12 @@ export function createReportManager({ repository, selectArticles, recoverIds = a
           next.job.error = "";
         } else {
           const articles = await selected(next.pendingIds);
-          next.pendingIds = articles.map((article) => article.id);
-          if (!articles.length || (!force && articles.length <= REPORT_THRESHOLD)) return;
+          const eligibleIds = articles.map((article) => article.id);
+          if (!articles.length || (!force && articles.length <= REPORT_THRESHOLD)) {
+            if (eligibleIds.length === next.pendingIds.length && eligibleIds.every((id, i) => id === next.pendingIds[i])) return false;
+            next.pendingIds = eligibleIds;
+            return;
+          }
           const end = now();
           next.job = { id: newId(), kind: "interval", status: "running", phase: "analysis",
             periodStart: next.periodStart, periodEnd: end, articles,
@@ -199,7 +205,7 @@ export function createReportManager({ repository, selectArticles, recoverIds = a
           next.periodStart = end;
         }
         jobId = next.job.id;
-      });
+      }, (current) => Boolean(current.job || current.pendingIds.length));
       if (!jobId || suspended || disposed) return null;
       const abort = new AbortController();
       controller = abort;

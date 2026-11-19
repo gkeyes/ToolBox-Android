@@ -345,6 +345,7 @@ export function createReportStorage(storage, accountKey, { now = Date.now } = {}
     },
     listReports: () => enqueue(async () => {
       const current = await expire(await snapshot(), clock());
+      if (coordinator.needsSweep) await collect(current);
       return current.index.map(publicMeta).sort((a, b) => b.completedAt - a.completedAt || a.id.localeCompare(b.id));
     }),
     readReport: (id) => enqueue(async () => {

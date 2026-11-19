@@ -116,15 +116,19 @@ export function createFeedNotifier({ api, notifications, storage, feedTitle = ()
    * Runs after a committed sync. One failing feed does not stop the others. `foreground` marks a
    * sync the reader ran on screen: it only moves the cursors, even if NextFlux leaves meanwhile.
    */
-  function check({ foreground = false, knownFeedIds = null, syncId = null } = {}) {
+  function check({ foreground = false, knownFeedIds = null, loadKnownFeedIds = null, syncId = null } = {}) {
     return serial(async () => {
       const state = await load();
       const results = [];
+      if (!Object.keys(state.feeds).length) return results;
+      if (loadKnownFeedIds) knownFeedIds = await loadKnownFeedIds();
+      let dirty = false;
       // Feeds gone from the committed catalog (deleted on the server) stop being watched.
       // null means the catalog could not be read; an empty set means no feeds are left.
       if (knownFeedIds) {
         for (const key of Object.keys(state.feeds)) {
           if (knownFeedIds.has(Number(key))) continue;
+          dirty = true;
           delete state.feeds[key];
           delete state.opens[feedNotificationId(Number(key))];
           await notifications?.cancel?.(feedNotificationId(Number(key))).catch(() => {});
@@ -137,11 +141,16 @@ export function createFeedNotifier({ api, notifications, storage, feedTitle = ()
         try {
           if (!Number.isSafeInteger(watch?.lastEntryId) || watch.lastEntryId < 0) {
             state.feeds[key] = { lastEntryId: Number(await api.latestEntryId(feedId)) || 0 };
+            dirty = true;
             results.push({ feedId, outcome: "baseline" });
             continue;
           }
           const { entries = [], total: reported = 0 } = await api.newUnreadEntries(feedId, watch.lastEntryId) || {};
           const newer = entries.filter((entry) => Number.isSafeInteger(entry?.id) && entry.id > watch.lastEntryId);
+          if (!newer.length && !reported && !watch.pending?.length && !watch.backlog?.length) {
+            results.push({ feedId, outcome: "none" });
+            continue;
+          }
           // Only entries the committed sync wrote announce, so a tap never opens a missing one.
           // The cursor still moves past every new entry; uncached ones wait in `pending` and
           // announce once a later sync caches them. A pending entry still uncached after two more
@@ -180,6 +189,7 @@ export function createFeedNotifier({ api, notifications, storage, feedTitle = ()
             backlog += Math.max(0, (Number(from?.total) || 0) - (Number(to?.total) || 0));
           }
           const total = Math.max(fresh.length, fresh.length + unlisted + backlog);
+          dirty = true;
           const next = {
             lastEntryId: newer.reduce((max, entry) => Math.max(max, entry.id), watch.lastEntryId),
             ...(pending.length ? { pending } : {}),
@@ -218,7 +228,7 @@ export function createFeedNotifier({ api, notifications, storage, feedTitle = ()
           results.push({ feedId, outcome: "failed", code: error?.code || "ERROR" });
         }
       }
-      await save(state);
+      if (dirty) await save(state);
       return results;
     });
   }

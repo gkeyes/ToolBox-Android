@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createReportStorage, REPORT_RETENTION_MS } from "../src/toolbox/board/report-storage.mjs";
+import { createReportManager } from "../src/toolbox/board/report-manager.mjs";
 
 const START = Date.UTC(2026, 10, 17, 8);
 const HOUR = 60 * 60 * 1000;
@@ -277,4 +278,28 @@ test("invalid snapshots and report metadata are rejected before altering committ
   await assert.rejects(repository.saveReport(report({ periodEnd: START - 2 * HOUR })), { code: "INVALID_REQUEST" });
   assert.deepEqual(await repository.loadState(), { checkpoint: 1 });
   assert.deepEqual(await repository.listReports(), []);
+});
+
+test("eight half-hour idle syncs keep every report watermark within the idle storage budget", async () => {
+  let time = START;
+  const storage = memoryStorage();
+  const repository = createReportStorage(storage, ACCOUNT, { now: () => time });
+  const manager = createReportManager({ repository, now: () => time, selectArticles: async () => [],
+    configuration: () => ({ enabled: true, aiReady: true }) });
+  await manager.initialize({ baselineAt: time });
+  await manager.resume();
+  storage.calls.reads.length = 0;
+  storage.calls.writes.length = 0;
+  storage.calls.scans = 0;
+  for (let round = 0; round < 8; round++) {
+    time += HOUR / 2;
+    await manager.onSync({ outcome: "committed", syncedAt: time, committedAt: time, newEntryIds: [] });
+    await manager.start();
+    assert.equal(manager.getState().observedThrough, time);
+  }
+  assert.equal(storage.calls.scans, 0);
+  // The 1.32.4 path made 144 host calls, including 64 writes.
+  assert.ok(storage.calls.reads.length + storage.calls.writes.length <= 72);
+  assert.ok(storage.calls.writes.length <= 32);
+  assert.equal((await repository.loadState()).observedThrough, time);
 });
