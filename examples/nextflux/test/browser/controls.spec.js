@@ -209,13 +209,19 @@ for (const method of ["close button", "backdrop", "system back"]) {
 
 test("system back closes the AI summary in one press with its regenerate tooltip open", async ({ page }) => {
   await open(page);
-  const dialog = await openSummary(page);
+  // Open as on the phone. A mouse click leaves a hovering pointer on the
+  // toolbar button, which legitimately shows its desktop hover tooltip.
+  const trigger = page.getByRole("button", { name: "AI 摘要", exact: true });
+  await trigger.tap();
+  const dialog = page.getByRole("dialog", { name: "AI 摘要" });
+  await expect(dialog.locator(".nextflux-summary-text")).toHaveText("Fixture summary.");
+  await expect(page.locator(".nextflux-summary-container[data-entering]")).toHaveCount(0);
   await dialog.getByRole("button", { name: "关闭 AI 摘要" }).focus();
   await page.keyboard.press("Shift+Tab");
   await expect(page.getByRole("tooltip", { name: "重新生成" })).toBeVisible();
   expect(await page.evaluate(() => !window.dispatchEvent(new Event("toolboxback", { cancelable: true })))).toBe(true);
   await expect(page.locator(".nextflux-summary-backdrop")).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "AI 摘要", exact: true })).toBeFocused();
+  await expect(trigger).toBeFocused();
   await expect(page.getByRole("tooltip")).toHaveCount(0);
   await expect(page.locator("html")).toHaveAttribute("data-nf-input", "touch");
   await expect(page.getByTestId("route")).toHaveText("/feed/1/article/42");
