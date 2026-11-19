@@ -687,3 +687,40 @@ test("查重方式 picks title, URL or both, and hides with 隐藏重复条目 o
   await expect(row).toHaveCount(0);
   expect(pageErrors).toEqual([]);
 });
+
+test("Chinese article search waits for composition, pages results, and replaces a previous query", async ({ page }) => {
+  await installNativeBoundary(page, {
+    auth: { serverUrl: "https://miniflux.xiaochen.win", username: "search-test", userId: 7, token: "test", authType: "token" },
+    settings: { ...STORED_SETTINGS, syncInterval: "0" },
+  });
+  await page.goto(PRODUCTION_URL);
+  await expect(page.locator(".nextflux-article-list-page")).toBeVisible();
+  await page.evaluate(async () => {
+    const db = await import("/src/db/storage.js");
+    const syncedAt = "2026-01-01T00:00:00Z";
+    const token = await db.prepareArticleSync({ syncedAt });
+    const articles = Array.from({ length: 85 }, (_, index) => ({
+      id: index + 1, feedId: 1, title: "测试文章 " + (index + 1), status: "unread", starred: 0,
+      url: "https://example.test/" + index, content: "<p>正文</p>", published_at: syncedAt, changed_at: syncedAt,
+    }));
+    await db.stageArticleSync(token, articles);
+    await db.commitArticleSync(token, { feeds: [{ id: 1, title: "测试订阅" }], categories: [] });
+    (await import("/src/stores/modalStore.js")).searchDialogOpen.set(true);
+  });
+  const input = page.getByRole("textbox");
+  await input.dispatchEvent("compositionstart");
+  await input.fill("测试文章");
+  await expect(page.locator(".search-result-row")).toHaveCount(0);
+  await input.dispatchEvent("compositionend");
+  await expect(page.locator(".search-result-row").first()).toBeVisible();
+  const count = () => page.evaluate(async () => (await import("/src/stores/searchStore.js")).searchResults.get().length);
+  await expect.poll(count).toBe(40);
+  const list = page.locator('[data-virtuoso-scroller="true"]').filter({ has: page.locator(".search-result-row") });
+  for (const size of [80, 85]) {
+    await list.evaluate(el => { el.scrollTop = el.scrollHeight; });
+    await expect.poll(count).toBe(size);
+  }
+  await input.fill("测试文章 85");
+  await expect.poll(count).toBe(1);
+  await expect(page.locator(".search-result-row")).toContainText("测试文章 85");
+});

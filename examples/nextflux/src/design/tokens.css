@@ -8,11 +8,11 @@
  */
 
 @theme {
-  --radius-card: 16px;
-  --radius-row: 10px;
-  --radius-control: 10px;
+  --radius-card: var(--ds-radius-card);
+  --radius-row: var(--ds-radius-row);
+  --radius-control: var(--ds-radius-control);
   --radius-small: 8px;
-  --radius-sheet: 24px;
+  --radius-sheet: var(--ds-radius-sheet);
 }
 
 :root {
@@ -32,7 +32,7 @@
   --ds-radius-card: 26px;
   --ds-radius-row: 12px;
   --ds-radius-button: 999px;
-  --ds-radius-control: 10px;
+  --ds-radius-control: 12px;
   --ds-radius-small: 8px;
   --ds-radius-sheet: 34px;
   --field-radius: var(--ds-radius-control);

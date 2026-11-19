@@ -3,7 +3,6 @@ import { useStore } from "@nanostores/react";
 import { useNavigate, useParams } from "react-router";
 import { Button, Label, ListBox, Select, Tabs, cn } from "@heroui/react";
 import { ChevronDown, RefreshCw } from "lucide-react";
-import { AISummaryIcon } from "@/components/ui/icons.jsx";
 import { SidebarTrigger } from "@/components/ui/sidebar.jsx";
 import ArticleView from "@/components/ArticleView/ArticleView.jsx";
 import CustomModal from "@/components/ui/CustomModal.jsx";
@@ -541,18 +540,4 @@ export default function BoardPage() {
       <SourcePreview value={sourcePreview} onClose={() => setSourcePreview(null)} />
     </div>
   );
-}
-
-// The sidebar row that opens the board: a dot when a board is ready but not
-// yet seen, a ring while one is made.
-export function BoardSidebarIcon() {
-  const state = useStore(board);
-  const history = useStore(reportHistory);
-  const working = state.status === "loading" || state.updating || history.job?.status === "running";
-  const unseen = state.unseen || history.reports.some((report) => report.unseen && epoch(report.expiresAt) > Date.now());
-  return <span className="nf-board-side-icon">
-    <AISummaryIcon />
-    {working ? <span className="nf-board-side-badge is-working" aria-hidden="true" />
-      : unseen ? <span className="nf-board-side-badge" aria-hidden="true" /> : null}
-  </span>;
 }

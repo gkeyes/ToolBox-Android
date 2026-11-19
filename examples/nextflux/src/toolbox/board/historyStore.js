@@ -62,7 +62,9 @@ export async function initializeBoardHistory() {
   context = current;
   reportHistory.set({ ...EMPTY, status: "loading" });
   current.ready = (async () => {
-    await retired.catch(() => {});
+    // Capture the reading baseline before the concurrently opening reader can sync.
+    const baselineAt = getLastSyncTime()?.getTime() ?? Date.now();
+    const [knownIds] = await Promise.all([getArticleIds(), retired.catch(() => {})]);
     const storage = globalThis.window?.ToolBox?.storage ?? globalThis.ToolBox?.storage;
     if (!storage) throw new Error("请在 ToolBox 中打开看板历史。");
     const repository = await createReportStorage(storage, key);
@@ -79,7 +81,7 @@ export async function initializeBoardHistory() {
       },
       onChange: (state) => { if (context === current && accountKey() === key) reportHistory.set(state); },
     });
-    await current.manager.initialize({ baselineAt: getLastSyncTime()?.getTime() ?? Date.now(), knownIds: await getArticleIds() });
+    await current.manager.initialize({ baselineAt, knownIds });
     if (context !== current || accountKey() !== key) return;
     if (runtimeClosing.get()) await current.manager.pause();
     else void current.manager.resume().catch((error) => reportError(error, key));

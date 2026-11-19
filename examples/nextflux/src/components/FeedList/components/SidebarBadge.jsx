@@ -2,8 +2,9 @@ import { useId } from "react";
 import { useStore } from "@nanostores/react";
 import { settingsState, sidebarIconStyle } from "@/stores/settingsStore.js";
 import { board } from "@/toolbox/board/boardStore.js";
-import { BoardSidebarIcon } from "@/components/Board/BoardPage.jsx";
-import { AllIcon, StarredIcon, UnreadIcon } from "@/components/ui/icons.jsx";
+import { reportHistory } from "@/toolbox/board/historyStore.js";
+import "@/toolbox/board/board.css";
+import { AISummaryIcon, AllIcon, StarredIcon, UnreadIcon } from "@/components/ui/icons.jsx";
 import "@/design/sidebar-icons.css";
 
 const Svg = ({ children }) => (
@@ -78,7 +79,7 @@ export default function SidebarBadge({ kind }) {
   const state = useStore(board);
   if (style === "classic") {
     const Classic = CLASSIC[kind];
-    return <span className="ds-icon-badge sidebar-row-icon">{Classic ? <Classic /> : <BoardSidebarIcon />}</span>;
+    return <span className="ds-icon-badge sidebar-row-icon">{Classic ? <Classic /> : <BoardSidebarIcon state={state} />}</span>;
   }
   const working = kind === "board" && (state.status === "loading" || state.updating);
   const fresh = kind === "board" && !working && state.unseen;
@@ -93,4 +94,17 @@ export default function SidebarBadge({ kind }) {
       <Glyph />
     </span>
   );
+}
+
+// The sidebar row that opens the board: a dot when a board is ready but not
+// yet seen, a ring while one is made.
+function BoardSidebarIcon({ state }) {
+  const history = useStore(reportHistory);
+  const working = state.status === "loading" || state.updating || history.job?.status === "running";
+  const unseen = state.unseen || history.reports.some((report) => report.unseen && (typeof report.expiresAt === "number" ? report.expiresAt : Date.parse(report.expiresAt)) > Date.now());
+  return <span className="nf-board-side-icon">
+    <AISummaryIcon />
+    {working ? <span className="nf-board-side-badge is-working" aria-hidden="true" />
+      : unseen ? <span className="nf-board-side-badge" aria-hidden="true" /> : null}
+  </span>;
 }

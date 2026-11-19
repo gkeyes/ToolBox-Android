@@ -35,8 +35,9 @@ async function refreshMeta() {
 }
 
 export async function initializeArticleCache(account) {
-  await getCache().initialize(account);
-  return refreshMeta();
+  const meta = await read((client) => client.initialize(account));
+  lastSyncTime = meta.lastSyncTime ?? null;
+  return meta;
 }
 
 export async function clearArticleCache() {
@@ -127,15 +128,16 @@ export async function getArticlesByPage(ids, filter = "all", page = 1, pageSize 
   finally { await closeArticleQuery(query.queryId); }
 }
 
-export async function searchArticles(keyword, showHiddenFeeds = false, field = "published_at") {
+export async function* searchArticlePages(keyword, showHiddenFeeds, field, signal) {
   const feedIds = (await getFeeds()).filter((feed) => showHiddenFeeds || !feed.hide_globally).map((feed) => feed.id);
-  const query = await openArticleQuery({ feedIds, keyword, filter: "all", field, direction: "desc", pageSize: 256 });
+  if (signal.aborted) return;
+  const query = await openArticleQuery({ feedIds, keyword, filter: "all", field, direction: "desc", pageSize: 40 });
   try {
-    const articles = [];
-    for (let page = 1; ; page += 1) {
+    for (let page = 1; !signal.aborted; page++) {
       const result = await readArticleQueryPage(query.queryId, page);
-      articles.push(...result.items);
-      if (!result.hasMore) return articles;
+      if (signal.aborted) return;
+      yield result;
+      if (!result.hasMore) return;
     }
   } finally { await closeArticleQuery(query.queryId); }
 }

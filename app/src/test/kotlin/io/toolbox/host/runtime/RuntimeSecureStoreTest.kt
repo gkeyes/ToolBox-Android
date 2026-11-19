@@ -92,6 +92,18 @@ class RuntimeSecureStoreTest {
         assertNull(store.readAll())
     }
 
+    @Test
+    fun standardStorageReadsLargeValuesInBoundedWindows() = runBlocking {
+        val repository = MemoryKv()
+        val handler = StandardToolKvStorageHandler(toolId, repository, { 1L })
+        val value = RpcValue.StringValue("中".repeat(16 * 128 * 1024) + "🌏")
+        handler.set("article", value)
+        repository.readSizes.clear()
+        assertEquals(value, handler.get("article"))
+        assertEquals(listOf(1, 16, 1), repository.readSizes)
+        assertNull(handler.get("missing"))
+    }
+
     /** Binds associated data like AES-GCM, without the Android Keystore. */
     private class FakeCipher : SecureValueCipher {
         var decrypts = 0
@@ -123,11 +135,14 @@ class RuntimeSecureStoreTest {
         val rows = linkedMapOf<String, String>()
         private val version = MutableStateFlow(0)
         var replaceCalls = 0
+        val readSizes = mutableListOf<Int>()
 
         override suspend fun <T> readSnapshot(toolId: String, action: suspend (ToolKvSnapshot) -> T): T =
             action(object : ToolKvSnapshot {
-                override suspend fun getMany(keys: Set<String>): Map<String, ToolKvValue> =
-                    keys.mapNotNull { key -> rows[key]?.let { key to ToolKvValue(key, it, 0) } }.toMap()
+                override suspend fun getMany(keys: Set<String>): Map<String, ToolKvValue> {
+                    readSizes += keys.size
+                    return keys.mapNotNull { key -> rows[key]?.let { key to ToolKvValue(key, it, 0) } }.toMap()
+                }
             })
 
         override fun observe(toolId: String, key: String): Flow<ToolKvValue?> =

@@ -23,8 +23,32 @@ internal class StandardToolKvStorageHandler(
         get() = (io.toolbox.core.data.ResourceCapacity.availableHeapBytes() / Char.SIZE_BYTES)
             .coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
     override suspend fun get(key: String): RpcValue? = withAccess {
-        val physicalKey = physicalKey(key)
-        readValue(physicalKey) ?: loadLegacyDocument()?.get(key)
+        val physical = physicalKey(key)
+        repository.readSnapshot(toolId) { snapshot ->
+            val encoded = snapshot.getMany(setOf(physical))[physical]?.valueJson
+            if (encoded == null) {
+                val legacyKey = ToolStorageNamespace.Standard.documentKey
+                snapshot.getMany(setOf(legacyKey))[legacyKey]?.valueJson?.let(::decodeLegacyDocument)?.get(key)
+            } else {
+                val record = RuntimeValueJson.decodeObject(encoded) ?: unreadable()
+                if (record.keys == setOf("value")) return@readSnapshot record.getValue("value")
+                val count = chunkCount(record)
+                val json = buildString {
+                    var start = 0
+                    while (start < count) {
+                        val end = start + minOf(count - start, READ_WINDOW_KEYS)
+                        val keys = (start until end).map { "$physical.$it" }
+                        val rows = snapshot.getMany(keys.toSet())
+                        for (part in keys) {
+                            val text = decodeChunk(rows[part]?.valueJson)
+                            append(text)
+                        }
+                        start = end
+                    }
+                }
+                RuntimeValueJson.decode(json) ?: unreadable()
+            }
+        }
     }
 
     override suspend fun getMany(keys: List<String>): List<RpcValue?> = withAccess {
@@ -60,9 +84,7 @@ internal class StandardToolKvStorageHandler(
                                     for (parts in (0 until count).toList().chunked(READ_WINDOW_KEYS)) {
                                         val chunks = snapshot.getMany(parts.map { "$physical.$it" }.toSet())
                                         for (part in parts) {
-                                            val row = chunks["$physical.$part"] ?: unreadable()
-                                            val text = (RuntimeValueJson.decode(row.valueJson) as? RpcValue.StringValue)?.value ?: unreadable()
-                                            if (text.length > CHUNK_CHARS) unreadable()
+                                            val text = decodeChunk(chunks["$physical.$part"]?.valueJson)
                                             valueBytes += text.toByteArray(Charsets.UTF_8).size
                                             if (resultBytes + valueBytes > maxBatchResponseBytes) batchResponseTooLarge()
                                             append(text)
@@ -151,24 +173,10 @@ internal class StandardToolKvStorageHandler(
         return document
     }
 
-    private suspend fun readRecord(key: String): Map<String, RpcValue>? {
-        val encoded = repository.observe(toolId, key).first()?.valueJson ?: return null
-        return RuntimeValueJson.decodeObject(encoded) ?: unreadable()
-    }
-
-    private suspend fun readValue(key: String): RpcValue? {
-        val record = readRecord(key) ?: return null
-        if (record.keys == setOf("value")) return record.getValue("value")
-        val count = chunkCount(record)
-        val encoded = buildString {
-            repeat(count) { index ->
-                val chunk = repository.observe(toolId, "$key.$index").first()?.valueJson ?: unreadable()
-                val text = (RuntimeValueJson.decode(chunk) as? RpcValue.StringValue)?.value ?: unreadable()
-                if (text.length > CHUNK_CHARS) unreadable()
-                append(text)
-            }
-        }
-        return RuntimeValueJson.decode(encoded) ?: unreadable()
+    private fun decodeChunk(json: String?): String {
+        val text = (json?.let(RuntimeValueJson::decode) as? RpcValue.StringValue)?.value ?: unreadable()
+        if (text.length > CHUNK_CHARS) unreadable()
+        return text
     }
 
     private fun chunkCount(record: Map<String, RpcValue>): Int {

@@ -6,7 +6,6 @@ import {
 } from "@/components/ui/icons.jsx";
 import {
   feedSearchResults,
-  search,
   searchFeeds,
   searching,
   searchResults,
@@ -18,7 +17,7 @@ import { settingsState } from "@/stores/settingsStore";
 import { useTranslation } from "react-i18next";
 import { filter } from "@/stores/articlesStore.js";
 import { handleMarkStatus } from "@/handlers/articleHandlers";
-import { debounce } from "@/lib/debounce.mjs";
+import { searchArticlePages } from "@/db/storage.js";
 import { toast } from "sonner";
 import { useIsMobile } from "@/hooks/use-mobile.jsx";
 import MobileSheet from "@/components/ui/MobileSheet.jsx";
@@ -30,43 +29,57 @@ export default function SearchModal() {
   const isOpen = useStore(searchDialogOpen);
   const $searchResults = useStore(searchResults);
   const $feedSearchResults = useStore(feedSearchResults);
-  const { showHiddenFeeds } = useStore(settingsState);
+  const { showHiddenFeeds, sortField } = useStore(settingsState);
   const [keyword, setKeyword] = useState("");
   const [searchType, setSearchType] = useState("articles");
   const [isComposing, setIsComposing] = useState(false);
   const inputRef = useRef(null);
 
+  const nextPage = useRef(null);
   useEffect(() => {
+    searchResults.set([]);
+    feedSearchResults.set([]);
     if (!isOpen || !keyword || isComposing) {
       searching.set(false);
-      if (!keyword) {
-        searchResults.set([]);
-        feedSearchResults.set([]);
-      }
       return;
     }
-    let ignore = false;
-    searching.set(true);
-    const handleSearch = debounce(async () => {
-      searchType === "articles" ? searchResults.set([]) : feedSearchResults.set([]);
+    const controller = new AbortController();
+    const { signal } = controller;
+    const pages = searchType === "articles"
+      ? searchArticlePages(keyword, showHiddenFeeds, sortField, signal) : null;
+    let loading = false;
+    const load = async () => {
+      if (loading || signal.aborted) return;
+      loading = true;
       try {
-        const res = searchType === "articles" ? await search(keyword) : await searchFeeds(keyword);
-        if (ignore) return;
-        searchType === "articles" ? searchResults.set(res) : feedSearchResults.set(res);
+        if (pages) {
+          const { value } = await pages.next();
+          if (!signal.aborted && value) searchResults.set([...searchResults.get(), ...value.items]);
+          if (!value?.hasMore) {
+            if (!signal.aborted) nextPage.current = null;
+            await pages.return();
+          }
+        } else {
+          const results = await searchFeeds(keyword);
+          if (!signal.aborted) feedSearchResults.set(results);
+        }
       } catch (failure) {
-        if (ignore) return;
-        searchType === "articles" ? searchResults.set([]) : feedSearchResults.set([]);
-        toast.error(failure?.message || "搜索失败，请重试。");
+        if (!signal.aborted) toast.error(failure?.message || "搜索失败，请重试。");
       } finally {
-        if (!ignore) searching.set(false);
+        loading = false;
+        if (!signal.aborted) searching.set(false);
       }
-    }, 500);
-    handleSearch();
-    return () => {
-      ignore = true;
-      handleSearch.cancel();
     };
-  }, [isOpen, keyword, searchType, showHiddenFeeds, isComposing]);
+    searching.set(true);
+    nextPage.current = pages ? load : null;
+    const timer = setTimeout(load, 60);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+      nextPage.current = null;
+      pages?.return().catch(() => {});
+    };
+  }, [isOpen, keyword, searchType, showHiddenFeeds, sortField, isComposing]);
 
   const handleSelect = (item) => {
     if (searchType === "articles") {
@@ -114,6 +127,7 @@ export default function SearchModal() {
       results={searchType === "articles" ? $searchResults : $feedSearchResults}
       keyword={keyword}
       onSelect={handleSelect}
+      onEndReached={() => nextPage.current?.()}
       type={searchType}
       isComposing={isComposing}
     />

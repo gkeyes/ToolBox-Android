@@ -598,10 +598,10 @@ export function createArticleCache(storage, options = {}) {
     (!query.ids || query.ids.has(row.id)) && (query.filter === "unread" ? row.status === "unread" :
       query.filter === "starred" ? row.starred === 1 : row.status !== "removed") &&
     (query.statusNot === undefined || row.status !== query.statusNot) &&
-    (!query.keyword || row.title?.toLowerCase().includes(query.keyword.toLowerCase()));
+    (!query.keyword || row.title?.toLowerCase().includes(query.keyword));
   const selectedRows = (current, wanted) => wanted.ids
     ? [...wanted.ids].map((id) => current.maps.articles.get(id)).filter(Boolean) : current.maps.articles.values();
-  const criteria = (query = {}) => ({ ...query, feedIds: query.feedIds ? new Set(query.feedIds) : null, ids: query.ids ? new Set(query.ids) : null });
+  const criteria = (query = {}) => ({ ...query, keyword: query.keyword?.toLowerCase(), feedIds: query.feedIds ? new Set(query.feedIds) : null, ids: query.ids ? new Set(query.ids) : null });
   function countValue(current, feedIds) {
     if (!countIndexes.has(current)) {
       options.onIndexBuild?.({ kind: "counts", rows: current.maps.articles.size });

@@ -49,7 +49,7 @@ async function boot() {
     // recovery must still let the reader open its already restored articles.
     try {
       const { initializeBoardHistory } = await import("./toolbox/board/historyStore.js");
-      await initializeBoardHistory();
+      void initializeBoardHistory().catch(() => {});
     } catch { /* The history screen offers recovery without blocking reading. */ }
   }
   startupStage = "打开阅读界面";

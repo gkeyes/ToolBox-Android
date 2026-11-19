@@ -16,6 +16,7 @@ export default function SearchResults({
   results: resultsProp,
   keyword,
   onSelect,
+  onEndReached,
   type = "articles",
   isComposing,
 }) {
@@ -30,7 +31,7 @@ export default function SearchResults({
   // 处理键盘事件
   useEffect(() => {
     const handleKeyDown = (e) => {
-      if (results.length === 0) return;
+      if (results.length === 0 || e.isComposing || isComposing) return;
 
       switch (e.key) {
         case "ArrowDown":
@@ -52,7 +53,7 @@ export default function SearchResults({
           }
 
           e.preventDefault();
-          if (selectedIndex >= 0) {
+          if (results[selectedIndex]) {
             onSelect(results[selectedIndex]);
           }
           break;
@@ -61,7 +62,7 @@ export default function SearchResults({
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [results, selectedIndex, onSelect]);
+  }, [results, selectedIndex, onSelect, isComposing]);
 
   // 确保选中项在视野内
   useEffect(() => {
@@ -110,6 +111,7 @@ export default function SearchResults({
       className="h-full mx-3"
       totalCount={results.length}
       data={results}
+      endReached={onEndReached}
       components={{
         Header: () => <div className="header h-2"></div>,
         Footer: () => <div className="footer h-2"></div>,
