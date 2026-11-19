@@ -15,8 +15,8 @@ function article(seed=17) {
   }
   return {w,h,gray};
 }
-function screenshot(doc,offset,{chrome=true,side=true,dark=false,noise=false}={}){
-  const w=doc.w+(side?60:0),h=680,top=chrome?60:0,bottom=chrome?50:0,gray=new Uint8Array(w*h).fill(235);
+function screenshot(doc,offset,{chrome=true,side=true,dark=false,noise=false,footer=50}={}){
+  const w=doc.w+(side?60:0),h=680,top=chrome?60:0,bottom=chrome?footer:0,gray=new Uint8Array(w*h).fill(235);
   for(let y=top;y<h-bottom;y++)for(let x=0;x<doc.w;x++){
     let v=doc.gray[(offset+y-top)*doc.w+x];if(dark)v=255-v;
     if(noise)v=Math.max(0,Math.min(255,v+(((x*19+y*31+offset)%13)-6)));
@@ -35,6 +35,34 @@ for(const [name,opts] of [['light',{}],['dark',{dark:true}],['compression noise'
 test('fixed bars are cropped without losing page margins',()=>{
   const c=E.detectCrop([screenshot(doc,0),screenshot(doc,327)]);
   assert.equal(c.left,0);assert.equal(c.right,60);assert(c.top>=59&&c.top<=62);assert(c.bottom>=49&&c.bottom<=53);
+});
+test('a moving gesture handle and a stronger black border do not move the crop off the chat pane',()=>{
+  const images=[0,327,709].map((offset,index)=>{
+    const image=screenshot(doc,offset,{footer:140});
+    const {w,h,gray}=image;
+    // A fixed black band above the header, and a system handle that moves
+    // below a long, otherwise fixed footer.
+    for(let y=0;y<20;y++)gray.fill(0,y*w,y*w+doc.w);
+    for(let y=h-37+index*10;y<h-31+index*10;y++)gray.fill(20,y*w+100,y*w+215);
+    return image;
+  });
+  const crop=E.detectCrop(images);
+  assert.equal(crop.right,60);
+  assert(crop.top>=59&&crop.top<=62);
+  assert(crop.bottom>=139&&crop.bottom<=143);
+  assert.equal(E.matchPair(images[0],images[1],crop).shift,327);
+  const next=E.matchPair(images[1],images[2],crop);
+  assert.equal(next.shift,382);
+  assert(next.confidence>.5);
+});
+test('seam prefers blank space between flat chat bubbles when both images agree',()=>{
+  const w=200,h=360,shift=180;
+  const rows=new Uint8Array(w*(h+shift)).fill(237);
+  for(let y=180;y<273;y++)rows.fill(213,y*w+56,y*w+183);
+  for(let y=304;y<374;y++)rows.fill(249,y*w+10,y*w+145);
+  const a={w,h,gray:rows.slice(0,h*w)},b={w,h,gray:rows.slice(shift*w,(shift+h)*w)};
+  const seam=E.chooseSeam(a,b,{top:0,bottom:0,left:0,right:0},shift);
+  assert(seam>=277&&seam<301, `cut at y=${seam}`);
 });
 test('reverse order is identified',()=>{
   const a=screenshot(doc,0),b=screenshot(doc,327),crop=E.detectCrop([a,b]);const m=E.matchPair(b,a,crop);

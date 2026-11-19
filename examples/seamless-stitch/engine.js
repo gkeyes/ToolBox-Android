@@ -23,8 +23,7 @@
     const empty = {left:0,right:0,top:0,bottom:0};
     const same = images.filter(a => a.w === w && a.h === h);
     if (same.length < 2) return {...empty, note:'截图高度不同，请检查或手动裁切固定栏。'};
-    const row = new Float32Array(h), col = new Float32Array(w);
-    let pairs = 0;
+    const row = new Float32Array(h), col = new Float32Array(w), changedPairs = [];
     for (let k = 1; k < same.length; k++) {
       const a=same[k-1].gray, b=same[k].gray;
       let changed=0;
@@ -32,17 +31,35 @@
         if (Math.abs(a[y*w+x]-b[y*w+x]) > 18) changed++;
       }
       if (changed < w*h*0.001) continue;
-      pairs++;
+      changedPairs.push([a,b]);
       for (let y=0; y<h; y++) for (let x=0; x<w; x+=2) {
-        if (Math.abs(a[y*w+x]-b[y*w+x]) > 18) { row[y]+=2/w; col[x]+=1/h; }
+        if (Math.abs(a[y*w+x]-b[y*w+x]) > 18) row[y]+=2/w;
       }
     }
+    const pairs=changedPairs.length;
     if (!pairs) return {...empty, note:'截图几乎相同，未自动裁切。'};
     for (let y=0;y<h;y++) row[y]/=pairs;
+    const bands=runs(row,0.035,5), blocks=[];
+    for(const band of bands){
+      const last=blocks[blocks.length-1];
+      if(last && band[0]-last[1]<h*.08) last[1]=band[1];
+      else blocks.push(band);
+    }
+    // A gesture handle or clock may change independently of the scrolled page.
+    // Ignore only thin, isolated changes at the very edge of the screen.
+    const first=blocks[0];
+    if(blocks.length>1 && first[1]<=h*.06 && first[1]-first[0]<=h*.04)blocks.shift();
+    const last=blocks[blocks.length-1];
+    if(blocks.length>1 && last[0]>=h*.94 && last[1]-last[0]<=h*.04)blocks.pop();
+    if(!blocks.length) return {...empty,note:'变化区域不足，保留原图边缘。'};
+    const y0=blocks[0][0],y1=blocks[blocks.length-1][1];
+    for(const [a,b] of changedPairs)for(let y=y0;y<y1;y++)for(let x=0;x<w;x+=2){
+      if(Math.abs(a[y*w+x]-b[y*w+x])>18)col[x]+=1/(y1-y0);
+    }
     for (let x=0;x<w;x+=2) { col[x]/=pairs; if(x+1<w)col[x+1]=col[x]; }
-    const yr=runs(row,0.035,5), xr=runs(col,0.035,8);
-    if (!yr.length || !xr.length) return {...empty,note:'变化区域不足，保留原图边缘。'};
-    const y0=yr[0][0], y1=yr[yr.length-1][1], x0=xr[0][0], x1=xr[xr.length-1][1];
+    const xr=runs(col,0.035,8);
+    if (!xr.length) return {...empty,note:'变化区域不足，保留原图边缘。'};
+    const x0=xr[0][0], x1=xr[xr.length-1][1];
     // A horizontal divider must be almost uniform, and visible in either image.
     // Unlike the original changed-pixel bounding box, this preserves page margins.
     function lineStats(im,y) {
@@ -57,7 +74,9 @@
           const [m,s]=lineStats(im,y),[p,ps]=lineStats(im,y-2),[n,ns]=lineStats(im,y+2);
           const edge=Math.max(Math.abs(m-p),Math.abs(m-n));
           if(s<2.5 && edge>3 && ps<3 && ns<3) {
-            const rank=edge/(1+Math.abs(y-(top?y0:y1))/80);
+            // Cap the score of strong lines, so a distant black screen
+            // border cannot beat the nearby divider of the scrolling pane.
+            const rank=Math.min(edge,24)/(1+Math.abs(y-(top?y0:y1))/18)**2;
             if(rank>score){score=rank; best=top?y+1:y;}
           }
         }
@@ -69,7 +88,7 @@
       top=divider(Math.max(0,y0-Math.min(180,h*.16)),y0,true) ?? Math.max(0,y0-Math.round(h*.012));
     }
     if(y1<h*.965 && y1>h*.5) {
-      const boundary=divider(y1-5,Math.min(h,y1+Math.min(100,h*.08)),false);
+      const boundary=divider(y1-5,Math.min(h,y1+Math.min(36,h*.04)),false);
       bottom=h-(boundary ?? Math.min(h,y1+Math.round(h*.012)));
     }
     // A stable vertical panel is removed only when there is a long straight
@@ -133,10 +152,10 @@
     if(informative<Math.max(8,24/step) || power<10000)return Infinity;
     return error/Math.max(power*.5,n*100);
   }
-  function pixelScore(a,b,ra,rb,shift) {
+  function pixelScore(a,b,ra,rb,shift,dark) {
     const begin=Math.max(0,shift),end=Math.min(ra.h,shift+rb.h);
     let sum=0,power=0,n=0,rows=0;
-    const dx=Math.max(2,Math.floor(ra.w/180)),dark=isDark(a,ra);
+    const dx=Math.max(2,Math.floor(ra.w/180));
     for(let y=begin+1;y<end-1;y+=2){
       let rowPower=0,rowErr=0;
       for(let x=3;x<ra.w-3;x+=dx){
@@ -179,32 +198,48 @@
     refined.sort((x,y)=>x.error-y.error);
     const zero=scoreProfiles(pa,pb,0,false,3);
     if(zero<.012 && ra.h===rb.h) {
-      const p=pixelScore(a,b,ra,rb,0);
+      const p=pixelScore(a,b,ra,rb,0,pa.dark);
       if(p.error<.02 && p.rows>16)return {duplicate:true,shift:0,overlap:ra.h,confidence:1,reason:'重复截图'};
     }
     if(!refined.length || !Number.isFinite(refined[0].error))return {shift:ra.h,overlap:0,confidence:0,reason:'没有足够的共同内容'};
     const best=refined[0],second=refined.find(x=>Math.abs(x.shift-best.shift)>12);
-    const verified=pixelScore(a,b,ra,rb,best.shift);
     const margin=second?second.error-best.error:1;
+    // Row averages find the right overlap, but soft JPEG edges can leave the
+    // adjacent pixel as a better fit. Refine locally against actual pixels.
+    let shift=best.shift,verified=pixelScore(a,b,ra,rb,shift,pa.dark);
+    for(let d=best.shift-1;d<=best.shift+1;d++){
+      if(d===best.shift||Math.abs(d)<8||Math.min(ra.h,d+rb.h)-Math.max(0,d)<minOverlap)continue;
+      const score=pixelScore(a,b,ra,rb,d,pa.dark);
+      if(score.error<verified.error){shift=d;verified=score;}
+    }
     const good=best.error<.12 && verified.error<.22 && verified.rows>=14 && margin>.025;
     const confidence=good?clamp(1-verified.error*1.7,0,1):0;
-    return {shift:best.shift,overlap:ra.h-best.shift,confidence,error:verified.error,margin,
-      reason:good?(best.shift<0?'截图顺序可能相反':'已找到重复内容'):'接缝不确定，请调整重叠高度或直接拼接'};
+    return {shift,overlap:ra.h-shift,confidence,error:verified.error,margin,
+      reason:good?(shift<0?'截图顺序可能相反':'已找到重复内容'):'接缝不确定，请调整重叠高度或直接拼接'};
   }
   function chooseSeam(a,b,crop,shift) {
     const ra=rectFor(a,crop),rb=rectFor(b,crop);
     const begin=Math.max(0,shift),end=Math.min(ra.h,shift+rb.h);
     if(end-begin<8)return ra.h;
-    const center=(begin+end)/2,lo=Math.ceil(begin+(end-begin)*.15),hi=Math.floor(end-(end-begin)*.15);
-    let best=clamp(Math.round(center),lo,hi),bestEnergy=Infinity;
+    const lo=begin+4,hi=end-4;
+    let best=lo,bestEnergy=Infinity;
     const step=Math.max(1,Math.floor(ra.w/180));
     for(let y=lo;y<=hi;y++){
-      let energy=0,n=0;
-      for(let x=2;x<ra.w-2;x+=step){
-        const idx=(ra.y+y)*a.w+ra.x+x,v=a.gray[idx];
-        energy+=Math.abs(v-a.gray[idx-1])+Math.abs(v-a.gray[idx-a.w]);n++;
+      let energy=0,n=0,sumA=0,sumB=0,squareA=0,squareB=0;
+      for(let dy=-3;dy<=2;dy++)for(let x=2;x<ra.w-2;x+=step){
+        const ai=(ra.y+y+dy)*a.w+ra.x+x,bi=(rb.y+y+dy-shift)*b.w+rb.x+x;
+        const av=a.gray[ai],bv=b.gray[bi];
+        energy+=Math.abs(av-bv) + Math.abs(av-a.gray[ai-1]) + Math.abs(bv-b.gray[bi-1]);
+        energy+=Math.abs(av-a.gray[ai-a.w])+Math.abs(bv-b.gray[bi-b.w]);n++;
+        sumA+=av;sumB+=bv;squareA+=av*av;squareB+=bv*bv;
       }
-      energy=energy/n+Math.abs(y-center)/Math.max(1,end-begin)*.35;
+      // A flat strip through a rounded chat bubble can have few edges but
+      // still has two background levels. Prefer a clear gap across the page.
+      const spreadA=Math.sqrt(Math.max(0,squareA/n-(sumA/n)**2));
+      const spreadB=Math.sqrt(Math.max(0,squareB/n-(sumB/n)**2));
+      // Prefer retaining less of the upper image near its clipped bottom
+      // edge, when both options are otherwise similarly clean.
+      energy=energy/n+(spreadA+spreadB)*.3+(y-begin)/(end-begin)*4;
       if(energy<bestEnergy){bestEnergy=energy;best=y;}
     }
     return best;
