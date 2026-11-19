@@ -27,6 +27,12 @@ def properties(kotlin):
         for key in names:
             value = re.search(rf"val {key}: Dp = (\d+)\.dp", section)[1]
             metrics[key] = value + "px"
+    sizes = kotlin.split("private val DefaultTextStyles =", 1)[1].split("\n)", 1)[0]
+    for name in ("body", "sectionTitle", "headline"):
+        sp = int(re.search(rf"\b{name} = TextStyle\(fontSize = (\d+)\.sp", sizes)[1])
+        metrics[name] = f"{sp / 16:g}rem"
+    recipes = kotlin.split("internal fun liquidGlassMaterials(", 1)[1]
+    metrics["blur"] = re.search(r"blurRadius = (\d+)\.dp", recipes)[1] + "px"
     palettes = []
     for mode in ("Light", "Dark"):
         section = kotlin.split(mode + "ToolBoxColors = ToolBoxColorScheme(", 1)[1].split("\n)", 1)[0]
@@ -34,6 +40,15 @@ def properties(kotlin):
         for key in ("primary", "background", "surface", "textPrimary"):
             match = re.search(rf"\b{key} = Color(?:\(0xFF([A-F0-9]{{6}})\)|\.(Black|White))", section)
             colors[key] = "#" + (match[1] or {"Black": "000000", "White": "FFFFFF"}[match[2]])
+        # These are the host's legible overlay material and its opaque fallback.
+        tone = "FFFFFF" if mode == "Light" else re.search(r"DarkOverlayGlass = Color\(0xFF([0-9A-F]{6})\)", kotlin)[1]
+        rgb = " ".join(str(int(tone[i:i+2], 16)) for i in (0, 2, 4))
+        alpha = re.search(r"overlayFill = overlay\(if \(dark\) ([.\d]+)f else ([.\d]+)f", recipes)
+        rim = re.search(r"overlayBorder = if \(dark\) Color.White.copy\(alpha = ([.\d]+)f\) else Color.White.copy\(alpha = ([.\d]+)f", recipes)
+        band = 2 if mode == "Light" else 1
+        colors["overlay"] = f"rgb({rgb} / {alpha[band]})"
+        colors["opaque"] = "#" + tone
+        colors["rim"] = f"rgb(255 255 255 / {rim[band]})"
         palettes.append(colors)
     return metrics, palettes
 
@@ -53,6 +68,9 @@ def render(source, metrics, palettes):
     block = f"{BEGIN}\n:root {{\n{root}\n}}"
     if dark:
         block += f"\n@media (prefers-color-scheme: dark) {{\n  :root {{\n{dark}\n  }}\n}}"
+        if '[data-theme="light"]' in source or '[data-theme="dark"]' in source:
+            for name, palette in zip(("light", "dark"), palettes):
+                block += f'\n:root[data-theme="{name}"] {{\n{lines(palette, "  ")}\n}}'
     return source + "\n\n" + block + "\n" + END + "\n"
 
 

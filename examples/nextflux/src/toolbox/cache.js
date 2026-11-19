@@ -838,6 +838,18 @@ export function createArticleCache(storage, options = {}) {
     return syncStage;
   }
 
+  // Derived preview fields normally reuse their old array references. Compare
+  // scalars directly and serialize only the nested server fields that need it.
+  function sameArticleRow(previous, next) {
+    if (!previous) return false;
+    const keys = Object.keys(next);
+    return keys.length === Object.keys(previous).length && keys.every(key => {
+      const value = next[key];
+      return Object.hasOwn(previous, key) && (value === previous[key] ||
+        (value !== null && typeof value === "object" && same(value, previous[key])));
+    });
+  }
+
   async function applySyncBatch(token, rows) {
     // Body compression/staging is independent of interactive root commits.
     const operation = stagingWriter.then(async () => {
@@ -859,7 +871,7 @@ export function createArticleCache(storage, options = {}) {
         else {
           const previous = stage.changes.has(article.id) ? stage.changes.get(article.id) : snapshot.maps.articles.get(article.id);
           const row = await articleRow(stage, article, previous);
-          stage.changes.set(article.id, same(previous, row) ? previous : row);
+          stage.changes.set(article.id, sameArticleRow(previous, row) ? previous : row);
         }
       }
       await flush(stage);
@@ -878,6 +890,16 @@ export function createArticleCache(storage, options = {}) {
       if (!incoming || (restored && !maps.articles.has(id) && !restored.has(id)) ||
           fields.status === "removed" || !maps.feeds.has(incoming.feedId)) {
         throw fail("同步期间文章被删除，已保留已确认的操作，请重新同步。", "SYNC_STATE_CONFLICT");
+      }
+    }
+  }
+
+  function adjustCounts(counts, beforeRows, changes) {
+    for (const [id, after] of changes) {
+      for (const [row, direction] of [[beforeRows.get(id), -1], [after, 1]]) {
+        if (!row) continue;
+        if (row.status === "unread") counts.unread[row.feedId] = (counts.unread[row.feedId] || 0) + direction;
+        if (row.starred === 1) counts.starred[row.feedId] = (counts.starred[row.feedId] || 0) + direction;
       }
     }
   }
@@ -910,6 +932,7 @@ export function createArticleCache(storage, options = {}) {
       await enqueue(async () => {
         await settleCommit();
         requireSync(token);
+        stage.baseCounts = countValue(snapshot);
         stage.base = { root: snapshot.root, maps: { ...snapshot.maps, articles: new Map(snapshot.maps.articles) },
           nodes: new Map(snapshot.nodes), refs: new Set(snapshot.refs) };
         stage.retainedRefs = new Set(stage.base.refs);
@@ -948,9 +971,19 @@ export function createArticleCache(storage, options = {}) {
       const delta = await buildDelta(stage, maps, changes);
       checkStage(stage);
       for (const ref of [...delta.replaced, ...delta.bodyRemoved]) stage.gcCandidates.add(ref);
+      const counts = stage.baseCounts;
+      adjustCounts(counts, maps.articles, changes);
+      for (const id of stage.base.maps.feeds.keys()) if (!maps.feeds.has(id)) {
+        delete counts.unread[id];
+        delete counts.starred[id];
+      }
+      for (const id of maps.feeds.keys()) {
+        counts.unread[id] ??= 0;
+        counts.starred[id] ??= 0;
+      }
       const candidate = applyDeltaToCandidate(stage.base, delta);
+      countIndexes.set(candidate, counts);
       stage.prepared = candidate;
-      countValue(candidate);
     })();
     stage.preparing = preparation;
     try { await preparation; return { token }; }
@@ -984,14 +1017,7 @@ export function createArticleCache(storage, options = {}) {
           if (before === after) continue;
           changes.set(id, after);
         }
-        for (const [id, after] of changes) {
-          const before = candidate.maps.articles.get(id);
-          for (const [row, direction] of [[before, -1], [after, 1]]) {
-            if (!row) continue;
-            if (row.status === "unread") counts.unread[row.feedId] = (counts.unread[row.feedId] || 0) + direction;
-            if (row.starred === 1) counts.starred[row.feedId] = (counts.starred[row.feedId] || 0) + direction;
-          }
-        }
+        adjustCounts(counts, candidate.maps.articles, changes);
         stage.base = candidate;
         stage.background = false;
         const delta = await buildDelta(stage, candidate.maps, changes);

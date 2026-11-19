@@ -23,7 +23,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-      - name: Retrieve signed APKs from their original successful main builds
+      - name: Retrieve signed APKs from their original verified main builds
         env:
           GH_TOKEN: ${{ github.token }}
           BASELINE_SHA: ${{ inputs.baseline }}
@@ -33,13 +33,22 @@ jobs:
           for edition in baseline candidate; do
             if [[ "$edition" == baseline ]]; then sha="$BASELINE_SHA"; else sha="$CANDIDATE_SHA"; fi
             sha="${sha:-$(jq -r --arg k "$edition" '.[$k]' scripts/bench/host-comparison.json)}"
+            if [[ "$edition" == candidate && "$sha" == self ]]; then sha="$GITHUB_SHA"; fi
             [[ "$sha" =~ ^[a-f0-9]{40}$ ]]
-            run=$(gh run list --workflow android.yml --branch main --event push --commit "$sha" --limit 1 --json databaseId --jq '.[0].databaseId')
+            for attempt in {1..10}; do
+              run=$(gh run list --workflow android.yml --branch main --event push --commit "$sha" --limit 1 --json databaseId --jq '.[0].databaseId')
+              [[ -n "$run" ]] && break
+              sleep 6
+            done
             test -n "$run"
-            gh run watch "$run" --exit-status --interval 30
+            gh run watch "$run" --interval 30
             gh run download "$run" -p "toolbox-v*-release-$sha" -D "build/comparison/$edition"
             mapfile -t apks < <(find "build/comparison/$edition" -name '*-release.apk')
             test "${#apks[@]}" -eq 1
+            receipt="$(dirname "${apks[0]}")/BUILD_RECEIPT.txt"
+            grep -Fxq "BUILD_COMMIT=$sha" "$receipt"
+            grep -Fxq "HOST_VERIFY_JOB=success" "$receipt"
+            grep -Fxq "ORIGINAL_CERTIFICATE_MATCH=PASS" "$receipt"
             cp "${apks[0]}" "build/comparison/$edition.apk"
           done
       - uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd

@@ -277,3 +277,20 @@ test("invalid retention IDs fail without evicting local history",async()=>{
   await cache.abortSync(token);
   assert.deepEqual(await ids(cache),[1,2]);
 });
+
+test("incremental sync preserves counts without rebuilding them over every retained row", async () => {
+  const builds = [];
+  const cache = createArticleCache(memoryStorage(), {autoGc:false, digest, onIndexBuild: event => builds.push(event)});
+  async function sync(rows, feeds) {
+    const token = await cache.prepareSync({account: ACCOUNT, syncedAt: SYNCED_AT});
+    await cache.applySyncBatch(token, rows);
+    await cache.commitSync(token, {feeds, categories:[CATEGORY]});
+  }
+  const other = {...FEED, id:8};
+  await sync([article(), article({id:102, starred:1})], [FEED, other]);
+  builds.length = 0;
+  await sync([article({id:102, feedId:8, status:"read", starred:1})], [other]);
+  assert.deepEqual(await cache.counts(), {unread:{8:0}, starred:{8:1}});
+  assert.equal(builds.filter(event=>event.kind==="counts").length, 0);
+  assert.equal(await cache.readArticle(101), null);
+});

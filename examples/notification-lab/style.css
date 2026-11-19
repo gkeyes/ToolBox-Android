@@ -1,9 +1,9 @@
 :root {
   color-scheme: light dark;
-  --bg: #f4f5f8;
-  --surface: #ffffff;
+  --bg: var(--tbx-background);
+  --surface: var(--tbx-surface);
   --surface-soft: #f7f8fa;
-  --text: #17181b;
+  --text: var(--tbx-textPrimary);
   --muted: #70747c;
   --line: rgba(20, 24, 32, 0.09);
   --primary: #1684ff;
@@ -262,10 +262,10 @@ h2 { margin-bottom: 0; font-size: 20px; line-height: 1.2; }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #090a0d;
-    --surface: #15171c;
+    --bg: var(--tbx-background);
+    --surface: var(--tbx-surface);
     --surface-soft: #20232a;
-    --text: #f4f5f7;
+    --text: var(--tbx-textPrimary);
     --muted: #a1a6b0;
     --line: rgba(255,255,255,0.09);
     --primary-soft: rgba(56, 151, 255, 0.18);
@@ -292,10 +292,16 @@ h2 { margin-bottom: 0; font-size: 20px; line-height: 1.2; }
   --tbx-button: 999px;
   --tbx-touchTarget: 48px;
   --tbx-primary: #0064D2;
+  --tbx-background: #F2F2F7;
+  --tbx-surface: #FFFFFF;
+  --tbx-textPrimary: #000000;
 }
 @media (prefers-color-scheme: dark) {
   :root {
     --tbx-primary: #0A84FF;
+    --tbx-background: #000000;
+    --tbx-surface: #1C1C1E;
+    --tbx-textPrimary: #FFFFFF;
   }
 }
 /* End ToolBox theme defaults. */
