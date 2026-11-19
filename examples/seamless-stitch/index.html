@@ -43,21 +43,12 @@
       <button type="button" id="back-to-order" class="text-button">返回截图</button>
     </div>
     <p id="result-info" class="muted"></p>
-    <div class="save-block">
-      <button type="button" id="export" class="primary wide" aria-describedby="export-info export-status">保存图片</button>
-      <p id="export-info" class="hint"></p>
-      <p id="export-status" class="hint" role="status"></p>
-    </div>
     <details id="export-details" class="function-bar">
       <summary>导出选项 <span id="export-summary">PNG · 原始尺寸</span></summary>
       <div class="form-row"><label for="format">图片格式</label><select id="format"><option value="png">PNG · 无损清晰</option><option value="jpeg">JPG · 文件更小</option></select></div>
       <div id="quality-row" class="form-row" hidden><label for="quality">JPG 画质</label><select id="quality"><option value="0.95">高画质 · 95%</option><option value="0.85" selected>均衡 · 85%</option><option value="0.65">省空间 · 65%</option></select></div>
       <div class="form-row"><label for="scale">导出尺寸</label><select id="scale"><option value="1">原始宽度 · 100%</option><option value="0.75">缩小至 75%</option><option value="0.5">缩小至 50%</option><option value="1080">宽度不超过 1080 px</option></select></div>
     </details>
-    <div class="preview-actions">
-      <button type="button" id="zoom" class="secondary">放大查看</button>
-      <button type="button" id="edit-seams" class="secondary">调整接缝</button>
-    </div>
     <div class="function-bars" aria-label="拼接工具">
       <details id="crop-details" class="function-bar">
         <summary>裁切固定栏 <span id="crop-summary"></span></summary>
@@ -82,6 +73,15 @@
       <div id="preview-stage"><canvas id="preview" aria-label="拼接后的长图预览，点击调整最近的接缝"></canvas><div id="seam-markers"></div></div>
     </div>
   </section>
+  <div class="action-dock" role="group" aria-label="长图操作">
+    <div class="dock-buttons">
+      <button type="button" id="edit-seams" class="secondary">调整接缝</button>
+      <button type="button" id="zoom" class="secondary">放大查看</button>
+      <button type="button" id="export" class="primary" aria-describedby="export-info export-status">保存图片</button>
+    </div>
+    <p id="export-info" class="hint"></p>
+    <p id="export-status" class="hint" role="status"></p>
+  </div>
 </main>
 <dialog id="help-dialog" aria-labelledby="help-title"><div class="dialog-title"><h2 id="help-title">使用说明</h2><button id="close-help" class="icon-button" aria-label="关闭说明">×</button></div>
   <ol>
