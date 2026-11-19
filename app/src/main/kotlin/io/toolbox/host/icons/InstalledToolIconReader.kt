@@ -20,6 +20,11 @@ internal class InstalledToolIconReader(
     private val privateFilesRoot: () -> Path,
     private val availableHeapBytes: () -> Long = io.toolbox.core.data.ResourceCapacity::availableHeapBytes,
 ) {
+    private data class PendingManifest(val bytes: ByteArray, val manifest: InstalledManifest)
+    private val pendingIcons = LinkedHashMap<String, PendingManifest>()
+
+    fun discardPending() = synchronized(pendingIcons) { pendingIcons.clear() }
+
     fun read(tool: InstalledTool): ToolIconSource? = readPresentation(tool)?.icon
 
     /** Description and artwork share one verified manifest read; no database migration is needed. */
@@ -41,20 +46,33 @@ internal class InstalledToolIconReader(
 
     /** Every `categories` entry of the installed version's verified manifest, for catalog search. */
     fun readCategories(toolId: String, versionCode: Int, securityProfile: SecurityProfile): List<String>? =
-        readManifest(toolId, versionCode, securityProfile)?.second?.categories
+        readManifest(toolId, versionCode, securityProfile, rememberForIcon = true)?.second?.categories
 
     private fun readManifest(
         toolId: String,
         versionCode: Int,
         securityProfile: SecurityProfile,
+        rememberForIcon: Boolean = false,
     ): Pair<Path, InstalledManifest>? {
         val locator = RuntimeIdentity.expectedBundleLocator(toolId, versionCode)
         val root = privateFilesRoot().toAbsolutePath().normalize()
         val bundle = safePath(root, locator, directory = true) ?: return null
         val manifestFile = safePath(bundle, "manifest.json") ?: return null
         val manifestBytes = readBounded(manifestFile) ?: return null
+        // Category indexing and the first visible icon often visit the same manifest.
+        // Recheck the path, bytes and expected identity even for a same-version reinstall.
+        val cached = synchronized(pendingIcons) { pendingIcons.remove(toolId) }
+        if (cached != null && cached.manifest.versionCode == versionCode &&
+            cached.manifest.securityProfile == securityProfile && cached.bytes.contentEquals(manifestBytes)
+        ) return bundle to cached.manifest
         val verified = InstalledManifestVerifier.verify(manifestBytes, toolId, versionCode, securityProfile)
             as? InstalledManifestVerification.Verified ?: return null
+        if (rememberForIcon && manifestBytes.size <= 8 * 1024) {
+            synchronized(pendingIcons) {
+                if (pendingIcons.size >= 32) pendingIcons.remove(pendingIcons.keys.first())
+                pendingIcons[toolId] = PendingManifest(manifestBytes, verified.manifest)
+            }
+        }
         return bundle to verified.manifest
     }
 

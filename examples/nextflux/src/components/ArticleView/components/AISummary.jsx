@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { useStore } from "@nanostores/react";
+import { computed } from "nanostores";
 import { Button, Modal, Spinner, Tooltip } from "@heroui/react";
 import { RotateCcw, Square } from "lucide-react";
 import { AISummaryIcon as Sparkles } from "@/components/ui/icons.jsx";
@@ -12,8 +13,7 @@ import "./AISummary.css";
 // Its portal keeps summaries out of article layouts and passive previews.
 export default function AISummary({ article, onClose, onGenerate, onStop }) {
   const articleId = article?.id;
-  const summaries = useStore(aiSummaries);
-  const state = summaries[articleId];
+  const state = useStore(useMemo(() => computed(aiSummaries, states => states[articleId]), [articleId]));
   const fullText = state?.summary || "";
   const formatted = useMemo(() => renderSummaryMarkdown(fullText, article?.url), [fullText, article?.url]);
 

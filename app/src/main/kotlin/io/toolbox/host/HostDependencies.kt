@@ -16,7 +16,6 @@ import io.toolbox.core.data.backup.BackupDatabase
 import io.toolbox.host.catalog.CatalogViewModel
 import io.toolbox.host.catalog.RunningToolsViewModel
 import io.toolbox.host.importflow.ImportViewModel
-import io.toolbox.host.icons.InstalledToolIconReader
 import io.toolbox.host.icons.ToolIconLoader
 import io.toolbox.host.permissions.PermissionCenterViewModel
 import io.toolbox.host.permissions.PermissionMutationRunner
@@ -67,8 +66,7 @@ internal class HostDependencies(
     val packageMutations = DataMutationLock()
     val catalogLayout = CatalogLayoutRepository(repositories)
     val toolIcons = ToolIconLoader(repositories.catalog) { application.filesDir.toPath() }
-    val manifestCategories: (CatalogEntry) -> List<String>? = InstalledToolIconReader({ application.filesDir.toPath() })
-        .let { reader -> { entry -> reader.readCategories(entry.toolId, entry.versionCode, entry.securityProfile) } }
+    val manifestCategories: (CatalogEntry) -> List<String>? = toolIcons::manifestCategories
 
     /** One-shot message from startup maintenance; the UI shows it once and clears it. */
     val startupNotice = MutableStateFlow<String?>(null)

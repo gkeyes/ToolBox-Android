@@ -54,6 +54,17 @@ class ToolBoxApplication : Application(), BackgroundWorkerDependencyOwner {
         }
     }
 
+    @Suppress("DEPRECATION")
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        val icons = dependencies?.toolIcons ?: return
+        when {
+            level >= android.content.ComponentCallbacks2.TRIM_MEMORY_BACKGROUND ||
+                level == android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL -> icons.trimMemory(clear = true)
+            level == android.content.ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN -> icons.trimMemory(clear = false)
+        }
+    }
+
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
         // Do not initialize persistence on the main thread just because Android changed configuration.

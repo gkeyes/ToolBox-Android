@@ -305,6 +305,24 @@ class ToolIconCompatibilityTest {
         }
     }
 
+    @Test
+    fun categoryLookupCannotHideReplacementManifestAndTrimAllowsReload() = runBlocking {
+        withInstalledIcon { root, tool, catalog ->
+            val manifest = root.resolve(tool.currentVersion.bundleLocator.value).resolve("manifest.json")
+            val original = java.nio.file.Files.readAllBytes(manifest)
+            val reader = InstalledToolIconReader({ root })
+            assertNotNull(reader.readCategories(tool.metadata.id, tool.currentVersion.versionCode, tool.metadata.securityProfile))
+            java.nio.file.Files.write(manifest, original.toString(Charsets.UTF_8).replace(tool.metadata.id, tool.metadata.id.dropLast(1) + "x").toByteArray())
+            assertNull(reader.read(tool))
+            java.nio.file.Files.write(manifest, original)
+            val loader = ToolIconLoader(catalog, privateFilesRoot = { root })
+            assertNotNull(loader.load(tool.metadata.id))
+            loader.trimMemory(clear = true)
+            assertNull(loader.cached(tool.metadata.id))
+            assertNotNull(loader.load(tool.metadata.id))
+        }
+    }
+
     private suspend fun withInstalledIcon(action: suspend (Path, InstalledTool, CatalogRepository) -> Unit) {
         InstalledIconFixture().use { fixture -> action(fixture.root, fixture.initialTool, fixture.catalog) }
     }

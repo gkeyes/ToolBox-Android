@@ -20,4 +20,6 @@ for version in ["baseline", "candidate"]:
     for metric in ["launchTotalMs", "homeFullyDrawnMs", "hostHomePssKiB"]:
         values = [s[metric] for s in report["samples"] if s[metric] is not None]
         print(version, report["hostVersion"], metric, len(values), statistics.median(values) if values else "unavailable")
+        if len(values) != len(report["samples"]):
+            raise SystemExit(f"Incomplete {version} {metric} measurements; see the retained evidence")
 PY

@@ -166,13 +166,19 @@ function publishUpdates(result, check) {
   for (const article of result.articles) stateOverrides.set(article.id, {
     status: article.status, starred: article.starred, revision: result.revision,
   });
-  filteredArticles.set(filteredArticles.get().map((article) => {
+  const visible = filteredArticles.get();
+  let nextVisible;
+  for (let i = 0; i < visible.length; i++) {
+    const article = visible[i];
     const update = updates.get(article.id);
-    return update ? { ...article, status: update.status, starred: update.starred } : article;
-  }));
+    if (!update || (article.status === update.status && article.starred === update.starred)) continue;
+    nextVisible ??= visible.slice();
+    nextVisible[i] = { ...article, status: update.status, starred: update.starred };
+  }
+  if (nextVisible) filteredArticles.set(nextVisible);
   const active = activeArticle.get();
   const update = active && updates.get(active.id);
-  if (update) activeArticle.set({ ...active, status: update.status, starred: update.starred });
+  if (update && (active.status !== update.status || active.starred !== update.starred)) activeArticle.set({ ...active, status: update.status, starred: update.starred });
   publishCounts(result.counts);
 }
 

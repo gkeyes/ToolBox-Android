@@ -5,7 +5,7 @@ import LoginPage from "@/pages/LoginPage";
 import ErrorPage from "@/pages/ErrorPage";
 import SplashScreen from "@/components/SplashScreen";
 import ProtectedRoute from "@/components/ProtectedRoute";
-const loadBoard = async () => ({ Component: (await import("@/components/Board/BoardPage.jsx")).default });
+import BoardPage from "@/components/Board/BoardPage.jsx";
 
 export const router = createHashRouter(
   [
@@ -50,11 +50,11 @@ export const router = createHashRouter(
         },
         {
           path: "board",
-          lazy: loadBoard,
+          element: <BoardPage />,
         },
         {
           path: "board/article/:articleId",
-          lazy: loadBoard,
+          element: <BoardPage />,
         },
       ],
     },

@@ -310,3 +310,27 @@ test("short and long article bodies share the existing cache format after a rest
   await reopened.initialize(ACCOUNT);
   for (const row of rows) assert.equal((await reopened.readArticle(row.id)).content, row.content);
 });
+
+test("recent identical plain bodies reuse a digest without masking body or enclosure changes", async () => {
+  const storage = memoryStorage();
+  let hashes = 0;
+  const cache = createArticleCache(storage, { autoGc: false, digest(body) { hashes++; return digest(body); } });
+  await cache.initialize(ACCOUNT);
+  async function sync(row) {
+    const token = await cache.prepareSync({ account: ACCOUNT, syncedAt: SYNCED_AT });
+    await cache.applySyncBatch(token, [row]);
+    await cache.commitSync(token, { feeds: [FEED], categories: [CATEGORY] });
+    assert.deepEqual((await cache.readArticle(row.id)).enclosures, row.enclosures);
+    assert.equal((await cache.readArticle(row.id)).content, row.content);
+  }
+  await sync(article());
+  await sync(article({ starred: 1 }));
+  assert.equal(hashes, 1);
+  await sync(article({ content: "<p>另一个正文</p>" }));
+  await sync(article({ enclosures: [{ url: "https://example.test/audio.mp3" }] }));
+  assert.equal(hashes, 3);
+  await cache.clear();
+  await cache.initialize(ACCOUNT);
+  await sync(article());
+  assert.equal(hashes, 4);
+});

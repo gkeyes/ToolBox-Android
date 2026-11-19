@@ -2,14 +2,14 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { startProgressiveReading } from "../src/reading/client.js";
 
-function harness({ maxOperations = 12 } = {}) {
+function harness({ maxOperations = 12, immediateFirstBatch = false, initiallyPaused = true } = {}) {
   const worker = new EventTarget();
   const posted = [], applied = [], frames = new Map();
-  let nextFrame = 0, paused = true, completed = 0, terminated = 0;
+  let nextFrame = 0, paused = initiallyPaused, completed = 0, terminated = 0;
   worker.postMessage = (data) => posted.push(data);
   worker.terminate = () => { terminated += 1; };
   const request = startProgressiveReading({ html: "fixture", baseUrl: "https://example.invalid", apply: (op) => applied.push(op),
-    maxOperations, shouldPause: () => paused, onDone: () => { completed += 1; }, onError: (error) => { throw error; },
+    immediateFirstBatch, maxOperations, shouldPause: () => paused, onDone: () => { completed += 1; }, onError: (error) => { throw error; },
   }, { createWorker: () => worker, now: () => 0,
     schedule: (callback) => { frames.set(++nextFrame, callback); return nextFrame; },
     unschedule: (id) => frames.delete(id),
@@ -80,4 +80,19 @@ test("cancelling a paused preview discards late batches and resume work", () => 
   assert.equal(h.applied.length, 12);
   assert.equal(h.completed(), 0);
   assert.equal(h.terminated(), 1);
+});
+
+test("only the first foreground batch can mount immediately and it still obeys the work cap", () => {
+  const active = harness({ immediateFirstBatch: true, initiallyPaused: false, maxOperations: 2 });
+  active.batch([1, 2, 3], false);
+  assert.deepEqual(active.applied, [1, 2]);
+  active.frame();
+  active.batch([4], true);
+  assert.deepEqual(active.applied, [1, 2, 3]);
+  active.frame();
+  assert.equal(active.completed(), 1);
+  const paused = harness({ immediateFirstBatch: true });
+  paused.batch([1], true);
+  assert.deepEqual(paused.applied, []);
+  paused.request.cancel();
 });

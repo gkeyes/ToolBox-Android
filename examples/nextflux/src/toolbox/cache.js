@@ -101,6 +101,9 @@ export function createArticleCache(storage, options = {}) {
   let sweptVersion = 0;
   const tokenPrefix = options.tokenPrefix || globalThis.crypto.randomUUID().replaceAll("-", "");
   const digest = options.digest || bodyDigest;
+  // The recent-feed window often repeats the same small bodies. Only cache exact
+  // content with no enclosures, bounded to 256 strings of at most 256 code units.
+  const shortBodyDigests = new Map();
   const deriveMetadata = options.deriveMetadata || deriveArticleMetadata;
   const yieldBackground = async (expectedEpoch) => {
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -495,7 +498,16 @@ export function createArticleCache(storage, options = {}) {
     const body = { content: article.content ?? "", enclosures: article.enclosures ?? [] };
     if (typeof body.content !== "string" || !Array.isArray(body.enclosures)) throw invalid();
     if (previous?.bodyRef) stage.retainedRefs.add(previous.bodyRef);
-    const hash = await digest(body);
+    const small = !body.enclosures.length && body.content.length <= 256;
+    let hash = small ? shortBodyDigests.get(body.content) : undefined;
+    if (hash === undefined) {
+      hash = await digest(body);
+      checkStage(stage);
+      if (small) {
+        if (shortBodyDigests.size >= 256) shortBodyDigests.delete(shortBodyDigests.keys().next().value);
+        shortBodyDigests.set(body.content, hash);
+      }
+    }
     checkStage(stage);
     const bodyRef = previous?.bodyDigest === hash ? previous.bodyRef : await writeDocument(stage, body, true);
     const { content, enclosures, feed, originalContent, bodyRef: ignoredRef, ...metadata } = article;
@@ -776,7 +788,7 @@ export function createArticleCache(storage, options = {}) {
         }
         for (const [id, after] of changes) {
           const before = stage.base.maps.articles.get(id);
-          if (same(before, after)) { changes.delete(id); continue; }
+          if (after && before.status === after.status && before.starred === after.starred) { changes.delete(id); continue; }
           for (const [row, direction] of [[before, -1], [after, 1]]) {
             if (!row) continue;
             if (row.status === "unread") counts.unread[row.feedId] = (counts.unread[row.feedId] || 0) + direction;
@@ -1055,6 +1067,7 @@ export function createArticleCache(storage, options = {}) {
     if (clearing) return clearing;
     clearingFailed = false;
     epoch += 1;
+    shortBodyDigests.clear();
     queries.clear();
     const initializing = loaded;
     const operation = enqueue(async () => {

@@ -1,5 +1,6 @@
 package io.toolbox.host.icons
 
+import io.toolbox.core.data.CatalogEntry
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
@@ -49,6 +50,16 @@ internal class ToolIconLoader(
                 if (newValue == null && cachedVersions[key.toolId] == key) cachedVersions.remove(key.toolId)
             }
             if (evicted) HostTrace.bestEffortSection("icon.cache.evict") { }
+        }
+    }
+
+    fun manifestCategories(entry: CatalogEntry): List<String>? =
+        reader.readCategories(entry.toolId, entry.versionCode, entry.securityProfile)
+
+    fun trimMemory(clear: Boolean) {
+        reader.discardPending()
+        synchronized(cacheLock) {
+            if (clear) cache.evictAll() else cache.trimToSize(cache.maxSize() / 2)
         }
     }
 

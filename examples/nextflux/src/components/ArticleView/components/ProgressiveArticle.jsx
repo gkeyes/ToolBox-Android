@@ -94,6 +94,7 @@ function ProgressiveArticle({ articleId, html, baseUrl, title, shownOriginal, on
       setState((previous) => ({ ...previous, ready: true }));
     };
     const request = startProgressiveReading({ html, baseUrl, title, onWordCount,
+      immediateFirstBatch: !modeRef.current.preview && !modeRef.current.paused,
       maxOperations: () => modeRef.current.preview || modeRef.current.paused ? 12 : 48,
       shouldPause: () => modeRef.current.paused || (modeRef.current.preview && firstScreenReady),
       apply: (operation) => dom.apply(operation),

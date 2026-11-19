@@ -65,14 +65,19 @@ def main():
         drawn = None
         until = time.monotonic() + 10
         while time.monotonic() < until:
-            logs = adb("logcat", "-d", "-v", "epoch", "-t", "500", "ActivityTaskManager:I", "ActivityManager:I", "*:S")
+            logs = adb("logcat", "-d", "-b", "main", "-b", "system", "-v", "epoch",
+                       "-e", "Fully drawn " + PACKAGE + "/")
             lines = "\n".join(line for line in logs.splitlines()
-                              if (stamp := re.match(r"^(\d+\.\d+) ", line)) and float(stamp[1]) >= since)
+                              if (stamp := re.match(r"^\s*(\d+\.\d+)\s", line)) and float(stamp[1]) >= since)
             marker = re.search(r"Fully drawn " + component_pattern + r":\s*(\+\S+)", lines)
             if marker:
                 drawn = duration_ms(marker[1])
                 break
             time.sleep(0.25)
+        if drawn is None:
+            report.setdefault("missingDrawDiagnostics", []).append({
+                "round": index + 1, "launchEpoch": since, "lastDrawMarkers": logs.splitlines()[-3:],
+            })
         report["samples"].append({"launchTotalMs": int(first[1]), "homeFullyDrawnMs": drawn})
         if args.memory:
             memory = adb("shell", "dumpsys", "meminfo", PACKAGE)

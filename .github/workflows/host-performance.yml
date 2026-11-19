@@ -2,7 +2,10 @@ name: Compare signed host builds on one emulator
 on:
   push:
     branches: [main]
-    paths: ["scripts/bench/host-comparison.json"]
+    paths:
+      - scripts/bench/host-comparison.json
+      - scripts/bench/android-startup.py
+      - scripts/bench/compare-emulator.sh
   workflow_dispatch:
     inputs:
       baseline:

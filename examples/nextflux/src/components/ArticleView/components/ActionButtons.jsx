@@ -29,13 +29,14 @@ import {
 import { Button, CloseButton, cn, Spinner, Tooltip } from "@heroui/react";
 import { useNavigate } from "react-router";
 import { useStore } from "@nanostores/react";
+import { computed } from "nanostores";
 import {
   activeArticle,
   filteredArticles,
   loadingOriginContent,
 } from "@/stores/articlesStore";
 import Confetti from "@/components/ui/Confetti";
-import { memo, useEffect, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import minifluxAPI from "@/api/miniflux";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
@@ -65,8 +66,12 @@ function ActionButtons() {
   const [saveLoading, setSaveLoading] = useState(false);
   const $hasIntegrations = useStore(hasIntegrations);
   const { aiApiKey, floatingSidebar } = useStore(settingsState);
-  const $aiSummaries = useStore(aiSummaries);
-  const currentSummaryState = $aiSummaries[$activeArticle?.id];
+  const articleId = $activeArticle?.id;
+  const summaryIndicator = useStore(useMemo(() => computed(aiSummaries, states => {
+    const state = states[articleId];
+    if (state?.loading) return "loading";
+    return state?.summary ? "ready" : "idle";
+  }), [articleId]));
   const [summaryArticleId, setSummaryArticleId] = useState(null);
   const [summaryTipOpen, setSummaryTipOpen] = useState(false);
   const summaryOpen = summaryArticleId !== null && summaryArticleId === String($activeArticle?.id);
@@ -197,7 +202,7 @@ function ActionButtons() {
   const openAISummary = () => {
     if (!$activeArticle) return;
     setSummaryArticleId(String($activeArticle.id));
-    if (!currentSummaryState) generateAISummary();
+    if (!aiSummaries.get()[$activeArticle.id]) generateAISummary();
   };
 
   // 处理保存到第三方服务
@@ -393,11 +398,11 @@ function ActionButtons() {
                 aria-haspopup="dialog"
                 aria-expanded={summaryOpen}
               >
-                {currentSummaryState?.loading ? (
+                {summaryIndicator === "loading" ? (
                   <Spinner color="current" size="sm" />
                 ) : (
                   <Sparkles
-                    className={`size-4 ${currentSummaryState?.summary ? "text-accent" : "text-muted"}`}
+                    className={`size-4 ${summaryIndicator === "ready" ? "text-accent" : "text-muted"}`}
                   />
                 )}
               </Button>
