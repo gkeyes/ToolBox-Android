@@ -215,6 +215,9 @@ test("system back closes the AI summary in one press with its regenerate tooltip
   await expect(page.getByRole("tooltip", { name: "重新生成" })).toBeVisible();
   expect(await page.evaluate(() => !window.dispatchEvent(new Event("toolboxback", { cancelable: true })))).toBe(true);
   await expect(page.locator(".nextflux-summary-backdrop")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "AI 摘要", exact: true })).toBeFocused();
+  await expect(page.getByRole("tooltip")).toHaveCount(0);
+  await expect(page.locator("html")).toHaveAttribute("data-nf-input", "touch");
   await expect(page.getByTestId("route")).toHaveText("/feed/1/article/42");
 });
 

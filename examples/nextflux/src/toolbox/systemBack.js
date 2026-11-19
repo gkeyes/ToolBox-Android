@@ -106,6 +106,10 @@ export function closeTopLayer({ doc = document, win = window } = {}) {
       if (backClose || dialog.getAttribute("role") === "alertdialog") {
         const close = backClose || dialog.querySelector("[slot='close'], .nextflux-close-button");
         if (!close || close.disabled || close.getAttribute("aria-disabled") === "true") return false;
+        // Native back restores the reader like a tap, even if a key or a
+        // virtual press focused a summary action. A real Escape stays on the
+        // keyboard path and keeps its focus indicator.
+        if (backClose) doc.documentElement.dataset.nfInput = "touch";
         close.click();
       } else {
         pressEscape(dialog, doc);
