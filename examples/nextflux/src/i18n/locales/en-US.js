@@ -382,7 +382,7 @@ export default {
       articleTitle: "TITLE",
       titleAlign: "Alignment",
       titleFontSize: "Size",
-      articleTitleLines: "Lines",
+      articleTitleLines: "Title lines when repeated in the body",
       reset: "Reset",
     },
     speech: {

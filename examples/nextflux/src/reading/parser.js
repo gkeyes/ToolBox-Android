@@ -15,9 +15,9 @@ const hasSentencePunctuation = (text) => /[。！？!?]|\.(?=\s|$|["'”’」�
 // A flat, already-sanitized tree stream. No DOM parser or HTML serialization is
 // involved, so malformed markup cannot become executable when inserted later.
 // Pulling one bounded batch at a time also bounds the worker/main-thread queue.
-export function createReadingParser(html, baseUrl) {
+export function createReadingParser(html, baseUrl, title) {
   const source = typeof html === "string" ? html : "";
-  const analysis = analyzeArticle(source, { countWords: true });
+  const analysis = analyzeArticle(source, { countWords: true, title });
   const normalization = createNormalizationPlan(analysis);
   let offset = 0, nextId = 1, ended = false;
   const pending = [];

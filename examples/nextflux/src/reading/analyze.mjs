@@ -27,7 +27,9 @@ const compact = (value) => String(value || "").replace(/\s+/g, " ").trim();
 const visibleLength = (value) => compact(value).length;
 const meaningfulBreaks = (value) => Math.max(0, String(value || "").split(/\r?\n/).map(v=>v.trim()).filter(Boolean).length - 1);
 
-export function analyzeArticle(html, { countWords = false } = {}) {
+export function analyzeArticle(html, { countWords = false, title = "" } = {}) {
+  const headline = compact(title);
+  let titleTail = "", titleInBody = false;
   const words = { count: 0, inWord: false };
   const source=String(html||"");
   const metrics={
@@ -38,7 +40,7 @@ export function analyzeArticle(html, { countWords = false } = {}) {
   };
   const stack=[{tag:null,blocked:false,protected:false,textLength:0,preview:"",link:false}];
   const parser=new Parser({
-    onopentag(tag){
+    onopentag(tag, attrs){
       const parent=stack.at(-1);
       const blocked=parent.blocked||DROP_CONTENT.has(tag);
       const entry={tag,blocked,protected:parent.protected||PROTECTED_TAGS.has(tag),textLength:0,preview:"",link:parent.link||tag==="a"};
@@ -46,6 +48,9 @@ export function analyzeArticle(html, { countWords = false } = {}) {
         entry.skipWords = parent.skipWords || blocked || MEDIA_TAGS.has(tag) || tag === "head";
         entry.hasMedia = MEDIA_TAGS.has(tag);
         if (!parent.skipWords && WORD_BREAK_TAGS.has(tag)) words.inWord = false;
+        entry.skipTitle = entry.skipWords || parent.skipTitle || tag === "details" || attrs.hidden != null || attrs["aria-hidden"] === "true";
+        if (WORD_BREAK_TAGS.has(tag) || entry.skipTitle) titleTail = "";
+        entry.hadTitle = titleInBody;
         entry.startWords = words.count;
         entry.startedInWord = words.inWord;
       }
@@ -67,7 +72,16 @@ export function analyzeArticle(html, { countWords = false } = {}) {
     ontext(text){
       const leaf=stack.at(-1);
       if(leaf.blocked||!text)return;
-      if (countWords && !leaf.skipWords) addWords(words, text);
+      if (countWords && !leaf.skipWords) {
+        addWords(words, text);
+        if (headline && !titleInBody && !leaf.skipTitle) {
+          // Inline markup and HTML entities can split a title between callbacks.
+          // Carry only enough text for a match spanning the next callback.
+          const candidate = (titleTail + text).replace(/\s+/g, " ");
+          titleInBody = candidate.includes(headline);
+          titleTail = titleInBody ? "" : candidate.slice(Math.max(0, candidate.length - headline.length + 1));
+        }
+      }
       const len=visibleLength(text);
       metrics.textChars+=len;
       if(stack.length===1)metrics.topLevelTextChars+=len;
@@ -92,9 +106,12 @@ export function analyzeArticle(html, { countWords = false } = {}) {
           tag: entry.tag, text: entry.preview, textLength: entry.textLength,
           hasMedia: entry.hasMedia, plan: { removeStandaloneNoise: true },
         })) {
+          titleInBody = entry.hadTitle;
+          titleTail = "";
           words.count = entry.startWords;
           words.inWord = entry.startedInWord;
         }
+        if (WORD_BREAK_TAGS.has(entry.tag) || entry.skipTitle) titleTail = "";
         if (!entry.skipWords && WORD_BREAK_TAGS.has(entry.tag)) words.inWord = false;
       }
       if(entry.blocked)return;
@@ -106,7 +123,10 @@ export function analyzeArticle(html, { countWords = false } = {}) {
     }
   },{decodeEntities:true,lowerCaseTags:true,lowerCaseAttributeNames:true,xmlMode:false});
   parser.end(source);
-  if (countWords) metrics.wordCount = words.count;
+  if (countWords) {
+    metrics.wordCount = words.count;
+    metrics.titleInBody = titleInBody;
+  }
   const semanticBlocks=metrics.paragraphs+metrics.breaks+metrics.listItems+metrics.headings+metrics.blockquotes+metrics.tables+metrics.preformatted+metrics.figures+metrics.captions;
   const averageDivText=metrics.textualDivs?metrics.textChars/metrics.textualDivs:metrics.textChars;
   const linkDensity=metrics.textChars?metrics.linkTextChars/metrics.textChars:0;

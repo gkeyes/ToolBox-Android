@@ -2,7 +2,7 @@ let nextTaskId = 0;
 
 // All DOM work is bounded by both a time budget and an operation cap. Waiting
 // for the next pull until this batch is mounted gives the worker backpressure.
-export function startProgressiveReading({ html, baseUrl, title, apply, onWordCount, onBatch, onDone, onError, shouldPause, immediateFirstBatch = false, maxOperations = 48 }, {
+export function startProgressiveReading({ html, baseUrl, title, apply, onMetadata, onBatch, onDone, onError, shouldPause, immediateFirstBatch = false, maxOperations = 48 }, {
   createWorker = () => new Worker(new URL("./worker.js", import.meta.url), { type: "module" }),
   schedule = (callback) => requestAnimationFrame(callback),
   unschedule = (handle) => cancelAnimationFrame(handle),
@@ -38,7 +38,7 @@ export function startProgressiveReading({ html, baseUrl, title, apply, onWordCou
     if (cancelled || data.id !== id) return;
     if (data.type === "reading:error") { fail(data.message); return; }
     if (data.type !== "reading:batch") return;
-    if (Number.isSafeInteger(data.wordCount)) onWordCount?.(data.wordCount);
+    if (data.metadata) onMetadata?.(data.metadata);
     operations = data.operations;
     cursor = 0;
     done = data.done;

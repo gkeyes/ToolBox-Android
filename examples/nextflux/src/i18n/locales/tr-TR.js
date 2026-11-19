@@ -340,7 +340,7 @@ export default {
       articleTitle: "BAŞLIK",
       titleAlign: "Hizalama",
       titleFontSize: "Boyut",
-      articleTitleLines: "Satır",
+      articleTitleLines: "Başlık metinde tekrarlanıyorsa satır sayısı",
       reset: "Sıfırla",
     },
     speech: {

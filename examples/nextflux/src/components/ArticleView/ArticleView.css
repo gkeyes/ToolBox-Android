@@ -298,7 +298,7 @@ div.force-dark-code-theme .shiki span {
   color: var(--ds-text-primary, var(--foreground));
 }
 .nextflux-article-header .article-title .nextflux-article-title-link { font-weight: 700; }
-/* 正文页标题最多显示的行数（设置 › 阅读 › 标题 › 行数） */
+/* 正文已含完整标题时，页首标题最多显示的行数（设置 › 阅读 › 标题 › 行数） */
 .nf-article-title-clamp {
   display: -webkit-box;
   -webkit-box-orient: vertical;

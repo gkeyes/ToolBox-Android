@@ -380,7 +380,7 @@ export default {
       articleTitle: "标题",
       titleAlign: "对齐",
       titleFontSize: "大小",
-      articleTitleLines: "行数",
+      articleTitleLines: "正文已含完整标题时的行数",
       reset: "重 置",
     },
     speech: {

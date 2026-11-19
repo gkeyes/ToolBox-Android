@@ -43,8 +43,9 @@ const ArticlePageContent = forwardRef(function ArticlePageContent(
   const shownOriginal = Boolean(article?.shownOriginal);
   const source = useMemo(() => ({ articleId, html, title, baseUrl, shownOriginal }),
     [articleId, html, title, baseUrl, shownOriginal]);
-  const [counted, setCounted] = useState(null);
-  const onWordCount = useCallback((value) => setCounted({ source, value }), [source]);
+  const [analyzed, setAnalyzed] = useState(null);
+  const onMetadata = useCallback((metadata) => setAnalyzed({ source, ...metadata }), [source]);
+  const metadata = analyzed?.source === source ? analyzed : null;
 
   if (!article) return null;
 
@@ -63,7 +64,8 @@ const ArticlePageContent = forwardRef(function ArticlePageContent(
     >
       <ArticleHeader
         article={article}
-        wordCount={counted?.source === source ? counted.value : null}
+        wordCount={metadata?.wordCount}
+        titleInBody={metadata?.titleInBody}
         interactive={!passive}
         onFeedClick={passive || !feedId ? undefined : () => navigate(`/feed/${feedId}`)}
       />
@@ -109,7 +111,7 @@ const ArticlePageContent = forwardRef(function ArticlePageContent(
             preview={passive}
             paused={readingPaused || !foreground}
             {...source}
-            onWordCount={onWordCount}
+            onMetadata={onMetadata}
           />
           <Attachments article={article} />
         </div>

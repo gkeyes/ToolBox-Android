@@ -136,6 +136,31 @@ test("article length appears beside the date and follows the displayed body", as
   await expect(badge).toHaveText(formatted);
 });
 
+test("a narrow reader shows the entire unique RSS title and only clamps a repeated title", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 780 });
+  await openArticle(page);
+  const title = "🖼️ tinybrain：从中文语料开始训练一个小模型，直到可以在本地推理";
+  const header = page.locator(".article-scroll-area .article-title");
+  const body = page.locator(".article-scroll-area .article-body");
+  await page.evaluate(title => {
+    window.navigationFixture.setTitle(title);
+    window.navigationFixture.showFullText("<p>免费开源的中文模型训练项目，包含自建分词器和训练语料处理。</p>");
+  }, title);
+  await expect(body).toContainText("自建分词器");
+  await expect(header).toHaveText(title);
+  const visibleHeight = () => header.evaluate(el => el.clientHeight);
+  const lineHeight = await header.evaluate(el => parseFloat(getComputedStyle(el).lineHeight));
+  expect(await visibleHeight()).toBeGreaterThan(2 * lineHeight);
+  expect(await header.evaluate(el => el.scrollHeight - el.clientHeight)).toBeLessThanOrEqual(1);
+
+  await page.evaluate(title => window.navigationFixture.showFullText(`<h2>${title}</h2><p>正文。</p>`), title);
+  await expect(body.locator("h2")).toHaveText(title);
+  await expect.poll(visibleHeight).toBeLessThanOrEqual(Math.ceil(lineHeight));
+  await page.evaluate(() => window.navigationFixture.showFullText("<p>🖼️ tinybrain：从中文语料开始训练，此处只有标题的一部分。</p>"));
+  await expect(body).toContainText("只有标题的一部分");
+  await expect.poll(visibleHeight).toBeGreaterThan(2 * lineHeight);
+});
+
 test("the next page follows the first pull before the release threshold", async ({ page }) => {
   await openArticle(page);
   await page.locator(".article-scroll-area").evaluate((element) => { element.scrollTop = element.scrollHeight; });

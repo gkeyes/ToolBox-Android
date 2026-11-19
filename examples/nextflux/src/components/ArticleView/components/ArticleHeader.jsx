@@ -18,6 +18,7 @@ function feedTitleOf(article, fallback) {
 export default function ArticleHeader({
   article,
   wordCount,
+  titleInBody,
   onFeedClick,
   interactive = true,
   className,
@@ -65,7 +66,7 @@ export default function ArticleHeader({
       <h1
         {...sharedTitle}
         data-font-block=""
-        className="article-title nf-article-title-clamp my-2 leading-tight"
+        className={cn("article-title my-2 leading-tight", titleInBody && "nf-article-title-clamp")}
         style={{
           fontSize: `${titleFontSize * fontSize}px`,
           "--nf-article-title-lines": Math.min(5, Math.max(1, Math.round(Number(articleTitleLines) || 5))),

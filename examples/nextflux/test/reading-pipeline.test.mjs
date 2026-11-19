@@ -20,6 +20,21 @@ test("first-pass word count uses body text, block boundaries and mixed scripts",
   assert.equal(createReadingParser('<img alt="caption"><iframe>fallback</iframe>').analysis.wordCount, 0);
 });
 
+test("the header only clamps when the displayed body contains the complete title", () => {
+  const title = "🖼️ tinybrain：从中文语料训练 A & B";
+  const htmlTitle = "🖼️ <b>tiny</b>brain：从中文语料训练 A&nbsp; &amp; B";
+  const repeats = (html, baseUrl = "https://example.test/") =>
+    createReadingPipeline({ html, baseUrl, title }).parser.analysis.titleInBody;
+  assert.equal(repeats(`<p>开头。</p><h2>${htmlTitle}</h2>`), true);
+  assert.equal(repeats("<p>🖼️ tinybrain：从中文语料训练</p>"), false);
+  for (const html of ["", `<img alt="${title}">`, `<script>${title}</script>`,
+    `<details><p>${htmlTitle}</p></details>`, `<video>${htmlTitle}</video>`]) {
+    assert.equal(repeats(html), false);
+  }
+  // The Telegram adapter removes the repeated opening line before rendering.
+  assert.equal(repeats(`<p>${htmlTitle}<br><br>免费开源的中文模型训练项目。</p>`, "https://t.me/example/1"), false);
+});
+
 test("structured content scores above flattened content",()=>{
   const structured=Array.from({length:8},(_,i)=>`<p>第${i+1}段 ${"正文".repeat(45)}</p>`).join("");
   const flat=`<div>${"正文".repeat(360)}</div>`;

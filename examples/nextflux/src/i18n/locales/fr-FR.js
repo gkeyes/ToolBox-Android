@@ -342,7 +342,7 @@ export default {
       articleTitle: "TITRE",
       titleAlign: "Alignement",
       titleFontSize: "Taille",
-      articleTitleLines: "Lignes",
+      articleTitleLines: "Lignes si le titre figure dans le texte",
       reset: "Réinitialiser",
     },
     speech: {

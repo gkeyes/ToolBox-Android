@@ -17,6 +17,10 @@ document.documentElement.dataset.theme = "light";
 runtimeForeground.set(true);
 
 window.navigationFixture = {
+  setTitle: (title) => {
+    settingsState.set({ ...settingsState.get(), articleTitleLines: 1 });
+    activeArticle.set({ ...activeArticle.get(), title, titleText: title });
+  },
   setReducedMotion: (value) => settingsState.set({ ...settingsState.get(), reduceMotion: value }),
   setModal: (value) => isModalOpen.set(value),
   setGallery: (value) => imageGalleryActive.set(value),
