@@ -9,6 +9,8 @@ export const ROOT_KEY = `${CACHE_PREFIX}root`;
 export { LEGACY_PREFIX } from "./cache-legacy.js";
 const TABLES = ["articles", "feeds", "categories", "feedIcons"];
 const FANOUT = 128;
+// Small JSON documents fit inline. Avoid setting up a gzip stream for each short article.
+const MIN_COMPRESSION_CHARS = 256;
 const PART_CHARS = 48 * 1024;
 const BATCH_BYTES = 1024 * 1024;
 const BATCH_KEYS = 256;
@@ -41,7 +43,7 @@ const publicRow = (row) => {
 
 async function encodeDocument(value, compress) {
   const text = JSON.stringify(value);
-  if (!compress || typeof globalThis.CompressionStream !== "function" ||
+  if (!compress || text.length < MIN_COMPRESSION_CHARS || typeof globalThis.CompressionStream !== "function" ||
       typeof globalThis.DecompressionStream !== "function") return { codec: "json", text };
   const bytes = new Uint8Array(await new Response(new Blob([text]).stream().pipeThrough(new CompressionStream("gzip"))).arrayBuffer());
   const parts = [];

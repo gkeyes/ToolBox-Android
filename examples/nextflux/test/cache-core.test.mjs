@@ -294,3 +294,19 @@ test("incremental sync preserves counts without rebuilding them over every retai
   assert.equal(builds.filter(event=>event.kind==="counts").length, 0);
   assert.equal(await cache.readArticle(101), null);
 });
+
+test("short and long article bodies share the existing cache format after a restart", async () => {
+  const storage = memoryStorage();
+  const cache = createArticleCache(storage, { autoGc: false, digest });
+  await cache.initialize(ACCOUNT);
+  const rows = [article(), article({ id: 102, content: "<p>中😀文。</p>".repeat(150) })];
+  const token = await cache.prepareSync({ account: ACCOUNT, syncedAt: SYNCED_AT });
+  await cache.applySyncBatch(token, rows);
+  await cache.commitSync(token, { feeds: [FEED], categories: [CATEGORY] });
+  const headers = [...storage.values.values()];
+  assert.ok(headers.some(row => row.codec === "json" && row.text?.includes(rows[0].content)));
+  assert.ok(headers.some(row => row.codec === "gzip-base64"));
+  const reopened = createArticleCache(storage, { autoGc: false, digest });
+  await reopened.initialize(ACCOUNT);
+  for (const row of rows) assert.equal((await reopened.readArticle(row.id)).content, row.content);
+});

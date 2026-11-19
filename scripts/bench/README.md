@@ -37,3 +37,9 @@ python3 scripts/bench/android-startup.py --cold --rounds 20 --output old-outer.j
 ### 同模拟器覆盖升级对照
 
 在 `host-comparison.json` 指定有已签名构建产物的两次 main 提交。更改该文件会在同一台 API 35 模拟器上先测基准，再覆盖安装候选版。两组各测 20 次强制停止后的启动，以及到达首页后的宿主 PSS。原始数据在工作流的 host-cold-start-comparison 附件。手动运行时可换用仍在 Actions 保留期内的构建 SHA。模拟器冷启动时间与首页 PSS 单独列示，折叠屏的同步、连续阅读和渲染进程仍需实机采样。
+
+### 实机阅读、同步与熄屏采样
+
+打开同一篇缓存长文或准备好同一批增量数据。运行 `python3 scripts/bench/android-flow.py read --seconds 30 --output old-read-01`，见到开始提示后执行固定操作。同步使用 `sync`。分别指定内外屏、旧新版的新目录。脚本保存每个进程的原始 PSS 采样、可访问的 CPU tick、帧记录及系统与 WebView 版本。已从开发者工具核实归属的渲染进程用 `--renderer-pid PID` 加入。缺少渲染进程、进程重启、读取受限或工作量不同的样本需单列。峰值是按间隔采集的近似值，CPU 时间为 tick 差除以设备的时钟频率。
+
+熄屏场景使用 `background --seconds 14400`。固定用户配置的半小时同步，在同一网络和供电条件下重复三轮。脚本只在两端采样电源状态和电池统计，中间不轮询手机。用 NextFlux 的同步时间、未读变化与通知记录核对计划轮次。系统采样本身无法证明每轮同步成功。
