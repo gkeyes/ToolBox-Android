@@ -318,9 +318,8 @@ test("the board opens as its own page from the sidebar and Back returns to the l
 });
 
 // Switching tabs reuses the mounted list instead of rebuilding it, an empty
-// list draws no footer, and the glass drops its edge bending only while
-// something scrolls.
-test("tab switches keep the list mounted and scrolling pauses the edge lens", async ({ page }) => {
+// list draws no footer, and the glass keeps a live backdrop throughout scrolling.
+test("tab switches keep the list mounted and scrolling keeps the glass refraction continuous", async ({ page }) => {
   const pageErrors = [];
   page.on("pageerror", (error) => pageErrors.push(error.message));
   await page.setViewportSize({ width: 400, height: 870 });
@@ -347,19 +346,51 @@ test("tab switches keep the list mounted and scrolling pauses the edge lens", as
     expect(await page.evaluate(() => document.querySelector(".article-list-content [data-virtuoso-scroller]") === window.__scroller)).toBe(true);
     await expect(page.locator(".vlist-footer")).toHaveCount(0);
   }
-  // A scroll empties the header's lens filters (blur stays, no bending) and
-  // restyles nothing on the page; they fill again once scrolling stops.
-  const bending = () => page.evaluate(() => [...document.querySelectorAll("svg[data-nf-lens] filter")]
-    .map((filter) => Boolean(filter.querySelector("feDisplacementMap"))));
-  await expect.poll(async () => (await bending()).length).toBeGreaterThan(0);
-  expect((await bending()).every(Boolean)).toBe(true);
-  const scrolling = await page.evaluate(() => {
-    window.__scroller.dispatchEvent(new Event("scroll"));
-    return [...document.querySelectorAll("svg[data-nf-lens] filter")].map((filter) => filter.querySelector("feDisplacementMap") === null);
+  const glass = page.locator('.article-list-header > [data-sidebar="trigger"]');
+  await expect.poll(() => glass.evaluate(el => el.style.getPropertyValue("--nf-lens"))).toMatch(/url/);
+  // Put a striped, genuinely scrollable backdrop behind the production glass.
+  // A frozen backdrop fails the first pixel comparison. A material swap at
+  // touch release fails the second, even when the scroll offset stays fixed.
+  await glass.evaluate(el => {
+    const backdrop = document.createElement("div");
+    backdrop.id = "lens-scroll-sample";
+    backdrop.style.cssText = "position:absolute;inset:0;overflow:auto;scrollbar-width:none;pointer-events:none";
+    const stripes = document.createElement("div");
+    stripes.style.cssText = "height:600px;background:repeating-linear-gradient(30deg,#204c91 0 12px,#ffbc53 12px 24px)";
+    backdrop.append(stripes);
+    el.before(backdrop);
+    el.style.zIndex = "1";
   });
-  expect(scrolling.every(Boolean)).toBe(true);
-  expect(await page.evaluate(() => document.documentElement.hasAttribute("data-nf-scrolling"))).toBe(false);
-  await expect.poll(async () => (await bending()).every(Boolean)).toBe(true);
+  const first = await glass.screenshot();
+  const backdrop = page.locator("#lens-scroll-sample");
+  await backdrop.evaluate(async el => {
+    const finger = new Touch({ identifier: 1, target: el });
+    el.dispatchEvent(new TouchEvent("touchstart", { bubbles: true, touches: [finger] }));
+    el.scrollTop = 19;
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+  });
+  expect(await backdrop.evaluate(el => el.scrollTop)).toBe(19);
+  const dragging = await glass.screenshot();
+  expect(dragging.equals(first)).toBe(false);
+  const hasLens = () => glass.evaluate(el => {
+    const id = el.style.getPropertyValue("--nf-lens").match(/#([^ )]+)/)?.[1];
+    return Boolean(id && document.getElementById(id)?.querySelector("feDisplacementMap"));
+  });
+  expect(await hasLens()).toBe(true);
+  await backdrop.evaluate(el => el.dispatchEvent(new TouchEvent("touchend", { bubbles: true, touches: [] })));
+  // Simulate the remaining scroll distance after the finger lifts.
+  await backdrop.evaluate(async el => {
+    el.scrollTop = 33;
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+  });
+  expect(await backdrop.evaluate(el => el.scrollTop)).toBe(33);
+  const coasting = await glass.screenshot();
+  expect(coasting.equals(dragging)).toBe(false);
+  expect(await hasLens()).toBe(true);
+  // Cover the former 180 ms idle switch without changing the background.
+  await page.waitForTimeout(300);
+  expect(await hasLens()).toBe(true);
+  expect((await glass.screenshot()).equals(coasting)).toBe(true);
   expect(pageErrors).toEqual([]);
 });
 

@@ -98,15 +98,7 @@ export function installLens({ doc = document, win = window } = {}) {
   svg.dataset.nfLens = "";
   doc.body.append(svg);
 
-  const filters = new Map(); // "w×h×r" -> { id, node, lens }
-  let paused = false;
-  // Same backdrop, no bending: the blur and tint after url() in each
-  // backdrop-filter are untouched.
-  const passThrough = () => {
-    const node = doc.createElementNS(NS, "feOffset");
-    node.setAttribute("in", "SourceGraphic");
-    return node;
-  };
+  const filters = new Map(); // geometry key -> { id, node }
   const bound = new Map(); // element -> { inset, key }
   let nextId = 0;
   const filterFor = (key, width, height, radius) => {
@@ -135,10 +127,10 @@ export function installLens({ doc = document, win = window } = {}) {
     }
     const displace = doc.createElementNS(NS, "feDisplacementMap");
     for (const [name, value] of Object.entries({ in: "SourceGraphic", in2: "map", scale: SCALE, xChannelSelector: "R", yChannelSelector: "G" })) displace.setAttribute(name, String(value));
-    const lens = [neutral, image, merge, displace];
-    filter.append(...(paused ? [passThrough()] : lens));
+    // Cache the geometry only. SourceGraphic keeps sampling the moving backdrop.
+    filter.append(neutral, image, merge, displace);
     svg.append(filter);
-    filters.set(key, { id, node: filter, lens });
+    filters.set(key, { id, node: filter });
     return id;
   };
 
@@ -218,61 +210,9 @@ export function installLens({ doc = document, win = window } = {}) {
   mutations.observe(doc.body, { childList: true, subtree: true });
   scan();
 
-  // While anything scrolls, the glass keeps its blur but drops the edge
-  // bending: re-running the displacement filter on every scrolled frame
-  // tripled the dropped frames on a phone. Only the few SVG filters change:
-  // a document-wide attribute restyled every glass subtree (~110 elements)
-  // at each scroll start and stop. The bending returns once nothing has
-  // scrolled for a moment and no finger is down, so a held or slow drag does
-  // not flip it on and off.
-  let still = 0;
-  let touches = 0;
-  let touchedAt = 0;
-  const setPaused = (value) => {
-    if (paused === value) return;
-    paused = value;
-    for (const { node, lens } of filters.values()) node.replaceChildren(...(value ? [passThrough()] : lens));
-  };
-  // A touchend the document never sees (a host gesture took the touch) would
-  // leave the bending off until the next touch; after 10 s without a touch
-  // event and without scrolling, the count is treated as stale. A finger held
-  // still for a few seconds is far more common than a lost touchend, so the
-  // wait is long (recheck-127 P3-2: at 2 s the bending came back under it).
-  const settle = () => {
-    still = 0;
-    if (touches && Date.now() - touchedAt < 10000) { still = win.setTimeout(settle, 500); return; }
-    touches = 0;
-    setPaused(false);
-  };
-  const onScroll = () => {
-    setPaused(true);
-    if (still) win.clearTimeout(still);
-    still = win.setTimeout(settle, 180);
-  };
-  const onTouch = (event) => {
-    touches = event.touches?.length ?? 0;
-    touchedAt = Date.now();
-    // On release, restore 180 ms later even if a stale-touch check is waiting.
-    if (!touches && paused) {
-      if (still) win.clearTimeout(still);
-      still = win.setTimeout(settle, 180);
-    }
-  };
-  // touchmove only refreshes the activity time, so a long drag is not taken
-  // for a lost touchend.
-  const touchTypes = ["touchstart", "touchmove", "touchend", "touchcancel"];
-  doc.addEventListener("scroll", onScroll, { capture: true, passive: true });
-  for (const type of touchTypes) doc.addEventListener(type, onTouch, { capture: true, passive: true });
   return {
     scan,
-    get paused() { return paused; },
     dispose() {
-      doc.removeEventListener("scroll", onScroll, { capture: true });
-      for (const type of touchTypes) doc.removeEventListener(type, onTouch, { capture: true });
-      if (still) win.clearTimeout(still);
-      still = 0;
-      touches = 0;
-      setPaused(false);
       mutations.disconnect();
       resizes.disconnect();
       if (frame) win.cancelAnimationFrame(frame);
