@@ -68,6 +68,7 @@ function ActionButtons() {
   const $aiSummaries = useStore(aiSummaries);
   const currentSummaryState = $aiSummaries[$activeArticle?.id];
   const [summaryArticleId, setSummaryArticleId] = useState(null);
+  const [summaryTipOpen, setSummaryTipOpen] = useState(false);
   const summaryOpen = summaryArticleId !== null && summaryArticleId === String($activeArticle?.id);
   const [moreOpen, setMoreOpen] = useState(false);
   const rootRef = useRef(null);
@@ -377,7 +378,11 @@ function ActionButtons() {
 
         <div className="nextflux-toolbar-group nextflux-toolbar-group-ai" aria-label="AI 功能">
           {aiApiKey && (
-            <Tooltip delay={0}>
+            <Tooltip
+              delay={0}
+              isOpen={summaryTipOpen && !summaryOpen}
+              onOpenChange={next => setSummaryTipOpen(next && document.documentElement.dataset.nfInput !== "touch")}
+            >
               <Button
                 className="nextflux-toolbar-button"
                 onPress={openAISummary}

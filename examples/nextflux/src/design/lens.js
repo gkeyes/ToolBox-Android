@@ -333,12 +333,14 @@ export function installGlassPress({ doc = document } = {}) {
   // focus-visible, so compact-controls.css hides focus rings after touch and
   // shows them again once a key is pressed.
   const root = doc.documentElement;
-  const touched = (event) => {
-    // Only on a change: rewriting it restyles every control on the page.
-    if ((event.type === "touchstart" || event.pointerType === "touch") && root.dataset.nfInput !== "touch") root.dataset.nfInput = "touch";
+  const setInput = (type) => {
+    if (root.dataset.nfInput !== type) root.dataset.nfInput = type;
   };
-  const typed = () => { if (root.dataset.nfInput !== "keyboard") root.dataset.nfInput = "keyboard"; };
-  listeners.push(["touchstart", touched], ["pointerdown", touched], ["keydown", typed]);
+  const pointerInput = (event) => { if (event.pointerType) setInput(event.pointerType); };
+  // System back dispatches its own Escape to close the top overlay.
+  const typed = (event) => { if (event.isTrusted) setInput("keyboard"); };
+  listeners.push(["touchstart", () => setInput("touch")], ["pointerdown", pointerInput],
+    ["pointerover", pointerInput], ["keydown", typed]);
   const win = doc.defaultView;
   for (const [type, handler] of listeners) doc.addEventListener(type, handler, options);
   win?.addEventListener("blur", release);

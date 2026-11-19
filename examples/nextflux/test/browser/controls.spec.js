@@ -169,6 +169,55 @@ test("toolbar actions work and closing an AI summary preserves its cached result
   await closeSummary(page);
 });
 
+test("touch dismissal never paints a header-only AI summary", async ({ page }) => {
+  await open(page, 393, "dark");
+  const trigger = page.getByRole("button", { name: "AI 摘要", exact: true });
+  await trigger.tap();
+  const dialog = page.getByRole("dialog", { name: "AI 摘要" });
+  await expect(dialog.locator(".nextflux-summary-text")).toHaveText("Fixture summary.");
+  await expect(page.locator('.nextflux-summary-container[data-entering]')).toHaveCount(0);
+  await page.evaluate(() => {
+    window.summaryHeaderObserved = new Promise(resolve => {
+      const inspect = () => {
+        const panel = document.querySelector(".nextflux-summary-dialog");
+        if (!panel) return resolve(false);
+        if (panel.querySelector(".nextflux-summary-header") &&
+            !panel.querySelector(".nextflux-summary-text")?.textContent) return resolve(true);
+        requestAnimationFrame(inspect);
+      };
+      requestAnimationFrame(inspect);
+    });
+  });
+  await dialog.getByRole("button", { name: "关闭 AI 摘要" }).tap();
+  await expect(dialog).toHaveCount(0);
+  expect(await page.evaluate(() => window.summaryHeaderObserved)).toBe(false);
+  await expect(trigger).toBeFocused();
+  await expect(page.getByRole("tooltip")).toHaveCount(0);
+});
+
+test("system back after touch returns to an unadorned AI summary button; keyboard focus remains visible", async ({ page }) => {
+  await open(page, 393, "dark");
+  const trigger = page.getByRole("button", { name: "AI 摘要", exact: true });
+  const dialog = page.getByRole("dialog", { name: "AI 摘要" });
+  await trigger.tap();
+  await expect(dialog.locator(".nextflux-summary-text")).toHaveText("Fixture summary.");
+  await expect(page.locator('.nextflux-summary-container[data-entering]')).toHaveCount(0);
+  expect(await page.evaluate(() => !window.dispatchEvent(new Event("toolboxback", { cancelable: true })))).toBe(true);
+  await expect(dialog).toHaveCount(0);
+  await expect(trigger).toBeFocused();
+  await expect(page.getByRole("tooltip")).toHaveCount(0);
+  expect(await page.locator("html").getAttribute("data-nf-input")).toBe("touch");
+  const ringPainted = () => trigger.evaluate(el => getComputedStyle(el).outlineStyle !== "none" ||
+    /rgb\(|rgba\([^)]*, 1\)/.test(getComputedStyle(el).boxShadow));
+  expect(await ringPainted()).toBe(false);
+  await page.keyboard.press("Enter");
+  await expect(dialog).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+  await expect(trigger).toBeFocused();
+  await expect.poll(ringPainted).toBe(true);
+});
+
 test("AI summary close, Escape, backdrop and system back stop the stream and retain received text", async ({ page }) => {
   await open(page);
   await page.evaluate(() => window.controlsFixture.summary.hold(true));

@@ -13,6 +13,7 @@ import { settingsState as appSettings } from "@/stores/settingsStore.js";
 import { speechState } from "@/stores/speechStore.js";
 import { installOverlayJanitor } from "@/toolbox/overlayJanitor.js";
 import { installSystemBack } from "@/toolbox/systemBack.js";
+import { installGlassPress } from "@/design/lens.js";
 import { installLinkHandling } from "@/toolbox/actions.js";
 import { runtimeForeground } from "@/toolbox/foreground.js";
 import { activeArticle, calls, currentThemeMode, hasIntegrations, loadingOriginContent, settingsModalOpen, settingsState, summaryBoundary } from "./controls-state.js";
@@ -108,5 +109,6 @@ function ControlsFixture() {
 // Same janitor as the app (render.jsx); the fixture's only store-driven overlay is Settings.
 window.controlsOverlayJanitor = installOverlayJanitor({ isOverlayExpected: () => settingsModalOpen.get(), settleMs: 300 });
 window.controlsStopSystemBack = installSystemBack();
+installGlassPress();
 
 createRoot(document.getElementById("root")).render(<HashRouter><ControlsFixture /></HashRouter>);

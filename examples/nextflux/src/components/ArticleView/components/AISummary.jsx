@@ -15,11 +15,6 @@ export default function AISummary({ article, open, onClose, onGenerate, onStop }
   const summaries = useStore(aiSummaries);
   const state = summaries[articleId];
   const fullText = state?.summary || "";
-  // Network chunks are already frame-batched by ActionButtons. Render those
-  // updates directly instead of reparsing on a second per-character timer.
-  const formattedText = useMemo(() => open
-    ? renderSummaryMarkdown(fullText, article?.url) : null,
-  [open, fullText, article?.url]);
 
   const action = state?.loading ? "停止生成" : state?.error ? "重试" : fullText ? "重新生成" : "生成摘要";
 
@@ -59,7 +54,7 @@ export default function AISummary({ article, open, onClose, onGenerate, onStop }
                 <Spinner size="sm" color="current" /><span>正在生成摘要…</span>
               </div>}
               {state?.error && <p className="ds-banner ds-tone-danger" role="alert">{state.error}</p>}
-              {fullText && <div className="nextflux-summary-text">{formattedText}</div>}
+              {fullText && <SummaryText text={fullText} url={article?.url} />}
               {!state?.loading && !state?.error && !fullText && <p className="nextflux-summary-empty">点击生成按钮，提炼这篇文章的要点。</p>}
             </Modal.Body>
           </div>
@@ -69,4 +64,11 @@ export default function AISummary({ article, open, onClose, onGenerate, onStop }
       </Modal.Container>
     </Modal.Backdrop>
   );
+}
+
+// The modal keeps its children mounted for the exit animation. Keep the text
+// with its header for that animation, and only parse it while mounted.
+function SummaryText({ text, url }) {
+  const formatted = useMemo(() => renderSummaryMarkdown(text, url), [text, url]);
+  return <div className="nextflux-summary-text">{formatted}</div>;
 }
