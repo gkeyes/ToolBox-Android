@@ -1,6 +1,6 @@
 import { atom } from "nanostores";
 import { settingsState } from "../stores/settingsStore.js";
-import { claimAutoSync } from "../stores/syncStore.js";
+import { claimAutoSync, notificationOptionsForSync } from "../stores/syncStore.js";
 import { toast } from "sonner";
 import { backgroundHealth, backgroundIntervalMs } from "./background-policy.mjs";
 import { continuousSync, nativeTimerEffective } from "./background-state.js";
@@ -156,7 +156,7 @@ async function runBackgroundSync(reason) {
       setHealth({ type: "success" });
       await publishBackgroundStatus(result);
       // Per-feed update notifications ride on the same timer; a failure there never fails the sync.
-      await checkWatchedFeeds({ syncId: result.syncedAt }).catch(() => {});
+      await checkWatchedFeeds(notificationOptionsForSync(result, false)).catch(() => {});
       return true;
     } catch (error) {
       if (runtimeClosing.get()) return false;

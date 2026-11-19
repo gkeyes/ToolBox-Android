@@ -298,8 +298,8 @@ test("eight half-hour idle syncs keep every report watermark within the idle sto
     assert.equal(manager.getState().observedThrough, time);
   }
   assert.equal(storage.calls.scans, 0);
-  // The 1.32.4 path made 144 host calls, including 64 writes.
-  assert.ok(storage.calls.reads.length + storage.calls.writes.length <= 72);
-  assert.ok(storage.calls.writes.length <= 32);
+  // In 1.32.5 eight rounds used 64 host calls, including 32 writes.
+  assert.ok(storage.calls.reads.length + storage.calls.writes.length <= 48);
+  assert.ok(storage.calls.writes.length <= 24);
   assert.equal((await repository.loadState()).observedThrough, time);
 });

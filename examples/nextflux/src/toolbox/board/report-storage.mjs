@@ -86,6 +86,8 @@ export function createReportStorage(storage, accountKey, { now = Date.now } = {}
   let rootKey;
   let token;
   let sequence = 0;
+  // Remember only the immutable state document this writer most recently staged.
+  let lastStateDocument = null;
   const enqueue = (work) => {
     const operation = coordinator.tail.catch(() => {}).then(async () => {
       if (!prefix) {
@@ -199,6 +201,7 @@ export function createReportStorage(storage, accountKey, { now = Date.now } = {}
     try {
       await writeBatches("set", [...writes, { key: ref, value: header }]);
     } catch (error) { coordinator.needsSweep = true; throw error; }
+    if (kind === "state") lastStateDocument = { ref, parts: header.parts };
     return ref;
   }
 
@@ -258,7 +261,7 @@ export function createReportStorage(storage, accountKey, { now = Date.now } = {}
     return next;
   }
 
-  async function collect(current, sweep = false) {
+  async function collect(current, sweep = false, previousStateDocument = null) {
     const live = liveRefs(current);
     if (sweep || coordinator.needsSweep) {
       // A namespace scan is reserved for startup, explicit pruning and failed
@@ -275,19 +278,25 @@ export function createReportStorage(storage, accountKey, { now = Date.now } = {}
     }
     for (const ref of [...coordinator.retired]) {
       if (!live.has(ref)) {
-        const value = await read(ref);
-        if (value !== null) {
-          const header = validateHeader(value);
-          await writeBatches("remove", Array.from({ length: header.parts }, (_, part) => `${ref}.p${part}`));
-          // Header last: an interrupted removal remains discoverable.
-          await writeBatches("remove", [ref]);
+        let parts;
+        if (previousStateDocument?.ref === ref) {
+          parts = previousStateDocument.parts;
+        } else {
+          const value = await read(ref);
+          parts = value === null ? 0 : validateHeader(value).parts;
+        }
+        if (parts) {
+          const keys = Array.from({ length: parts }, (_, part) => `${ref}.p${part}`);
+          // If the batch splits, its recoverable header is still removed last.
+          keys.push(ref);
+          await writeBatches("remove", keys);
         }
       }
       coordinator.retired.delete(ref);
     }
   }
-  const cleanup = async (current) => {
-    try { await collect(current); }
+  const cleanup = async (current, previousStateDocument = null) => {
+    try { await collect(current, false, previousStateDocument); }
     catch { coordinator.needsSweep = true; }
   };
   async function replaceIndex(previous, index) {
@@ -312,9 +321,10 @@ export function createReportStorage(storage, accountKey, { now = Date.now } = {}
       const text = serialize(state); // Freeze the input before joining the queue.
       return enqueue(async () => {
         const previous = await snapshot();
+        const previousStateDocument = lastStateDocument;
         const stateRef = await writeDocument("state", text);
         const current = await publish(previous, { stateRef });
-        await cleanup(current);
+        await cleanup(current, previousStateDocument);
         return decodeCacheValue("json", text);
       });
     },

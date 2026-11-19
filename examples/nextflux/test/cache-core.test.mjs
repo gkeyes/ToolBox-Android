@@ -334,3 +334,26 @@ test("recent identical plain bodies reuse a digest without masking body or enclo
   await sync(article());
   assert.equal(hashes, 4);
 });
+
+test("checkpoint-only syncs leave the idle collector asleep after its startup sweep", async (t) => {
+  // Hold scheduled maintenance until the committed root is durable.
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const storage = memoryStorage();
+  const cache = createArticleCache(storage, { digest });
+  await cache.initialize(ACCOUNT);
+  const catalog = { feeds: [], categories: [] };
+  const sync = async () => {
+    const token = await cache.prepareSync({ account: ACCOUNT, syncedAt: SYNCED_AT });
+    await cache.commitSync(token, catalog);
+  };
+  await sync();
+  t.mock.timers.tick(1000);
+  await cache.collectGarbage();
+  await sync();
+  let reads = 0;
+  const getMany = storage.getMany;
+  storage.getMany = async keys => { reads++; return getMany(keys); };
+  t.mock.timers.tick(1000);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(reads, 0);
+});

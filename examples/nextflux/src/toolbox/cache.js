@@ -678,7 +678,7 @@ export function createArticleCache(storage, options = {}) {
   }
 
   function scheduleGc() {
-    if (options.autoGc === false) return;
+    if (options.autoGc === false || (sweptVersion === sweepVersion && !retired.size)) return;
     if (gcPromise) { gcAgain = true; return; }
     if (gcTimer !== null) return;
     gcTimer = setTimeout(() => { gcTimer = null; collectGarbage().catch(() => {}); }, 1000);

@@ -116,7 +116,7 @@ export function createFeedNotifier({ api, notifications, storage, feedTitle = ()
    * Runs after a committed sync. One failing feed does not stop the others. `foreground` marks a
    * sync the reader ran on screen: it only moves the cursors, even if NextFlux leaves meanwhile.
    */
-  function check({ foreground = false, knownFeedIds = null, loadKnownFeedIds = null, syncId = null } = {}) {
+  function check({ foreground = false, knownFeedIds = null, loadKnownFeedIds = null, latestEntryIdForFeed = null, syncId = null } = {}) {
     return serial(async () => {
       const state = await load();
       const results = [];
@@ -143,6 +143,14 @@ export function createFeedNotifier({ api, notifications, storage, feedTitle = ()
             state.feeds[key] = { lastEntryId: Number(await api.latestEntryId(feedId)) || 0 };
             dirty = true;
             results.push({ feedId, outcome: "baseline" });
+            continue;
+          }
+          const head = latestEntryIdForFeed?.(feedId);
+          // Keep the cursor unchanged. Arrivals after the committed snapshot
+          // become eligible on the next sync. Pending delivery always retries.
+          if (Number.isSafeInteger(head) && head > 0 && head <= watch.lastEntryId &&
+              !watch.pending?.length && !watch.backlog?.length) {
+            results.push({ feedId, outcome: "none" });
             continue;
           }
           const { entries = [], total: reported = 0 } = await api.newUnreadEntries(feedId, watch.lastEntryId) || {};

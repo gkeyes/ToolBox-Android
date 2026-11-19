@@ -288,6 +288,9 @@ async function collectSnapshot(baseCheck) {
   // on the next complete sync, never halfway through a paginated window.
   const recentCacheLimit = normalizeRecentCacheLimit(settingsState.get().recentCacheLimit);
   const recentEntryIds = recentCacheLimit > 0 ? new Set() : null;
+  // The recent endpoint returns read and unread entries in descending ID order. A feed
+  // actually present in that window has a known head, even on a truncated page.
+  let recentFeedHeads = recentCacheLimit > 0 ? {} : null;
   const previous = getLastSyncTime();
   const previousTime = previous?.getTime?.() ?? Number.NaN;
   const newEntryIds = new Set();
@@ -351,7 +354,18 @@ async function collectSnapshot(baseCheck) {
       syncProgress.set(`正在缓存最近 ${recentCacheLimit} 条文章…`);
       await consume(minifluxAPI.getRecentEntries, [recentCacheLimit, check], 2,
         `正在缓存最近文章（最多 ${recentCacheLimit} 条）`,
-        (batch) => batch.forEach((entry) => recentEntryIds.add(entry.id)));
+        (batch) => {
+          for (const entry of batch) {
+            recentEntryIds.add(entry.id);
+            const feedId = entry.feed_id ?? entry.feed?.id;
+            if (!Number.isSafeInteger(feedId) || feedId <= 0 || !Number.isSafeInteger(entry.id) ||
+                entry.id <= 0 || (entry.feed?.id != null && entry.feed.id !== feedId)) {
+              recentFeedHeads = null;
+            } else if (recentFeedHeads && !Object.hasOwn(recentFeedHeads, feedId)) {
+              recentFeedHeads[feedId] = entry.id;
+            }
+          }
+        });
     }
     await staging;
     check();
@@ -377,7 +391,7 @@ async function collectSnapshot(baseCheck) {
       feeds: serverFeeds.map(mapServerFeed),
       categories: serverCategories.map((category) => ({ id: category.id, title: category.title })),
       oldestServerReadId,
-      recentCacheLimit,
+      recentCacheLimit, recentFeedHeads,
       recentEntryIds: recentEntryIds ? [...recentEntryIds] : undefined,
     };
   } catch (failure) {
@@ -448,6 +462,7 @@ export function sync(mode = "foreground") {
           unreadCount,
           recentCacheLimit: collected.recentCacheLimit,
           recentCachedCount: collected.recentEntryIds?.length ?? 0,
+          recentFeedHeads: collected.recentFeedHeads, accountEpoch,
         };
         check(false);
         syncCommitted.set(result);
@@ -554,13 +569,20 @@ export async function flushSyncWork() {
 // background run does not announce entries the reader already saw.
 let feedNotifyCheck = null;
 
+export function notificationOptionsForSync(result, foreground) {
+  return {
+    foreground, syncId: result.syncedAt,
+    latestEntryIdForFeed: (feedId) => result.accountEpoch === accountEpoch ? result.recentFeedHeads?.[feedId] : null,
+  };
+}
+
 // Tracked by flushSyncWork, so closing the runtime waits for the cursors to move.
 function checkFeedNotifications(result) {
   if (result?.outcome !== "committed") return Promise.resolve();
   const run = (async () => {
     try {
       const { checkWatchedFeeds } = await import("../toolbox/feed-notifications.js");
-      await checkWatchedFeeds({ foreground: true, syncId: result.syncedAt });
+      await checkWatchedFeeds(notificationOptionsForSync(result, true));
     } catch { /* notifications never fail a sync */ }
   })();
   feedNotifyCheck = run;

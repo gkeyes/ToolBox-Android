@@ -477,3 +477,24 @@ test("empty watches skip catalog reads and unchanged cursors skip native writes"
   assert.equal(writes, 2);
   assert.equal(posted.length, 1);
 });
+
+test("a committed feed head skips covered watches only and preserves pending retries", async () => {
+  const uncached = new Set([101]);
+  const { server, notifier, posted } = world({ uncached });
+  for (const id of [12, 13, 14]) {
+    server.add(id, 100, "基线");
+    await notifier.setWatched(id, true);
+  }
+  server.fail(12);
+  server.fail(14);
+  server.add(13, 101, "新消息");
+  const options = { latestEntryIdForFeed: id => ({12: 100, 13: 101})[id] };
+  assert.deepEqual(await notifier.check({ ...options, syncId: 1 }), [
+    { feedId: 12, outcome: "none" }, { feedId: 13, outcome: "none" },
+    { feedId: 14, outcome: "failed", code: "NETWORK_UNAVAILABLE" },
+  ]);
+  uncached.clear();
+  await notifier.check({ ...options, syncId: 2 });
+  assert.equal(posted.length, 1);
+  assert.equal(posted[0].body, "新消息");
+});
