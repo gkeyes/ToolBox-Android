@@ -26,6 +26,8 @@ def main():
     parser.add_argument("--rounds", type=int, default=20)
     parser.add_argument("--cold", required=True, action="store_true",
                         help="Force-stop ToolBox before each launch. Installed tools and data are retained.")
+    parser.add_argument("--memory", action="store_true",
+                        help="Also sample the host process PSS after each home launch.")
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     if args.rounds < 1:
@@ -72,6 +74,10 @@ def main():
                 break
             time.sleep(0.25)
         report["samples"].append({"launchTotalMs": int(first[1]), "homeFullyDrawnMs": drawn})
+        if args.memory:
+            memory = adb("shell", "dumpsys", "meminfo", PACKAGE)
+            pss = re.search(r"TOTAL PSS:\s*([0-9,]+)", memory)
+            report["samples"][-1]["hostHomePssKiB"] = int(pss[1].replace(",", "")) if pss else None
         print(f"{index + 1}/{args.rounds} launch {first[1]} ms, fully drawn {drawn} ms", flush=True)
         args.output.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     usable = [row["homeFullyDrawnMs"] for row in report["samples"] if row["homeFullyDrawnMs"] is not None]

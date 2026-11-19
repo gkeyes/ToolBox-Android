@@ -19,7 +19,7 @@ REGISTRY = ROOT / "scripts/ci/tbx-targets.json"
 # tbx.yml has a browser-test step only for these tools; registering browser tests elsewhere would be silently skipped.
 BROWSER_TEST_RUNNERS = {"github-actions-watcher", "nextflux", "socialcoach"}
 SHARED_PATHS = (
-    ".github/workflows/tbx.yml", "scripts/ci/tbx.py", "scripts/ci/tbx-targets.json",
+    ".github/workflows/tbx.yml", "scripts/ci/tbx.py", "scripts/ci/glass_tokens.py", "scripts/ci/tbx-targets.json",
     "scripts/package-tool.py", "scripts/package-examples.sh", "sdk/*",
     "tool-api/*", "tool-package/*", "tool-runtime/*", "core-*/*",
     "app/build.gradle.kts", "app/src/main/kotlin/io/toolbox/host/runtime/*",
