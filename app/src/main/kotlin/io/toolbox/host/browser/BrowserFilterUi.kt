@@ -84,19 +84,15 @@ fun BrowserFilterControls(filters: BrowserFilterController, resumed: Boolean) {
 }
 
 @Composable
-fun BrowserFilterSheet(filters: BrowserFilterController, canPick: Boolean, resumed: Boolean) {
+fun BrowserFilterSheet(filters: BrowserFilterController, canPick: Boolean) {
     if (!filters.sheet) return
     var screen by remember { mutableStateOf("home") }
     var editing by remember { mutableStateOf<BrowserFilterRule?>(null) }
     var resetConfirm by remember { mutableStateOf(false) }
-    var blocked by remember { mutableIntStateOf(filters.blockedCount) }
     var expandedHosts by remember(screen, filters.site) {
         mutableStateOf(if (screen == "all" && filters.site.isNotBlank()) setOf(filters.site) else emptySet())
     }
     var expandedRules by remember(screen) { mutableStateOf(emptySet<String>()) }
-    LaunchedEffect(resumed) {
-        if (resumed) while (true) { blocked = filters.blockedCount; delay(500) }
-    }
     val state = filters.snapshot
     val site = filters.site
     val siteRules = state.rules.filter { it.site == site }
@@ -141,7 +137,7 @@ fun BrowserFilterSheet(filters: BrowserFilterController, canPick: Boolean, resum
                                 state.enabled,
                                 { value -> filters.change { it.copy(enabled = value) } },
                                 modifier = Modifier.padding(horizontal = 12.dp),
-                                summary = if (state.enabled) "已开启 · 本页已拦截 $blocked 次请求" else "已关闭",
+                                summary = if (state.enabled) "已开启 · 本页已拦截 ${filters.blockedCount} 次请求" else "已关闭",
                             )
                         }
 

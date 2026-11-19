@@ -3,6 +3,7 @@ package io.toolbox.host.background
 import io.toolbox.core.data.ResourceCapacity
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
@@ -16,12 +17,13 @@ import kotlinx.coroutines.selects.select
 internal class NetworkResources(
     private val availableHeap: () -> Long = ResourceCapacity::availableHeapBytes,
     private val infrastructureAvailable: () -> Boolean = { systemAvailable() },
+    probeDispatcher: CoroutineDispatcher = Dispatchers.Default,
 ) {
     private data class Waiting(val bytes: Long, val result: CompletableDeferred<Reservation>, var granted: Reservation? = null)
     private val lock = Any()
     private val waiting = linkedMapOf<String, ArrayDeque<Waiting>>()
     private var reserved = 0L
-    private val probeScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val probeScope = CoroutineScope(SupervisorJob() + probeDispatcher)
     private var probeJob: Job? = null
 
     internal val reservedBytes: Long get() = synchronized(lock) { reserved }
@@ -82,9 +84,13 @@ internal class NetworkResources(
         if (probeJob?.isActive == true) return
         val job = probeScope.launch(start = CoroutineStart.LAZY) {
             try {
+                var delayMillis = 50L
                 while (true) {
-                    delay(50)
+                    delay(delayMillis)
                     if (!synchronized(lock) { drain(); waiting.isNotEmpty() }) break
+                    // Releases already drain synchronously. Only unannounced heap
+                    // or platform recovery needs a bounded follow-up probe.
+                    delayMillis = (delayMillis * 2).coerceAtMost(400L)
                 }
             } finally {
                 synchronized(lock) {

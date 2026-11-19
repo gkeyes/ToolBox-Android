@@ -12,6 +12,8 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import okhttp3.Protocol
@@ -67,13 +69,39 @@ class NetworkResourceAdmissionTest {
         withTimeout(2_000) { while (resources.waitingCount != controls.size) delay(1) }
         val before = probes.get()
         delay(250)
-        assertTrue("one 50 ms timer should probe all waiters", probes.get() - before <= 8)
+        assertTrue("one shared probe should serve all waiters", probes.get() - before <= 8)
         controls.forEach { it.cancel() }
         waiters.forEach { assertTrue(withTimeout(2_000) { it.await() }.isFailure) }
         assertEquals(0, resources.waitingCount)
         val after = probes.get()
         delay(120)
         assertEquals(after, probes.get())
+    }
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    @Test
+    fun blockedQueueBacksOffAndAnEmptyQueueDoesNotProbe() = runTest {
+        var probes = 0
+        var heap = 0L
+        val resources = NetworkResources(
+            availableHeap = { probes++; heap },
+            probeDispatcher = StandardTestDispatcher(testScheduler),
+        )
+        val waiting = async { resources.admit("tool", 100, ToolNetworkStreamControl()) }
+        testScheduler.runCurrent()
+        val initial = probes
+        testScheduler.advanceTimeBy(10_000)
+        testScheduler.runCurrent()
+        assertEquals(27, probes - initial)
+        heap = 200L
+        testScheduler.advanceTimeBy(400)
+        testScheduler.runCurrent()
+        assertTrue(waiting.isCompleted)
+        waiting.await().close()
+        val idle = probes
+        testScheduler.advanceTimeBy(60_000)
+        testScheduler.runCurrent()
+        assertEquals(idle, probes)
     }
 
     @Test

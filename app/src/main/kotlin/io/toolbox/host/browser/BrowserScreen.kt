@@ -114,7 +114,6 @@ internal fun BrowserScreen(
     BrowserFilterSheet(
         filters,
         canPick = state.webView != null && state.error == null && !state.interaction.loading && !state.interaction.unresponsive && !state.clearing,
-        resumed = state.resumed,
     )
     if (state.menu) BrowserMenuSheet(state, actions)
     if (state.mediaDiagnosticsSheet) BrowserMediaDiagnosticsSheet(state, actions)

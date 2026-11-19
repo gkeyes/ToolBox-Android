@@ -44,6 +44,7 @@ import io.toolbox.host.ui.applyHyperOsGestureNavigationImmersion
 import io.toolbox.host.update.launchUpdateHint
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
@@ -107,6 +108,7 @@ class MainActivity : ComponentActivity() {
                     LaunchedEffect(state.dependencies) {
                         // Let the first frames and startup maintenance go first; the check itself runs off the main thread.
                         kotlinx.coroutines.delay(3_000)
+                        lifecycle.currentStateFlow.first { it.isAtLeast(Lifecycle.State.RESUMED) }
                         state.dependencies.updates.launchUpdateHint(state.dependencies.repositories.catalog)
                             ?.let { ToolBoxToasts.show(this@MainActivity, it, long = true) }
                     }
