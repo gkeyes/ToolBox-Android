@@ -95,6 +95,7 @@ export default function SearchModal() {
 
   useEffect(() => {
     if (!isOpen) {
+      setIsComposing(false);
       setKeyword("");
       searchResults.set([]);
       feedSearchResults.set([]);

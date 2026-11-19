@@ -8,6 +8,8 @@ import io.toolbox.tool.runtime.RuntimeHandlerException
 import io.toolbox.tool.runtime.RuntimeRpcErrorCode
 import io.toolbox.tool.runtime.RuntimeStorageMutation
 import io.toolbox.tool.runtime.RuntimeStorageSet
+import io.toolbox.tool.runtime.RuntimeRpcJson
+import okio.utf8Size
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
@@ -54,7 +56,7 @@ internal class StandardToolKvStorageHandler(
     override suspend fun getMany(keys: List<String>): List<RpcValue?> = withAccess {
         val requested = keys.map { it to physicalKey(it) }
         repository.readSnapshot(toolId) { snapshot ->
-            val decoded = mutableMapOf<String, Pair<RpcValue?, Int>>()
+            val decoded = mutableMapOf<String, Pair<RpcValue?, Long>>()
             val result = mutableListOf<RpcValue?>()
             var resultBytes = 2L // Array delimiters; the bridge checks the full envelope too.
             var legacyLoaded = false
@@ -85,7 +87,7 @@ internal class StandardToolKvStorageHandler(
                                         val chunks = snapshot.getMany(parts.map { "$physical.$it" }.toSet())
                                         for (part in parts) {
                                             val text = decodeChunk(chunks["$physical.$part"]?.valueJson)
-                                            valueBytes += text.toByteArray(Charsets.UTF_8).size
+                                            valueBytes += text.utf8Size()
                                             if (resultBytes + valueBytes > maxBatchResponseBytes) batchResponseTooLarge()
                                             append(text)
                                         }
@@ -94,7 +96,7 @@ internal class StandardToolKvStorageHandler(
                                 RuntimeValueJson.decode(encoded) ?: unreadable()
                             }
                         }
-                        val bytes = RuntimeValueJson.encode(value ?: RpcValue.Null).toByteArray(Charsets.UTF_8).size
+                        val bytes = RuntimeRpcJson.encodedValueBytes(value ?: RpcValue.Null)
                         (value to bytes).also { decoded[physical] = it }
                     }
                     resultBytes += bytes + if (result.isEmpty()) 0 else 1

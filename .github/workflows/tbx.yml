@@ -88,6 +88,8 @@ jobs:
           ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       # android.yml skips a change that only touches tbx.yml or tbx.py, so the guard tests for this workflow
       # and its scripts run here too.
+      - name: Verify official tools use current host theme defaults
+        run: python3 scripts/ci/glass_tokens.py --check
       - name: Verify CI and packaging scripts
         run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/tests -p 'test_*.py' -v
       - id: targets

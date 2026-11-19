@@ -544,6 +544,35 @@ internal object RuntimeBridgeLifecycle {
 object RuntimeRpcJson {
     fun encodeValue(value: RpcValue): String = buildString { appendJson(value) }
 
+    /** Uses the wire encoder's escaping and number formatting without a second JSON buffer. */
+    fun encodedValueBytes(value: RpcValue): Long = JsonByteCounter().apply { appendJson(value) }.bytes
+
+    // appendJsonString escapes all surrogate code units before they reach this sink.
+    private class JsonByteCounter : Appendable {
+        var bytes = 0L
+            private set
+
+        override fun append(c: Char): Appendable {
+            bytes += when (c.code) {
+                in 0..0x7f -> 1
+                in 0x80..0x7ff -> 2
+                else -> 3
+            }
+            return this
+        }
+
+        override fun append(csq: CharSequence?): Appendable {
+            val text = csq ?: "null"
+            return append(text, 0, text.length)
+        }
+
+        override fun append(csq: CharSequence?, start: Int, end: Int): Appendable {
+            val text = csq ?: "null"
+            for (index in start until end) append(text[index])
+            return this
+        }
+    }
+
     fun parseValue(encoded: String): RpcValue = parseValue(encoded.toByteArray(Charsets.UTF_8))
 
     fun parseValue(encoded: ByteArray): RpcValue {
@@ -610,15 +639,15 @@ object RuntimeRpcJson {
     internal fun prepareResponse(response: RuntimeRpcResponse): EncodedRuntimeResponse =
         (response as? RuntimeRpcResponse.Success)?.preparedEncoding ?: EncodedRuntimeResponse(encodeResponse(response))
 
-    private fun StringBuilder.appendJson(value: RpcValue) {
+    private fun Appendable.appendJson(value: RpcValue) {
         val pending = ArrayDeque<Any>()
         pending.addLast(value)
         while (pending.isNotEmpty()) {
             when (val item = pending.removeLast()) {
                 is String -> append(item)
                 RpcValue.Null -> append("null")
-                is RpcValue.Bool -> append(item.value)
-                is RpcValue.Number -> { require(item.value.isFinite()); append(item.value) }
+                is RpcValue.Bool -> append(item.value.toString())
+                is RpcValue.Number -> { require(item.value.isFinite()); append(item.value.toString()) }
                 is RpcValue.StringValue -> appendJsonString(item.value)
                 is RpcValue.ArrayValue -> {
                     append('[')
@@ -642,7 +671,7 @@ object RuntimeRpcJson {
         }
     }
 
-    private fun StringBuilder.appendJsonString(value: String) {
+    private fun Appendable.appendJsonString(value: String) {
         append('"')
         value.forEach { char ->
             when (char) {

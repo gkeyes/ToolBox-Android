@@ -104,6 +104,15 @@ class RuntimeSecureStoreTest {
         assertNull(handler.get("missing"))
     }
 
+    @Test
+    fun storageQuotaCountsTheExactBridgeEncoding() {
+        val value = RpcValue.ObjectValue(mapOf("中🌏" to RpcValue.ArrayValue(listOf(
+            RpcValue.StringValue("引號\"\u0000\u2028🌏\uD800"), RpcValue.Bool(false),
+            RpcValue.Number(1e100), RpcValue.Null,
+        ))))
+        assertEquals(RuntimeRpcJson.encodeValue(value).toByteArray().size.toLong(), RuntimeRpcJson.encodedValueBytes(value))
+    }
+
     /** Binds associated data like AES-GCM, without the Android Keystore. */
     private class FakeCipher : SecureValueCipher {
         var decrypts = 0

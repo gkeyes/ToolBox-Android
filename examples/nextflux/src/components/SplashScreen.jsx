@@ -1,26 +1,10 @@
-import { useEffect } from "react";
+import { useLayoutEffect } from "react";
 
-// The splash shares the page colour, so it can leave as soon as the first real
-// frame is painted: two animation frames, then a short opacity-only fade.
+// Mounted with the destination page. Release the input-blocking splash in the
+// same paint as the real content, including login and route errors.
 export default function SplashScreen() {
-  useEffect(() => {
-    const splashScreen = document.getElementById("splash-screen");
-    if (!splashScreen) return;
-    let removeTimer;
-    let second;
-    const first = requestAnimationFrame(() => {
-      second = requestAnimationFrame(() => {
-        splashScreen.classList.add("fade-out");
-        removeTimer = setTimeout(() => splashScreen.remove(), 240);
-      });
-    });
-    return () => {
-      cancelAnimationFrame(first);
-      if (second) cancelAnimationFrame(second);
-      clearTimeout(removeTimer);
-      splashScreen.remove();
-    };
+  useLayoutEffect(() => {
+    document.getElementById("splash-screen")?.remove();
   }, []);
-
   return null;
 }

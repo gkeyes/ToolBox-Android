@@ -918,27 +918,34 @@ export function createArticleCache(storage, options = {}) {
       const maps = { ...stage.base.maps,
         feeds: mapRows("feeds", catalog.feeds, stage.base.maps.feeds),
         categories: mapRows("categories", catalog.categories, stage.base.maps.categories),
-        articles: new Map(stage.base.maps.articles),
       };
       assertSyncConflicts(stage, maps);
-      for (const [id, row] of stage.changes) {
-        if (row) maps.articles.set(id, overlayFields(row, stage.confirmed.get(id))); else maps.articles.delete(id);
-      }
-      for (const [id, row] of maps.articles) if (!maps.feeds.has(row.feedId) || row.status === "removed") maps.articles.delete(id);
-      pruneServerPurged(maps.articles, catalog.oldestServerReadId, stage.confirmed);
-      // Keep metadata only for rows retired by this local policy. Server
-      // removals and deleted feeds must never be revived by a later reader.
-      // Original/staged body references stay leased until the sync finishes.
+      // The captured article map is already private. Keep just the affected rows
+      // beside it until buildDelta has compared the old and new body references.
+      const changes = new Map();
+      const oldest = catalog.oldestServerReadId;
+      const purgeOldRead = oldest === Infinity || validId(oldest);
       stage.retentionRemoved = new Map();
-      if (recentIds) for (const [id, row] of maps.articles) {
-        if (row.status === "read" && row.starred !== 1 && !recentIds.has(id) &&
-            !protectedIds.has(id) && !stage.confirmed.has(id)) {
-          stage.retentionRemoved.set(id, row);
-          maps.articles.delete(id);
+      function collect(id, incoming, before) {
+        let row = incoming && overlayFields(incoming, stage.confirmed.get(id));
+        if (row && (!maps.feeds.has(row.feedId) || row.status === "removed")) row = null;
+        if (row?.status === "read" && row.starred !== 1 && !stage.confirmed.has(id)) {
+          if (purgeOldRead && id < oldest) row = null;
+          else if (recentIds && !recentIds.has(id) && !protectedIds.has(id)) {
+            stage.retentionRemoved.set(id, row);
+            row = null;
+          }
         }
+        if ((before ?? null) !== row) changes.set(id, row);
+      }
+      for (const [id, before] of maps.articles) {
+        collect(id, stage.changes.has(id) ? stage.changes.get(id) : before, before);
+      }
+      for (const [id, row] of stage.changes) {
+        if (!maps.articles.has(id)) collect(id, row, null);
       }
       maps.feedIcons = new Map([...maps.feedIcons].filter(([id]) => maps.feeds.has(id)));
-      const delta = await buildDelta(stage, maps);
+      const delta = await buildDelta(stage, maps, changes);
       checkStage(stage);
       for (const ref of [...delta.replaced, ...delta.bodyRemoved]) stage.gcCandidates.add(ref);
       const candidate = applyDeltaToCandidate(stage.base, delta);

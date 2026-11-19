@@ -723,4 +723,13 @@ test("Chinese article search waits for composition, pages results, and replaces 
   await input.fill("测试文章 85");
   await expect.poll(count).toBe(1);
   await expect(page.locator(".search-result-row")).toContainText("测试文章 85");
+  await input.dispatchEvent("compositionstart");
+  const openSearch = value => page.evaluate(async open => {
+    (await import("/src/stores/modalStore.js")).searchDialogOpen.set(open);
+  }, value);
+  await openSearch(false);
+  await expect(input).toBeHidden();
+  await openSearch(true);
+  await input.fill("测试文章 84");
+  await expect(page.locator(".search-result-row")).toHaveText(/测试文章 84/);
 });

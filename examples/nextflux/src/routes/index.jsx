@@ -3,6 +3,7 @@ import App from "@/App";
 import ArticleList from "@/components/ArticleList/ArticleList";
 import LoginPage from "@/pages/LoginPage";
 import ErrorPage from "@/pages/ErrorPage";
+import SplashScreen from "@/components/SplashScreen";
 import ProtectedRoute from "@/components/ProtectedRoute";
 const loadBoard = async () => ({ Component: (await import("@/components/Board/BoardPage.jsx")).default });
 
@@ -10,17 +11,18 @@ export const router = createHashRouter(
   [
     {
       path: "/login",
-      element: <LoginPage />,
-      errorElement: <ErrorPage />,
+      element: <><LoginPage /><SplashScreen /></>,
+      errorElement: <><ErrorPage /><SplashScreen /></>,
     },
     {
       path: "/",
       element: (
         <ProtectedRoute>
           <App />
+          <SplashScreen />
         </ProtectedRoute>
       ),
-      errorElement: <ErrorPage />,
+      errorElement: <><ErrorPage /><SplashScreen /></>,
       children: [
         {
           path: "/",

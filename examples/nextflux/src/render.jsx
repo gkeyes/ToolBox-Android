@@ -6,7 +6,6 @@ import { createRoot } from "react-dom/client";
 import "./index.css";
 import { router } from "@/routes/index.jsx";
 import { RouterProvider } from "react-router";
-import SplashScreen from "@/components/SplashScreen";
 import { Toaster } from "sonner";
 import { isModalOpen } from "@/stores/modalStore.js";
 import { imageGalleryActive } from "@/stores/articlesStore.js";
@@ -48,7 +47,6 @@ function AppToaster(props) {
 
 createRoot(document.getElementById("root")).render(
   <>
-    <SplashScreen />
     <AppToaster
       position="bottom-center"
       offset={{ bottom: "calc(16px + env(safe-area-inset-bottom))" }}
