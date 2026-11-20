@@ -6,6 +6,6 @@ export function createReadingPipeline({ html, baseUrl, title } = {}) {
   return {
     adapter: adapted.adapter,
     changed: adapted.changed,
-    parser: createReadingParser(adapted.html, baseUrl, title),
+    parser: createReadingParser(adapted.html, baseUrl, title, { telegram: adapted.adapter === "telegram" }),
   };
 }

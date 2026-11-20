@@ -227,6 +227,40 @@ test("a narrow reader clamps a truncated Weibo title only when the displayed ope
   expect(errors).toEqual([]);
 });
 
+test("a narrow reader clamps a matching decorated Telegram title and shows unique words in full", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 780 });
+  const errors = await openArticle(page);
+  const header = page.locator(".article-scroll-area .article-title");
+  const body = page.locator(".article-scroll-area .article-body");
+  const opening = "去欧洲旅游回来的中国人，发现一个扎心真相：很多西方发达国家，已停留在过去的荣光里，陷入全方位停滞，只剩松弛的外壳撑着门面。";
+  const title = "🖼️ 去欧洲旅游回来的中国人, 发现一个扎心真相: 很多西方发达国家，已停留在过去的荣光里，陷入全方位停...";
+  await page.evaluate(async ({ title, opening }) => {
+    const { activeArticle } = await import("./article-navigation-state.js");
+    const url = "https://t.me/example/123";
+    activeArticle.set({ ...activeArticle.get(), url, fullTextBaseUrl: url });
+    window.navigationFixture.setTitle(title);
+    window.navigationFixture.showFullText(`<p>${opening}<br><br>很多人对欧洲的印象还停留在固有认知里。</p>`);
+  }, { title, opening });
+  await expect(body.locator("p").first()).toHaveText(opening);
+  await expect(header).toHaveText(title);
+  await expect(header).toBeVisible();
+  const visibleHeight = () => header.evaluate(element => element.clientHeight);
+  const lineHeight = await header.evaluate(element => Math.ceil(parseFloat(getComputedStyle(element).lineHeight)));
+  await expect.poll(visibleHeight).toBeLessThanOrEqual(lineHeight);
+  expect(await header.locator("a").textContent()).toBe(title);
+
+  const unique = "🖼️ tinybrain：从中文语料开始训练一个小模型，直到可以在本地推理";
+  await page.evaluate(title => {
+    window.navigationFixture.setTitle(title);
+    window.navigationFixture.showFullText("<p>从中文语料开始训练一个小模型，直到可以在本地推理。</p>");
+  }, unique);
+  await expect(body).toContainText("直到可以在本地推理");
+  await expect(header).toHaveText(unique);
+  await expect.poll(visibleHeight).toBeGreaterThan(lineHeight);
+  expect(await header.evaluate(element => element.scrollHeight - element.clientHeight)).toBeLessThanOrEqual(1);
+  expect(errors).toEqual([]);
+});
+
 test("the next page follows the first pull before the release threshold", async ({ page }) => {
   await openArticle(page);
   await page.locator(".article-scroll-area").evaluate((element) => { element.scrollTop = element.scrollHeight; });
