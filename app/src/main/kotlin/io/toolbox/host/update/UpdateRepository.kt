@@ -5,6 +5,8 @@ import io.toolbox.host.BuildConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -27,6 +29,7 @@ internal class UpdateRepository(
     private val client: OkHttpClient = OkHttpClient(),
     private val repository: String = BuildConfig.UPDATE_REPOSITORY,
 ) {
+    private val launchCheckMutex = Mutex()
     private val preferences by lazy { context.getSharedPreferences("toolbox_updates", Context.MODE_PRIVATE) }
 
     val installedBuild = InstalledBuild(BuildConfig.VERSION_NAME, BuildConfig.VERSION_CODE, BuildConfig.BUILD_RUN_ID)
@@ -46,13 +49,27 @@ internal class UpdateRepository(
         preferences.edit().putBoolean(KeyCheckOnLaunch, enabled).apply()
     }
 
-    /** Returns the feed when a launch check is due (at most every [LaunchCheckIntervalMs]), otherwise null. */
-    suspend fun launchCheck(now: Long = System.currentTimeMillis()): ChannelFeed? = withContext(Dispatchers.IO) {
-        if (!preferences.getBoolean(KeyCheckOnLaunch, true)) return@withContext null
-        if (now - preferences.getLong(KeyLastLaunchCheck, 0L) < LaunchCheckIntervalMs) return@withContext null
-        preferences.edit().putLong(KeyLastLaunchCheck, now).apply()
-        fetch(channel())
+    /** A failed automatic request has a shorter retry window than a successful check. */
+    suspend fun launchCheck(now: Long? = null): ChannelFeed? = withContext(Dispatchers.IO) {
+        launchCheckMutex.withLock {
+            val attemptedAt = now ?: System.currentTimeMillis()
+            if (!preferences.getBoolean(KeyCheckOnLaunch, true)) return@withLock null
+            val selectedChannel = channel()
+            val successKey = "$KeyLastSuccessfulLaunchCheck:${selectedChannel.name}"
+            val lastSuccess = preferences.getLong(successKey, 0L)
+            if (isRecentCheck(lastSuccess, attemptedAt, LaunchCheckIntervalMs)) return@withLock null
+            val lastAttempt = preferences.getLong(KeyLastLaunchAttempt, 0L)
+            if (isRecentCheck(lastAttempt, attemptedAt, LaunchRetryIntervalMs)) return@withLock null
+
+            preferences.edit().putLong(KeyLastLaunchAttempt, attemptedAt).apply()
+            val feed = fetch(selectedChannel)
+            preferences.edit().putLong(successKey, attemptedAt).apply()
+            feed.takeIf { preferences.getBoolean(KeyCheckOnLaunch, true) && channel() == selectedChannel }
+        }
     }
+
+    private fun isRecentCheck(timestamp: Long, now: Long, interval: Long): Boolean =
+        timestamp > 0L && timestamp <= now && now - timestamp < interval
 
     suspend fun fetch(channel: UpdateChannel): ChannelFeed = withContext(Dispatchers.IO) {
         val stable = release("releases/latest")
@@ -153,8 +170,11 @@ internal class UpdateRepository(
     private companion object {
         const val KeyChannel = "channel"
         const val KeyCheckOnLaunch = "check_on_launch"
-        const val KeyLastLaunchCheck = "last_launch_check"
+        // Older installs stored every attempt under this key, regardless of its result.
+        const val KeyLastLaunchAttempt = "last_launch_check"
+        const val KeyLastSuccessfulLaunchCheck = "last_successful_launch_check"
         const val LaunchCheckIntervalMs = 6L * 60 * 60 * 1000
+        const val LaunchRetryIntervalMs = 5L * 60 * 1000
         const val UpdateCacheDirectory = "updates"
     }
 }

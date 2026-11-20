@@ -1,6 +1,7 @@
 package io.toolbox.host.update
 
 import android.app.Application
+import android.content.Context
 import androidx.lifecycle.viewModelScope
 import io.toolbox.core.data.CatalogEntry
 import io.toolbox.core.data.CatalogRepository
@@ -11,6 +12,7 @@ import io.toolbox.tool.packagekit.lifecycle.PackageImportControl
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
@@ -144,11 +146,63 @@ class UpdateViewModelTest {
         assertEquals("检查完成，发现ToolBox 新版本。", complete.checkSummary)
     }
 
+    @Test fun failedAutomaticCheckRetriesAfterShortCooldownAndSuccessKeepsSixHours() = runTest(dispatcher) {
+        val repository = repository()
+        val start = 1_000_000_000L
+        val failed = async { runCatching { repository.launchCheck(start) } }
+        releases.attempts.receive().fail(503)
+        assertTrue(failed.await().exceptionOrNull() is UpdateCheckException)
+
+        assertNull(repository.launchCheck(start + 4 * 60_000))
+        assertEquals(1, releases.requestCount)
+
+        val retryAt = start + 5 * 60_000
+        val recovered = async { repository.launchCheck(retryAt) }
+        val concurrent = async { repository.launchCheck(retryAt) }
+        releases.attempts.receive().succeed("99.0.0")
+        val successfulFeeds = listOfNotNull(recovered.await(), concurrent.await())
+        assertEquals(listOf("99.0.0"), successfulFeeds.map { it.app?.versionName })
+        assertEquals(2, releases.requestCount)
+
+        // Recreating the repository still observes the successful check's timestamp.
+        val reopened = repository()
+        val nextCheckAt = retryAt + 6 * 60 * 60_000
+        assertNull(reopened.launchCheck(nextCheckAt - 1))
+        assertEquals(2, releases.requestCount)
+        val due = async { reopened.launchCheck(nextCheckAt) }
+        releases.attempts.receive().succeed("99.0.1")
+        assertEquals("99.0.1", due.await()?.app?.versionName)
+    }
+
+    @Test fun legacyAttemptDoesNotDelayAutomaticChecksForSixHoursAndManualCheckBypassesCooldown() = runTest(dispatcher) {
+        val application = RuntimeEnvironment.getApplication()
+        val prefs = application.getSharedPreferences("toolbox_updates", Context.MODE_PRIVATE)
+        val start = 1_000_000_000L
+        prefs.edit().putLong("last_launch_check", start).commit()
+        val repository = repository()
+        assertNull(repository.launchCheck(start + 4 * 60_000))
+
+        val manual = async { repository.fetch(UpdateChannel.STABLE) }
+        releases.attempts.receive().succeed("99.0.0")
+        assertEquals("99.0.0", manual.await().app?.versionName)
+
+        repository.setCheckOnLaunch(false)
+        assertNull(repository.launchCheck(start + 5 * 60_000))
+        assertEquals(1, releases.requestCount)
+        repository.setCheckOnLaunch(true)
+        // The manual check does not consume the automatic check's own scheduling slot.
+        val due = async { repository.launchCheck(start + 5 * 60_000) }
+        releases.attempts.receive().succeed("99.0.1")
+        assertEquals("99.0.1", due.await()?.app?.versionName)
+    }
+
+    private fun repository() = UpdateRepository(
+        RuntimeEnvironment.getApplication(),
+        OkHttpClient.Builder().addInterceptor(releases).build(),
+    )
+
     private fun model(): UpdateViewModel {
-        val repository = UpdateRepository(
-            RuntimeEnvironment.getApplication(),
-            OkHttpClient.Builder().addInterceptor(releases).build(),
-        )
+        val repository = repository()
         val catalog = object : CatalogRepository {
             override fun observeCatalogProjection(): Flow<List<CatalogEntry>> = flowOf(emptyList())
             override fun observeTools(): Flow<List<InstalledTool>> = flowOf(emptyList())
