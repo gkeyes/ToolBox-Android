@@ -201,6 +201,32 @@ test("a narrow reader shows the entire unique RSS title and only clamps a repeat
   expect(await clippedHeight()).toBeLessThanOrEqual(1);
 });
 
+test("a narrow reader clamps a truncated Weibo title only when the displayed opening matches", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 780 });
+  const errors = await openArticle(page);
+  const prefix = "红果 800 部短剧的剧名里，最多用到的词与婚恋离合有关，排第一的竟是“重生”，里边没有直接出现钱、官、";
+  const title = `${prefix}...`;
+  const header = page.locator(".article-scroll-area .article-title");
+  const body = page.locator(".article-scroll-area .article-body");
+  await page.evaluate(({ title, prefix }) => {
+    window.navigationFixture.setTitle(title);
+    window.navigationFixture.showFullText(`<p>${prefix}考。看来国人还是最重感情的，而且幻想来世，对功名利禄，在心理深处反而视为过眼云烟[允悲][允悲]。</p>`);
+  }, { title, prefix });
+  await expect(body).toContainText("在心理深处反而视为过眼云烟");
+  await expect(header).toHaveText(title);
+  await expect(header).toBeVisible();
+  const visibleHeight = () => header.evaluate(element => element.clientHeight);
+  const lineHeight = await header.evaluate(element => Math.ceil(parseFloat(getComputedStyle(element).lineHeight)));
+  await expect.poll(visibleHeight).toBeLessThanOrEqual(lineHeight);
+
+  await page.evaluate(() => window.navigationFixture.showFullText("<p>红果 800 部短剧的剧名里，重生题材往往强调个人选择。</p>"));
+  await expect(body).toContainText("往往强调个人选择");
+  await expect(header).toHaveText(title);
+  await expect.poll(visibleHeight).toBeGreaterThan(lineHeight);
+  expect(await header.evaluate(element => element.scrollHeight - element.clientHeight)).toBeLessThanOrEqual(1);
+  expect(errors).toEqual([]);
+});
+
 test("the next page follows the first pull before the release threshold", async ({ page }) => {
   await openArticle(page);
   await page.locator(".article-scroll-area").evaluate((element) => { element.scrollTop = element.scrollHeight; });

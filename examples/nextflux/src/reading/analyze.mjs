@@ -24,11 +24,23 @@ function addWords(counter, text) {
 }
 
 const compact = (value) => String(value || "").replace(/\s+/g, " ").trim();
-const visibleLength = (value) => compact(value).length;
 const meaningfulBreaks = (value) => Math.max(0, String(value || "").split(/\r?\n/).map(v=>v.trim()).filter(Boolean).length - 1);
+
+function joinNormalizedText(before, after) {
+  return before + (before.endsWith(" ") && after.startsWith(" ") ? after.slice(1) : after);
+}
+
+function truncatedTitlePrefix(headline) {
+  const marker = headline.match(/(?:^|[^.．…])([.．…]+)$/u)?.[1];
+  return marker && (marker.includes("…") || marker.length >= 3)
+    ? headline.slice(0, -marker.length).trimEnd()
+    : "";
+}
 
 export function analyzeArticle(html, { countWords = false, title = "" } = {}) {
   const headline = compact(title);
+  const prefix = countWords ? truncatedTitlePrefix(headline) : "";
+  let openingText = prefix ? "" : null;
   let titleTail = "", titleInBody = false;
   const words = { count: 0, inWord: false };
   const source=String(html||"");
@@ -48,7 +60,10 @@ export function analyzeArticle(html, { countWords = false, title = "" } = {}) {
         entry.skipWords = parent.skipWords || blocked || MEDIA_TAGS.has(tag) || tag === "head";
         entry.hasMedia = MEDIA_TAGS.has(tag);
         if (!parent.skipWords && WORD_BREAK_TAGS.has(tag)) words.inWord = false;
-        entry.skipTitle = entry.skipWords || parent.skipTitle || tag === "details" || attrs.hidden != null || attrs["aria-hidden"] === "true";
+        const hidden = attrs.hidden != null || attrs["aria-hidden"] === "true";
+        entry.skipTitle = entry.skipWords || parent.skipTitle || tag === "details" || hidden;
+        if (openingText !== null) entry.openingText = openingText;
+        if (openingText && openingText !== prefix && WORD_BREAK_TAGS.has(tag) && !parent.skipTitle && !hidden) openingText = null;
         if (WORD_BREAK_TAGS.has(tag) || entry.skipTitle) titleTail = "";
         entry.hadTitle = titleInBody;
         entry.startWords = words.count;
@@ -72,28 +87,40 @@ export function analyzeArticle(html, { countWords = false, title = "" } = {}) {
     ontext(text){
       const leaf=stack.at(-1);
       if(leaf.blocked||!text)return;
+      const normalizedText = text.replace(/\s+/g, " ");
       if (countWords && !leaf.skipWords) {
         addWords(words, text);
         if (headline && !titleInBody && !leaf.skipTitle) {
           // Inline markup and HTML entities can split a title between callbacks.
           // Carry only enough text for a match spanning the next callback.
-          const candidate = (titleTail + text).replace(/\s+/g, " ");
+          const candidate = joinNormalizedText(titleTail, normalizedText);
           titleInBody = candidate.includes(headline);
           titleTail = titleInBody ? "" : candidate.slice(Math.max(0, candidate.length - headline.length + 1));
+          // Match the entire surviving prefix within the first visible run.
+          // Once it matches, the continuation can begin on the next line.
+          if (!titleInBody && openingText !== null) {
+            const opening = joinNormalizedText(openingText, normalizedText).trimStart();
+            if (prefix.startsWith(opening)) openingText = opening;
+            else if (!opening.startsWith(prefix)) openingText = null;
+            else if (/[\p{L}\p{N}\p{S}]/u.test(opening.slice(prefix.length))) {
+              titleInBody = true;
+              openingText = null;
+            } else openingText = prefix;
+          }
         }
       }
-      const len=visibleLength(text);
+      const normalized=normalizedText.trim();
+      const len=normalized.length;
       metrics.textChars+=len;
       if(stack.length===1)metrics.topLevelTextChars+=len;
       if(leaf.link)metrics.linkTextChars+=len;
       if(!leaf.protected)metrics.meaningfulNewlines+=meaningfulBreaks(text);
-      const normalized=compact(text);
       if(!normalized)return;
       for(let i=1;i<stack.length;i++){
         const entry=stack[i];
         if(entry.blocked)continue;
         entry.textLength+=normalized.length;
-        if(entry.preview.length<96)entry.preview=compact(entry.preview?entry.preview+" "+normalized:normalized).slice(0,96);
+        if(entry.preview.length<96)entry.preview=(entry.preview?entry.preview+" "+normalized:normalized).slice(0,96);
       }
     },
     onclosetag(){
@@ -108,9 +135,11 @@ export function analyzeArticle(html, { countWords = false, title = "" } = {}) {
         })) {
           titleInBody = entry.hadTitle;
           titleTail = "";
+          openingText = entry.openingText ?? null;
           words.count = entry.startWords;
           words.inWord = entry.startedInWord;
         }
+        if (openingText && openingText !== prefix && WORD_BREAK_TAGS.has(entry.tag) && !entry.skipTitle) openingText = null;
         if (WORD_BREAK_TAGS.has(entry.tag) || entry.skipTitle) titleTail = "";
         if (!entry.skipWords && WORD_BREAK_TAGS.has(entry.tag)) words.inWord = false;
       }
