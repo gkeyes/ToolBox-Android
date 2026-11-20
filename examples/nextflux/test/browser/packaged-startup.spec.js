@@ -147,6 +147,7 @@ test("packed landscape cards select the last article without a document view tra
   expect(await page.evaluate(() => window.documentViewTransitionCalls)).toBe(0);
 });
 
+const touchReaderTest = test.extend({ isMobile: true });
 const dockLabels = ["阅读模式", "收藏", "AI 摘要", "朗读文章", "分享", "更多"];
 
 async function openPackedReader(page, articleId) {
@@ -176,11 +177,11 @@ async function withinReader(surface) {
   }), { message: "the article surface stays centered inside the reader pane" }).toBe(true);
 }
 
-test("packed touch reader keeps six glass controls in its pane across rotations and each hit target owns its edges", async ({ page }) => {
+touchReaderTest("packed touch reader keeps six glass controls in its pane across rotations and each hit target owns its edges", async ({ page }) => {
   await page.setViewportSize({ width: 920, height: 420 });
   await openPackedReader(page, 2);
   await page.evaluate(() => document.documentElement.style.setProperty("--toolbox-safe-area-top", "32px"));
-  const dock = page.getByRole("toolbar", { name: "文章操作" });
+  const dock = page.locator(".reader-dock");
   for (const [width, height] of [[393, 852], [740, 360], [768, 420], [769, 420], [920, 420], [1024, 724]]) {
     await test.step(`touch ${width}×${height}`, async () => {
       await page.setViewportSize({ width, height });
@@ -211,6 +212,11 @@ test("packed touch reader keeps six glass controls in its pane across rotations 
   await expect(more).toBeVisible();
   await page.setViewportSize({ width: 769, height: 420 });
   await withinReader(more);
+  await expect.poll(async () => {
+    const sheet = await more.boundingBox();
+    const bar = await dock.boundingBox();
+    return Math.round(sheet.y + sheet.height - bar.y);
+  }).toBeLessThanOrEqual(1);
   await tapEdge(page, more.getByRole("button", { name: "下一篇" }), "left");
   await expect(more).toHaveCount(0);
   await expect(page.locator(".nextflux-continuous-current-surface .article-title")).toHaveText("双栏文章 3");
@@ -231,7 +237,7 @@ test("packed touch reader keeps six glass controls in its pane across rotations 
 });
 
 for (const width of [768, 920]) {
-  test(`packed fresh summary at ${width}px keeps its first paint and close target in the reader pane`, async ({ page }) => {
+  touchReaderTest(`packed fresh summary at ${width}px keeps its first paint and close target in the reader pane`, async ({ page }) => {
     await page.setViewportSize({ width, height: 420 });
     await openPackedReader(page, 2);
     // Capture frames from before the lazy dialog mounts; polling settled geometry
@@ -264,13 +270,16 @@ for (const width of [768, 920]) {
       expect(frame.close[1]).toBeLessThanOrEqual(frame.dialog[1] + 1);
     }
     await withinReader(dialog);
+    const dock = page.locator(".reader-dock");
+    const dialogBox = await dialog.boundingBox();
+    expect(dialogBox.y + dialogBox.height).toBeLessThanOrEqual((await dock.boundingBox()).y + 1);
     const close = dialog.getByRole("button", { name: "关闭 AI 摘要" });
     await tapEdge(page, close, "right");
     await expect(dialog).toHaveCount(0);
   });
 }
 
-test("packed landscape speech controls leave the last line visible and tappable", async ({ page }) => {
+touchReaderTest("packed landscape speech controls leave the last line visible and tappable", async ({ page }) => {
   await page.setViewportSize({ width: 920, height: 420 });
   await openPackedReader(page, 4);
   await page.evaluate(() => {
@@ -281,7 +290,7 @@ test("packed landscape speech controls leave the last line visible and tappable"
       cancelStream: async () => {},
     });
   });
-  const dock = page.getByRole("toolbar", { name: "文章操作" });
+  const dock = page.locator(".reader-dock");
   await dock.getByRole("button", { name: "朗读文章" }).tap();
   const player = page.getByRole("region", { name: "文章语音播放器" });
   await expect(player).toBeVisible();

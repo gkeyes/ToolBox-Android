@@ -613,7 +613,7 @@ for (const width of [393, 820]) {
       await page.getByRole("button", { name: trigger, exact: true }).click();
       const dialog = page.getByRole("dialog");
       const close = dialog.locator(".nextflux-close-button");
-      if (trigger === "Open settings" && await dialog.locator(".nextflux-close-header.has-header-end").count()) {
+      if (trigger === "Open settings") {
         // The tall settings sheet paints its own close button, shaped like the
         // back button, and keeps a single close target.
         await expect(dialog.getByRole("button", { name: /close|关闭/i })).toHaveCount(1);

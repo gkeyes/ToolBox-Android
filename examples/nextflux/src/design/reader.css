@@ -210,7 +210,7 @@
   .action-buttons .reader-secondary .nextflux-toolbar-button { display: none; }
 
   /* Speech player docks just above the toolbar. */
-  .action-buttons.reader-topbar > .reader-speech-slot:has(.nextflux-speech-bar) {
+  .reader-topbar > .reader-speech-slot:has(.nextflux-speech-bar) {
     position: fixed;
     max-inline-size: 640px;
     margin-inline: auto;

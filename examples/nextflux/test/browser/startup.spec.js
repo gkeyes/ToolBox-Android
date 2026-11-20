@@ -751,6 +751,18 @@ test("touch settings draft and search composition survive portrait and landscape
   await input.fill("旋转");
   await input.dispatchEvent("compositionstart");
   const originalInput = await input.elementHandle();
+  // Some Android keyboards reduce only the visual viewport, leaving layout
+  // coordinates and the landscape width unchanged.
+  await page.evaluate(() => {
+    Object.defineProperty(visualViewport, "height", { configurable: true, value: 220 });
+    visualViewport.dispatchEvent(new Event("resize"));
+  });
+  await expect.poll(() => dialog.evaluate((el) => el.getBoundingClientRect().bottom)).toBeLessThanOrEqual(220);
+  await expect(input).toBeInViewport();
+  await page.evaluate(() => {
+    delete visualViewport.height;
+    visualViewport.dispatchEvent(new Event("resize"));
+  });
   await page.setViewportSize(portrait);
   await expect(input).toHaveValue("旋转");
   expect(await input.evaluate((el, before) => el === before, originalInput)).toBe(true);
