@@ -96,6 +96,44 @@ test("next-page preparation mounts only a bounded first screen", async ({ page }
   expect(errors).toEqual([]);
 });
 
+test("the same next unread ID is prepared again only when its content changes", async ({ page }) => {
+  const errors = await openArticle(page);
+  const preview = page.locator(".nextflux-continuous-next-page");
+  await expect(preview.locator(".article-body p").first()).toContainText("文章 2 段落 1");
+  const nextArticleReads = () => page.evaluate(async () => {
+    const { articleReads } = await import("./article-navigation-state.js");
+    return articleReads.filter((id) => id === 2).length;
+  });
+  expect(await nextArticleReads()).toBe(1);
+
+  await page.evaluate(async () => {
+    const { filteredArticles } = await import("./article-navigation-state.js");
+    filteredArticles.set(filteredArticles.get().map((article) =>
+      article.id === 2 ? { ...article, starred: 1 } : article));
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+  });
+  expect(await nextArticleReads()).toBe(1);
+
+  await page.evaluate(async () => {
+    const { filteredArticles, rows } = await import("./article-navigation-state.js");
+    const changed = { ...rows[1], bodyDigest: "fixture-body-2-updated", content: "<p>同步修订后的正文。</p>" };
+    rows[1] = changed;
+    // List rows carry a digest, not the full body loaded separately by the reader.
+    const { content, ...metadata } = changed;
+    filteredArticles.set(filteredArticles.get().map((article) => article.id === 2 ? metadata : article));
+  });
+  await expect(preview.locator(".article-body p").first()).toHaveText("同步修订后的正文。");
+  expect(await nextArticleReads()).toBe(2);
+
+  await page.locator(".article-scroll-area").evaluate((element) => { element.scrollTop = element.scrollHeight; });
+  await touch(page, "touchstart", 150, 750);
+  await touch(page, "touchmove", 151, 520);
+  await touch(page, "touchend", 151, 520);
+  await expect(page.getByTestId("route")).toHaveText("/article/2");
+  await expect(page.locator(".article-scroll-area .article-body p").first()).toHaveText("同步修订后的正文。");
+  expect(errors).toEqual([]);
+});
+
 test("article length appears beside the date and follows the displayed body", async ({ page }) => {
   await page.setViewportSize({ width: 360, height: 800 });
   await installReadingMessageHold(page);
@@ -172,6 +210,72 @@ test("the next page follows the first pull before the release threshold", async 
     new DOMMatrix(getComputedStyle(element).transform).m42 < element.clientHeight - 20)).toBe(true);
   await touch(page, "touchcancel", 151, 690);
   await expect(page.getByTestId("route")).toHaveText("/article/1");
+});
+
+test("preview geometry and close controls are prepared only for a bottom pull", async ({ page }) => {
+  const errors = await openArticle(page);
+  await expect(page.locator(".nextflux-article-page")).toHaveAttribute("data-navigation-state", "idle");
+  const area = page.locator(".article-scroll-area");
+  const layer = page.locator(".nextflux-continuous-layer");
+  const closeCopy = layer.locator(".nextflux-continuous-chrome .nextflux-close-button");
+  const realClose = area.locator(".nextflux-close-button");
+  const measureCount = () => page.evaluate(() => window.previewMeasureCount);
+  await area.evaluate((viewport) => {
+    // The fixture uses a minimal toolbar. Add the real toolbar's structural
+    // selectors so the continuous reader exercises its close-button copying.
+    const bar = viewport.querySelector(".action-buttons");
+    const button = bar.querySelector("button");
+    const row = document.createElement("div");
+    row.className = "reader-topbar-row";
+    button.classList.add("nextflux-close-button");
+    row.append(button);
+    bar.append(row);
+    window.previewMeasureCount = 0;
+    for (const element of [viewport, viewport.querySelector(".nextflux-continuous-current-surface")]) {
+      const measure = element.getBoundingClientRect.bind(element);
+      element.getBoundingClientRect = () => {
+        window.previewMeasureCount++;
+        return measure();
+      };
+    }
+    viewport.scrollTop = 230;
+  });
+  for (let attempt = 0; attempt < 3; attempt++) {
+    await touch(page, "touchstart", 150, 600);
+    await touch(page, "touchmove", 151, 555);
+    await touch(page, "touchend", 151, 555);
+  }
+  await expect(layer).toHaveAttribute("data-phase", "idle");
+  await expect(closeCopy).toHaveCount(0);
+  expect(await measureCount()).toBe(0);
+
+  await area.evaluate((viewport) => { viewport.scrollTop = viewport.scrollHeight; });
+  await expect(area).toHaveAttribute("data-chrome", "shown");
+  await expect.poll(() => realClose.evaluate((button) => button.getBoundingClientRect().top)).toBeGreaterThanOrEqual(0);
+  await touch(page, "touchstart", 150, 750);
+  expect(await measureCount()).toBe(0);
+  await touch(page, "touchmove", 151, 690);
+  await expect(layer).toHaveAttribute("data-phase", "pulling");
+  await expect(closeCopy).toBeVisible();
+  await expect(realClose).toHaveCSS("opacity", "0");
+  expect(await measureCount()).toBe(2);
+
+  await page.setViewportSize({ width: 394, height: 858 });
+  await expect.poll(measureCount).toBe(4);
+  await expect(closeCopy).toBeVisible();
+  await expect(realClose).toHaveCSS("opacity", "0");
+
+  await area.evaluate((viewport) => {
+    const point = new Touch({ identifier: 1, target: viewport, clientX: 151, clientY: 690 });
+    viewport.dispatchEvent(new TouchEvent("touchend", { touches: [], changedTouches: [point], bubbles: true, cancelable: true }));
+    viewport.dispatchEvent(new TouchEvent("touchstart", { touches: [point], changedTouches: [point], bubbles: true, cancelable: true }));
+  });
+  await expect(layer).toHaveAttribute("data-phase", "pulling");
+  expect(await measureCount()).toBe(4);
+  await closeCopy.click();
+  await expect(page.getByTestId("route")).toHaveText("/");
+  await expect(page.getByRole("button", { name: "打开文章 1" })).toBeVisible();
+  expect(errors).toEqual([]);
 });
 
 test("a long pull keeps the next page under the finger up to the top", async ({ page }) => {

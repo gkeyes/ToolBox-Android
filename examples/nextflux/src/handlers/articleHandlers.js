@@ -1,5 +1,5 @@
 import { toast } from "sonner";
-import { currentAccountCheck } from "../stores/syncStore.js";
+import { currentAccountCheck, onAccountInvalidated } from "../stores/syncStore.js";
 import {
   activeArticle,
   updateArticleStarred,
@@ -8,7 +8,7 @@ import {
   markAllAsRead,
   markAboveAsRead,
   markBelowAsRead,
-  loadingOriginContent,
+  fullTextLoadingId,
 } from "../stores/articlesStore.js";
 import minifluxAPI from "@/api/miniflux";
 import { loadBestFullText } from "@/reading/fulltext.mjs";
@@ -76,32 +76,68 @@ export const handleMarkBelowAsRead = async (articleId) => {
   }
 };
 
-// 处理内容切换
+let fullTextRequest = null;
+
+function stopWaitingForFullText() {
+  if (!fullTextRequest) return;
+  fullTextRequest.controller.abort();
+  fullTextRequest = null;
+  fullTextLoadingId.set(null);
+}
+
+activeArticle.listen((article, previous) => {
+  if (article?.id !== previous?.id) stopWaitingForFullText();
+});
+onAccountInvalidated(stopWaitingForFullText);
+
 export const handleToggleContent = async (article) => {
-  if (!article || loadingOriginContent.get()) return;
+  const current = activeArticle.get();
+  if (!article || !current || current.id !== article.id) return;
 
-  try {
-    loadingOriginContent.set(true);
-    const showOriginal = !article.shownOriginal;
+  // The same action can end the wait. Its old completion must leave a new
+  // request (including a retry of the same article) and its state alone.
+  if (fullTextRequest) {
+    stopWaitingForFullText();
+    return;
+  }
 
-    // The page fetch and parse can take seconds; they run outside the account
-    // queue so mark-read and star are not held behind them. The result is only
-    // applied if the account is unchanged and the article is still open.
-    const check = currentAccountCheck();
-    check(showOriginal);
-    const result = showOriginal
-      ? await loadBestFullText({ article, api: minifluxAPI })
-      : { content: article.originalContent, source: "rss" };
-    check(false);
-    if (activeArticle.get()?.id === article.id) {
-      activeArticle.set({ ...activeArticle.get(), content: result.content, shownOriginal: showOriginal,
-        fullTextSource: showOriginal ? result.source : null,
-        fullTextBaseUrl: showOriginal ? result.baseUrl : null,
-        fullTextCandidates: showOriginal ? result.candidates : null });
+  const showOriginal = !current.shownOriginal;
+  const check = currentAccountCheck();
+  if (!showOriginal) {
+    try { check(false); }
+    catch (error) {
+      if (error.code !== "ACCOUNT_CHANGED") throw error;
+      return;
     }
+    activeArticle.set({
+      ...current, content: current.originalContent, shownOriginal: false,
+      fullTextSource: null, fullTextBaseUrl: null, fullTextCandidates: null,
+    });
+    return;
+  }
+
+  const request = { controller: new AbortController() };
+  fullTextRequest = request;
+  fullTextLoadingId.set(current.id);
+  try {
+    check();
+    const result = await loadBestFullText({
+      article: current, api: minifluxAPI, signal: request.controller.signal,
+    });
+    if (fullTextRequest !== request) return;
+    check(false);
+    activeArticle.set({
+      ...activeArticle.get(), content: result.content, shownOriginal: true,
+      fullTextSource: result.source, fullTextBaseUrl: result.baseUrl, fullTextCandidates: result.candidates,
+    });
   } catch (error) {
-    if (error.code !== "ACCOUNT_CHANGED") toast.error(error.message || "操作失败，请检查网络后重试。");
+    if (fullTextRequest === request && error.code !== "ACCOUNT_CHANGED") {
+      toast.error(error.message || "操作失败，请检查网络后重试。");
+    }
   } finally {
-    loadingOriginContent.set(false);
+    if (fullTextRequest === request) {
+      fullTextRequest = null;
+      fullTextLoadingId.set(null);
+    }
   }
 };

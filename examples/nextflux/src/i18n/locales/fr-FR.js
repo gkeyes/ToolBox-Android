@@ -156,6 +156,7 @@ export default {
     videoError: "Erreur de chargement de la vidéo",
     stopPlay: "STOP",
     getFullText: "Vue lecteur",
+    stopWaitingForFullText: "Arrêter d’attendre le texte intégral",
     showSummary: "Masquer la vue lecteur",
     saveToThirdParty: "Enregistrer dans des services tiers",
     attachments: "Pièces jointes",

@@ -145,7 +145,7 @@ test("all optional controls fit one row without clipping and loading does not gr
   await bounds(page);
   const before = await page.locator(".action-buttons").boundingBox();
   await page.evaluate(() => window.controlsFixture.setBusy(true));
-  await expect(page.locator(".nextflux-toolbar-button[data-pending=\"true\"]")).toHaveCount(1);
+  await expect(page.getByRole("button", { name: "Stop waiting for full text", exact: true })).toBeEnabled();
   expect((await page.locator(".action-buttons").boundingBox()).height).toBe(before.height);
   await bounds(page);
 });

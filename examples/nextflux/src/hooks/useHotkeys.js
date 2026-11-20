@@ -130,7 +130,7 @@ export function useHotkeys() {
           break;
 
         case "g": // 原文/摘要切换
-          if (articleId && $activeArticle) {
+          if (!e.repeat && articleId && $activeArticle) {
             await handleToggleContent($activeArticle);
           }
           break;

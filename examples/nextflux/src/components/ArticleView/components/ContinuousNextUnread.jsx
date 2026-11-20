@@ -17,6 +17,17 @@ export default function ContinuousNextUnread({ articleId, scrollAreaRef, surface
   const navigate = useNavigate();
   const articles = useStore(filteredArticles);
   const nextUnread = useMemo(() => findNextUnreadArticle(articles, articleId), [articles, articleId]);
+  const nextId = nextUnread?.id == null ? null : String(nextUnread.id);
+  const nextBody = nextUnread?.bodyDigest ?? nextUnread?.content;
+  const nextTitle = nextUnread?.titleText ?? nextUnread?.title;
+  const nextUrl = nextUnread?.url;
+  const nextFeedId = nextUnread?.feedId;
+  const nextPublishedAt = nextUnread?.published_at;
+  // A list row can change without changing its ID. Key the prepared body by
+  // the fields used in the preview, so read/star acknowledgements don't reload it.
+  const nextSource = useMemo(() => nextId === null ? null : {
+    id: nextId, body: nextBody, title: nextTitle, url: nextUrl, feedId: nextFeedId, publishedAt: nextPublishedAt,
+  }, [nextId, nextBody, nextTitle, nextUrl, nextFeedId, nextPublishedAt]);
   const [preparedArticle, setPreparedArticle] = useState(null);
   const [handoffArticle, setHandoffArticle] = useState(null);
   const layerRef = useRef(null);
@@ -31,31 +42,34 @@ export default function ContinuousNextUnread({ articleId, scrollAreaRef, surface
   const heightRef = useRef(0);
   const gestureRef = useRef(null);
   const transitionRef = useRef(null);
-  const preparedRef = useRef({ id: null, promise: null });
+  const preparedRef = useRef(null);
   const springRef = useRef(null);
   const fadeRef = useRef(null);
   const paintRafRef = useRef(0);
   const latestRef = useRef(null);
 
   const visibleNextArticle = handoffArticle ??
-    (String(preparedArticle?.id) === String(nextUnread?.id) ? preparedArticle : nextUnread);
+    (String(preparedArticle?.id) === nextId ? preparedArticle : nextUnread);
 
   useEffect(() => {
-    if (!enabled || handoffArticle) return;
-    let cancelled = false;
-    setPreparedArticle(null);
-    if (!nextUnread?.id) {
-      preparedRef.current = { id: null, promise: null };
+    if (handoffArticle) return;
+    if (!enabled || !nextSource) {
+      setPreparedArticle(null);
       return;
     }
-    const id = String(nextUnread.id);
-    const promise = getArticleById(id).catch(() => null).then((article) => {
-      if (!cancelled && article) setPreparedArticle(article);
-      return article;
+    // Keep the last rendered version until the new one arrives. Replacing it
+    // with a bodyless list row in between would flash an empty preview.
+    setPreparedArticle((previous) => String(previous?.id) === nextSource.id ? previous : null);
+    const promise = getArticleById(nextSource.id).catch(() => null);
+    const request = { source: nextSource, promise };
+    preparedRef.current = request;
+    void promise.then((article) => {
+      if (preparedRef.current === request && article) setPreparedArticle(article);
     });
-    preparedRef.current = { id, promise };
-    return () => { cancelled = true; };
-  }, [enabled, nextUnread?.id, handoffArticle]);
+    return () => {
+      if (preparedRef.current === request) preparedRef.current = null;
+    };
+  }, [enabled, nextSource, handoffArticle]);
 
   const cancelPaint = () => {
     if (paintRafRef.current) cancelAnimationFrame(paintRafRef.current);
@@ -163,7 +177,8 @@ export default function ContinuousNextUnread({ articleId, scrollAreaRef, surface
     setHandoffArticle(article);
     layerRef.current.dataset.phase = "handoff";
     onTransitionStateChange?.(true);
-    const prepared = preparedRef.current.id === target.id ? preparedRef.current.promise : getArticleById(target.id).catch(() => null);
+    const request = preparedRef.current;
+    const prepared = request?.source === nextSource ? request.promise : getArticleById(target.id).catch(() => null);
     springRef.current = animateReadingValue({
       from: continuousPageOffset(rawRef.current, heightRef.current), to: 0,
       velocity: -(gestureRef.current?.velocity ?? 0) * 1000, reduceMotion,
@@ -209,7 +224,7 @@ export default function ContinuousNextUnread({ articleId, scrollAreaRef, surface
     const viewport = scrollAreaRef.current;
     if (!viewport) return;
     let ignoreUntilEnd = false;
-    const syncInset = () => {
+    const syncInset = (prepareClose = false) => {
       const layer = layerRef.current;
       if (!layer) return;
       // The preview covers the whole reading area, title bar included: the
@@ -226,10 +241,10 @@ export default function ContinuousNextUnread({ articleId, scrollAreaRef, surface
       layer.style.setProperty("--nf-continuous-shift", `${Math.round(top - viewportTop - realOffset)}px`);
       heightRef.current = layer.clientHeight;
       const chrome = chromeRef.current;
-      if (chrome && !transitionRef.current) {
+      if (prepareClose && chrome) {
         chrome.replaceChildren();
-        // A pull started before the last one sprang back still has the
-        // real button hidden; the copy must not inherit that.
+        // Resizing during the pull may leave the real button hidden.
+        // The new copy must not inherit its opacity.
         latestRef.current.showRealClose();
         const bar = viewport.querySelector(".action-buttons");
         const row = bar?.querySelector(".reader-topbar-row");
@@ -254,6 +269,14 @@ export default function ContinuousNextUnread({ articleId, scrollAreaRef, surface
         }
       }
     };
+    const onResize = () => {
+      const pulling = !transitionRef.current && (rawRef.current > 0 || gestureRef.current?.pulling);
+      syncInset(pulling);
+      if (pulling) {
+        latestRef.current.hideRealClose();
+        latestRef.current.paint();
+      }
+    };
     const blocked = (event) => {
       const selection = document.getSelection();
       return event.defaultPrevented || isModalOpen.get() || imageGalleryActive.get() ||
@@ -274,11 +297,9 @@ export default function ContinuousNextUnread({ articleId, scrollAreaRef, surface
       if (motion && motion !== "continuous") return;
       if (event.touches.length !== 1 || blocked(event) || shouldExcludeSwipeTarget(event.target)) { resetGesture(); return; }
       stopSpring();
-      syncInset(); // Cache geometry once. Moves write transforms only.
       const touch = event.touches[0];
       gestureRef.current = { id: touch.identifier, x: touch.clientX, y: touch.clientY,
         lastY: touch.clientY, lastT: performance.now(), direction: null, velocity: 0, pulling: rawRef.current > 0 };
-      if (rawRef.current > 0) latestRef.current.hideRealClose();
     };
     const onMove = (event) => {
       const gesture = gestureRef.current;
@@ -302,6 +323,9 @@ export default function ContinuousNextUnread({ articleId, scrollAreaRef, surface
       gesture.lastT = now;
       if (!gesture.pulling) {
         if (move <= 0 || viewport.scrollTop + viewport.clientHeight < viewport.scrollHeight - 2) return;
+        // Prepare the overlay only when this move belongs to the next page.
+        // Later moves and a touch that resumes a spring reuse this geometry.
+        syncInset(true);
         gesture.pulling = true;
         layerRef.current.dataset.phase = "pulling";
         latestRef.current.hideRealClose();
@@ -329,14 +353,14 @@ export default function ContinuousNextUnread({ articleId, scrollAreaRef, surface
       gestureRef.current = null;
     };
     syncInset();
-    window.addEventListener("resize", syncInset);
+    window.addEventListener("resize", onResize);
     viewport.addEventListener("touchstart", onStart, { passive: true });
     viewport.addEventListener("touchmove", onMove, { passive: false });
     viewport.addEventListener("touchend", onEnd);
     const onCancel = () => { ignoreUntilEnd = false; resetGesture(); };
     viewport.addEventListener("touchcancel", onCancel);
     return () => {
-      window.removeEventListener("resize", syncInset);
+      window.removeEventListener("resize", onResize);
       viewport.removeEventListener("touchstart", onStart);
       viewport.removeEventListener("touchmove", onMove);
       viewport.removeEventListener("touchend", onEnd);

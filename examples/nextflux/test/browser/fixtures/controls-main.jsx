@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { Button } from "@heroui/react";
 import { HashRouter, useLocation, useNavigate } from "react-router";
 import i18n from "i18next";
+import enUS from "@/i18n/locales/en-US.js";
 import { initReactI18next } from "react-i18next";
 import ActionButtons from "@/components/ArticleView/components/ActionButtons.jsx";
 import Settings from "@/components/Settings/Settings.jsx";
@@ -16,7 +17,7 @@ import { installSystemBack } from "@/toolbox/systemBack.js";
 import { installGlassPress } from "@/design/lens.js";
 import { installLinkHandling } from "@/toolbox/actions.js";
 import { runtimeForeground } from "@/toolbox/foreground.js";
-import { activeArticle, calls, currentThemeMode, hasIntegrations, loadingOriginContent, settingsModalOpen, settingsState, summaryBoundary } from "./controls-state.js";
+import { activeArticle, calls, currentThemeMode, hasIntegrations, fullTextLoadingId, settingsModalOpen, settingsState, summaryBoundary } from "./controls-state.js";
 import "../../../src/index.css";
 import "../../../src/compact-controls.css";
 
@@ -24,7 +25,7 @@ await i18n.use(initReactI18next).init({
   lng: "en", fallbackLng: "en", interpolation: { escapeValue: false },
   resources: { en: { translation: {
     common: { close: "Close", previous: "Previous", next: "Next", read: "Read", unread: "Unread", star: "Star", unstar: "Unstar", share: "Share", settings: "Settings" },
-    articleView: { aiSummary: "AI summary", aiSummarize: "AI summary", showSummary: "Show summary", getFullText: "Full text", saveToThirdParty: "Save externally" },
+    articleView: { aiSummary: "AI summary", aiSummarize: "AI summary", showSummary: "Show summary", getFullText: "Full text", stopWaitingForFullText: enUS.articleView.stopWaitingForFullText, saveToThirdParty: "Save externally" },
     settings: { general: { title: "General" } },
   } } },
 });
@@ -64,7 +65,7 @@ function ControlsFixture() {
       },
       calls,
       setIntegrations: (value) => hasIntegrations.set(value),
-      setBusy: (value) => loadingOriginContent.set(value),
+      setBusy: (value) => fullTextLoadingId.set(value ? activeArticle.get()?.id : null),
       setAI: (value) => settingsState.set({ ...settingsState.get(), aiApiKey: value ? "fixture" : "" }),
       pending: null,
     };

@@ -155,6 +155,7 @@ export default {
     videoError: "Video yüklemede hata",
     stopPlay: "DUR",
     getFullText: "Okuma görünümü",
+    stopWaitingForFullText: "Tam metni beklemeyi durdur",
     showSummary: "Okuma görünümünü gizle",
     saveToThirdParty: "Üçüncü taraf hizmetlerine kaydet",
     attachments: "Ekler",
