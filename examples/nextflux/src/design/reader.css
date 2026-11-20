@@ -136,20 +136,31 @@
 .reader-dock > .nextflux-toolbar-group { display: contents; }
 .reader-secondary { display: flex; align-items: center; }
 
-@media (min-width: 768px) {
+@media (min-width: 800px) and (pointer: fine) {
   /* Wide screens: one bar — back, prev/next, secondary actions, then the dock. */
   .action-buttons.reader-topbar { display: flex; flex-wrap: wrap; align-items: center; }
-  .action-buttons .reader-topbar-row { flex: 1 1 0; min-inline-size: 0; }
+  .action-buttons .reader-topbar-row { flex: 1 1 max-content; min-inline-size: max-content; }
+  .reader-topbar-row .nextflux-toolbar-groups { flex: none; }
   .action-buttons .reader-speech-slot { flex: 1 0 100%; }
   .reader-more-button { display: none !important; }
   .nextflux-toolbar-groups { justify-content: flex-end; }
 }
 
-@media (max-width: 767px) {
-  /* Phones: the dock floats at the bottom with text labels; the top bar keeps
-     only "back". Secondary actions live in the More sheet. */
+@media (max-width: 799px), (pointer: coarse), (pointer: none) {
+  /* A touch reader keeps the same controls when its viewport expands into
+     two panes. Establish the fixed dock's containing block outside the scroller. */
+  .nextflux-article-page { contain: layout; }
+  .reader-topbar .reader-article-navigation { display: none; }
+  .reader-topbar + .article-view-content {
+    padding-block-end: calc(84px + env(safe-area-inset-bottom, 0px));
+  }
+  .reader-topbar:has(> .reader-speech-slot > .nextflux-speech-bar) + .article-view-content {
+    padding-block-end: calc(84px + max(80px, 5rem) + env(safe-area-inset-bottom, 0px));
+  }
   .action-buttons .reader-dock {
     position: fixed;
+    max-inline-size: 640px;
+    margin-inline: auto;
     z-index: 45;
     inset-inline: 12px;
     inset-block-end: calc(10px + env(safe-area-inset-bottom, 0px));
@@ -199,8 +210,10 @@
   .action-buttons .reader-secondary .nextflux-toolbar-button { display: none; }
 
   /* Speech player docks just above the toolbar. */
-  .action-buttons .reader-speech-slot:has(.nextflux-speech-bar) {
+  .action-buttons.reader-topbar > .reader-speech-slot:has(.nextflux-speech-bar) {
     position: fixed;
+    max-inline-size: 640px;
+    margin-inline: auto;
     z-index: 44;
     inset-inline: 12px;
     inset-block-end: calc(78px + env(safe-area-inset-bottom, 0px));
@@ -235,6 +248,24 @@
     transform: translate3d(0, calc(100% + 24px), 0);
     opacity: 0;
     pointer-events: none;
+  }
+}
+
+/* Article controls use normal application-modal focus/backdrop semantics.
+   Their content occupies the reader pane; the backdrop still dismisses outside. */
+@media (768px <= width < 800px), (min-width: 768px) and (pointer: coarse), (min-width: 768px) and (pointer: none) {
+  html :is(.modal__container, .drawer__content)[data-reader-overlay] {
+    position: absolute;
+    inset-block: 0;
+    inline-size: auto;
+    max-inline-size: none;
+    left: var(--nf-pane-left);
+    right: var(--nf-pane-right);
+  }
+  .drawer__content[data-reader-overlay] .nextflux-floating-sheet[data-placement="bottom"] {
+    max-inline-size: 640px;
+    margin-block-end: calc(78px + env(safe-area-inset-bottom, 0px));
+    max-block-size: calc(var(--visual-viewport-height, 100dvh) - var(--nf-safe-top, 0px) - 90px - env(safe-area-inset-bottom, 0px));
   }
 }
 
@@ -392,7 +423,7 @@
   background: transparent;
   box-shadow: none;
 }
-@media (max-width: 767px) {
+@media (max-width: 799px), (pointer: coarse), (pointer: none) {
   .action-buttons .reader-speech-slot:has(.nextflux-speech-bar) {
     border-radius: 24px;
     padding: 4px 6px;

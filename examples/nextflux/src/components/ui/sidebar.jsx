@@ -9,6 +9,8 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { cn } from "@/lib/utils";
 import { registerBackHandler } from "@/toolbox/systemBack.js";
 import { Button } from "@heroui/react";
+import { isModalOpen } from "@/stores/modalStore";
+import { useTranslation } from "react-i18next";
 
 const SIDEBAR_WIDTH = "16rem";
 // Leave a strip of page to tap closed, even at the largest text size.
@@ -44,6 +46,10 @@ const SidebarProvider = React.forwardRef(
     const [openMobile, setOpenMobile] = React.useState(false);
     // System back closes the phone sidebar, like a tap on its scrim.
     React.useEffect(() => (isMobile && openMobile ? registerBackHandler(() => setOpenMobile(false), 1) : undefined), [isMobile, openMobile]);
+
+    React.useEffect(() => {
+      if (!isMobile) setOpenMobile(false);
+    }, [isMobile]);
 
     // This is the internal state of the sidebar.
     // We use openProp and setOpenProp for control from outside the component.
@@ -147,6 +153,18 @@ const Sidebar = React.forwardRef(
   ) => {
     const { isMobile, state, openMobile, setOpenMobile } = useSidebar();
 
+    const { t } = useTranslation();
+    const mobilePanel = React.useRef(null);
+    const wasOpen = React.useRef(false);
+    React.useLayoutEffect(() => {
+      if (openMobile && isMobile) {
+        mobilePanel.current?.focus({ preventScroll: true });
+      } else if (wasOpen.current && !isModalOpen.get()) {
+        document.querySelector('[data-sidebar="trigger"]')?.focus({ preventScroll: true });
+      }
+      wasOpen.current = isMobile && openMobile;
+    }, [isMobile, openMobile]);
+
     if (collapsible === "none") {
       return (
         <div
@@ -188,9 +206,20 @@ const Sidebar = React.forwardRef(
             data-sidebar="sidebar"
             data-mobile="true"
             data-open={openMobile ? "true" : "false"}
-            role="dialog"
-            aria-modal="true"
-            tabIndex={openMobile ? 0 : -1}
+            ref={mobilePanel}
+            role={openMobile ? "dialog" : undefined}
+            aria-label={openMobile ? t("sidebar.shortcuts.sidebar") : undefined}
+            aria-hidden={!openMobile || undefined}
+            aria-modal={openMobile || undefined}
+            inert={!openMobile}
+            tabIndex={-1}
+            onKeyDown={(event) => {
+              if (event.key === "Escape" && !event.defaultPrevented && event.currentTarget.contains(event.target)) {
+                event.preventDefault();
+                event.stopPropagation();
+                setOpenMobile(false);
+              }
+            }}
             {...props}
           >
             <div className="flex h-full w-full flex-col overflow-y-auto touch-pan-y">
@@ -209,6 +238,7 @@ const Sidebar = React.forwardRef(
         data-collapsible={state === "collapsed" ? collapsible : ""}
         data-variant={variant}
         data-side={side}
+        inert={collapsible === "offcanvas" && state === "collapsed"}
       >
         {/* This is what handles the sidebar gap on desktop */}
         <div
@@ -249,12 +279,14 @@ const Sidebar = React.forwardRef(
 Sidebar.displayName = "Sidebar";
 
 const SidebarTrigger = React.forwardRef(({ className, ...props }, ref) => {
-  const { toggleSidebar } = useSidebar();
+  const { toggleSidebar, isMobile, openMobile, open } = useSidebar();
+  const { t } = useTranslation();
 
   return (
     <Button
       ref={ref}
       data-sidebar="trigger"
+      aria-expanded={isMobile ? openMobile : open}
       className={cn("nextflux-toolbar-button", className)}
       size="sm"
       variant="ghost"
@@ -265,16 +297,18 @@ const SidebarTrigger = React.forwardRef(({ className, ...props }, ref) => {
       {...props}
     >
       <PanelLeft className="size-5 text-muted" />
-      <span className="sr-only">Toggle Sidebar</span>
+      <span className="sr-only">{t("sidebar.shortcuts.toggleSidebar")}</span>
     </Button>
   );
 });
 SidebarTrigger.displayName = "SidebarTrigger";
 
 const SidebarInset = React.forwardRef(({ className, ...props }, ref) => {
+  const { isMobile, openMobile } = useSidebar();
   return (
     <main
       ref={ref}
+      inert={isMobile && openMobile}
       className={cn(
         "relative flex min-h-svh flex-1 flex-col",
         "peer-data-[variant=inset]:min-h-[calc(100svh-(--spacing(4)))] md:peer-data-[variant=inset]:m-2 md:peer-data-[variant=inset]:peer-data-[state=collapsed]:ml-2 md:peer-data-[variant=inset]:ml-0 md:peer-data-[variant=inset]:rounded-xl md:peer-data-[variant=inset]:shadow-sm",

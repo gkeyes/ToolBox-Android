@@ -67,7 +67,7 @@
   -webkit-backdrop-filter: var(--nf-lens, blur(12px)) var(--nf-glass-filter);
   backdrop-filter: var(--nf-lens, blur(12px)) var(--nf-glass-filter);
 }
-@media (max-width: 767px) {
+@media (max-width: 799px), (pointer: coarse), (pointer: none) {
   .action-buttons .reader-dock,
   .action-buttons .reader-speech-slot:has(.nextflux-speech-bar) {
     isolation: isolate;

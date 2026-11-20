@@ -1,3 +1,4 @@
+import { useReaderOverlayRef } from "./ReaderPaneContext.jsx";
 import { useIsMobile } from "@/hooks/use-mobile.jsx";
 import { Modal, cn, Button } from "@heroui/react";
 import { useTranslation } from "react-i18next";
@@ -14,6 +15,7 @@ export default function CustomModal({
   // then goes to the host instead of being swallowed.
   locked = false,
 }) {
+  const overlayRef = useReaderOverlayRef();
   const { isMedium } = useIsMobile();
   const { t } = useTranslation();
 
@@ -38,7 +40,7 @@ export default function CustomModal({
     <Modal>
       <Button className="hidden" />
       <Modal.Backdrop className="nextflux-modal-backdrop" isOpen={open} onOpenChange={onOpenChange}>
-        <Modal.Container>
+        <Modal.Container ref={overlayRef}>
           <Modal.Dialog className={cn("nextflux-modal-surface p-0", fixedHeight && "h-2/3")} data-nf-locked={locked || undefined}>
             <Modal.Header className="nextflux-close-header">
               <Modal.Heading className="p-4">{title}</Modal.Heading>

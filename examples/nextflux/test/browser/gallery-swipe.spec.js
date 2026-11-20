@@ -211,3 +211,16 @@ for (const lost of ["hidden", "blur"]) test(`a drag interrupted by ${lost} relea
   await touchAt(page, "touchend", 80, 421);
   await expect(counter(page)).toHaveText("2 / 2");
 });
+
+test("landscape gallery close stays below the ToolBox status bar", async ({ page }) => {
+  await page.setViewportSize({ width: 920, height: 420 });
+  await openArticleWithImage(page);
+  await page.evaluate(() => document.documentElement.style.setProperty("--toolbox-safe-area-top", "32px"));
+  await openImage(page);
+  const close = page.locator(".PhotoView-Slider__toolbarIcon").last();
+  await expect(close).toBeVisible();
+  const bounds = await close.boundingBox();
+  expect(bounds.y).toBeGreaterThanOrEqual(32);
+  await close.tap();
+  await expect(page.locator(".PhotoView-Portal")).toHaveCount(0);
+});

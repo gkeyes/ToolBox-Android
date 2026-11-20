@@ -1,5 +1,6 @@
 import { startTransition, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Button, Drawer, cn } from "@heroui/react";
+import { useReaderOverlayRef } from "./ReaderPaneContext.jsx";
 import { hadPointerDownFor } from "@/toolbox/touch-drag.js";
 
 // Release motion: settle back on the sheet spring, dismiss on the 220ms
@@ -75,6 +76,7 @@ export default function MobileSheet({
   children,
   footer,
 }) {
+  const overlayRef = useReaderOverlayRef();
   const dialogRef = useRef(null);
   const dragRef = useRef(null);
   const attachDialog = useCallback((dialog) => {
@@ -261,7 +263,7 @@ export default function MobileSheet({
     <Drawer>
       <Button className="hidden" />
       <Drawer.Backdrop className="nextflux-modal-backdrop" isOpen={open} onOpenChange={onOpenChange}>
-        <Drawer.Content>
+        <Drawer.Content ref={overlayRef}>
           <Drawer.Dialog
             ref={attachDialog}
             data-nf-locked={locked || undefined}

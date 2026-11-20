@@ -108,16 +108,12 @@ async function bounds(page) {
 for (const [width, theme, scale] of [[320, "light", 1], [393, "light", 1], [393, "dark", 1], [820, "light", 1], [393, "dark", 1.5]]) {
   test(`compact toolbar ${width}px ${theme} font ${scale}`, async ({ page }, info) => {
     await open(page, width, theme, scale);
-    await closeGeometry(page.locator(".action-buttons .nextflux-close-button"), width < 768 ? 44 : 32);
+    await closeGeometry(page.locator(".action-buttons .nextflux-close-button"), 44);
     await bounds(page);
-    if (width < 768) {
-      await page.getByRole("button", { name: "更多", exact: true }).click();
-      await expect(page.getByRole("dialog").getByRole("button", { name: "全文适配", exact: true })).toBeVisible();
-      await page.keyboard.press("Escape");
-      await expect(page.getByRole("dialog")).toHaveCount(0);
-    } else {
-      await expect(page.getByRole("button", { name: "全文适配", exact: true })).toBeVisible();
-    }
+    await page.getByRole("button", { name: "更多", exact: true }).click();
+    await expect(page.getByRole("dialog").getByRole("button", { name: "全文适配", exact: true })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("dialog")).toHaveCount(0);
     await expect(page.locator("main .ai-summary")).toHaveCount(0);
     const summary = await openSummary(page);
     await expect(summary.locator(".nextflux-summary-text")).toHaveText("Fixture summary.");
@@ -617,7 +613,7 @@ for (const width of [393, 820]) {
       await page.getByRole("button", { name: trigger, exact: true }).click();
       const dialog = page.getByRole("dialog");
       const close = dialog.locator(".nextflux-close-button");
-      if (width < 768 && trigger === "Open settings") {
+      if (trigger === "Open settings" && await dialog.locator(".nextflux-close-header.has-header-end").count()) {
         // The tall settings sheet paints its own close button, shaped like the
         // back button, and keeps a single close target.
         await expect(dialog.getByRole("button", { name: /close|关闭/i })).toHaveCount(1);

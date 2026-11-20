@@ -19,6 +19,9 @@
   border-top-color: currentColor;
   animation: nf-board-spin 0.8s linear infinite;
 }
+/* The reader stays mounted for its exit gesture. Only its idle placeholder
+   gives up the second pane; the selected report and scroll container survive. */
+.nf-board-layout > .nextflux-article-page.hidden { display: none; }
 .nf-board-page .article-list-caption.is-working { color: var(--accent); }
 .nf-board-page .article-list-actions .nf-board-spinner { inline-size: 18px; block-size: 18px; flex-basis: 18px; color: var(--accent); }
 .nf-board-scroll {

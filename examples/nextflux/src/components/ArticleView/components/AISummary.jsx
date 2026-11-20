@@ -6,12 +6,14 @@ import { RotateCcw, Square } from "lucide-react";
 import { AISummaryIcon as Sparkles } from "@/components/ui/icons.jsx";
 import { aiSummaries } from "@/stores/aiStore.js";
 import { renderSummaryMarkdown } from "@/toolbox/summary-markdown.mjs";
+import { useReaderOverlayRef } from "@/components/ui/ReaderPaneContext.jsx";
 import { ArticleSpeechBar } from "./ArticleSpeech.jsx";
 import "./AISummary.css";
 
 // Reuse the speech surface inside the existing accessible Modal primitive.
 // Its portal keeps summaries out of article layouts and passive previews.
 export default function AISummary({ article, onClose, onGenerate, onStop }) {
+  const overlayRef = useReaderOverlayRef();
   const articleId = article?.id;
   const state = useStore(useMemo(() => computed(aiSummaries, states => states[articleId]), [articleId]));
   const fullText = state?.summary || "";
@@ -26,7 +28,7 @@ export default function AISummary({ article, onClose, onGenerate, onStop }) {
       isOpen
       onOpenChange={(next) => { if (!next) onClose(); }}
     >
-      <Modal.Container placement="bottom" scroll="inside" className="action-buttons nextflux-summary-container">
+      <Modal.Container ref={overlayRef} placement="bottom" scroll="inside" className="action-buttons nextflux-summary-container">
         <Modal.Dialog className="reader-speech-slot nextflux-summary-dialog" aria-label="AI 摘要">
           <div className="nextflux-speech-bar ai-summary">
             <Modal.Header className="nextflux-summary-header">

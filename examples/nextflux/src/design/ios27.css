@@ -354,7 +354,7 @@ body { font-family: var(--nf-sans); -webkit-tap-highlight-color: transparent; }
 
 /* ---------------------------------------------------------------- reader */
 .article-scroll-area { background: var(--ds-reader); }
-@media (max-width: 767px) {
+@media (max-width: 799px), (pointer: coarse), (pointer: none) {
   .action-buttons .reader-dock {
     block-size: 64px;
     border-radius: 32px;
@@ -766,7 +766,7 @@ fieldset, .fieldset { min-inline-size: 0; max-inline-size: 100%; }
 :root { --nf-safe-top: max(env(safe-area-inset-top, 0px), var(--toolbox-safe-area-top, 0px)); }
 .article-list-header-wrap { padding-block-start: var(--nf-safe-top); }
 .sidebar-header { padding-block-start: calc(var(--nf-safe-top) + 0.5rem); }
-@media (max-width: 767px) {
+@media (max-width: 799px), (pointer: coarse), (pointer: none) {
   .action-buttons.reader-topbar { padding-block-start: var(--nf-safe-top); }
   /* Tucked away, the close button clears the status bar too. */
   .article-scroll-area[data-chrome="hidden"] .reader-topbar-row { transform: translate3d(0, calc(-100% - var(--nf-safe-top)), 0); }

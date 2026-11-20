@@ -96,6 +96,6 @@
 .nextflux-summary-text input[type="checkbox"] { margin-inline-end: .4em; accent-color: var(--accent); }
 .nextflux-summary-empty { color: var(--ds-text-secondary, var(--muted)); font-size: .875rem; }
 .nextflux-summary-dialog > .nextflux-speech-bar:not(.ai-summary) { flex-shrink: 0; border-block-start: .5px solid var(--ds-hairline); }
-@media (min-width: 768px) {
+@media (min-width: 800px) and (pointer: fine) {
   .nextflux-summary-container.action-buttons { padding: 24px; }
 }

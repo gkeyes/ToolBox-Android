@@ -242,7 +242,7 @@ function ActionButtons() {
             {t("common.close")}
           </Tooltip.Content>
         </Tooltip>
-        <div className="hidden shrink-0 items-center gap-1 md:flex">
+        <div className="reader-article-navigation hidden shrink-0 items-center gap-1 md:flex">
           <Tooltip delay={0}>
             <Button
               className="nextflux-toolbar-button"

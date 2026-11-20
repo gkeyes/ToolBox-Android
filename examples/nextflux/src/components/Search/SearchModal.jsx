@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useStore } from "@nanostores/react";
 import { Separator, InputGroup, Kbd, Modal, Tabs, Button } from "@heroui/react";
+import { X } from "lucide-react";
 import {
   SearchIcon as SearchIcon,
 } from "@/components/ui/icons.jsx";
@@ -19,14 +20,20 @@ import { filter } from "@/stores/articlesStore.js";
 import { handleMarkStatus } from "@/handlers/articleHandlers";
 import { searchArticlePages } from "@/db/storage.js";
 import { toast } from "sonner";
-import { useIsMobile } from "@/hooks/use-mobile.jsx";
 import MobileSheet from "@/components/ui/MobileSheet.jsx";
 
 export default function SearchModal() {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const { isMedium } = useIsMobile();
   const isOpen = useStore(searchDialogOpen);
+  const chooseSheet = () => window.matchMedia("(pointer: coarse), (max-width: 767px)").matches;
+  const [sheet, setSheet] = useState(chooseSheet);
+  const [wasOpen, setWasOpen] = useState(isOpen);
+  if (wasOpen !== isOpen) {
+    setWasOpen(isOpen);
+    if (isOpen) setSheet(chooseSheet());
+  }
+
   const $searchResults = useStore(searchResults);
   const $feedSearchResults = useStore(feedSearchResults);
   const { showHiddenFeeds, sortField } = useStore(settingsState);
@@ -101,7 +108,7 @@ export default function SearchModal() {
       feedSearchResults.set([]);
       setSearchType("articles");
     }
-  }, [isOpen, searchType]);
+  }, [isOpen]);
 
   const input = (
     <InputGroup className="ds-search-field search-field-group min-h-12 shadow-none ring-0 ring-transparent">
@@ -110,6 +117,7 @@ export default function SearchModal() {
       </InputGroup.Prefix>
       <InputGroup.Input
         ref={inputRef}
+        aria-label={t("common.search")}
         autoFocus
         className="text-[length:var(--ds-text-body)] bg-transparent"
         placeholder={searchType === "articles"
@@ -160,17 +168,23 @@ export default function SearchModal() {
     </Tabs>
   );
 
-  if (isMedium) {
+  if (sheet) {
     return (
       <MobileSheet
         open={isOpen}
         onOpenChange={(open) => searchDialogOpen.set(open)}
         title={t("common.search", { defaultValue: "搜索" })}
         closeLabel={t("common.close")}
-        dialogClassName="h-[82vh]"
+        dialogClassName="nf-search-sheet h-[82dvh] max-w-[700px]"
+        headerEnd={
+          <Button isIconOnly size="sm" variant="tertiary" className="size-11 min-w-11"
+            aria-label={t("common.close")} onPress={() => searchDialogOpen.set(false)}>
+            <X className="size-5" />
+          </Button>
+        }
         bodyClassName="overflow-hidden flex flex-col"
       >
-        <div className="px-4 pb-3 shrink-0 flex flex-col gap-3">{input}{tabs}</div>
+        <div className="nf-search-fields px-4 pb-3 shrink-0 flex flex-col gap-3">{input}{tabs}</div>
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">{results}</div>
       </MobileSheet>
     );
@@ -186,8 +200,9 @@ export default function SearchModal() {
         variant="transparent"
       >
         <Modal.Container scroll="inside" size="lg">
-          <Modal.Dialog className="nextflux-modal-surface w-[700px] max-w-[90vw] h-[500px] p-0">
-            <Modal.Header className="p-4 pb-3">{input}</Modal.Header>
+          <Modal.Dialog className="nextflux-modal-surface w-[700px] max-w-[90vw] h-[500px] p-0" aria-label={t("common.search")}>
+            <Modal.Header className="p-4 pb-3 pe-16">{input}</Modal.Header>
+            <Modal.CloseTrigger className="nextflux-close-button" aria-label={t("common.close")} />
             <Modal.Body className="nextflux-modal-body p-0 m-0">{results}</Modal.Body>
             <Modal.Footer className="p-0 m-0">
               <div className="w-full px-4 py-3 flex items-center justify-between gap-3 [&_.search-scope]:w-56">

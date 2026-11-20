@@ -195,158 +195,104 @@ function ContentArea({ activeTab, showTitle = false, onCollapsedChange }) {
   );
 }
 
-// 移动端设置界面 - 共享手势 Sheet
-function MobileSettings() {
+// Keep the form at the same React position while the menu changes from a
+// page into a rail. Uncommitted text, selection and scroll belong to the form.
+export default function SettingsModal() {
   const isOpen = useStore(settingsModalOpen);
-  const [activeTab, setActiveTab] = useState(null);
-  // The content page keeps its last tab while sliding out, so "back" never shows a blank page.
-  const [shownTab, setShownTab] = useState(null);
-  const [collapsed, setCollapsed] = useState({ menu: false, content: false });
-  const [openCount, setOpenCount] = useState(0);
-  const [wasOpen, setWasOpen] = useState(isOpen);
+  const { isMedium: compact } = useIsMobile();
   const { t } = useTranslation();
   const titleFor = useItemTitle();
+  const [activeTab, setActiveTab] = useState(compact ? null : "general");
+  const [shownTab, setShownTab] = useState(activeTab);
+  const [collapsed, setCollapsed] = useState({ menu: false, content: false });
+  const [wasOpen, setWasOpen] = useState(isOpen);
+  // Hold the presentation for an open session so changing input hardware
+  // cannot move an active field between two different overlay portals.
+  const chooseSheet = () => compact || window.matchMedia("(pointer: coarse)").matches;
+  const [sheet, setSheet] = useState(chooseSheet);
 
-  // Reset while rendering the opening frame (not in an effect), so the sheet
-  // never paints the previous session's page first. Closing keeps the page in
-  // place for the exit animation.
   if (wasOpen !== isOpen) {
     setWasOpen(isOpen);
     if (isOpen) {
-      setActiveTab(null);
-      setShownTab(null);
+      setActiveTab(compact ? null : "general");
+      setShownTab(compact ? null : "general");
       setCollapsed({ menu: false, content: false });
-      setOpenCount((count) => count + 1);
+      setSheet(chooseSheet());
     }
   }
 
-  const handleSelectMenu = (id) => {
+  if (isOpen && !compact && activeTab === null) {
+    setActiveTab(shownTab ?? "general");
+    setShownTab(shownTab ?? "general");
+  }
+
+  const selectTab = (id) => {
     setActiveTab(id);
     setShownTab(id);
     setCollapsed((current) => ({ ...current, content: false }));
   };
-  const handleBack = () => setActiveTab(null);
-  const handleClose = (value) => settingsModalOpen.set(value);
   const currentPage = activeTab === null ? "menu" : "content";
-  const currentTitle = activeTab === null ? t("common.settings") : titleFor(activeTab);
-  const isCollapsed = collapsed[currentPage];
-
-  return (
-    <MobileSheet
-      open={isOpen}
-      onOpenChange={handleClose}
-      title={<span className="nf-collapse-title" data-collapsed={isCollapsed}>{currentTitle}</span>}
-      closeLabel={t("common.close")}
-      dialogClassName="h-[85vh]"
-      bodyClassName="overflow-hidden"
-      headerStart={activeTab !== null ? (
-        <Button
-          isIconOnly
-          size="sm"
-          variant="tertiary"
-          onPress={handleBack}
-          className="size-11 min-w-11"
-          aria-label={t("common.back", { defaultValue: "Back" })}
-        >
-          <ArrowLeft className="size-5" />
-        </Button>
-      ) : null}
-      headerEnd={(
-        <Button
-          isIconOnly
-          size="sm"
-          variant="tertiary"
-          onPress={() => handleClose(false)}
-          className="size-11 min-w-11"
-          aria-label={t("common.close")}
-        >
-          <X className="size-5" />
-        </Button>
-      )}
-    >
-      <div key={openCount} className="t-settings-slide h-full" data-active={currentPage}>
-        <div className="nf-collapse-hairline" data-collapsed={isCollapsed} />
-        <div className="t-page" data-page-id="menu" inert={currentPage !== "menu" || undefined}>
-          <MenuList
-            onSelect={handleSelectMenu}
-            onCollapsedChange={(value) => setCollapsed((current) => ({ ...current, menu: value }))}
-          />
-        </div>
-        <div className="t-page" data-page-id="content" inert={currentPage !== "content" || undefined}>
-          {shownTab && (
-            <ContentArea
-              key={shownTab}
-              activeTab={shownTab}
-              onCollapsedChange={(value) => setCollapsed((current) => ({ ...current, content: value }))}
-            />
-          )}
-        </div>
-      </div>
-    </MobileSheet>
+  const shown = shownTab ?? "general";
+  const currentTitle = compact && activeTab ? titleFor(activeTab) : t("common.settings");
+  const back = compact && activeTab && (
+    <Button isIconOnly size="sm" variant="tertiary" onPress={() => setActiveTab(null)}
+      className="size-11 min-w-11" aria-label={t("common.back")}>
+      <ArrowLeft className="size-5" />
+    </Button>
   );
-}
 
-// 桌面端设置界面 - 使用 Modal
-function DesktopSettings() {
-  const isOpen = useStore(settingsModalOpen);
-  const [activeTab, setActiveTab] = useState("general");
-  const [wasOpen, setWasOpen] = useState(isOpen);
-  const { t } = useTranslation();
+  const layout = (
+    <div className={compact ? "t-settings-slide h-full" : "flex h-full min-h-0"} data-active={currentPage}>
+      {compact && <div className="nf-collapse-hairline" data-collapsed={collapsed[currentPage]} />}
+      <div key="menu" className={compact ? "t-page" : "nf-set-rail"} data-page-id="menu" inert={compact && currentPage !== "menu" || undefined}>
+        {compact ? <MenuList onSelect={selectTab} onCollapsedChange={(value) => setCollapsed((current) => ({ ...current, menu: value }))} /> : (
+          <>
+            {!sheet && <h2 className="nf-set-rail-title">{t("common.settings")}</h2>}
+            <nav className="nf-set-nav flex-1 overflow-y-auto">
+              {menuItems.map((item) => <NavRow key={item.id} item={item} active={shown === item.id} onSelect={selectTab} />)}
+            </nav>
+          </>
+        )}
+      </div>
+      <div key="content" className={compact ? "t-page" : "nf-set-pane"} data-page-id="content" inert={compact && currentPage !== "content" || undefined}>
+        {(!compact || shownTab) && <ContentArea key={shown} activeTab={shown} showTitle={!compact && !sheet}
+          onCollapsedChange={(value) => setCollapsed((current) => ({ ...current, content: value }))} />}
+      </div>
+    </div>
+  );
 
-  if (wasOpen !== isOpen) {
-    setWasOpen(isOpen);
-    if (isOpen) setActiveTab("general");
+  if (sheet) {
+    return (
+      <MobileSheet
+        open={isOpen}
+        onOpenChange={(open) => settingsModalOpen.set(open)}
+        title={compact ? <span className="nf-collapse-title" data-collapsed={collapsed[currentPage]}>{currentTitle}</span> : currentTitle}
+        closeLabel={t("common.close")}
+        dialogClassName="nf-settings-sheet h-[85dvh] max-w-[760px]"
+        bodyClassName="overflow-hidden"
+        headerStart={back}
+        headerEnd={(
+          <Button isIconOnly size="sm" variant="tertiary" onPress={() => settingsModalOpen.set(false)}
+            className="size-11 min-w-11" aria-label={t("common.close")}>
+            <X className="size-5" />
+          </Button>
+        )}
+      >{layout}</MobileSheet>
+    );
   }
-
-  const handleClose = (value) => settingsModalOpen.set(value);
 
   return (
     <Modal>
       <Button className="hidden" />
-      <Modal.Backdrop
-        className="nextflux-modal-backdrop"
-        isOpen={isOpen}
-        onOpenChange={handleClose}
-        variant="transparent"
-      >
+      <Modal.Backdrop className="nextflux-modal-backdrop" isOpen={isOpen} onOpenChange={(open) => settingsModalOpen.set(open)} variant="transparent">
         <Modal.Container>
-          <Modal.Dialog className="nextflux-modal-surface w-[760px] max-w-[90vw] h-[600px] p-0 relative">
+          <Modal.Dialog className="nextflux-modal-surface w-[760px] max-w-[90vw] h-[600px] p-0 relative" aria-label={t("common.settings")}>
             <Modal.CloseTrigger className="nextflux-close-button" aria-label={t("common.close")} />
-            <div className="flex h-full">
-              {/* 左侧导航栏 */}
-              <aside className="nf-set-rail">
-                <h2 className="nf-set-rail-title">{t("common.settings")}</h2>
-                <nav className="nf-set-nav flex-1 overflow-y-auto">
-                  {menuItems.map((item) => (
-                    <NavRow
-                      key={item.id}
-                      item={item}
-                      active={activeTab === item.id}
-                      onSelect={setActiveTab}
-                    />
-                  ))}
-                </nav>
-              </aside>
-
-              {/* 右侧内容区域 */}
-              <div className="nf-set-pane">
-                <ContentArea key={activeTab} activeTab={activeTab} showTitle={true} />
-              </div>
-            </div>
+            {compact && <div className="nextflux-close-header flex items-center px-4">{back}<h2>{currentTitle}</h2></div>}
+            {layout}
           </Modal.Dialog>
         </Modal.Container>
       </Modal.Backdrop>
     </Modal>
   );
-}
-
-// 主组件 - 根据设备类型选择渲染方式
-export default function SettingsModal() {
-  const { isMedium } = useIsMobile();
-
-  if (isMedium) {
-    return <MobileSettings />;
-  }
-
-  return <DesktopSettings />;
 }
