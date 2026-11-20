@@ -449,10 +449,13 @@ export default function BoardPage() {
   />;
 
   return (
-    <div className="main-content flex">
+    <div className="main-content nf-board-layout flex">
       <div
         ref={pageRef}
-        className="nextflux-article-list-page nf-board-page bg-background w-full relative max-w-screen md:w-84 md:max-w-[30%] md:min-w-[18rem] h-dvh flex flex-col"
+        className={cn(
+          "nextflux-article-list-page nf-board-page bg-background w-full relative max-w-screen h-dvh flex flex-col",
+          articleId && "md:w-84 md:max-w-[30%] md:min-w-[18rem]",
+        )}
         data-list-style={articleListStyle === "cards" ? "cards" : "lines"}
       >
         <div ref={headRef} className="article-list-header-wrap z-10 standalone:pt-safe" data-scoped="true">

@@ -6,6 +6,7 @@ import "react-photo-view/dist/react-photo-view.css";
 import "./ArticleView.css";
 import "@/reading/reading.css";
 import "@/reading/typography.css";
+import { ReaderPaneContext } from "@/components/ui/ReaderPaneContext.jsx";
 import ActionButtons from "@/components/ArticleView/components/ActionButtons.jsx";
 import ArticlePageContent from "@/components/ArticleView/components/ArticlePageContent.jsx";
 import ContinuousNextUnread from "@/components/ArticleView/components/ContinuousNextUnread.jsx";
@@ -403,7 +404,9 @@ const ArticleView = () => {
         "article-scroll-area reader-surface h-full relative",
         floatingSidebar ? "" : "reader-surface-card",
       )}>
-        <ActionButtons />
+        <ReaderPaneContext.Provider value={pageRef}>
+          <ActionButtons />
+        </ReaderPaneContext.Provider>
         <ArticlePageContent
           ref={articleSurfaceRef}
           article={presentedArticle}

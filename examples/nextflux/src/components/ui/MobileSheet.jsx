@@ -1,5 +1,6 @@
 import { startTransition, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Button, Drawer, cn } from "@heroui/react";
+import { useReaderOverlayRef } from "./ReaderPaneContext.jsx";
 import { hadPointerDownFor } from "@/toolbox/touch-drag.js";
 
 // Release motion: settle back on the sheet spring, dismiss on the 220ms
@@ -75,6 +76,7 @@ export default function MobileSheet({
   children,
   footer,
 }) {
+  const overlayRef = useReaderOverlayRef();
   const dialogRef = useRef(null);
   const dragRef = useRef(null);
   const attachDialog = useCallback((dialog) => {
@@ -99,11 +101,19 @@ export default function MobileSheet({
   const [dismissCheck, setDismissCheck] = useState(0);
 
   useLayoutEffect(() => {
+    if (!open) return;
+    const dialog = dialogRef.current;
+    // React Aria can reuse a backdrop previously released during a stalled exit.
+    const released = dialog?.closest("[data-nextflux-released='true']");
+    if (released) {
+      released.style.removeProperty("pointer-events");
+      released.style.removeProperty("visibility");
+      delete released.dataset.nextfluxReleased;
+    }
     const pending = dismissRef.current;
-    if (!open || !pending) return;
+    if (!pending) return;
     dismissRef.current = null;
     pending.animation?.cancel();
-    const dialog = dialogRef.current;
     if (!dialog || dialog !== pending.dialog || !dialog.isConnected) return;
     dialog.style.transition = "";
     animateTranslate(dialog, pending.offscreen, 0, 440, () => { dialog.style.willChange = ""; });
@@ -260,8 +270,8 @@ export default function MobileSheet({
   return (
     <Drawer>
       <Button className="hidden" />
-      <Drawer.Backdrop className="nextflux-modal-backdrop" isOpen={open} onOpenChange={onOpenChange}>
-        <Drawer.Content>
+      <Drawer.Backdrop className="nextflux-modal-backdrop" data-nf-sheet-open={open || undefined} isOpen={open} onOpenChange={onOpenChange}>
+        <Drawer.Content ref={overlayRef}>
           <Drawer.Dialog
             ref={attachDialog}
             data-nf-locked={locked || undefined}

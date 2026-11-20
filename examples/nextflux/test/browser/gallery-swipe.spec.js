@@ -43,7 +43,10 @@ async function openArticleWithImage(page, images = 1) {
   }, sources);
   await page.getByRole("button", { name: "打开文章 1", exact: true }).click();
   await expect(page.locator(".article-scroll-area .article-title")).toHaveText("文章 1");
-  await expect(page.locator(".nextflux-article-page")).toHaveAttribute("data-navigation-state", "idle");
+  // The split reader opens directly; only single-pane navigation animates.
+  if (page.viewportSize().width < 768) {
+    await expect(page.locator(".nextflux-article-page")).toHaveAttribute("data-navigation-state", "idle");
+  }
   for (const [i, src] of sources.entries()) {
     await expect.poll(() => page.evaluate(async (s) => (await import("/media-transport.js")).pendingRequests(s), src)).toBe(1);
     await page.evaluate(async (s) => (await import("/media-transport.js")).settleImage(s), src);
@@ -210,4 +213,17 @@ for (const lost of ["hidden", "blur"]) test(`a drag interrupted by ${lost} relea
   await drag(page, [300, 420], [[280, 421], [240, 421], [180, 421], [120, 421], [80, 421]]);
   await touchAt(page, "touchend", 80, 421);
   await expect(counter(page)).toHaveText("2 / 2");
+});
+
+test("landscape gallery close stays below the ToolBox status bar", async ({ page }) => {
+  await page.setViewportSize({ width: 920, height: 420 });
+  await openArticleWithImage(page);
+  await page.evaluate(() => document.documentElement.style.setProperty("--toolbox-safe-area-top", "32px"));
+  await page.locator(".article-scroll-area img[alt=nf1]").tap();
+  const close = page.locator(".PhotoView-Slider__toolbarIcon").last();
+  await expect(close).toBeVisible();
+  const bounds = await close.boundingBox();
+  expect(bounds.y).toBeGreaterThanOrEqual(32);
+  await close.tap();
+  await expect(page.locator(".PhotoView-Portal")).toHaveCount(0);
 });

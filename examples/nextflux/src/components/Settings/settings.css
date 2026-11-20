@@ -368,13 +368,15 @@
   /* ---------- Login ---------- */
   .nf-auth {
     display: flex;
-    min-block-size: 100dvh;
-    align-items: center;
+    block-size: min(100dvh, var(--nf-login-height, 100dvh));
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+    align-items: flex-start;
     justify-content: center;
-    padding: calc(var(--ds-space-xl) + env(safe-area-inset-top, 0px)) var(--ds-space-md) calc(var(--ds-space-xl) + env(safe-area-inset-bottom, 0px));
+    padding: calc(var(--ds-space-xl) + var(--nf-safe-top, env(safe-area-inset-top, 0px))) var(--ds-space-md) calc(var(--ds-space-xl) + env(safe-area-inset-bottom, 0px));
     background: var(--ds-page);
   }
-  .nf-auth-column { display: flex; flex-direction: column; gap: var(--ds-space-lg); inline-size: 100%; max-inline-size: 400px; }
+  .nf-auth-column { display: flex; margin-block: auto; flex-direction: column; gap: var(--ds-space-lg); inline-size: 100%; max-inline-size: 400px; }
   .nf-auth-hero { display: flex; flex-direction: column; align-items: flex-start; gap: var(--ds-space-xs); padding-inline: var(--ds-space-xxs); }
   .nf-auth-hero .ds-empty-icon { margin-block-end: var(--ds-space-xs); }
   .nf-auth-card { display: flex; flex-direction: column; gap: var(--ds-space-md); padding: var(--ds-space-md); }
@@ -394,3 +396,12 @@
   .nf-auth-banner { animation: none; }
 }
 html[data-reduce-motion="true"] .nf-auth-banner { animation: none; }
+
+/* Short touch viewports need room for results while the keyboard is open. */
+@media (min-width: 620px) {
+  .nf-search-sheet .nf-search-fields { flex-direction: row; align-items: center; }
+  .nf-search-fields .search-field-group { flex: 1; min-inline-size: 0; }
+  .nf-search-fields .search-scope { min-inline-size: 9rem; }
+}
+
+.nf-settings-sheet { max-block-size: min(600px, var(--visual-viewport-height, 100dvh)); }

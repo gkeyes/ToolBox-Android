@@ -558,3 +558,34 @@ test("board scope tabs keep one pill without overlap while touching, switching, 
   expect(await page.evaluate(() => window.__intervalTest.reads)).toEqual([]);
   expect(errors).toEqual([]);
 });
+
+test("landscape history uses the whole pane until a source opens and keeps the selected report on return", async ({ page }) => {
+  await page.setViewportSize({ width: 920, height: 420 });
+  await prepareIntervals(page);
+  await commitArticles(page, 9001, 1);
+  await seedReport(page, { id: "other-report", topicCount: 1 });
+  await seedReport(page, { id: "selected-report", topicCount: 2, kind: "interval" });
+  await seedReport(page, { id: "latest-report", topicCount: 3 });
+  await page.evaluate(() => { location.hash = "#/board"; });
+  const board = page.locator(".nf-board-page");
+  const reader = page.locator(".nextflux-article-page");
+  const picker = reportPicker(page);
+  await chooseSavedReport(page, /3 篇/);
+  const tab = page.getByRole("tab", { name: /历史报告/ });
+  await expect(tab).toHaveAccessibleName("历史报告，1 份未读");
+  const width = await board.evaluate((element) => element.parentElement.clientWidth);
+  await expect.poll(async () => (await board.boundingBox()).width).toBe(width);
+  await expect(reader).toBeHidden();
+
+  await page.locator('.nf-board-chip[href="#/board/article/9001"]').tap();
+  await expect(reader.locator(".article-title")).toHaveText("时段文章 9001");
+  const split = await board.boundingBox();
+  expect(split.width).toBeLessThan(width);
+  expect((await reader.boundingBox()).x).toBeGreaterThanOrEqual(split.x + split.width - 1);
+  await reader.locator(".nextflux-close-button").first().tap();
+  await expect(page).toHaveURL(/#\/board$/);
+  await expect(reader).toBeHidden();
+  await expect.poll(async () => (await board.boundingBox()).width).toBe(width);
+  await expect(picker).toContainText("3 篇");
+  await expect(tab).toHaveAccessibleName("历史报告，1 份未读");
+});

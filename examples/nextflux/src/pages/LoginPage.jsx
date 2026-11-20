@@ -1,5 +1,5 @@
 import appIcon from "@/assets/app-icon.svg";
-import {useEffect, useState} from "react";
+import {useEffect, useRef, useState} from "react";
 import {useNavigate} from "react-router";
 import {authState, login} from "@/stores/authStore";
 import {
@@ -29,6 +29,7 @@ import { SERVER_URL } from "@/toolbox/server.mjs";
 
 export default function LoginPage() {
     const navigate = useNavigate();
+    const formPage = useRef(null);
     const $auth = useStore(authState);
     const {t} = useTranslation();
     const [authType, setAuthType] = useState("token");
@@ -47,6 +48,20 @@ export default function LoginPage() {
             navigate("/");
         }
     }, [$auth.serverUrl, $auth.username, $auth.password, $auth.token, navigate]);
+
+    // An Android keyboard can shrink the visual viewport while leaving dvh unchanged.
+    useEffect(() => {
+        const page = formPage.current;
+        const viewport = window.visualViewport;
+        if (!page || !viewport) return;
+        const resize = () => {
+            if (viewport.scale === 1) page.style.setProperty("--nf-login-height", viewport.height + "px");
+            else page.style.removeProperty("--nf-login-height");
+        };
+        resize();
+        viewport.addEventListener("resize", resize);
+        return () => viewport.removeEventListener("resize", resize);
+    }, [isAuthenticated]);
 
     const handleSubmit = async (e) => {
         e.preventDefault();
@@ -84,7 +99,7 @@ export default function LoginPage() {
     if (isAuthenticated) return null;
 
     return (
-        <main className="nf-auth">
+        <main className="nf-auth" ref={formPage}>
             <div className={stagger ? "nf-auth-column ds-stagger" : "nf-auth-column"}>
                 <header className="nf-auth-hero">
                     <img src={appIcon} alt="" className="nf-app-icon nf-auth-icon" aria-hidden="true"/>

@@ -72,10 +72,10 @@ test("packed production entry restores a signed-in account from its v3 cache", a
   expect(pageErrors).toEqual([]);
 });
 
-test("packed landscape cards select the last article without a document view transition", async ({ page, context }) => {
+async function installPackedArticles(page) {
   const auth = { serverUrl: SERVER_URL, userId: 7, token: "fixed-synthetic-test-token", authType: "token" };
   const settings = { ...STORED_SETTINGS, syncInterval: "0", autoBoardEnabled: false, showFavicon: false };
-  const seed = await context.newPage();
+  const seed = await page.context().newPage();
   let cacheEntries;
   try {
     await installNativeBoundary(seed, { auth, settings });
@@ -85,8 +85,9 @@ test("packed landscape cards select the last article without a document view tra
       const db = await import("/src/db/storage.js");
       const syncedAt = "2026-01-01T00:00:00Z";
       const token = await db.prepareArticleSync({ syncedAt });
-      const articles = [1, 2, 3].map((id) => ({
-        id, feedId: 1, title: `双栏文章 ${id}`, content: `<p>双栏正文 ${id}</p>`,
+      const articles = [1, 2, 3, 4].map((id) => ({
+        id, feedId: 1, title: `双栏文章 ${id}`,
+        content: id === 4 ? "<p>测试滚动正文。</p>".repeat(32) + "<p>正文最后一行。</p>" : `<p>双栏正文 ${id}</p>`,
         status: "unread", starred: 0, url: `https://example.test/article/${id}`,
         published_at: new Date(Date.parse(syncedAt) - id * 60_000).toISOString(), changed_at: syncedAt,
       }));
@@ -98,8 +99,12 @@ test("packed landscape cards select the last article without a document view tra
     await seed.close();
   }
 
-  await page.setViewportSize({ width: 920, height: 420 });
   await installNativeBoundary(page, { url: PACKED_URL, auth, settings, cacheEntries });
+}
+
+test("packed landscape cards select the last article without a document view transition", async ({ page }) => {
+  await page.setViewportSize({ width: 920, height: 420 });
+  await installPackedArticles(page);
   await page.addInitScript(() => {
     const start = document.startViewTransition;
     window.documentViewTransitionCalls = 0;
@@ -140,4 +145,189 @@ test("packed landscape cards select the last article without a document view tra
   await expect(list.locator(".article-card.is-active")).toHaveAttribute("data-article-id", "3");
   await expect(card(3)).toHaveAttribute("data-read", "true");
   expect(await page.evaluate(() => window.documentViewTransitionCalls)).toBe(0);
+});
+
+const touchReaderTest = test.extend({ isMobile: true });
+const dockLabels = ["阅读模式", "收藏", "AI 摘要", "朗读文章", "分享", "更多"];
+
+async function openPackedReader(page, articleId) {
+  await installPackedArticles(page);
+  await page.goto(PACKED_URL);
+  await page.evaluate(() => {
+    const request = window.ToolBox.network.request;
+    window.ToolBox.network.request = (options) => options.method === "PUT" && new URL(options.url).pathname === "/v1/entries"
+      ? Promise.resolve({ status: 204, body: "", headers: {} })
+      : request(options);
+  });
+  await page.locator(`.article-card[data-article-id="${articleId}"]`).tap();
+  await expect(page.locator(".nextflux-continuous-current-surface .article-title")).toHaveText(`双栏文章 ${articleId}`);
+}
+
+async function tapEdge(page, button, edge) {
+  const { x, y, width, height } = await button.boundingBox();
+  await page.touchscreen.tap(edge === "right" ? x + width - 4 : x + 4, y + height / 2);
+}
+
+async function withinReader(surface) {
+  await expect.poll(() => surface.evaluate((el) => {
+    const pane = document.querySelector(".nextflux-article-page").getBoundingClientRect();
+    const rect = el.getBoundingClientRect();
+    return rect.width > 0 && rect.left >= pane.left - 1 && rect.right <= pane.right + 1 &&
+      Math.abs((rect.left + rect.right - pane.left - pane.right) / 2) <= 6;
+  }), { message: "the article surface stays centered inside the reader pane" }).toBe(true);
+}
+
+touchReaderTest("packed touch reader keeps six glass controls in its pane across rotations and each hit target owns its edges", async ({ page }) => {
+  await page.setViewportSize({ width: 920, height: 420 });
+  await openPackedReader(page, 2);
+  await page.evaluate(() => document.documentElement.style.setProperty("--toolbox-safe-area-top", "32px"));
+  const dock = page.locator(".reader-dock");
+  for (const [width, height] of [[393, 852], [740, 360], [768, 420], [769, 420], [920, 420], [1024, 724]]) {
+    await test.step(`touch ${width}×${height}`, async () => {
+      await page.setViewportSize({ width, height });
+      await page.emulateMedia({ colorScheme: width === 1024 ? "dark" : "light" });
+      const buttons = dock.getByRole("button");
+      await expect(buttons).toHaveCount(dockLabels.length);
+      await withinReader(dock);
+      await expect.poll(() => dock.evaluate((el) => {
+        const gap = innerHeight - el.getBoundingClientRect().bottom;
+        return gap >= 0 && gap <= 28;
+      }), { message: "the whole dock is visible at the bottom" }).toBe(true);
+      expect(await dock.evaluate(el => getComputedStyle(el, "::before").backdropFilter)).not.toBe("none");
+      const close = page.locator(".reader-topbar .nextflux-close-button");
+      expect((await close.boundingBox()).y).toBeGreaterThanOrEqual(32);
+      const hitLabels = await buttons.evaluateAll(nodes => nodes.map(el => {
+        const rect = el.getBoundingClientRect();
+        const hit = x => document.elementFromPoint(x, rect.top + rect.height / 2)?.closest("button")?.getAttribute("aria-label");
+        return [hit(rect.left + 4), hit(rect.left + rect.width / 2), hit(rect.right - 4)];
+      }));
+      expect(hitLabels).toEqual(dockLabels.map(label => [label, label, label]));
+      await expect(page.locator(".nextflux-continuous-current-surface .article-title")).toHaveText("双栏文章 2");
+    });
+  }
+
+  await page.setViewportSize({ width: 768, height: 420 });
+  await tapEdge(page, dock.getByRole("button", { name: "更多" }), "right");
+  const more = page.getByRole("dialog", { name: "这篇文章" });
+  await expect(more).toBeVisible();
+  await page.setViewportSize({ width: 769, height: 420 });
+  await withinReader(more);
+  await expect.poll(async () => {
+    const sheet = await more.boundingBox();
+    const bar = await dock.boundingBox();
+    return Math.round(sheet.y + sheet.height - bar.y);
+  }).toBeLessThanOrEqual(1);
+  await tapEdge(page, more.getByRole("button", { name: "下一篇" }), "left");
+  await expect(more).toHaveCount(0);
+  await expect(page.locator(".nextflux-continuous-current-surface .article-title")).toHaveText("双栏文章 3");
+  await expect(page.locator('.article-card[data-article-id="2"]')).toHaveAttribute("data-read", "true");
+
+  await tapEdge(page, dock.getByRole("button", { name: "AI 摘要" }), "left");
+  const summary = page.getByRole("dialog", { name: "AI 摘要" });
+  await expect(summary).toBeVisible();
+  for (const [width, height] of [[393, 852], [1024, 724]]) {
+    await page.setViewportSize({ width, height });
+    await withinReader(summary);
+    expect((await summary.boundingBox()).y).toBeGreaterThanOrEqual(32);
+  }
+  await summary.getByRole("button", { name: "关闭 AI 摘要" }).tap();
+  await expect(page.locator(".nextflux-summary-backdrop")).toHaveCount(0);
+  await page.locator('.article-card[data-article-id="1"]').tap();
+  await expect(page.locator(".nextflux-continuous-current-surface .article-title")).toHaveText("双栏文章 1");
+});
+
+for (const width of [768, 920]) {
+  touchReaderTest(`packed fresh summary at ${width}px keeps its first paint and close target in the reader pane`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 420 });
+    await openPackedReader(page, 2);
+    // Capture frames from before the lazy dialog mounts; polling settled geometry
+    // alone can miss a first-open flash with the close button outside the window.
+    await page.evaluate(() => {
+      window.firstSummaryFrames = new Promise(resolve => {
+        const frames = [];
+        const sample = () => {
+          const dialog = document.querySelector(".nextflux-summary-dialog");
+          if (dialog) {
+            const pane = document.querySelector(".nextflux-article-page").getBoundingClientRect();
+            const rect = dialog.getBoundingClientRect();
+            const close = dialog.querySelector(".nextflux-close-button").getBoundingClientRect();
+            frames.push({ pane: [pane.left, pane.right], dialog: [rect.left, rect.right], close: [close.left, close.right] });
+          }
+          if (frames.length === 6) resolve(frames);
+          else requestAnimationFrame(sample);
+        };
+        requestAnimationFrame(sample);
+      });
+    });
+    await page.getByRole("button", { name: "AI 摘要", exact: true }).tap();
+    const dialog = page.getByRole("dialog", { name: "AI 摘要" });
+    await expect(dialog).toBeVisible();
+    const frames = await page.evaluate(() => window.firstSummaryFrames);
+    for (const frame of frames) {
+      expect(frame.dialog[0], JSON.stringify(frame)).toBeGreaterThanOrEqual(frame.pane[0] - 1);
+      expect(frame.dialog[1], JSON.stringify(frame)).toBeLessThanOrEqual(frame.pane[1] + 1);
+      expect(frame.close[0]).toBeGreaterThanOrEqual(frame.dialog[0] - 1);
+      expect(frame.close[1]).toBeLessThanOrEqual(frame.dialog[1] + 1);
+    }
+    await withinReader(dialog);
+    const dock = page.locator(".reader-dock");
+    const dialogBox = await dialog.boundingBox();
+    expect(dialogBox.y + dialogBox.height).toBeLessThanOrEqual((await dock.boundingBox()).y + 1);
+    const close = dialog.getByRole("button", { name: "关闭 AI 摘要" });
+    await tapEdge(page, close, "right");
+    await expect(dialog).toHaveCount(0);
+  });
+}
+
+touchReaderTest("packed landscape speech controls leave the last line visible and tappable", async ({ page }) => {
+  await page.setViewportSize({ width: 920, height: 420 });
+  await openPackedReader(page, 4);
+  await page.evaluate(() => {
+    // Keep the native voice request pending so geometry never depends on external playback.
+    Object.assign(window.ToolBox.network, {
+      openStream: async () => ({ streamId: "test-speech", status: 200 }),
+      readStream: () => new Promise(() => {}),
+      cancelStream: async () => {},
+    });
+  });
+  const dock = page.locator(".reader-dock");
+  await dock.getByRole("button", { name: "朗读文章" }).tap();
+  const player = page.getByRole("region", { name: "文章语音播放器" });
+  await expect(player).toBeVisible();
+  await withinReader(player);
+  await expect(page.getByText("正文最后一行。", { exact: true })).toBeAttached();
+  await page.locator(".article-scroll-area").evaluate(el => { el.scrollTop = el.scrollHeight; });
+  const lastLine = page.getByText("正文最后一行。", { exact: true });
+  const textBox = await lastLine.boundingBox();
+  const playerBox = await player.boundingBox();
+  expect(textBox.y + textBox.height).toBeLessThanOrEqual(playerBox.y + 1);
+  expect(await lastLine.evaluate(el => {
+    const box = el.getBoundingClientRect();
+    return el.contains(document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2));
+  })).toBe(true);
+  expect(playerBox.y + playerBox.height).toBeLessThanOrEqual((await dock.boundingBox()).y + 1);
+  await player.getByRole("button", { name: "停止朗读" }).tap();
+  await expect(player).toHaveCount(0);
+});
+
+test.describe("desktop reader", () => {
+  test.use({ hasTouch: false, viewport: { width: 920, height: 420 } });
+  test("packed mouse layout retains the inline actions", async ({ page }) => {
+    await installPackedArticles(page);
+    await page.goto(PACKED_URL);
+    await page.locator('.article-card[data-article-id="2"]').click();
+    await expect(page.locator(".nextflux-continuous-current-surface .article-title")).toHaveText("双栏文章 2");
+    await expect(page.getByRole("button", { name: "全文适配", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "更多", exact: true })).toBeHidden();
+    const next = page.getByRole("button", { name: "下一篇", exact: true });
+    expect((await next.boundingBox()).y).toBeLessThan(64);
+    await next.click();
+    await expect(page.locator(".nextflux-continuous-current-surface .article-title")).toHaveText("双栏文章 3");
+
+    // At the split boundary the full desktop row overlapped even with a mouse.
+    await page.setViewportSize({ width: 768, height: 420 });
+    await page.getByRole("button", { name: "更多", exact: true }).click();
+    await page.getByRole("dialog").getByRole("button", { name: "上一篇" }).click();
+    await expect(page.locator(".nextflux-continuous-current-surface .article-title")).toHaveText("双栏文章 2");
+  });
 });

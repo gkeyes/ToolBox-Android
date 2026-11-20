@@ -113,7 +113,8 @@ div.force-dark-code-theme .shiki span {
 
 /*image gallery*/
 .PhotoView-Slider__BannerWrap {
-  @apply pt-safe-or-4 px-safe-or-4 h-auto flex-row-reverse
+  @apply px-safe-or-4 h-auto flex-row-reverse;
+  padding-block-start: max(1rem, var(--nf-safe-top, env(safe-area-inset-top, 0px)));
 }
 
 /*图片计数显示*/

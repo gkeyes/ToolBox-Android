@@ -719,6 +719,66 @@ test("查重方式 picks title, URL or both, and hides with 隐藏重复条目 o
   expect(pageErrors).toEqual([]);
 });
 
+test("touch settings draft and search composition survive portrait and landscape rotation", async ({ page }) => {
+  const portrait = { width: 390, height: 844 };
+  const landscape = { width: 920, height: 420 };
+  await page.setViewportSize(portrait);
+  await installNativeBoundary(page, {
+    auth: { serverUrl: "https://miniflux.xiaochen.win", username: "rotation", userId: 7, token: "fixture", authType: "token" },
+    settings: { ...STORED_SETTINGS, syncInterval: "0" },
+  });
+  await page.goto(PRODUCTION_URL);
+  await page.locator('[data-sidebar="trigger"]').first().tap();
+  await page.locator(".sidebar-profile").tap();
+  await page.getByRole("menuitem").filter({ hasText: "设置" }).tap();
+  const dialog = page.locator(".nextflux-modal-surface[role=dialog]");
+  await dialog.getByRole("button", { name: "AI", exact: true }).tap();
+  const model = dialog.getByPlaceholder("gpt-4o-mini");
+  await model.fill("draft-for-rotation");
+  await page.setViewportSize(landscape);
+  await expect(dialog.locator(".nf-set-rail")).toBeVisible();
+  await expect(dialog.locator(".nf-set-pane .nf-set-large-title")).toHaveText("AI");
+  await expect(model).toHaveValue("draft-for-rotation");
+  await expect(model).toBeFocused();
+  await page.setViewportSize(portrait);
+  await expect(dialog.locator('[data-page-id="content"]')).not.toHaveAttribute("inert", "");
+  await expect(model).toHaveValue("draft-for-rotation");
+  await dialog.getByRole("button", { name: /返回|Back/ }).tap();
+  await dialog.getByRole("button", { name: "AI", exact: true }).tap();
+  await page.setViewportSize(landscape);
+  await expect(dialog.locator(".nf-set-rail")).toBeVisible();
+  await expect.poll(() => dialog.evaluate((el) => el.contains(document.activeElement))).toBe(true);
+  await page.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+
+
+  await page.locator(".article-list-header").getByRole("button", { name: "搜索", exact: true }).tap();
+  const input = dialog.getByRole("textbox", { name: "搜索" });
+  await dialog.getByRole("tab", { name: "订阅" }).tap();
+  await input.fill("旋转");
+  await input.dispatchEvent("compositionstart");
+  const originalInput = await input.elementHandle();
+  // Some Android keyboards reduce only the visual viewport, leaving layout
+  // coordinates and the landscape width unchanged.
+  await page.evaluate(() => {
+    Object.defineProperty(visualViewport, "height", { configurable: true, value: 220 });
+    visualViewport.dispatchEvent(new Event("resize"));
+  });
+  await expect.poll(() => dialog.evaluate((el) => el.getBoundingClientRect().bottom)).toBeLessThanOrEqual(220);
+  await expect(input).toBeInViewport();
+  await page.evaluate(() => {
+    delete visualViewport.height;
+    visualViewport.dispatchEvent(new Event("resize"));
+  });
+  await page.setViewportSize(portrait);
+  await expect(input).toHaveValue("旋转");
+  expect(await input.evaluate((el, before) => el === before, originalInput)).toBe(true);
+  await input.dispatchEvent("compositionend");
+  await expect(dialog.getByRole("tab", { name: "订阅" })).toHaveAttribute("aria-selected", "true");
+  await dialog.getByRole("button", { name: "关闭", exact: true }).tap();
+  await expect(dialog).toHaveCount(0);
+});
+
 test("Chinese article search waits for composition, pages results, and replaces a previous query", async ({ page }) => {
   await installNativeBoundary(page, {
     auth: { serverUrl: "https://miniflux.xiaochen.win", username: "search-test", userId: 7, token: "test", authType: "token" },
@@ -834,4 +894,69 @@ test("full text starts after an article switch and stopped requests cannot repla
     rssRestored: "<p>RSS 2</p>",
   });
   await expect(page.locator("[data-sonner-toast]")).toHaveCount(0);
+});
+
+for (const mode of ["token", "basic"]) {
+  test(`landscape login submit is reachable by touch with ${mode} authentication`, async ({ page }) => {
+    await page.setViewportSize({ width: 920, height: 420 });
+    await installNativeBoundary(page);
+    await page.goto(PRODUCTION_URL);
+    const form = page.locator(".nf-auth");
+    const submit = form.locator("button[type=submit]");
+    await expect(submit).toBeAttached();
+    if (mode === "basic") {
+      await page.getByRole("tab", { name: "用户名和密码" }).tap();
+      // Android WebView may resize just the visual viewport when its IME opens.
+      await page.evaluate(() => {
+        Object.defineProperty(visualViewport, "height", { configurable: true, value: 270 });
+        visualViewport.dispatchEvent(new Event("resize"));
+      });
+      await expect(form).toHaveCSS("height", "270px");
+    }
+
+    const cdp = await page.context().newCDPSession(page);
+    const height = (await form.boundingBox()).height;
+    const x = 470;
+    const inReach = () => submit.evaluate((button) => {
+      const rect = button.getBoundingClientRect();
+      return rect.bottom <= visualViewport.height && rect.top >= 0
+        && button.contains(document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2));
+    });
+    for (let drag = 0; drag < 5 && !await inReach(); drag++) {
+      const y = height - 20;
+      await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x, y }] });
+      for (let step = 1; step <= 8; step++) {
+        await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x, y: y - (height - 60) * step / 8 }] });
+      }
+      await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+    }
+    await expect.poll(inReach).toBe(true);
+    const box = await submit.boundingBox();
+    await submit.evaluate((button) => button.addEventListener("click", () => { window.__loginSubmitTapped = true; }, { once: true }));
+    await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2);
+    await expect.poll(() => page.evaluate(() => window.__loginSubmitTapped)).toBe(true);
+  });
+}
+
+test("a closed source drawer leaves focus on visible controls in touch landscape", async ({ page }) => {
+  await page.setViewportSize({ width: 740, height: 360 });
+  await installNativeBoundary(page, {
+    auth: { userId: 7, serverUrl: "https://miniflux.xiaochen.win", token: "fixture-token", authType: "token" },
+    settings: { ...STORED_SETTINGS, syncInterval: "0" },
+  });
+  await page.goto(PRODUCTION_URL);
+  const toggle = page.locator('[data-sidebar="trigger"]');
+  const drawer = page.locator(".sidebar-mobile-panel");
+  await expect(drawer).toHaveAttribute("inert", "");
+  await expect(page.locator(".article-list-header")).toBeVisible();
+  expect((await page.locator(".nextflux-article-list-page").boundingBox()).width).toBe(740);
+  await page.keyboard.press("Tab");
+  expect(await drawer.evaluate((panel) => panel.contains(document.activeElement))).toBe(false);
+  await toggle.tap();
+  await expect(drawer).toBeFocused();
+  await page.keyboard.press("Tab");
+  expect(await drawer.evaluate((panel) => panel.contains(document.activeElement))).toBe(true);
+  await page.keyboard.press("Escape");
+  await expect(drawer).toHaveAttribute("inert", "");
+  await expect(toggle).toBeFocused();
 });
