@@ -59,6 +59,74 @@ test("the header recognizes a long truncated feed title in the displayed opening
   assert.equal(analysis(title, `<p>${prefix.slice(0, 26)}</p><p>${prefix.slice(26)}${continuation}</p>`).titleInBody, false);
 });
 
+const telegramUrl = "https://t.me/example/123";
+const telegramTitleStart = "去欧洲旅游回来的中国人，发现一个扎心真相：很多西方发达国家，已停留在过去的荣光里，陷入全方位停";
+const telegramOpening = `${telegramTitleStart}滞，只剩松弛的外壳撑着门面。`;
+const telegramSecond = "很多人对欧洲的印象，还停留在高楼林立、科技领先、基建完善的固有认知里。";
+const telegramBody = `<p>${telegramOpening}<br><br>${telegramSecond}</p>`;
+
+test("Telegram titles match the visible opening despite a picture badge and punctuation spacing", () => {
+  const titles = [
+    `🖼 ${telegramTitleStart}...`,
+    `🖼️ ${telegramTitleStart}…`,
+    `🖼️ ${telegramTitleStart.replaceAll("，", " , ").replace("：", " : ")}...`,
+  ];
+  const expectedWordCount = pipelineOperations({ html: telegramBody, baseUrl: telegramUrl }).analysis.wordCount;
+  for (const title of titles) {
+    const parsed = pipelineOperations({ html: telegramBody, baseUrl: telegramUrl, title });
+    assert.equal(parsed.adapter, "telegram");
+    assert.equal(parsed.analysis.titleInBody, true, title);
+    assert.equal(parsed.analysis.wordCount, expectedWordCount);
+    assert.deepEqual(renderedParagraphs(parsed.operations).map(({ text }) => text), [telegramOpening, telegramSecond]);
+  }
+
+  const decoratedBody = `<p>🖼️ ${telegramOpening}<br><br>${telegramSecond}</p>`;
+  const parsed = pipelineOperations({ html: decoratedBody, baseUrl: telegramUrl, title: titles[1] });
+  assert.equal(parsed.analysis.titleInBody, true);
+  assert.equal(renderedParagraphs(parsed.operations)[0].text, `🖼️ ${telegramOpening}`);
+
+  const complete = pipelineOperations({
+    html: "<p>开幕时间：周六上午。</p>", baseUrl: telegramUrl, title: "🖼 开幕时间 : 周六上午。",
+  });
+  assert.equal(complete.analysis.titleInBody, true);
+  const completeChinese = pipelineOperations({ html: telegramBody, baseUrl: telegramUrl, title: "🖼 去欧洲旅游" });
+  assert.equal(completeChinese.analysis.titleInBody, true);
+});
+
+test("Telegram title matching preserves unique words and rejects non-Telegram or unavailable openings", () => {
+  const title = `🖼️ ${telegramTitleStart}...`;
+  const matches = (html, headline = title, baseUrl = telegramUrl) =>
+    createReadingPipeline({ html, title: headline, baseUrl }).parser.analysis.titleInBody;
+  assert.equal(matches(telegramBody, title, "https://example.test/post"), false);
+  assert.equal(matches(`<p>${telegramOpening.replace("很多", "许多")}</p>`), false);
+  assert.equal(matches(`<p>先读与标题不同的导语。</p>${telegramBody}`), false);
+  assert.equal(matches(`<p hidden>${telegramOpening}</p><p>${telegramSecond}</p>`), false);
+  assert.equal(matches("<p>从中文语料开始训练一个小模型，直到可以在本地推理。</p>",
+    "🖼️ tinybrain：从中文语料开始训练一个小模型，直到可以在本地推理"), false);
+  assert.equal(matches("<p>比赛将于 10：30 开始，届时开放直播。</p>", "🖼️ 比赛将于 10:30 开始..."), false);
+  assert.equal(matches("<p>参数 foo，bar 默认为启用，下面说明配置。</p>", "🖼️ 参数 foo,bar 默认为启用..."), false);
+  assert.equal(matches("<p>v1.2.3 已上线，发布说明如下。</p>", "🖼️ v1.2"), false);
+  assert.equal(matches("<p>foo-bar 新型号已发布。</p>", "🖼️ foo"), false);
+  assert.equal(matches("<p>C#X 项目发布了新版本。</p>", "🖼️ C#"), false);
+
+  // A title removed by the adapter cannot justify clamping.
+  const parsed = pipelineOperations({
+    html: `<p>${telegramOpening}<br><br>${telegramSecond}</p>`, baseUrl: telegramUrl,
+    title: `🖼️ ${telegramOpening.replace("：", ":")}`,
+  });
+  assert.equal(parsed.changed, true);
+  assert.equal(parsed.analysis.titleInBody, false);
+  assert.deepEqual(renderedParagraphs(parsed.operations).map(({ text }) => text), [telegramSecond]);
+});
+
+test("a truncated Telegram title with one Latin word requires a word boundary", () => {
+  const title = "🖼 AI...";
+  const matches = (html) => createReadingPipeline({ html, title, baseUrl: telegramUrl }).parser.analysis.titleInBody;
+  assert.equal(matches("<p>AIOS 是新的操作系统。</p>"), false);
+  assert.equal(matches("<p><b>AI</b>OS 是新的操作系统。</p>"), false);
+  assert.equal(matches("<p><b>AI</b> 助手今天发布。</p>"), true);
+});
+
 test("structured content scores above flattened content",()=>{
   const structured=Array.from({length:8},(_,i)=>`<p>第${i+1}段 ${"正文".repeat(45)}</p>`).join("");
   const flat=`<div>${"正文".repeat(360)}</div>`;
@@ -275,7 +343,7 @@ function pipelineOperations({html,baseUrl,title}){
   for(;;){
     const batch=pipeline.parser.next();
     operations.push(...batch.operations);
-    if(batch.done)return {operations,adapter:pipeline.adapter,changed:pipeline.changed};
+    if(batch.done)return {operations,adapter:pipeline.adapter,changed:pipeline.changed,analysis:pipeline.parser.analysis};
   }
 }
 

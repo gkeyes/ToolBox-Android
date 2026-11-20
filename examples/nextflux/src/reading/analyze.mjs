@@ -1,9 +1,12 @@
 import { Parser } from "htmlparser2";
 import { ALLOWED_TAGS, BLOCK_TAGS, BLOCKISH_TAGS, DROP_CONTENT, HEADING_RE, PROTECTED_TAGS, STANDALONE_NOISE_RE } from "./schema.mjs";
 import { shouldRemoveStandaloneNoise } from "./normalize.mjs";
+import { createTelegramOpeningTitle } from "./adapters/telegram-title.mjs";
 
 const CHARACTER_SCRIPTS = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u;
 const WORD_CHAR = /[\p{L}\p{N}]/u;
+const VISIBLE_TITLE_TEXT = /[\p{L}\p{N}\p{S}]/u;
+const ASCII_SENTENCE_MARK = /^[,.:;!?]$/;
 const COMBINING_MARK = /\p{M}/u;
 const MEDIA_TAGS = new Set(["img", "iframe", "audio", "video"]);
 const WORD_BREAK_TAGS = new Set([...BLOCK_TAGS, "br", "hr", ...MEDIA_TAGS]);
@@ -37,11 +40,44 @@ function truncatedTitlePrefix(headline) {
     : "";
 }
 
-export function analyzeArticle(html, { countWords = false, title = "" } = {}) {
+export function analyzeArticle(html, { countWords = false, title = "", telegram = false } = {}) {
   const headline = compact(title);
   const prefix = countWords ? truncatedTitlePrefix(headline) : "";
   let openingText = prefix ? "" : null;
+  const telegramTitle = countWords && telegram ? createTelegramOpeningTitle(prefix || headline) : null;
+  let telegramOpening = telegramTitle ? "" : null;
   let titleTail = "", titleInBody = false;
+  const matchTelegramOpening = (text, boundary = false) => {
+    if (telegramOpening === null || titleInBody) return;
+    if (telegramOpening === true) {
+      if (!VISIBLE_TITLE_TEXT.test(text)) return;
+      titleInBody = true;
+      telegramOpening = null;
+      return;
+    }
+
+    const opening = joinNormalizedText(telegramOpening, text).trimStart();
+    if (!opening) return;
+    const matched = telegramTitle.pattern.exec(opening);
+    if (!matched) {
+      telegramOpening = boundary || opening.length >= telegramTitle.limit ? null : opening;
+      return;
+    }
+
+    const after = opening.slice(matched[0].length);
+    const pendingBoundary = !after || ASCII_SENTENCE_MARK.test(after);
+    const chineseContinuation = telegramTitle.endsWithHan && /^\p{Script=Han}/u.test(after);
+    const hasBoundary = /^[ ，。！？；：、]/u.test(after) || /^[,.:;!?] /.test(after) ||
+      telegramTitle.endsWithChinesePunctuation || chineseContinuation || (boundary && pendingBoundary);
+    if (prefix && (!telegramTitle.standaloneLatinWord || hasBoundary)) {
+      titleInBody = VISIBLE_TITLE_TEXT.test(after);
+      telegramOpening = titleInBody ? null : true;
+    } else {
+      titleInBody = !prefix && hasBoundary;
+      // Wait at an inline split. A dot may still be inside a version number.
+      telegramOpening = !titleInBody && pendingBoundary ? opening : null;
+    }
+  };
   const words = { count: 0, inWord: false };
   const source=String(html||"");
   const metrics={
@@ -63,6 +99,8 @@ export function analyzeArticle(html, { countWords = false, title = "" } = {}) {
         const hidden = attrs.hidden != null || attrs["aria-hidden"] === "true";
         entry.skipTitle = entry.skipWords || parent.skipTitle || tag === "details" || hidden;
         if (openingText !== null) entry.openingText = openingText;
+        if (telegramOpening !== null) entry.telegramOpening = telegramOpening;
+        if (telegramOpening && WORD_BREAK_TAGS.has(tag) && !parent.skipTitle && !hidden) matchTelegramOpening("", true);
         if (openingText && openingText !== prefix && WORD_BREAK_TAGS.has(tag) && !parent.skipTitle && !hidden) openingText = null;
         if (WORD_BREAK_TAGS.has(tag) || entry.skipTitle) titleTail = "";
         entry.hadTitle = titleInBody;
@@ -102,11 +140,12 @@ export function analyzeArticle(html, { countWords = false, title = "" } = {}) {
             const opening = joinNormalizedText(openingText, normalizedText).trimStart();
             if (prefix.startsWith(opening)) openingText = opening;
             else if (!opening.startsWith(prefix)) openingText = null;
-            else if (/[\p{L}\p{N}\p{S}]/u.test(opening.slice(prefix.length))) {
+            else if (VISIBLE_TITLE_TEXT.test(opening.slice(prefix.length))) {
               titleInBody = true;
               openingText = null;
             } else openingText = prefix;
           }
+          if (telegramOpening !== null) matchTelegramOpening(normalizedText);
         }
       }
       const normalized=normalizedText.trim();
@@ -136,10 +175,12 @@ export function analyzeArticle(html, { countWords = false, title = "" } = {}) {
           titleInBody = entry.hadTitle;
           titleTail = "";
           openingText = entry.openingText ?? null;
+          telegramOpening = entry.telegramOpening ?? null;
           words.count = entry.startWords;
           words.inWord = entry.startedInWord;
         }
         if (openingText && openingText !== prefix && WORD_BREAK_TAGS.has(entry.tag) && !entry.skipTitle) openingText = null;
+        if (telegramOpening && WORD_BREAK_TAGS.has(entry.tag) && !entry.skipTitle) matchTelegramOpening("", true);
         if (WORD_BREAK_TAGS.has(entry.tag) || entry.skipTitle) titleTail = "";
         if (!entry.skipWords && WORD_BREAK_TAGS.has(entry.tag)) words.inWord = false;
       }
@@ -152,6 +193,7 @@ export function analyzeArticle(html, { countWords = false, title = "" } = {}) {
     }
   },{decodeEntities:true,lowerCaseTags:true,lowerCaseAttributeNames:true,xmlMode:false});
   parser.end(source);
+  if (telegramOpening) matchTelegramOpening("", true);
   if (countWords) {
     metrics.wordCount = words.count;
     metrics.titleInBody = titleInBody;
