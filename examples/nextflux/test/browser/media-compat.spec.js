@@ -341,6 +341,40 @@ test("DW lazy image templates survive real extraction and keep image alt and cap
   expect((await snapshot(page)).requests.map(({ source }) => source)).toEqual([source]);
 });
 
+test("real Defuddle extraction retains both captioned images and the original diagram link", async ({ page }) => {
+  await openFixture(page);
+  const url = "https://media.example.invalid/articles/fulltext";
+  const diagramUrl = `${url}/diagram`;
+  const html = sourcePage(`
+    <figure>
+      <div>
+        <img src="${SECONDARY}" width="800" height="530">
+        <a href="${diagramUrl}"><img src="${FALLBACK}" alt="Labeled diagram" width="800" height="530"></a>
+      </div>
+      <figcaption>Captioned diagram collection</figcaption>
+    </figure>
+  `);
+  const figure = await page.evaluate(async ({ html, url }) => {
+    const extracted = await window.mediaCompatFixture.extractWithDefuddle({ html, url });
+    const document = new DOMParser().parseFromString(extracted.content, "text/html");
+    return {
+      caption: document.querySelector("figure figcaption")?.textContent,
+      images: Array.from(document.querySelectorAll("figure img"), (image) => ({
+        source: image.getAttribute("src"),
+        alt: image.getAttribute("alt"),
+        link: image.closest("a")?.getAttribute("href") ?? null,
+      })),
+    };
+  }, { html, url });
+  expect(figure).toEqual({
+    caption: "Captioned diagram collection",
+    images: [
+      { source: SECONDARY, alt: null, link: null },
+      { source: FALLBACK, alt: "Labeled diagram", link: diagramUrl },
+    ],
+  });
+});
+
 test("a video loads its poster before playback and keeps the same stage on play and close", async ({ page }) => {
   await openArticle(page, `<p>视频前的正文。</p><video src="${MP4}" poster="${PRIMARY}"></video><p>视频后的正文。</p>`);
   await respond(page, PRIMARY);
