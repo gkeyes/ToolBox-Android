@@ -101,11 +101,19 @@ export default function MobileSheet({
   const [dismissCheck, setDismissCheck] = useState(0);
 
   useLayoutEffect(() => {
+    if (!open) return;
+    const dialog = dialogRef.current;
+    // React Aria can reuse a backdrop previously released during a stalled exit.
+    const released = dialog?.closest("[data-nextflux-released='true']");
+    if (released) {
+      released.style.removeProperty("pointer-events");
+      released.style.removeProperty("visibility");
+      delete released.dataset.nextfluxReleased;
+    }
     const pending = dismissRef.current;
-    if (!open || !pending) return;
+    if (!pending) return;
     dismissRef.current = null;
     pending.animation?.cancel();
-    const dialog = dialogRef.current;
     if (!dialog || dialog !== pending.dialog || !dialog.isConnected) return;
     dialog.style.transition = "";
     animateTranslate(dialog, pending.offscreen, 0, 440, () => { dialog.style.willChange = ""; });
@@ -262,7 +270,7 @@ export default function MobileSheet({
   return (
     <Drawer>
       <Button className="hidden" />
-      <Drawer.Backdrop className="nextflux-modal-backdrop" isOpen={open} onOpenChange={onOpenChange}>
+      <Drawer.Backdrop className="nextflux-modal-backdrop" data-nf-sheet-open={open || undefined} isOpen={open} onOpenChange={onOpenChange}>
         <Drawer.Content ref={overlayRef}>
           <Drawer.Dialog
             ref={attachDialog}

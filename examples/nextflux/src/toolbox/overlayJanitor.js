@@ -129,7 +129,10 @@ export function createOverlayJanitor({
   // in a body-level portal means an overlay is legitimately open.
   const dialogOpen = () => [...doc.body.children].some((child) =>
     child.id !== "root" && child.tagName !== "SCRIPT" && hasVisibleDialog(child, win));
-  const quiet = () => !isOverlayExpected() && !fullscreenElement(doc) && !doc.querySelector("dialog[open]") && !dialogOpen();
+  // A finger can hold an open drawer entirely off-screen. Its backdrop and
+  // focus lock still belong to the drawer until the owner accepts dismissal.
+  const quiet = () => !isOverlayExpected() && !fullscreenElement(doc) &&
+    !doc.querySelector("dialog[open], [data-nf-sheet-open]") && !dialogOpen();
 
   const release = (found) => {
     const released = [];

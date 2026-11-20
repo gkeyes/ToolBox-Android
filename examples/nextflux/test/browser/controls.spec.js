@@ -1448,6 +1448,24 @@ test("a leftover empty long-press menu no longer shields a stranded scrim", asyn
   await expectUncovered(page);
 });
 
+test("an off-screen drag keeps ownership of the sheet until release and can reopen", async ({ page }) => {
+  await open(page, 393);
+  await page.getByRole("button", { name: "Open modal", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  const handle = dialog.locator(".nextflux-sheet-handle-zone");
+  await handle.hover(); // Wait for the entry motion to settle before grabbing it.
+  const box = await handle.boundingBox();
+  const x = box.x + box.width / 2;
+  const y = box.y + box.height / 2;
+  await page.mouse.down();
+  await page.mouse.move(x, y + 260, { steps: 4 });
+  expect((await dialog.boundingBox()).y).toBeGreaterThan(page.viewportSize().height);
+  expect(await page.evaluate(() => window.controlsOverlayJanitor.check())).toEqual([]);
+  expect(await page.locator("#root").evaluate((root) => root.inert)).toBe(true);
+  await page.mouse.up();
+  await expectPageInteractive(page);
+});
+
 test("the overlay janitor never touches an open sheet", async ({ page }) => {
   await open(page, 393);
   await page.getByRole("button", { name: "更多", exact: true }).click();
