@@ -28,7 +28,7 @@ the same hash-checked Tailwind Oxide archive, not independently upgraded.
 Original location fields describe the source inventory.
 Source inventory lockfile SHA-256: d9be22538f9a6060638f48035f90456611f71df2364ed106f86984fec2559de2
 
-Lockfile SHA-256: 96cc035f8441d3a1f231d7e8445f7c2e16a14eb4040c480a6a8027d91a15c2b7
+Lockfile SHA-256: 6fbd7eec08dd1823b0912aa7c7bc6163cbe8e5a9716e8076a1c28b520566a13c
 Build-only cleanup removed unused direct dependencies and unreachable lock entries; the license inventory remains a conservative superset.
 Inventory entries: 239
 Distinct license/notice texts: 121
@@ -36,7 +36,7 @@ Distinct license/notice texts: 121
 DEFUDDLE ARTICLE EXTRACTION
 
 Source: https://github.com/kepano/defuddle
-Version: 0.19.4
+Version: 0.19.11
 License: MIT
 Integration: NextFlux uses the browser core locally to extract and standardize article HTML.
 Network/API fallbacks are disabled (useAsync=false); no Defuddle third-party service is called.
@@ -59,7 +59,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
 AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE.
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 
 FRIRSS ADAPTED READING UTILITIES
 
