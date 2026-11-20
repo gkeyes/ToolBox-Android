@@ -33,12 +33,14 @@ function resourceBaseUrl(html, pageUrl) {
   catch { return pageUrl; }
 }
 
-export async function fetchWebDocument(url,network=()=>globalThis.window?.ToolBox?.network){
+export async function fetchWebDocument(url,network=()=>globalThis.window?.ToolBox?.network,{signal}={}){
+  signal?.throwIfAborted();
   const target=validateArticleUrl(url),bridge=network();
   if(!bridge?.request)throw fail("BRIDGE_REQUIRED","请在 ToolBox 内读取原网页。");
   let response;
   try{response=await bridge.request({url:target,method:"GET",timeoutMs:15000,maxResponseBytes:RESPONSE_LIMIT,headers:{Accept:"text/html,application/xhtml+xml;q=0.9,*/*;q=0.1"}});}
   catch(error){throw fail(error?.code||"NETWORK_ERROR","无法读取原网页；可能存在反爬、登录或网络限制。");}
+  signal?.throwIfAborted();
   if(!response||response.status<200||response.status>=300)throw fail("HTTP_ERROR",`原网页返回 HTTP ${response?.status||"?"}。`);
   const headers=response.headers||{};
   const finalHeader=Object.hasOwn(headers,"x-toolbox-final-url")?headers["x-toolbox-final-url"]:Object.entries(headers).find(([name])=>name.toLowerCase()==="x-toolbox-final-url")?.[1];

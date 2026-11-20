@@ -184,6 +184,7 @@ export default {
     videoError: "Error loading video",
     stopPlay: "STOP",
     getFullText: "Reader view",
+    stopWaitingForFullText: "Stop waiting for full text",
     showSummary: "Hide reader view",
     saveToThirdParty: "Save to third-party services",
     attachments: "Attachments",

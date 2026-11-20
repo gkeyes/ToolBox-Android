@@ -329,14 +329,14 @@ export const getAllStarredEntries = (check, onPage) => getEntriesInBatches("/v1/
 }, check, onPage);
 
 // 获取文章原始内容
-export const fetchEntryContent = async (entryId) => {
+export const fetchEntryContent = async (entryId, { signal } = {}) => {
   try {
     const response = await apiClient.get(
-      `/v1/entries/${entryId}/fetch-content`,
+      `/v1/entries/${entryId}/fetch-content`, { signal },
     );
     return response.data.content;
   } catch (error) {
-    console.error("获取文章原始内容失败:", error);
+    if (!signal?.aborted) console.error("获取文章原始内容失败:", error);
     throw error;
   }
 };

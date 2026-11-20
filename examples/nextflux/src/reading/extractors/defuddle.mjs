@@ -33,15 +33,17 @@ function cleanLocatedRoot(root) {
 // task, letting the page paint and handle taps between them on a large page.
 const yieldToMain=()=>globalThis.scheduler?.yield?.()??new Promise(resolve=>setTimeout(resolve,0));
 
-export async function extractWithDefuddle({html,url,baseUrl=url}){
+export async function extractWithDefuddle({html,url,baseUrl=url,signal}){
   if(typeof DOMParser!=="function")throw new Error("当前环境不支持网页结构解析。");
   url=validateArticleUrl(url);
   baseUrl=validateArticleUrl(baseUrl);
   await yieldToMain();
+  signal?.throwIfAborted();
   const original=new DOMParser().parseFromString(String(html||""),"text/html");
   const images=normalizeDocumentImages(original,{url,baseUrl});
   // Defuddle gets its own DOM because extraction mutates the document.
   await yieldToMain();
+  signal?.throwIfAborted();
   const working=new DOMParser().parseFromString(original.documentElement.outerHTML,"text/html");
   // Use the validated base from the source loader, including redirects. This
   // avoids a second interpretation of an inert or invalid source <base>.
@@ -50,6 +52,7 @@ export async function extractWithDefuddle({html,url,baseUrl=url}){
   resourceBase.setAttribute("href",baseUrl);
   working.head.prepend(resourceBase);
   await yieldToMain();
+  signal?.throwIfAborted();
   const result=new Defuddle(working,{
     url,
     useAsync:false,
@@ -67,6 +70,7 @@ export async function extractWithDefuddle({html,url,baseUrl=url}){
   // original DOM instead of accepting a flattened standardized rewrite.
   const locatedChars=textLength(located);
   await yieldToMain();
+  signal?.throwIfAborted();
   const standardizedDoc=new DOMParser().parseFromString(`<main>${standardized}</main>`,"text/html");
   const standardizedRoot=standardizedDoc.querySelector("main");
   normalizeDocumentImages(standardizedRoot,{url,baseUrl},images);

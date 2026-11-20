@@ -182,6 +182,7 @@ export default {
     videoError: "加载视频失败",
     stopPlay: "停止播放",
     getFullText: "阅读模式",
+    stopWaitingForFullText: "停止等待",
     showSummary: "隐藏阅读模式",
     saveToThirdParty: "保存到第三方服务",
     attachments: "附件",

@@ -6,13 +6,18 @@ import { extractWithMiniflux } from "./extractors/miniflux.mjs";
 // out of the startup chunk and load it alongside the page request.
 const loadDefuddle=()=>import("./extractors/defuddle.mjs");
 
-export async function loadBestFullText({article,api,fetchSource=fetchWebDocument}){
-  const miniflux=extractWithMiniflux({entryId:article.id,api});
+export async function loadBestFullText({
+  article, api, signal,
+  fetchSource = (url, options) => fetchWebDocument(url, undefined, options),
+}){
+  signal?.throwIfAborted();
+  const miniflux=extractWithMiniflux({entryId:article.id,api,signal});
   const defuddle=(async()=>{
-    const [source,{extractWithDefuddle}]=await Promise.all([fetchSource(article.url),loadDefuddle()]);
-    return extractWithDefuddle(source);
+    const [source,{extractWithDefuddle}]=await Promise.all([fetchSource(article.url,{signal}),loadDefuddle()]);
+    return extractWithDefuddle({...source,signal});
   })();
   const results=await Promise.allSettled([miniflux,defuddle]);
+  signal?.throwIfAborted();
   const candidates=results.filter(r=>r.status==="fulfilled").map(r=>r.value);
   if(!candidates.length){
     const failure=results.find(r=>r.status==="rejected");

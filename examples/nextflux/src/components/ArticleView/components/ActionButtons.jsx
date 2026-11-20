@@ -33,7 +33,7 @@ import { computed } from "nanostores";
 import {
   activeArticle,
   filteredArticles,
-  loadingOriginContent,
+  fullTextLoadingId,
 } from "@/stores/articlesStore";
 import Confetti from "@/components/ui/Confetti";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
@@ -62,7 +62,10 @@ function ActionButtons() {
   const $articles = useStore(filteredArticles);
   const $activeArticle = useStore(activeArticle);
   const buttonRef = useRef(null);
-  const fetchLoading = useStore(loadingOriginContent);
+  const loadingArticleId = useStore(fullTextLoadingId);
+  const fetchLoading = loadingArticleId != null && loadingArticleId === $activeArticle?.id;
+  const fullTextLabel = fetchLoading ? t("articleView.stopWaitingForFullText") :
+    t($activeArticle?.shownOriginal ? "articleView.showSummary" : "articleView.getFullText");
   const [saveLoading, setSaveLoading] = useState(false);
   const $hasIntegrations = useStore(hasIntegrations);
   const { aiApiKey, floatingSidebar } = useStore(settingsState);
@@ -335,12 +338,11 @@ function ActionButtons() {
           <Tooltip delay={0}>
             <Button
               className="nextflux-toolbar-button"
-              aria-label={$activeArticle?.shownOriginal ? t("articleView.showSummary") : t("articleView.getFullText")}
+              aria-label={fullTextLabel}
               onPress={() => handleToggleContent($activeArticle)}
               variant="ghost"
               isIconOnly
               size="sm"
-              isPending={fetchLoading}
             >
               {fetchLoading ? (
                 <Spinner color="current" size="sm" />
@@ -355,7 +357,7 @@ function ActionButtons() {
             </Button>
             <Tooltip.Content showArrow>
               <Tooltip.Arrow />
-              {$activeArticle?.shownOriginal ? t("articleView.showSummary") : t("articleView.getFullText")}
+              {fullTextLabel}
             </Tooltip.Content>
           </Tooltip>
 

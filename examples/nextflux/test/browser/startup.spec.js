@@ -764,3 +764,74 @@ test("Chinese article search waits for composition, pages results, and replaces 
   await input.fill("测试文章 84");
   await expect(page.locator(".search-result-row")).toHaveText(/测试文章 84/);
 });
+
+test("full text starts after an article switch and stopped requests cannot replace a newer result", async ({ page }) => {
+  await installNativeBoundary(page, {
+    auth: { userId: 7, serverUrl: "https://miniflux.xiaochen.win", token: "fixed-synthetic-test-token", authType: "token" },
+    settings: { ...STORED_SETTINGS, syncInterval: "0" },
+    cacheRoot: { version: 3, revision: 1, account: { serverUrl: "https://miniflux.xiaochen.win", userId: "7" },
+      transaction: null, lastSyncTime: null, tables: { articles: null, feeds: null, categories: null, feedIcons: null } },
+  });
+  await page.goto(PRODUCTION_URL);
+  await expect(page.locator(".article-list-header")).toBeVisible();
+
+  const result = await page.evaluate(async () => {
+    const [{ activeArticle, fullTextLoadingId }, { handleToggleContent }] = await Promise.all([
+      import("/src/stores/articlesStore.js"),
+      import("/src/handlers/articleHandlers.js"),
+    ]);
+    const requests = [];
+    window.ToolBox.network.request = ({ url }) => new Promise((resolve, reject) => requests.push({ url, resolve, reject }));
+    const open = (id) => activeArticle.set({
+      id, url: `https://source.example.invalid/article/${id}`,
+      originalContent: `<p>RSS ${id}</p>`, content: `<p>RSS ${id}</p>`,
+    });
+    const toggle = () => handleToggleContent(activeArticle.get());
+    const complete = (pair, text) => {
+      for (const request of pair) {
+        if (text && request.url.endsWith("/fetch-content")) {
+          request.resolve({ status: 200, body: JSON.stringify({ content: `<p>${text}</p>` }), headers: {} });
+        } else {
+          request.reject(Object.assign(new Error("Fixture request failed"), { code: "NETWORK_TIMEOUT" }));
+        }
+      }
+    };
+
+    open(1);
+    const fetchA = toggle();
+    const first = requests.splice(0);
+    open(2);
+    const fetchB = toggle();
+    const second = requests.splice(0);
+    complete(first, null);
+    await fetchA;
+    const afterFirstFailure = { id: fullTextLoadingId.get(), content: activeArticle.get().content };
+
+    await toggle(); // Stop waiting for B and keep its RSS.
+    const afterStop = { id: fullTextLoadingId.get(), content: activeArticle.get().content };
+    const retryB = toggle();
+    const retry = requests.splice(0);
+    complete(second, "Stale full text");
+    await fetchB;
+    const afterOldSuccess = { id: fullTextLoadingId.get(), content: activeArticle.get().content };
+
+    complete(retry, "Latest full text");
+    await retryB;
+    const finished = { id: fullTextLoadingId.get(), content: activeArticle.get().content };
+    await toggle(); // The same control returns to RSS after a success.
+    return {
+      calls: [first.length, second.length, retry.length],
+      afterFirstFailure, afterStop, afterOldSuccess, finished,
+      rssRestored: activeArticle.get().content,
+    };
+  });
+  expect(result).toEqual({
+    calls: [2, 2, 2],
+    afterFirstFailure: { id: 2, content: "<p>RSS 2</p>" },
+    afterStop: { id: null, content: "<p>RSS 2</p>" },
+    afterOldSuccess: { id: 2, content: "<p>RSS 2</p>" },
+    finished: { id: null, content: "<p>Latest full text</p>" },
+    rssRestored: "<p>RSS 2</p>",
+  });
+  await expect(page.locator("[data-sonner-toast]")).toHaveCount(0);
+});

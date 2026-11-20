@@ -4,6 +4,7 @@ import { atom, map } from "nanostores";
 // pull handoff, gesture, parser worker and DOM renderer are production modules.
 export const rows = [1, 2, 3].map((id) => ({
   id, title: `文章 ${id}`, titleText: `文章 ${id}`, status: id === 1 ? "read" : "unread",
+  bodyDigest: `fixture-body-${id}`,
   url: `https://example.invalid/article/${id}`, feedId: 1,
   feed: { id: 1, title: "Fixture feed" }, published_at: "2026-09-28T08:00:00Z",
   enclosures: [], content: Array.from({ length: 240 }, (_, index) =>
@@ -23,7 +24,11 @@ export const themeState = atom({ lightTheme: "default" });
 export const currentThemeMode = atom("light");
 export const getAcknowledgedArticleState = () => undefined;
 export const loadAccountFeedIcon = async () => null;
-export const getArticleById = async (id) => rows.find((row) => String(row.id) === String(id)) ?? null;
+export const articleReads = [];
+export const getArticleById = async (id) => {
+  articleReads.push(Number(id));
+  return rows.find((row) => String(row.id) === String(id)) ?? null;
+};
 export const handleMarkRead = async (article) => {
   filteredArticles.set(filteredArticles.get().map((row) => row.id === article.id ? { ...row, status: "read" } : row));
 };
