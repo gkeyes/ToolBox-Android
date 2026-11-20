@@ -35,6 +35,30 @@ test("the header only clamps when the displayed body contains the complete title
   assert.equal(repeats(`<p>${htmlTitle}<br><br>免费开源的中文模型训练项目。</p>`, "https://t.me/example/1"), false);
 });
 
+test("the header recognizes a long truncated feed title in the displayed opening", () => {
+  const prefix = "红果 800 部短剧的剧名里，最多用到的词与婚恋离合有关，排第一的竟是“重生”，里边没有直接出现钱、官、";
+  const continuation = "考。看来国人还是最重感情的，而且幻想来世，对功名利禄，在心理深处反而视为过眼云烟[允悲][允悲]。";
+  const opening = `<p>红果&nbsp;<strong>800</strong> ${prefix.slice("红果 800 ".length)}${continuation}</p>`;
+  const analysis = (title, html = opening) => createReadingPipeline({
+    html, title, baseUrl: "https://weibo.com/123/456",
+  }).parser.analysis;
+  const count = analysis("").wordCount;
+  for (const ellipsis of ["...", " ...", "…", "……"]) {
+    const result = analysis(`${prefix}${ellipsis}`);
+    assert.equal(result.titleInBody, true, `suffix ${ellipsis}`);
+    assert.equal(result.wordCount, count);
+  }
+  const title = `${prefix}...`;
+  assert.equal(analysis("红果 800 部短剧...").titleInBody, true);
+  assert.equal(analysis(title, "<p>红果 800 部短剧的剧名里，重生题材往往强调个人选择。</p>").titleInBody, false);
+  assert.equal(analysis(title, `<p>${prefix}。 </p>`).titleInBody, false);
+  assert.equal(analysis(title, `<p>先读另一段导语。</p>${opening}`).titleInBody, false);
+  assert.equal(analysis(title, `<details>${opening}</details><p>同一话题的另一篇文章。</p>`).titleInBody, false);
+  assert.equal(analysis(title, `<p>${prefix}</p><p>${continuation}</p>`).titleInBody, true);
+  assert.equal(analysis(title, `<p>${prefix}</p><p hidden>${continuation}</p>`).titleInBody, false);
+  assert.equal(analysis(title, `<p>${prefix.slice(0, 26)}</p><p>${prefix.slice(26)}${continuation}</p>`).titleInBody, false);
+});
+
 test("structured content scores above flattened content",()=>{
   const structured=Array.from({length:8},(_,i)=>`<p>第${i+1}段 ${"正文".repeat(45)}</p>`).join("");
   const flat=`<div>${"正文".repeat(360)}</div>`;
