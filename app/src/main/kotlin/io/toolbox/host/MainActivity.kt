@@ -23,6 +23,7 @@ import androidx.compose.ui.Modifier
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import io.toolbox.core.data.ThemeMode
 import io.toolbox.core.ui.component.ToolBoxToastHost
 import io.toolbox.core.ui.component.ToolBoxToasts
@@ -44,7 +45,6 @@ import io.toolbox.host.ui.applyHyperOsGestureNavigationImmersion
 import io.toolbox.host.update.launchUpdateHint
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
@@ -106,11 +106,12 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                     LaunchedEffect(state.dependencies) {
-                        // Let the first frames and startup maintenance go first; the check itself runs off the main thread.
-                        kotlinx.coroutines.delay(3_000)
-                        lifecycle.currentStateFlow.first { it.isAtLeast(Lifecycle.State.RESUMED) }
-                        state.dependencies.updates.launchUpdateHint(state.dependencies.repositories.catalog)
-                            ?.let { ToolBoxToasts.show(this@MainActivity, it, long = true) }
+                        lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+                            // Give the visible UI time to settle after each return to the foreground.
+                            kotlinx.coroutines.delay(3_000)
+                            state.dependencies.updates.launchUpdateHint(state.dependencies.repositories.catalog)
+                                ?.let { ToolBoxToasts.show(this@MainActivity, it, long = true) }
+                        }
                     }
                     val featureFactory = remember(state.dependencies) {
                         HostFeatureViewModelFactory(state.dependencies)
