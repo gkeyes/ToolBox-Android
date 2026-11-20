@@ -55,15 +55,9 @@ export default function ArticleCard({ article, active = false, onOpen, feedTitle
     return observeRead(cardRef.current, article);
   }, [article, markAsReadOnScroll, observeRead]);
 
-  const handleArticleClick = async (article) => {
-    onOpen?.(article, cardRef.current?.querySelector(".card-title"));
-    if (article.status !== "read") {
-      await handleMarkRead(article);
-    }
-  };
-
   const handleClick = () => {
-    handleArticleClick(article);
+    onOpen?.(article);
+    if (article.status !== "read") void handleMarkRead(article);
   };
 
   const handleContextMenu = (e) => {
@@ -123,7 +117,6 @@ export default function ArticleCard({ article, active = false, onOpen, feedTitle
             <div className="card-content-body flex">
               <div className="flex flex-col gap-0.5 flex-1 min-w-0">
                 <h3
-                  data-shared-article-title={article.id}
                   className={cn(
                     "card-title ds-headline text-wrap break-words",
                     article.status === "read" && "is-read",

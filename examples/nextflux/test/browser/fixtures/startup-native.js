@@ -56,7 +56,7 @@ export const SPEECH_SECRET = "startup-regression-speech-secret";
 
 export async function installNativeBoundary(page, {
   denySecure = false, failAuthRead = false, url = PRODUCTION_URL,
-  auth = null, cacheRoot = null, settings = STORED_SETTINGS, persistStorage = false,
+  auth = null, cacheRoot = null, cacheEntries = [], settings = STORED_SETTINGS, persistStorage = false,
 } = {}) {
   const allowedOrigin = new URL(url).origin;
   await page.route("**/*", async (route) => {
@@ -66,14 +66,14 @@ export async function installNativeBoundary(page, {
       await route.abort("blockedbyclient");
     }
   });
-  await page.addInitScript(({ denySecure, failAuthRead, storedSettings, storedTheme, storedCategoryExpanded, aiSecret, speechSecret, auth, cacheRoot, persistStorage }) => {
+  await page.addInitScript(({ denySecure, failAuthRead, storedSettings, storedTheme, storedCategoryExpanded, aiSecret, speechSecret, auth, cacheRoot, cacheEntries, persistStorage }) => {
     const preferences = {
       settings: JSON.stringify(storedSettings),
       theme: JSON.stringify(storedTheme),
       categoryExpanded: JSON.stringify(storedCategoryExpanded),
       language: "zh-CN",
     };
-    const plain = new Map([["nextflux.preferences.v1", preferences]]);
+    const plain = new Map([...cacheEntries, ["nextflux.preferences.v1", preferences]]);
     if (cacheRoot) plain.set("nextflux.cache.v3.root", cacheRoot);
     // Optional native persistence across a reload in the same test. Ordinary
     // startup cases still begin with exactly the supplied storage snapshot.
@@ -117,6 +117,7 @@ export async function installNativeBoundary(page, {
       network,
       flush: () => flushHandler?.(),
       persistedPreferences: () => plain.get("nextflux.preferences.v1"),
+      cacheEntries: () => [...plain].filter(([key]) => key.startsWith("nextflux.cache.")),
     };
     window.ToolBox = {
       ready: async () => {},
@@ -201,6 +202,6 @@ export async function installNativeBoundary(page, {
   }, {
     denySecure, failAuthRead, storedSettings: settings,
     storedTheme: STORED_THEME, storedCategoryExpanded: STORED_CATEGORY_EXPANDED,
-    aiSecret: AI_SECRET, speechSecret: SPEECH_SECRET, auth, cacheRoot, persistStorage,
+    aiSecret: AI_SECRET, speechSecret: SPEECH_SECRET, auth, cacheRoot, cacheEntries, persistStorage,
   });
 }

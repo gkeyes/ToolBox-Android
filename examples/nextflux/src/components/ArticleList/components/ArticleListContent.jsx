@@ -32,7 +32,6 @@ import { cn } from "@/lib/utils.js";
 import { createArticleRequestGate } from "@/lib/articleReadingState.js";
 import { toast } from "sonner";
 import { claimStagger, STAGGER_LIMIT } from "@/design/motion.js";
-import { navigateWithSharedArticleTitle } from "@/motion/sharedElement.mjs";
 
 // The large title collapses into the top bar once it has scrolled under it.
 const COLLAPSE_AT = 40;
@@ -167,25 +166,18 @@ export default function ArticleListContent({
   // One lookup for all rows; cards do not subscribe to the feed catalog.
   const feedTitles = useMemo(() => new Map($feeds.map((feed) => [feed.id, feed.title])), [$feeds]);
   const dateField = dayField(sortField);
-  const openContext = useRef(null);
+  const navigateRef = useRef(navigate);
   useLayoutEffect(() => {
-    openContext.current = { navigate, isMedium, reduceMotion };
-  });
+    navigateRef.current = navigate;
+  }, [navigate]);
   // Stable for the list's lifetime so memoised rows never re-render for it.
-  const openArticle = useCallback((article, source) => {
-    const { navigate: go, isMedium: medium, reduceMotion: reduced } = openContext.current;
+  const openArticle = useCallback((article) => {
     const basePath = (window.location.hash.slice(1).split("?")[0] || "/").split("/article/")[0];
     const toUrl =
       basePath === "/"
         ? `/article/${article.id}`
         : `${basePath}/article/${article.id}`;
-    navigateWithSharedArticleTitle({
-      articleId: article.id,
-      to: toUrl,
-      navigate: go,
-      source,
-      enabled: !medium && !reduced,
-    });
+    navigateRef.current(toUrl);
   }, []);
   const pageRequests = useRef(null);
   const listScroller = useRef(null);
