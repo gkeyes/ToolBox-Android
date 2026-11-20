@@ -739,12 +739,19 @@ test("touch settings draft and search composition survive portrait and landscape
   await expect(dialog.locator(".nf-set-rail")).toBeVisible();
   await expect(dialog.locator(".nf-set-pane .nf-set-large-title")).toHaveText("AI");
   await expect(model).toHaveValue("draft-for-rotation");
+  await expect(model).toBeFocused();
   await page.setViewportSize(portrait);
   await expect(dialog.locator('[data-page-id="content"]')).not.toHaveAttribute("inert", "");
   await expect(model).toHaveValue("draft-for-rotation");
-  await dialog.getByRole("button", { name: "关闭", exact: true }).tap();
-
+  await dialog.getByRole("button", { name: /返回|Back/ }).tap();
+  await dialog.getByRole("button", { name: "AI", exact: true }).tap();
   await page.setViewportSize(landscape);
+  await expect(dialog.locator(".nf-set-rail")).toBeVisible();
+  await expect.poll(() => dialog.evaluate((el) => el.contains(document.activeElement))).toBe(true);
+  await page.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+
+
   await page.locator(".article-list-header").getByRole("button", { name: "搜索", exact: true }).tap();
   const input = dialog.getByRole("textbox", { name: "搜索" });
   await dialog.getByRole("tab", { name: "订阅" }).tap();

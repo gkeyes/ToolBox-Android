@@ -1,6 +1,6 @@
 import { cn, Button, Modal } from "@heroui/react";
 import MobileSheet from "@/components/ui/MobileSheet.jsx";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { settingsModalOpen } from "@/stores/modalStore.js";
 import { useStore } from "@nanostores/react";
 import General from "@/components/Settings/General.jsx";
@@ -232,6 +232,22 @@ export default function SettingsModal() {
     setCollapsed((current) => ({ ...current, content: false }));
   };
   const currentPage = activeTab === null ? "menu" : "content";
+  const layoutRef = useRef(null);
+  useLayoutEffect(() => {
+    if (!isOpen) return;
+    // A tab can become inert or be removed when the rail changes shape.
+    // Restore Escape handling without moving focus out of a surviving field.
+    const frame = requestAnimationFrame(() => {
+      const layout = layoutRef.current;
+      if (!layout) return;
+      const doc = layout.ownerDocument;
+      const focused = doc.activeElement;
+      if (focused === doc.body || (layout.contains(focused) && focused.closest("[inert]"))) {
+        layout.closest('[role="dialog"]')?.focus({ preventScroll: true });
+      }
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [compact, currentPage, isOpen]);
   const shown = shownTab ?? "general";
   const currentTitle = compact && activeTab ? titleFor(activeTab) : t("common.settings");
   const back = compact && activeTab && (
@@ -242,7 +258,7 @@ export default function SettingsModal() {
   );
 
   const layout = (
-    <div className={compact ? "t-settings-slide h-full" : "flex h-full min-h-0"} data-active={currentPage}>
+    <div ref={layoutRef} className={compact ? "t-settings-slide h-full" : "flex h-full min-h-0"} data-active={currentPage}>
       {compact && <div className="nf-collapse-hairline" data-collapsed={collapsed[currentPage]} />}
       <div key="menu" className={compact ? "t-page" : "nf-set-rail"} data-page-id="menu" inert={compact && currentPage !== "menu" || undefined}>
         {compact ? <MenuList onSelect={selectTab} onCollapsedChange={(value) => setCollapsed((current) => ({ ...current, menu: value }))} /> : (
