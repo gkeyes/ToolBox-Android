@@ -4,7 +4,7 @@ import { cn } from "@/lib/utils";
 
 // Attributes app code uses to find rows or press targets. The copy keeps
 // presentation attributes (data-read, data-active, ...) so it looks the same.
-const LOOKUP_ATTRIBUTES = ["data-article-id", "data-react-aria-pressable", "data-nextflux-press", "data-shared-article-title", "data-reading-local-anchor"];
+const LOOKUP_ATTRIBUTES = ["data-article-id", "data-react-aria-pressable", "data-nextflux-press", "data-reading-local-anchor"];
 
 // Copies the pressed row for the lifted preview without ids or lookup hooks,
 // so app code that looks rows up by attribute never finds the copy.
