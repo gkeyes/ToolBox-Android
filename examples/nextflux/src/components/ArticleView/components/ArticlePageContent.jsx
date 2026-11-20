@@ -16,7 +16,7 @@ import { getFontSizeClass, cn } from "@/lib/utils.js";
 import { enclosurePosterSources, isHlsPlaylist } from "@/reading/media-sources.mjs";
 
 const ArticlePageContent = forwardRef(function ArticlePageContent(
-  { article, passive = false, readingPaused = false, className },
+  { article, passive = false, readingPaused = false, className, previewPreparationRef, takePreparedReading },
   ref,
 ) {
   const navigate = useNavigate();
@@ -107,12 +107,15 @@ const ArticlePageContent = forwardRef(function ArticlePageContent(
             textAlign: alignJustify ? "justify" : "left",
           }}
         >
-          <ProgressiveArticle
+          {(!passive || typeof html === "string") && <ProgressiveArticle
             preview={passive}
             paused={readingPaused || !foreground}
             {...source}
+            contentVersion={article.bodyDigest}
             onMetadata={onMetadata}
-          />
+            previewPreparationRef={previewPreparationRef}
+            takePreparedReading={takePreparedReading}
+          />}
           <Attachments article={article} />
         </div>
       </PhotoProvider>

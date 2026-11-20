@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
-import { useNavigate, useParams } from "react-router";
+import { useLocation, useNavigate, useParams } from "react-router";
 import { useStore } from "@nanostores/react";
 import "react-photo-view/dist/react-photo-view.css";
 import "./ArticleView.css";
@@ -10,6 +10,7 @@ import ActionButtons from "@/components/ArticleView/components/ActionButtons.jsx
 import ArticlePageContent from "@/components/ArticleView/components/ArticlePageContent.jsx";
 import ContinuousNextUnread from "@/components/ArticleView/components/ContinuousNextUnread.jsx";
 import { activeArticle, articleContentRevision, imageGalleryActive, getAcknowledgedArticleState } from "@/stores/articlesStore.js";
+import { authState } from "@/stores/authStore.js";
 import { ScrollShadow } from "@heroui/react";
 import EmptyPlaceholder from "@/components/ArticleList/components/EmptyPlaceholder";
 import { settingsState } from "@/stores/settingsStore";
@@ -28,14 +29,20 @@ import {
   prepareNavigationPush,
   restNavigationVisual,
 } from "@/motion/navigationTransition.mjs";
-import { createArticleScrollReset, startArticleRead } from "@/lib/articleReadingState.js";
+import { createArticleScrollReset, sameReadingSource, startArticleRead } from "@/lib/articleReadingState.js";
 import { toast } from "sonner";
 import { speechController } from "@/toolbox/speech/speechController.js";
 import { registerBackHandler } from "@/toolbox/systemBack.js";
 
+let nextReadingHandoff = 0;
+
 const ArticleView = () => {
   const { articleId } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
+  const readingHandoffTicket = location.state?.nextfluxReadingHandoff;
+  const pendingReadingHandoff = useRef(null);
+  const readerAccount = useRef(authState.get());
   const [error, setError] = useState(null);
   const [continuousHandoff, setContinuousHandoff] = useState(false);
   const [pageShown, setPageShown] = useState(Boolean(articleId));
@@ -360,6 +367,28 @@ const ArticleView = () => {
     else if (page?.dataset.readingMotion === "continuous") delete page.dataset.readingMotion;
   }, []);
 
+  const rememberPreparedReading = useCallback((prepared) => {
+    if (authState.get() !== readerAccount.current) return null;
+    const ticket = ++nextReadingHandoff;
+    pendingReadingHandoff.current = { ...prepared, ticket };
+    return ticket;
+  }, []);
+
+  const takePreparedReading = useCallback((source) => {
+    const prepared = pendingReadingHandoff.current;
+    if (!prepared || prepared.ticket !== readingHandoffTicket || String(source.articleId) !== articleId) return null;
+    pendingReadingHandoff.current = null;
+    if (authState.get() !== readerAccount.current || prepared.source.contentVersion !== source.contentVersion ||
+        !sameReadingSource(prepared.source, source)) return null;
+    return prepared.handoff;
+  }, [articleId, readingHandoffTicket]);
+
+  useLayoutEffect(() => {
+    if (error || pendingReadingHandoff.current?.ticket !== readingHandoffTicket) pendingReadingHandoff.current = null;
+  }, [error, location.key, readingHandoffTicket]);
+
+  useEffect(() => authState.listen(() => { pendingReadingHandoff.current = null; }), []);
+
   useEffect(() => {
     setError(null);
     if (!articleId) { activeArticle.set(null); return; }
@@ -408,6 +437,7 @@ const ArticleView = () => {
           ref={articleSurfaceRef}
           article={presentedArticle}
           readingPaused={readingPaused}
+          takePreparedReading={takePreparedReading}
           className="nextflux-continuous-current-surface"
         />
         <ContinuousNextUnread
@@ -417,6 +447,7 @@ const ArticleView = () => {
           enabled={isMedium && isOpen && isArticleVisible && !pageMoving}
           reduceMotion={reduceMotion}
           onTransitionStateChange={handleContinuousState}
+          onPrepareReadingHandoff={rememberPreparedReading}
         />
       </ScrollShadow>}
     </div>

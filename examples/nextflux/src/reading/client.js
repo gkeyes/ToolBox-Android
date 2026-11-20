@@ -1,33 +1,62 @@
 let nextTaskId = 0;
+const MAX_PREPARED_OPERATIONS = 512;
+const MAX_PREPARED_TEXT = 128 * 1024;
+
+function operationTextLength(value) {
+  if (typeof value === "string") return value.length;
+  if (!value || typeof value !== "object") return 0;
+  return Object.values(value).reduce((length, field) => length + operationTextLength(field), 0);
+}
 
 // All DOM work is bounded by both a time budget and an operation cap. Waiting
 // for the next pull until this batch is mounted gives the worker backpressure.
-export function startProgressiveReading({ html, baseUrl, title, apply, onMetadata, onBatch, onDone, onError, shouldPause, immediateFirstBatch = false, maxOperations = 48 }, {
+export function startProgressiveReading(options, {
   createWorker = () => new Worker(new URL("./worker.js", import.meta.url), { type: "module" }),
   schedule = (callback) => requestAnimationFrame(callback),
   unschedule = (handle) => cancelAnimationFrame(handle),
   now = () => performance.now(),
 } = {}) {
+  const adopted = options.prepared?.take(options);
+  if (adopted) return adopted;
+
+  const { html, baseUrl, title, retainPrefix } = options;
   const id = ++nextTaskId;
+  let consumer = options, owner = {}, metadata, completed = false;
+  let prefix = retainPrefix ? [] : null;
+  let prefixText = 0;
   let worker, frame, cancelled = false, paused = false, operations = [], cursor = 0, done = false;
   const fail = (message) => {
     if (cancelled) return;
+    const { onError } = consumer;
     cancel();
     onError(new Error(message || "正文加载失败，请返回文章列表后重试，或复制文章链接阅读。"));
   };
   const mount = () => {
     frame = null;
     if (cancelled) return;
+    const { apply, onBatch, onDone, shouldPause, maxOperations = 48 } = consumer;
     const start = now();
     const operationLimit = typeof maxOperations === "function" ? maxOperations() : maxOperations;
     let count = 0;
     try {
       while (cursor < operations.length && count < operationLimit && (count === 0 || now() - start < 4)) {
-        apply(operations[cursor++]);
+        const operation = operations[cursor++];
+        apply(operation);
+        if (prefix) {
+          prefixText += operationTextLength(operation);
+          if (prefix.length >= MAX_PREPARED_OPERATIONS || prefixText > MAX_PREPARED_TEXT) prefix = null;
+          else prefix.push(operation);
+        }
         count += 1;
       }
       onBatch?.();
-      if (cursor === operations.length && done) { worker.terminate(); onDone?.(); }
+      if (cursor === operations.length && done) {
+        closeWorker();
+        operations = [];
+        cursor = 0;
+        completed = true;
+        onDone?.();
+      }
       else if (shouldPause?.()) paused = true;
       else if (cursor < operations.length) frame = schedule(mount);
       else { operations = []; cursor = 0; worker.postMessage({ type: "reading:next", id }); }
@@ -38,25 +67,65 @@ export function startProgressiveReading({ html, baseUrl, title, apply, onMetadat
     if (cancelled || data.id !== id) return;
     if (data.type === "reading:error") { fail(data.message); return; }
     if (data.type !== "reading:batch") return;
-    if (data.metadata) onMetadata?.(data.metadata);
+    if (data.metadata) {
+      metadata = data.metadata;
+      consumer.onMetadata?.(metadata);
+    }
     operations = data.operations;
     cursor = 0;
     done = data.done;
-    const mountNow = firstBatch && immediateFirstBatch && !shouldPause?.();
+    const mountNow = firstBatch && consumer.immediateFirstBatch && !consumer.shouldPause?.();
     firstBatch = false;
     if (mountNow) mount();
     else frame = schedule(mount);
   };
-  function cancel() {
-    cancelled = true;
-    if (frame != null) unschedule(frame);
+  function closeWorker() {
     worker?.removeEventListener("message", message);
     worker?.removeEventListener("error", failed);
     worker?.removeEventListener("messageerror", failed);
     worker?.terminate();
+    worker = null;
+  }
+  function cancel() {
+    cancelled = true;
+    if (frame != null) unschedule(frame);
+    closeWorker();
     operations = [];
+    prefix = null;
+    metadata = null;
+    consumer = null;
   }
   const failed = (event) => { event.preventDefault?.(); fail(); };
+  function requestFor(requestOwner) {
+    const transferable = () => requestOwner === owner && !cancelled && prefix && (paused || completed);
+    return {
+      id,
+      cancel() { if (requestOwner === owner) cancel(); },
+      resume() {
+        if (requestOwner !== owner || cancelled || !paused || consumer.shouldPause?.()) return;
+        paused = false;
+        frame = schedule(mount);
+      },
+      prepareHandoff() {
+        if (!transferable()) return null;
+        return { take(nextConsumer) {
+          if (!transferable()) return null;
+          // A paused batch has not requested its successor. Replay what is
+          // already visible, then drain its remaining operations in order.
+          operations = prefix.concat(operations.slice(cursor));
+          cursor = 0;
+          prefix = null;
+          paused = false;
+          completed = false;
+          owner = {};
+          consumer = nextConsumer;
+          if (metadata) consumer.onMetadata?.(metadata);
+          frame = schedule(mount);
+          return requestFor(owner);
+        } };
+      },
+    };
+  }
   try {
     worker = createWorker();
     worker.addEventListener("message", message);
@@ -64,11 +133,7 @@ export function startProgressiveReading({ html, baseUrl, title, apply, onMetadat
     worker.addEventListener("messageerror", failed);
     worker.postMessage({ type: "reading:start", id, html, baseUrl, title });
   } catch { fail(); }
-  return { id, cancel, resume() {
-    if (cancelled || !paused || shouldPause?.()) return;
-    paused = false;
-    frame = schedule(mount);
-  } };
+  return requestFor(owner);
 }
 
 export function createHighlightQueue({

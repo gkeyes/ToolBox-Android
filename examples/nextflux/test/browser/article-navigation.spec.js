@@ -1,5 +1,7 @@
 import { test, expect } from "@playwright/test";
 
+const nextArticleUrl = "https://example.invalid/article/2";
+
 async function touch(page, type, x, y, selector = ".article-scroll-area") {
   return page.locator(selector).evaluate((target, { type, x, y }) => {
     const point = new Touch({ identifier: 1, target, clientX: x, clientY: y });
@@ -58,17 +60,30 @@ test("button navigation away from an article finishes the exit animation", async
   expect(errors).toEqual([]);
 });
 
-async function installReadingMessageHold(page) {
-  await page.addInitScript(() => {
+async function installReadingMessageHold(page, holdSource = null) {
+  await page.addInitScript((source) => {
     window.heldReadingMessages = [];
+    window.holdReadingMessagesFor = source;
+    window.readingWorkerStarts = [];
+    const sources = new Map();
+    const nativePost = Worker.prototype.postMessage;
     const nativeAdd = Worker.prototype.addEventListener;
     const nativeRemove = Worker.prototype.removeEventListener;
     const wrappedListeners = new WeakMap();
+    Worker.prototype.postMessage = function (message, ...options) {
+      if (message?.type === "reading:start") {
+        sources.set(message.id, message.baseUrl);
+        window.readingWorkerStarts.push(message.baseUrl);
+      }
+      return nativePost.call(this, message, ...options);
+    };
     Worker.prototype.addEventListener = function (type, listener, options) {
       if (type !== "message") return nativeAdd.call(this, type, listener, options);
       const wrapped = (event) => {
         const deliver = () => listener.call(this, event);
-        if (window.holdReadingMessages && event.data?.type === "reading:batch") window.heldReadingMessages.push(deliver);
+        const heldSource = window.holdReadingMessagesFor;
+        const hold = window.holdReadingMessages || (heldSource !== null && sources.get(event.data?.id) === heldSource);
+        if (hold && event.data?.type === "reading:batch") window.heldReadingMessages.push(deliver);
         else deliver();
       };
       wrappedListeners.set(listener, wrapped);
@@ -77,14 +92,19 @@ async function installReadingMessageHold(page) {
     Worker.prototype.removeEventListener = function (type, listener, options) {
       return nativeRemove.call(this, type, wrappedListeners.get(listener) ?? listener, options);
     };
-  });
+  }, holdSource);
 }
 
 async function releaseReadingMessages(page) {
   await page.evaluate(() => {
     window.holdReadingMessages = false;
+    window.holdReadingMessagesFor = null;
     window.heldReadingMessages.splice(0).forEach((deliver) => deliver());
   });
+}
+
+function nextArticleWorkerStarts(page) {
+  return page.evaluate((url) => window.readingWorkerStarts.filter((source) => source === url).length, nextArticleUrl);
 }
 
 test("next-page preparation mounts only a bounded first screen", async ({ page }) => {
@@ -97,6 +117,7 @@ test("next-page preparation mounts only a bounded first screen", async ({ page }
 });
 
 test("the same next unread ID is prepared again only when its content changes", async ({ page }) => {
+  await installReadingMessageHold(page);
   const errors = await openArticle(page);
   const preview = page.locator(".nextflux-continuous-next-page");
   await expect(preview.locator(".article-body p").first()).toContainText("文章 2 段落 1");
@@ -105,6 +126,7 @@ test("the same next unread ID is prepared again only when its content changes", 
     return articleReads.filter((id) => id === 2).length;
   });
   expect(await nextArticleReads()).toBe(1);
+  expect(await nextArticleWorkerStarts(page)).toBe(1);
 
   await page.evaluate(async () => {
     const { filteredArticles } = await import("./article-navigation-state.js");
@@ -113,6 +135,7 @@ test("the same next unread ID is prepared again only when its content changes", 
     await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
   });
   expect(await nextArticleReads()).toBe(1);
+  expect(await nextArticleWorkerStarts(page)).toBe(1);
 
   await page.evaluate(async () => {
     const { filteredArticles, rows } = await import("./article-navigation-state.js");
@@ -123,7 +146,9 @@ test("the same next unread ID is prepared again only when its content changes", 
     filteredArticles.set(filteredArticles.get().map((article) => article.id === 2 ? metadata : article));
   });
   await expect(preview.locator(".article-body p").first()).toHaveText("同步修订后的正文。");
+  await expect(preview.locator(".article-body")).toHaveAttribute("data-reading-complete", "true");
   expect(await nextArticleReads()).toBe(2);
+  expect(await nextArticleWorkerStarts(page)).toBe(2);
 
   await page.locator(".article-scroll-area").evaluate((element) => { element.scrollTop = element.scrollHeight; });
   await touch(page, "touchstart", 150, 750);
@@ -131,6 +156,35 @@ test("the same next unread ID is prepared again only when its content changes", 
   await touch(page, "touchend", 151, 520);
   await expect(page.getByTestId("route")).toHaveText("/article/2");
   await expect(page.locator(".article-scroll-area .article-body p").first()).toHaveText("同步修订后的正文。");
+  await expect(page.locator(".nextflux-continuous-layer")).toHaveAttribute("data-phase", "idle");
+  expect(await nextArticleWorkerStarts(page)).toBe(2);
+  expect(errors).toEqual([]);
+});
+
+test("handoff continues a prepared next article without starting its parser again", async ({ page }) => {
+  await installReadingMessageHold(page);
+  const errors = await openArticle(page);
+  const preview = page.locator(".nextflux-continuous-next-page");
+  const area = page.locator(".article-scroll-area");
+  await expect(preview.locator(".article-body")).toHaveAttribute("data-reading-ready", "true");
+  await expect(preview.locator(".article-body")).toHaveAttribute("data-reading-complete", "false");
+  const wordCount = await preview.locator(".nextflux-article-word-count").textContent();
+  expect(await nextArticleWorkerStarts(page)).toBe(1);
+
+  await area.evaluate((element) => { element.scrollTop = element.scrollHeight; });
+  await touch(page, "touchstart", 150, 750);
+  await touch(page, "touchmove", 151, 520);
+  await touch(page, "touchend", 151, 520);
+  await expect(page.getByTestId("route")).toHaveText("/article/2");
+  await expect(area.locator(".article-body")).toHaveAttribute("data-reading-complete", "true");
+  await expect(area.locator(".article-body p")).toHaveCount(240);
+  await expect(area.locator(".article-body p").last()).toContainText("文章 2 段落 240");
+  await expect(area.locator(".nextflux-article-word-count")).toHaveText(wordCount);
+  await expect(page.locator(".nextflux-continuous-layer")).toHaveAttribute("data-phase", "idle");
+  expect(await nextArticleWorkerStarts(page)).toBe(1);
+
+  await area.locator(".nextflux-article-feed-button").click();
+  await expect(page.getByTestId("route")).toHaveText("/feed/1");
   expect(errors).toEqual([]);
 });
 
@@ -370,14 +424,17 @@ test("AI stream updates never shift reading content or open a summary without it
 });
 
 test("a delayed real-body worker cannot uncover or replace the frozen target", async ({ page }) => {
-  await installReadingMessageHold(page);
+  // Keep the next article cold from its initial preview. A ready preview can
+  // hand off without another worker, so delaying only after the pull races it.
+  await installReadingMessageHold(page, nextArticleUrl);
   const errors = await openArticle(page);
+  await expect.poll(() => nextArticleWorkerStarts(page)).toBe(1);
   await page.locator(".article-scroll-area").evaluate((element) => { element.scrollTop = element.scrollHeight; });
-  await page.evaluate(() => { window.holdReadingMessages = true; });
   await touch(page, "touchstart", 150, 750);
   await touch(page, "touchmove", 151, 520);
   await touch(page, "touchend", 151, 520);
   await expect(page.getByTestId("route")).toHaveText("/article/2");
+  await expect.poll(() => nextArticleWorkerStarts(page)).toBe(2);
   await expect(page.locator(".article-scroll-area .article-body")).toHaveAttribute("data-reading-ready", "false");
   await expect(page.locator(".nextflux-continuous-layer")).toHaveAttribute("data-phase", "handoff");
   await expect(page.locator(".nextflux-continuous-next-page .article-title")).toHaveText("文章 2");
@@ -390,10 +447,9 @@ test("a delayed real-body worker cannot uncover or replace the frozen target", a
 });
 
 test("resizing a delayed handoff to desktop and back releases the mobile controller", async ({ page }) => {
-  await installReadingMessageHold(page);
+  await installReadingMessageHold(page, nextArticleUrl);
   const errors = await openArticle(page);
   await page.locator(".article-scroll-area").evaluate((element) => { element.scrollTop = element.scrollHeight; });
-  await page.evaluate(() => { window.holdReadingMessages = true; });
   await touch(page, "touchstart", 150, 750);
   await touch(page, "touchmove", 151, 520);
   await touch(page, "touchend", 151, 520);
@@ -413,10 +469,9 @@ test("resizing a delayed handoff to desktop and back releases the mobile control
 });
 
 test("navigating to another article while its predecessor is loading clears the frozen handoff", async ({ page }) => {
-  await installReadingMessageHold(page);
+  await installReadingMessageHold(page, nextArticleUrl);
   const errors = await openArticle(page);
   await page.locator(".article-scroll-area").evaluate((element) => { element.scrollTop = element.scrollHeight; });
-  await page.evaluate(() => { window.holdReadingMessages = true; });
   await touch(page, "touchstart", 150, 750);
   await touch(page, "touchmove", 151, 520);
   await touch(page, "touchend", 151, 520);

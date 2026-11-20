@@ -12,7 +12,7 @@ import { resolveSwipeDirection, shouldExcludeSwipeTarget } from "@/hooks/swipeGe
 import { animateReadingValue } from "@/toolbox/reading-motion.mjs";
 import { CONTINUOUS_MAX_EXTRA, CONTINUOUS_PULL_TRIGGER, continuousPageOffset, findNextUnreadArticle } from "@/toolbox/continuous-reading-motion.mjs";
 
-export default function ContinuousNextUnread({ articleId, scrollAreaRef, surfaceRef, enabled, reduceMotion, onTransitionStateChange }) {
+export default function ContinuousNextUnread({ articleId, scrollAreaRef, surfaceRef, enabled, reduceMotion, onTransitionStateChange, onPrepareReadingHandoff }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const articles = useStore(filteredArticles);
@@ -43,6 +43,7 @@ export default function ContinuousNextUnread({ articleId, scrollAreaRef, surface
   const gestureRef = useRef(null);
   const transitionRef = useRef(null);
   const preparedRef = useRef(null);
+  const previewPreparationRef = useRef(null);
   const springRef = useRef(null);
   const fadeRef = useRef(null);
   const paintRafRef = useRef(0);
@@ -187,9 +188,12 @@ export default function ContinuousNextUnread({ articleId, scrollAreaRef, surface
         const resolved = await prepared;
         if (transitionRef.current !== target) return;
         const next = resolved ?? article;
+        const preparation = previewPreparationRef.current?.();
+        const ticket = preparation && onPrepareReadingHandoff?.(preparation);
         activeArticle.set(next);
         const basePath = (window.location.hash.slice(1).split("?")[0] || "/").split("/article/")[0];
-        navigate(`${basePath === "/" ? "" : basePath}/article/${target.id}`);
+        navigate(`${basePath === "/" ? "" : basePath}/article/${target.id}`,
+          ticket == null ? undefined : { state: { nextfluxReadingHandoff: ticket } });
         if (next.status !== "read") void handleMarkRead(next);
       },
     });
@@ -373,7 +377,8 @@ export default function ContinuousNextUnread({ articleId, scrollAreaRef, surface
   return createPortal(<div ref={layerRef} className="nextflux-continuous-layer"
     data-phase={handoffArticle ? "handoff" : rawRef.current > 0 ? "pulling" : "idle"} aria-hidden="true">
     <section ref={nextPageRef} className="nextflux-continuous-next-page">
-      {visibleNextArticle && <ArticlePageContent article={visibleNextArticle} passive className="nextflux-continuous-next-page-inner" />}
+      {visibleNextArticle && <ArticlePageContent article={visibleNextArticle} passive
+        previewPreparationRef={previewPreparationRef} className="nextflux-continuous-next-page-inner" />}
     </section>
     <div ref={chromeRef} className="nextflux-continuous-chrome" />
     <div ref={dockRef} className="nextflux-continuous-progress-dock">

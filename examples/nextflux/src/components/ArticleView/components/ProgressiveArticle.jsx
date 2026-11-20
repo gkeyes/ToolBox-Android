@@ -47,13 +47,15 @@ function ReadingPortal({ item, highlights }) {
   return createPortal(content, item.target, String(item.id));
 }
 
-function ProgressiveArticle({ articleId, html, baseUrl, title, shownOriginal, onMetadata, preview = false, paused = false }) {
+function ProgressiveArticle({ articleId, html, baseUrl, title, shownOriginal, contentVersion, onMetadata, preview = false, paused = false, previewPreparationRef, takePreparedReading }) {
   const rootRef = useRef(null);
   const domRef = useRef(null);
   const requestRef = useRef(null);
   const readyNotifiedRef = useRef(false);
   const modeRef = useRef({ preview, paused });
   modeRef.current = { preview, paused };
+  const preparationRef = useRef({ contentVersion, takePreparedReading });
+  preparationRef.current = { contentVersion, takePreparedReading };
   const [portals, setPortals] = useState([]);
   const [state, setState] = useState({ complete: false, ready: false, error: null });
   const [attempt, setAttempt] = useState(0);
@@ -93,7 +95,10 @@ function ProgressiveArticle({ articleId, html, baseUrl, title, shownOriginal, on
       root.dataset.readingReady = "true";
       setState((previous) => ({ ...previous, ready: true }));
     };
+    const source = { articleId, html, baseUrl, title, shownOriginal, contentVersion: preparationRef.current.contentVersion };
     const request = startProgressiveReading({ html, baseUrl, title, onMetadata,
+      retainPrefix: Boolean(previewPreparationRef),
+      prepared: preparationRef.current.takePreparedReading?.(source),
       immediateFirstBatch: !modeRef.current.preview && !modeRef.current.paused,
       maxOperations: () => modeRef.current.preview || modeRef.current.paused ? 12 : 48,
       shouldPause: () => modeRef.current.paused || (modeRef.current.preview && firstScreenReady),
@@ -118,8 +123,15 @@ function ProgressiveArticle({ articleId, html, baseUrl, title, shownOriginal, on
       onError(error) { if (mounted) { root.style.minHeight = ""; ready(); setState({ complete: false, ready: true, error: error.message }); } },
     });
     requestRef.current = request;
+    const prepare = () => {
+      if (!firstScreenReady) return null;
+      const handoff = request.prepareHandoff();
+      return handoff ? { source, handoff } : null;
+    };
+    if (previewPreparationRef) previewPreparationRef.current = prepare;
     return () => {
       mounted = false;
+      if (previewPreparationRef?.current === prepare) previewPreparationRef.current = null;
       request.cancel();
       if (requestRef.current === request) requestRef.current = null;
       highlights.dispose();
@@ -127,7 +139,7 @@ function ProgressiveArticle({ articleId, html, baseUrl, title, shownOriginal, on
       if (domRef.current === dom) domRef.current = null;
       notify([], { removed: true });
     };
-  }, [articleId, html, baseUrl, title, shownOriginal, onMetadata, attempt]);
+  }, [articleId, html, baseUrl, title, shownOriginal, onMetadata, attempt, previewPreparationRef]);
   useEffect(() => { requestRef.current?.resume(); }, [preview, paused]);
   return <>
     <div ref={rootRef} className="article-body article-content" data-font-reading-root="" data-font-article-id={articleId} data-font-block="" data-reading-ready={String(state.ready)} data-reading-complete={String(state.complete)} onClick={(event) => {
@@ -142,4 +154,6 @@ function ProgressiveArticle({ articleId, html, baseUrl, title, shownOriginal, on
 }
 
 export default memo(ProgressiveArticle, (previous, next) => sameReadingSource(previous, next) &&
-  previous.onMetadata === next.onMetadata && previous.preview === next.preview && previous.paused === next.paused);
+  previous.contentVersion === next.contentVersion && previous.onMetadata === next.onMetadata &&
+  previous.preview === next.preview && previous.paused === next.paused &&
+  previous.previewPreparationRef === next.previewPreparationRef && previous.takePreparedReading === next.takePreparedReading);
