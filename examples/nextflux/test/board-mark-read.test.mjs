@@ -47,10 +47,28 @@ const storage = {
 };
 let serverRows = new Map();
 let requests = [];
+let feedReads = [];
 let interceptRequest = null;
 async function request(payload) {
+  const url = new URL(payload.url);
+  if (payload.method === "GET") {
+    assert.equal(url.pathname, `/v1/feeds/${FEED.id}/entries`);
+    const params = url.searchParams;
+    assert.equal(params.get("status"), "unread");
+    assert.equal(params.get("order"), "id");
+    assert.equal(params.get("direction"), "desc");
+    assert.equal(params.has("starred"), false, "the scan can count protected matches");
+    const before = params.has("before_entry_id") ? Number(params.get("before_entry_id")) : Infinity;
+    feedReads.push(before);
+    const entries = [...serverRows.values()]
+      .filter(({ feedId, status, id }) => feedId === FEED.id && status === "unread" && id < before)
+      .sort((a, b) => b.id - a.id)
+      .slice(0, Number(params.get("limit")))
+      .map((entry) => ({ ...entry, feed_id: entry.feedId, starred: Boolean(entry.starred) }));
+    return { status: 200, headers: {}, body: JSON.stringify({ entries }) };
+  }
   assert.equal(payload.method, "PUT");
-  assert.equal(new URL(payload.url).pathname, "/v1/entries", "never use a feed, category or all-read endpoint");
+  assert.equal(url.pathname, "/v1/entries", "never use a feed, category or all-read endpoint");
   const body = JSON.parse(payload.body);
   assert.deepEqual(Object.keys(body).sort(), ["entry_ids", "status"]);
   const call = { ids: [...body.entry_ids], status: body.status, headers: { ...payload.headers } };
@@ -70,9 +88,10 @@ const { authState } = await import("../src/stores/authStore.js");
 const { settingsState } = await import("../src/stores/settingsStore.js");
 const { feeds, categories, unreadCounts, starredCounts } = await import("../src/stores/feedsStore.js");
 const {
-  markArticlesAsRead, queueArticleRead, updateArticleStatus,
-  activeArticle, filteredArticles, resetArticleState,
+  markArticlesAsRead, markScannedUnreadAsRead, queueArticleRead, updateArticleStatus,
+  activeArticle, filter, filteredArticles, loadArticles, resetArticleState,
 } = await import("../src/stores/articlesStore.js");
+const { getFeedUnreadEntries } = await import("../src/api/miniflux.js");
 const {
   clearArticleCache, initializeArticleCache, addArticles, addFeeds,
   getArticleById, getArticleIds, getArticleCounts,
@@ -113,6 +132,7 @@ beforeEach(async () => {
   await cancelAccountOperations();
   await clearArticleCache();
   resetArticleState();
+  filter.set("all");
   feeds.set([FEED]);
   categories.set([]);
   unreadCounts.set({});
@@ -124,6 +144,7 @@ beforeEach(async () => {
   await addFeeds([FEED]);
   serverRows = new Map();
   requests = [];
+  feedReads = [];
 });
 after(async () => { await cancelAccountOperations(); });
 
@@ -257,6 +278,19 @@ test("account invalidation cancels a queued selection before dispatch", async ()
   assert.deepEqual(await unreadIds(), [1, 2, 3]);
 });
 
+test("a scan counts an acknowledged server batch even when local recovery is pending", async () => {
+  await seed(entries(2));
+  failNextRoot = true;
+  await assert.rejects(markScannedUnreadAsRead([1], async () => [1]), {
+    code: "LOCAL_STATE_PENDING", markedCount: 1,
+  });
+  assert.equal(serverRows.get(1).status, "read");
+  assert.equal((await getArticleById(1)).status, "unread");
+  assert.equal(await markScannedUnreadAsRead([1], async () => []), 0);
+  assert.deepEqual(requests.map(({ ids }) => ids), [[1]]);
+  assert.deepEqual(await unreadIds(), [2]);
+});
+
 test("account changes during a request cannot publish its reply or send later batches", async () => {
   await seed(entries(301));
   let draining;
@@ -287,4 +321,46 @@ test("manual selection absorbs selected automatic reads and a later unread actio
     { ids: [1, 2], status: "read" }, { ids: [2], status: "unread" },
   ]);
   assert.deepEqual(await unreadIds(), [2, 3, 4]);
+});
+
+test("scanned selection acknowledges server-only matches and refreshes the local unread list", async () => {
+  await seed(entries(3));
+  const [, , , uncached, otherFeed, later] = entries(6);
+  serverRows.set(uncached.id, uncached);
+  serverRows.set(otherFeed.id, { ...otherFeed, feedId: FEED.id + 1 });
+  serverRows.set(later.id, later);
+  // Another client starred this candidate while the NextFlux preview was open.
+  serverRows.get(2).starred = 1;
+  activeArticle.set(clone(serverRows.get(1)));
+  filter.set("unread");
+  await loadArticles(FEED.id);
+
+  const previewIds = [1, 2, uncached.id];
+  const marked = await markScannedUnreadAsRead(previewIds, async (check) => {
+    const freshRows = await getFeedUnreadEntries(FEED.id, check, undefined, { beforeEntryId: uncached.id + 1 });
+    return freshRows.filter(({ id, starred }) => previewIds.includes(id) && !starred).map(({ id }) => id);
+  });
+  assert.equal(marked, 2);
+  assert.deepEqual(feedReads, [uncached.id + 1]);
+  assert.deepEqual(requests.map(({ ids }) => ids), [[uncached.id, 1]]);
+  assert.equal(serverRows.get(2).status, "unread");
+  assert.equal(serverRows.get(uncached.id).status, "read");
+  assert.equal(serverRows.get(otherFeed.id).status, "unread");
+  assert.equal(serverRows.get(later.id).status, "unread");
+  assert.equal(activeArticle.get().id, 1);
+  assert.equal(activeArticle.get().status, "read");
+  assert.deepEqual(filteredArticles.get().map(({ id }) => id).sort(), [2, 3]);
+  assert.deepEqual(await unreadIds(), [2, 3]);
+});
+
+test("scanned selection refuses broadened scope or a cancelled editor before writing", async () => {
+  await seed(entries(3));
+  await assert.rejects(markScannedUnreadAsRead([1], async () => [1, 3]), /复核结果超出预览范围/);
+  let isCurrent = true;
+  await assert.rejects(markScannedUnreadAsRead([1], async () => {
+    isCurrent = false;
+    return [1];
+  }, () => isCurrent), { code: "CANCELLED" });
+  assert.equal(requests.length, 0);
+  assert.deepEqual(await unreadIds(), [1, 2, 3]);
 });

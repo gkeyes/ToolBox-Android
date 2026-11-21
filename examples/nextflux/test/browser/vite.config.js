@@ -40,6 +40,7 @@ const controlBoundaries = new Set([
   "stores/basicInfoStore.js", "stores/settingsStore.js",
   "stores/themeStore.js", "stores/modalStore.js",
   "stores/authStore.js", "stores/feedsStore.js", "toolbox/network.js",
+  "toolbox/title-filter/title-filter-backfill-app.js",
   "api/miniflux", "api/miniflux.js", "api/openai.js",
 ].map((name) => path.join(sourceRoot, name)));
 const navigationComponents = new Set([

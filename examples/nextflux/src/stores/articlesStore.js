@@ -92,13 +92,13 @@ const isCurrent = (session, sourceId, type) => querySession === session &&
 
 // A query owns a stable ID sequence. State changes never recalculate an offset
 // against a newly shortened unread list, and old routes cannot publish pages.
-export async function loadArticles(sourceId = null, type = "feed", page = 1, append = false) {
+export async function loadArticles(sourceId = null, type = "feed", page = 1, append = false, { keepVisible = false } = {}) {
   const options = queryOptions(sourceId, type);
   if (!append) {
     if (querySession) resetArticleQuery();
-    const session = { generation: queryGeneration, signature: signature(options), queryId: null, nextPage: 1, pending: null };
+    const session = { generation: queryGeneration, signature: signature(options), sourceId, type, queryId: null, nextPage: 1, pending: null };
     querySession = session;
-    filteredArticles.set([]);
+    if (!keepVisible) filteredArticles.set([]);
     error.set(null);
     session.opening = (async () => {
       const feeds = await getFeeds();
@@ -233,40 +233,91 @@ export function updateArticleStarred(article) {
   }, { priority: "manual" });
 }
 
-// A board (or another explicit selection) may only acknowledge its own IDs.
-// Never expand this scope to a feed, duplicate copies, or the whole account.
-export function markArticlesAsRead(articleIds) {
-  const selected = Array.isArray(articleIds) ? [...new Set(articleIds)] : null;
-  if (!selected || selected.some((id) => !Number.isSafeInteger(id) || id <= 0)) {
-    return Promise.reject(new Error("文章编号无效，请刷新后重试。"));
+function validatedSelection(articleIds) {
+  const ids = Array.isArray(articleIds) ? [...new Set(articleIds)] : null;
+  if (!ids || ids.some((id) => !Number.isSafeInteger(id) || id <= 0)) throw new Error("文章编号无效，请刷新后重试。");
+  return ids;
+}
+
+async function writeReadBatches(selectIds, check, checkWrite = check) {
+  let markedCount = 0;
+  let serverConfirmedCount = 0;
+  try {
+    const ids = await selectIds();
+    // Match the existing automatic-read batch size while keeping this manual
+    // action in the same account queue until all its acknowledgements finish.
+    for (let offset = 0; offset < ids.length; offset += 256) {
+      const batch = ids.slice(offset, offset + 256);
+      checkWrite();
+      await minifluxAPI.updateEntriesStatus(batch, "read", checkWrite);
+      serverConfirmedCount += batch.length;
+      await saveAcknowledged(batch.map((id) => ({ id, status: "read" })), check);
+      markedCount += batch.length;
+    }
+    return markedCount;
+  } catch (cause) {
+    const message = cause?.message || "标记已读失败，请重试。";
+    const failure = new Error(markedCount && cause?.code !== "ACCOUNT_CHANGED"
+      ? `已确认 ${markedCount} 篇标为已读，其余未能确认完成。${message}` : message, { cause });
+    if (typeof cause?.code === "string") failure.code = cause.code;
+    failure.markedCount = markedCount;
+    failure.serverConfirmedCount = serverConfirmedCount;
+    throw failure;
   }
-  if (!selected.length) return Promise.resolve(0);
+}
+
+// A board may only acknowledge its own cached selection.
+export async function markArticlesAsRead(articleIds) {
+  const selected = validatedSelection(articleIds);
+  if (!selected.length) return 0;
   for (const id of selected) autoReadQueue.cancelUnsent(id);
-  return runAccountOperation(async (check) => {
+  return runAccountOperation((check) => writeReadBatches(async () => {
+    const unread = new Set(await getArticleIds({ ids: selected, filter: "unread" }));
+    check();
+    return selected.filter((id) => unread.has(id));
+  }, check), { priority: "manual" });
+}
+
+// Unlike board rows, these feed entries can be absent from the local cache.
+// Let an in-flight sync finish before refreshing the server's candidate set.
+export async function markScannedUnreadAsRead(previewIds, revalidate, checkCurrent) {
+  const preview = new Set(validatedSelection(previewIds));
+  if (!preview.size) return 0;
+  return runAccountScopeOperation(async (check) => {
+    const checkWrite = () => {
+      check();
+      if (checkCurrent?.() === false) {
+        throw Object.assign(new Error("页面或订阅已改变，处理已停止。"), { code: "CANCELLED" });
+      }
+    };
+    checkWrite.beforeRequest = checkWrite;
     let markedCount = 0;
     try {
-      const unread = new Set(await getArticleIds({ ids: selected, filter: "unread" }));
-      check();
-      const ids = selected.filter((id) => unread.has(id));
-      // Match the existing automatic-read batch size while keeping this manual
-      // action in the same account queue until all its acknowledgements finish.
-      for (let offset = 0; offset < ids.length; offset += 256) {
-        const batch = ids.slice(offset, offset + 256);
-        check();
-        await minifluxAPI.updateEntriesStatus(batch, "read", check);
-        await saveAcknowledged(batch.map((id) => ({ id, status: "read" })), check);
-        markedCount += batch.length;
-      }
+      markedCount = await writeReadBatches(async () => {
+        checkWrite();
+        const ids = validatedSelection(await revalidate(checkWrite));
+        checkWrite();
+        if (ids.some((id) => !preview.has(id))) throw new Error("复核结果超出预览范围，请重新扫描。");
+        for (const id of ids) autoReadQueue.cancelUnsent(id);
+        return ids;
+      }, check, checkWrite);
       return markedCount;
-    } catch (cause) {
-      const message = cause?.message || "标记已读失败，请重试。";
-      const failure = new Error(markedCount && cause?.code !== "ACCOUNT_CHANGED"
-        ? `已确认 ${markedCount} 篇标为已读，其余未能确认完成。${message}` : message, { cause });
-      if (typeof cause?.code === "string") failure.code = cause.code;
-      failure.markedCount = markedCount;
+    } catch (failure) {
+      if (failure.code !== "ACCOUNT_CHANGED") {
+        markedCount = failure.markedCount;
+        failure.markedCount = failure.serverConfirmedCount;
+      }
       throw failure;
+    } finally {
+      // Ordinary taps keep the current list stable. Explicit cleanup removes
+      // the acknowledged rows from the unread query without navigating away.
+      const session = querySession;
+      if (markedCount && session && filter.get() === "unread" && !loading.get() && checkCurrent?.() !== false &&
+          isCurrent(session, session.sourceId, session.type)) {
+        await loadArticles(session.sourceId, session.type, 1, false, { keepVisible: true }).catch(() => {});
+      }
     }
-  }, { priority: "manual" });
+  });
 }
 
 export function markAllAsRead(type = "all", id = null) {
