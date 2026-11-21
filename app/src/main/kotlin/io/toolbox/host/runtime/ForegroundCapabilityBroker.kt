@@ -662,6 +662,7 @@ internal class ForegroundCapabilityBroker private constructor(
 
         fun attach(activity: ComponentActivity): ForegroundCapabilityBroker = synchronized(companionLock) {
             activeBroker.get()?.close()
+            RuntimeImageShareSession.cleanupOnStartup(activity)
             ForegroundCapabilityBroker(activity).also { activeBroker = WeakReference(it) }
         }
 
@@ -683,6 +684,10 @@ internal class ForegroundCapabilityBroker private constructor(
             return RuntimeSystemHandlers(
                 clipboardRead = RuntimeClipboardReadHandler { withForeground(requireForegroundRuntime) { it.readClipboardText() } },
                 shareText = RuntimeShareTextHandler { text -> withForeground(requireForegroundRuntime) { it.shareText(text) } },
+                shareImage = RuntimeImageShareSession(context.applicationContext) { file, format ->
+                    val broker = foregroundBroker(requireForegroundRuntime)
+                    broker.activity.startActivity(createImageShareChooser(broker.activity, file, format))
+                },
                 browserOpen = RuntimeBrowserOpenHandler { url, beforeLaunch ->
                     withForeground(requireForegroundRuntime) { broker ->
                         launchBrowserUrl(
@@ -715,12 +720,16 @@ internal class ForegroundCapabilityBroker private constructor(
 
         private suspend fun <T> withForeground(requireForegroundRuntime: () -> Unit, action: suspend (ForegroundCapabilityBroker) -> T): T =
             withContext(Dispatchers.Main.immediate) {
-                val broker = synchronized(companionLock) { activeBroker.get() }
-                    ?: throw RuntimeHandlerException(RuntimeRpcErrorCode.SESSION_ENDED, "No foreground host activity is available")
-                broker.ensureActive()
-                requireForegroundRuntime()
-                action(broker)
+                action(foregroundBroker(requireForegroundRuntime))
             }
+
+        private fun foregroundBroker(requireForegroundRuntime: () -> Unit): ForegroundCapabilityBroker {
+            val broker = synchronized(companionLock) { activeBroker.get() }
+                ?: throw RuntimeHandlerException(RuntimeRpcErrorCode.SESSION_ENDED, "No foreground host activity is available")
+            broker.ensureActive()
+            requireForegroundRuntime()
+            return broker
+        }
 
         private fun readMetadata(cursor: Cursor): Pair<String, Long>? {
             if (!cursor.moveToFirst()) return null

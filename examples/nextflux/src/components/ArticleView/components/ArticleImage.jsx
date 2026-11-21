@@ -4,7 +4,7 @@ import {
   ImageOffIcon as ImageOff,
 } from "@/components/ui/icons.jsx";
 import { cn } from "@/lib/utils.js";
-import { approvedImageSource, useSafeImage } from "@/toolbox/media.js";
+import { approvedImageSource, shareableImageType, useSafeImage } from "@/toolbox/media.js";
 import { useStore } from "@nanostores/react";
 import { imageGalleryActive } from "@/stores/articlesStore.js";
 import { imageDimensions, imageSize } from "@/toolbox/imageDimensions.js";
@@ -34,6 +34,7 @@ function ArticleImage({ imgNode, type = "article", inline: inlineHint = false })
   const inline = inlineHint || imageIsInline(imgNode, attributes);
   const reserve = !measured && type === "article" && !inline;
   const imageStyle = measured ? { width: measured.width, aspectRatio: `${measured.width} / ${measured.height}` } : reserve ? { aspectRatio: "16 / 9" } : undefined;
+  const imageLink = loadedSource && !loadedSource.startsWith("data:") && approvedImageSource(loadedSource);
   return (
     <div ref={containerRef} className={cn("flex justify-center my-2 min-h-12", type === "article" ? "max-w-[calc(100%+2.5rem)]! -mx-5" : "rounded-lg shadow-custom! mx-auto overflow-hidden w-fit")}>
       {failure || !source ? (
@@ -51,6 +52,16 @@ function ArticleImage({ imgNode, type = "article", inline: inlineHint = false })
                 src={url}
                 alt={alt}
                 decoding="async"
+                tabIndex={type === "article" ? 0 : undefined}
+                aria-label={type === "article" && !alt ? "文章图片" : undefined}
+                aria-haspopup={type === "article" ? "dialog" : undefined}
+                data-nextflux-image-share={type === "article" ? shareableImageType(url) : undefined}
+                data-nextflux-image-source={type === "article" && imageLink?.kind === "proxy" ? imageLink.url : undefined}
+                onKeyDown={type === "article" ? (event) => {
+                  if (event.key !== "Enter" && event.key !== " ") return;
+                  event.preventDefault();
+                  event.currentTarget.click();
+                } : undefined}
                 className="h-auto object-contain my-0 mx-auto max-w-full"
                 style={measured ? { width: "100%", aspectRatio: `${measured.width} / ${measured.height}` } : undefined}
                 onLoad={(event) => {

@@ -105,6 +105,7 @@ class RuntimeBridgeSession internal constructor(
         foregroundInteractionGuard = { withContext(Dispatchers.Main.immediate) { requireForegroundSession() } },
     )
     private val sessionCleanup = systemHandlers.sessionCleanup
+    private val imageShare = systemHandlers.shareImage
     private val network = serviceHandlers.network
     private val embeddedBrowser = systemHandlers.browserEmbedded
 
@@ -262,6 +263,7 @@ class RuntimeBridgeSession internal constructor(
         pendingDeliveries.filter { it.epoch < currentEpoch }.forEach(ReplyDelivery::finish)
         runCatching { network?.cancelStreams() }
         runCatching { embeddedBrowser?.resetForNavigation() }
+        runCatching { imageShare?.resetForNavigation() }
     }
 
     internal fun close(webView: WebView) {
@@ -276,6 +278,7 @@ class RuntimeBridgeSession internal constructor(
         runCatching { network?.close() }
         runCatching { embeddedBrowser?.release() }
         runCatching { sessionCleanup?.close() }
+        runCatching { imageShare?.close() }
         inFlightIds.clear()
         nonWriteJobs.clear()
         eventReady.set(false)

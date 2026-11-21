@@ -450,6 +450,10 @@ export type ToolBoxMethodName =
   | "background.cancelTimer"
   | "clipboard.readText"
   | "share.text"
+  | "share.image.begin"
+  | "share.image.write"
+  | "share.image.finish"
+  | "share.image.cancel"
   | "browser.open"
   | "browser.openEmbedded"
   | "browser.updateEmbedded"
@@ -470,6 +474,7 @@ export type ToolBoxMethodName =
 export type ToolBoxErrorCode =
   | "UNSUPPORTED"
   | "INVALID_REQUEST"
+  | "INVALID_MIME"
   | "INVALID_SESSION"
   | "WRONG_ORIGIN"
   | "NOT_MAIN_FRAME"
@@ -845,6 +850,10 @@ export interface ToolBoxApi {
   };
   share: {
     text(text: string): Promise<void>;
+    /** Opens the Android Sharesheet for a JPEG, PNG, WebP or GIF Blob (up to 32 MiB).
+     * Shares the original bytes, requires the foreground tool and share permission,
+     * and resolves when the chooser opens. Feature-detect on earlier hosts. */
+    image?(blob: Blob, options?: { signal?: AbortSignal }): Promise<void>;
   };
   browser: {
     /** Opens an absolute HTTP/HTTPS URL (without credentials or control characters) in ToolBox's isolated in-app browser. Requires the separate, default-off browser capability and the current visible foreground tool. No per-minute allowance, browsing deadline, or fixed page-size quota applies. No network capability or Android runtime permission is required. Resolves when the browser Activity starts, not when the page loads. Website cookies are shared across browser sessions and tools, separate from tool storage, until expiry or explicit browser-data clearing. Remote pages have no ToolBox bridge. File inputs open Android's document picker (direct camera capture is not implemented); HTTP(S) downloads go to the system download manager after confirmation (generated blob/data downloads are not transferable); camera, microphone, location and MIDI requests are asked per website and name it. The menu also offers an explicit system-browser fallback. */

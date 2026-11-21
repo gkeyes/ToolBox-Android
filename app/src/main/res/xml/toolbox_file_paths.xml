@@ -6,4 +6,7 @@
     <cache-path
         name="toolbox_updates"
         path="updates/" />
+    <cache-path
+        name="toolbox_share_images"
+        path="toolbox-share-images/ready/" />
 </paths>
