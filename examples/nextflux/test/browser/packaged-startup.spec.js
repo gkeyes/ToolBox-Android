@@ -285,12 +285,12 @@ for (const [layout, viewport, colorScheme] of [
     await expect(share).toBeVisible();
     await expectLiquidGlass(share);
     await share.tap();
-    await expect(gallery).toBeVisible();
-    expect(await trace()).toEqual({
+    await expect.poll(trace).toEqual({
       mediaRequests: [SHARE_IMAGE_SOURCE],
       shared: [{ mime: "image/png", data: SHARE_IMAGE_BYTES }],
       openedLinks: [],
     });
+    await expect(gallery).toBeVisible();
   });
 }
 
