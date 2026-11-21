@@ -88,6 +88,7 @@ class RuntimeImageShareRpcTest {
         )
 
     private fun assertFailure(code: RuntimeRpcErrorCode, response: RuntimeRpcResponse) {
+        assertTrue("Expected $code, received $response", response is RuntimeRpcResponse.Failure)
         assertEquals(code, (response as RuntimeRpcResponse.Failure).error.code)
     }
 }

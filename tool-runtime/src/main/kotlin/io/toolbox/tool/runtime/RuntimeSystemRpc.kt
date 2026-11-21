@@ -64,7 +64,7 @@ internal suspend fun RuntimeRpcDispatcher.invokeSystem(
         val offset = params.requiredLong("offset", 0, RUNTIME_IMAGE_SHARE_MAX_BYTES.toLong()).toInt()
         val bytes = decodeRuntimeBase64Bytes(params.requiredObject("content"), IMAGE_SHARE_CHUNK_BYTES)
             ?: throw IllegalArgumentException("Invalid image chunk")
-        require(bytes.isNotEmpty())
+        require(bytes.size in 1..IMAGE_SHARE_CHUNK_BYTES)
         requireHandler(systemHandlers.shareImage).write(params.imageShareId(), offset, bytes)
         RpcValue.Null
     }
