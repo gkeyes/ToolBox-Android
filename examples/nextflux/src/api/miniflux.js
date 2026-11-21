@@ -297,6 +297,16 @@ export const getAllUnreadEntries = (check, onPage) => getEntriesInBatches("/v1/e
   status: "unread",
 }, check, onPage);
 
+export async function getFeedUnreadEntries(feedId, check, onPage, { beforeEntryId } = {}) {
+  if (!Number.isSafeInteger(feedId) || feedId <= 0) throw new Error("订阅编号无效。");
+  if (beforeEntryId !== undefined && (!Number.isSafeInteger(beforeEntryId) || beforeEntryId <= 0)) {
+    throw new Error("文章分页位置无效。");
+  }
+  return getEntriesInBatches(`/v1/feeds/${feedId}/entries`, {
+    status: "unread", before_entry_id: beforeEntryId,
+  }, check, onPage);
+}
+
 // 标记全部已读
 export const markAllAsRead = async (type, id = null, check) => {
   const current = operationCheck(check);
@@ -508,6 +518,7 @@ const minifluxApi = {
   getUnreadChangedEntries,
   getReadChangedEntries,
   getAllUnreadEntries,
+  getFeedUnreadEntries,
   getRecentEntries,
   markAllAsRead,
   getAllStarredEntries,

@@ -21,6 +21,40 @@
 .nf-title-filter-toast{position:fixed;z-index:9999;left:50%;top:auto;bottom:calc(24px + env(safe-area-inset-bottom,0px) + var(--nf-toast-viewport-inset,0px));translate:-50% 0;width:max-content;max-width:min(480px,calc(100vw - 32px));box-sizing:border-box;overflow-wrap:anywhere;padding:14px 16px;border-radius:var(--ds-radius-row,16px);background:var(--ds-raised,var(--overlay));color:var(--ds-text-primary,var(--foreground));box-shadow:var(--overlay-shadow,var(--shadow-custom-md));font-size:var(--ds-text-subhead,.875rem);font-weight:500;line-height:1.5;font-variant-numeric:tabular-nums;pointer-events:none;text-align:center;animation:nf-title-filter-toast-in var(--ds-dur-spatial,300ms) var(--ds-ease-spatial,ease) both}
 .article-list-header .nf-title-filter-trigger{min-width:48px!important;width:48px!important;height:48px!important}
 
+.nf-title-filter-review:focus { outline: none; }
+.nf-title-filter-result {
+  margin: 0;
+  padding-inline: 2px;
+  font-size: var(--ds-text-subhead, .875rem);
+  font-weight: 600;
+  line-height: 1.5;
+  font-variant-numeric: tabular-nums;
+}
+.nf-title-filter-skipped-rules {
+  list-style: disc;
+  padding-inline-start: 1.25rem;
+}
+.nf-title-filter-matches {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.nf-title-filter-matches li {
+  min-width: 0;
+  padding: 10px 12px;
+  border-radius: var(--ds-radius-small, 10px);
+  background: color-mix(in srgb, var(--ds-on-surface, currentColor) 5%, transparent);
+}
+.nf-title-filter-match-title {
+  margin: 0 0 4px;
+  padding-inline: 2px;
+  font-size: var(--ds-text-subhead, .875rem);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
 /* Existing server rules are a read-only disclosure, not an editable regex form. */
 .nf-server-rules{border:0;border-radius:var(--ds-radius-row,16px);padding:0 14px;min-width:0;background:color-mix(in srgb,var(--ds-on-surface,currentColor) 5%,transparent)}
 .nf-server-rules>summary{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:48px;cursor:pointer;padding:10px 0;list-style:none;font-size:var(--ds-text-subhead,.875rem);font-weight:500;line-height:1.5;color:var(--ds-text-primary,var(--foreground));overflow-wrap:anywhere;-webkit-tap-highlight-color:transparent}

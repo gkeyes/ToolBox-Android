@@ -12,6 +12,9 @@ export const themeState = atom({ lightTheme: "default" });
 export const authState = atom({});
 export const feeds = atom([]);
 export const SERVER_URL = "https://miniflux.example.invalid";
+// The isolated controls exercise editor mechanics. The production-app cases
+// in title-filter.spec.js exercise the scanner, transport and article store.
+export const titleFilterBackfill = undefined;
 export const calls = [];
 export const handleMarkStatus = (article) => calls.push(["status", article.id]);
 export const handleMarkRead = (article) => calls.push(["read", article.id]);
