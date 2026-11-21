@@ -1,5 +1,5 @@
-const HOLD_MS = 500;
-const MOVE_LIMIT = 10;
+const HOLD_MS = 420;
+const MOVE_LIMIT = 16;
 const FOLLOW_UP_MS = 800;
 
 function articleImage(target) {
