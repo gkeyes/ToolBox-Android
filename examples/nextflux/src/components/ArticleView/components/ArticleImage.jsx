@@ -1,5 +1,5 @@
 import { PhotoView } from "react-photo-view";
-import { memo, useState } from "react";
+import { memo, useRef, useState } from "react";
 import {
   ImageOffIcon as ImageOff,
 } from "@/components/ui/icons.jsx";
@@ -9,6 +9,8 @@ import { useStore } from "@nanostores/react";
 import { imageGalleryActive } from "@/stores/articlesStore.js";
 import { imageDimensions, imageSize } from "@/toolbox/imageDimensions.js";
 import { imageIsInline } from "@/reading/inlineImage.mjs";
+
+const TAP_MAX_DURATION_MS = 500;
 
 function ArticleImage({ imgNode, type = "article", inline: inlineHint = false }) {
   const attributes = imgNode?.attribs && typeof imgNode.attribs === "object" ? imgNode.attribs : {};
@@ -21,6 +23,7 @@ function ArticleImage({ imgNode, type = "article", inline: inlineHint = false })
   const { containerRef, url, error, retry, onError, source: loadedSource } = useSafeImage(candidates, false, galleryOpen);
   const source = loadedSource || primarySource;
   const [dimensions, setDimensions] = useState(null);
+  const tapStartedAt = useRef(null);
   const epoch = imageDimensions.epoch;
   const failure = error;
   const measured = imageSize(attributes.width, attributes.height)
@@ -57,6 +60,20 @@ function ArticleImage({ imgNode, type = "article", inline: inlineHint = false })
                 aria-haspopup={type === "article" ? "dialog" : undefined}
                 data-nextflux-image-share={type === "article" ? shareableImageType(url) : undefined}
                 data-nextflux-image-source={type === "article" && imageLink?.kind === "proxy" ? imageLink.url : undefined}
+                onPointerDown={type === "article" ? (event) => {
+                  tapStartedAt.current = event.pointerType === "mouse" ? null : event.timeStamp;
+                } : undefined}
+                onPointerCancel={type === "article" ? () => { tapStartedAt.current = null; } : undefined}
+                onClickCapture={type === "article" ? (event) => {
+                  const startedAt = tapStartedAt.current;
+                  tapStartedAt.current = null;
+                  // WebView can emit a click on release even after a hold.
+                  // Intercept it before PhotoView opens, while keeping keyboard clicks.
+                  if (event.detail > 0 && startedAt !== null && event.timeStamp - startedAt >= TAP_MAX_DURATION_MS) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                  }
+                } : undefined}
                 onKeyDown={type === "article" ? (event) => {
                   if (event.key !== "Enter" && event.key !== " ") return;
                   event.preventDefault();

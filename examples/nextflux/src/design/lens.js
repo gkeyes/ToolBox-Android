@@ -28,7 +28,6 @@ const TARGETS = [
   { selector: ".action-buttons .reader-topbar-row .nextflux-close-button", inset: 2 },
   // Sheets, alerts and the loading dialog (design/panel-glass.css).
   { selector: ".nextflux-modal-surface" },
-  { selector: ".toolbox-image-dialog" },
   { selector: ".nextflux-gallery-share-button" },
   { selector: ".PhotoView-Slider__BannerRight > .PhotoView-Slider__toolbarIcon" },
   // Standalone glass buttons (design/glass-buttons.css). Inside sheets and

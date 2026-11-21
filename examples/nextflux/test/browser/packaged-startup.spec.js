@@ -161,8 +161,8 @@ const SHARE_IMAGE_BYTES = "iVBORw0KGgoAAAANSUhEUgAAAAgAAAAECAYAAACzzX7wAAAAEklEQ
 const NEXT_IMAGE_SOURCE = "https://reader.example.invalid/proxy/another.png?key=fixture-image";
 const NEXT_IMAGE_BYTES = "iVBORw0KGgoAAAANSUhEUgAAAAgAAAAECAYAAACzzX7wAAAAEklEQVR4nGPgT3n7Hx9moL0CAFvRS+EeBMLEAAAAAElFTkSuQmCC";
 
-async function openPackedImageArticle(page, nativeImages, { secondImage = false } = {}) {
-  await page.emulateMedia({ reducedMotion: "reduce" });
+async function openPackedImageArticle(page, nativeImages, { secondImage = false, colorScheme = "light" } = {}) {
+  await page.emulateMedia({ reducedMotion: "reduce", colorScheme });
   const linked = `<p><a href="${SHARE_IMAGE_LINK}"><img src="${SHARE_IMAGE_SOURCE}" alt="可分享测试图片" width="320" height="160"></a></p>`;
   const another = secondImage ? `<p><img src="${NEXT_IMAGE_SOURCE}" alt="可分享另一张图片" width="320" height="160"></p>` : "";
   await installPackedArticles(page, { imageArticle: linked + another });
@@ -209,7 +209,7 @@ async function openPackedImageArticle(page, nativeImages, { secondImage = false 
   return { reader, image };
 }
 
-async function holdImage(page, image, { moveX = 0, moveY = 0, advance } = {}) {
+async function holdImage(page, image, { moveY = 0, duringHold } = {}) {
   const touch = await page.context().newCDPSession(page);
   const point = await image.evaluate((element) => {
     const { left, top, width, height } = element.getBoundingClientRect();
@@ -218,14 +218,14 @@ async function holdImage(page, image, { moveX = 0, moveY = 0, advance } = {}) {
     if (document.elementFromPoint(x, y) !== element) throw new Error("The test image is not reachable");
     return { x, y };
   });
-  const dispatch = (type, dx = 0, dy = 0) => touch.send("Input.dispatchTouchEvent", {
-    type, touchPoints: type === "touchEnd" ? [] : [{ x: point.x + dx, y: point.y + dy }],
+  const dispatch = (type, offset = 0) => touch.send("Input.dispatchTouchEvent", {
+    type, touchPoints: type === "touchEnd" ? [] : [{ x: point.x, y: point.y + offset }],
   });
   try {
     await dispatch("touchStart");
-    if (moveX || moveY) await dispatch("touchMove", moveX, moveY);
-    if (advance) await advance();
-    else await page.waitForTimeout(650);
+    if (moveY) await dispatch("touchMove", moveY);
+    await page.waitForTimeout(650);
+    await duringHold?.();
     await dispatch("touchEnd");
   } finally {
     await touch.detach();
@@ -245,53 +245,54 @@ async function expectLiquidGlass(surface) {
   })).toEqual({ blur: true, lens: true, translucent: true });
 }
 
-for (const [layout, viewport] of [
-  ["portrait", { width: 393, height: 852 }],
-  ["landscape", { width: 920, height: 420 }],
+for (const [layout, viewport, colorScheme] of [
+  ["portrait", { width: 393, height: 852 }, "light"],
+  ["landscape", { width: 920, height: 420 }, "dark"],
 ]) {
-  touchReaderTest(`packed ${layout} long press shares the original linked article image offline`, async ({ page, context }) => {
+  touchReaderTest(`packed ${layout} shares linked article images only from the enlarged viewer`, async ({ page, context }) => {
     await page.setViewportSize(viewport);
-    const { reader, image } = await openPackedImageArticle(page, true);
+    const { reader, image } = await openPackedImageArticle(page, true, { colorScheme });
     const trace = () => page.evaluate(() => window.__imageShareTrace);
+    const menu = page.getByRole("dialog", { name: /^(图片|链接)操作$/ });
+    const gallery = page.locator(".PhotoView-Portal");
+    const share = page.getByRole("button", { name: "分享图片", exact: true });
+    const expectNoImageActions = async () => {
+      await expect(menu).toHaveCount(0);
+      await expect(share).toHaveCount(0);
+      expect((await trace()).shared).toEqual([]);
+      expect((await trace()).openedLinks).toEqual([]);
+    };
     expect((await trace()).mediaRequests).toEqual([SHARE_IMAGE_SOURCE]);
+
+    await holdImage(page, image, { duringHold: expectNoImageActions });
+    await expectNoImageActions();
+    await expect(gallery).toHaveCount(0);
+    expect(await image.evaluate((element) => element.dispatchEvent(
+      new MouseEvent("contextmenu", { bubbles: true, cancelable: true }),
+    ))).toBe(false);
+    await image.press("Shift+F10");
+    await expectNoImageActions();
+
+    const scrollBefore = await reader.evaluate((element) => element.scrollTop);
+    await holdImage(page, image, { moveY: -114 });
+    await expect.poll(() => reader.evaluate((element) => element.scrollTop)).toBeGreaterThan(scrollBefore);
+    await expectNoImageActions();
+
+    await image.scrollIntoViewIfNeeded();
     await context.setOffline(true);
-    await holdImage(page, image);
-    const dialog = page.getByRole("dialog", { name: "图片操作" });
-    await expect(dialog).toBeVisible();
-    await expectLiquidGlass(dialog);
-    await expect(page.getByRole("dialog", { name: "链接操作" })).toHaveCount(0);
-    await expect(page.locator(".PhotoView-Portal")).toHaveCount(0);
-    expect((await trace()).shared).toEqual([]);
-    await dialog.getByRole("button", { name: "分享图片", exact: true }).tap();
-    await expect(dialog).toHaveCount(0);
-    expect(await trace()).toEqual({
+    await image.tap();
+    await expect(gallery).toBeVisible();
+    await expect(share).toBeVisible();
+    await expectLiquidGlass(share);
+    await share.tap();
+    await expect.poll(trace).toEqual({
       mediaRequests: [SHARE_IMAGE_SOURCE],
       shared: [{ mime: "image/png", data: SHARE_IMAGE_BYTES }],
       openedLinks: [],
     });
-    const scrollBefore = await reader.evaluate((element) => element.scrollTop);
-    await holdImage(page, image, { moveY: -114 });
-    await expect.poll(() => reader.evaluate((element) => element.scrollTop)).toBeGreaterThan(scrollBefore);
-    await expect(dialog).toHaveCount(0);
+    await expect(gallery).toBeVisible();
   });
 }
-
-touchReaderTest("packed portrait accepts a slightly moving finger after a shorter hold", async ({ page }) => {
-  await page.setViewportSize({ width: 393, height: 852 });
-  const { reader, image } = await openPackedImageArticle(page, true);
-  const scrollBefore = await reader.evaluate((element) => element.scrollTop);
-  await page.clock.install();
-  await page.clock.pauseAt(new Date(Date.now() + 1_000));
-  await holdImage(page, image, { moveX: 12, advance: () => page.clock.runFor(450) });
-  const dialog = page.getByRole("dialog", { name: "图片操作" });
-  await expect(dialog).toBeVisible();
-  await expectLiquidGlass(dialog);
-  expect(await reader.evaluate((element) => element.scrollTop)).toBe(scrollBefore);
-  expect(await page.evaluate(() => window.__imageShareTrace.shared)).toEqual([]);
-  await page.clock.resume();
-  await dialog.getByRole("button", { name: "取消", exact: true }).tap();
-  await expect(dialog).toHaveCount(0);
-});
 
 touchReaderTest("packed gallery shares the selected image directly and keeps the viewer open", async ({ page, context }) => {
   await page.setViewportSize({ width: 920, height: 420 });
@@ -317,34 +318,30 @@ touchReaderTest("packed gallery shares the selected image directly and keeps the
   expect(trace.openedLinks).toEqual([]);
 });
 
-touchReaderTest("packed older host offers the image link and keeps gallery taps after cancelling", async ({ page }) => {
+touchReaderTest("packed older host offers the image link from the viewer while text links still have their menu", async ({ page }) => {
   await page.setViewportSize({ width: 393, height: 852 });
   const { reader, image } = await openPackedImageArticle(page, false);
-  const dialog = page.getByRole("dialog", { name: "图片操作" });
-  await holdImage(page, image);
-  await expect(dialog.getByRole("button", { name: "分享图片链接", exact: true })).toBeVisible();
-  await expect(dialog.getByRole("button", { name: "分享图片", exact: true })).toHaveCount(0);
-  expect(await page.evaluate(() => !window.dispatchEvent(new Event("toolboxback", { cancelable: true })))).toBe(true);
-  await expect(dialog).toHaveCount(0);
   await image.tap();
   const gallery = page.locator(".PhotoView-Portal");
   await expect(gallery).toBeVisible();
   const shareLink = gallery.getByRole("button", { name: "分享图片链接", exact: true });
   await expect(shareLink).toBeVisible();
+  await expect(gallery.getByRole("button", { name: "分享图片", exact: true })).toHaveCount(0);
   await expectLiquidGlass(shareLink);
   await shareLink.tap();
   expect(await page.evaluate(() => window.__imageShareTrace.shared)).toEqual([{ text: SHARE_IMAGE_SOURCE }]);
   await expect(gallery).toBeVisible();
   await gallery.locator(".PhotoView-Slider__toolbarIcon").last().tap();
   await expect(gallery).toHaveCount(0);
-  await holdImage(page, image);
-  await dialog.getByRole("button", { name: "取消", exact: true }).tap();
-  await expect(dialog).toHaveCount(0);
-  await image.press("Shift+F10");
-  await dialog.getByRole("button", { name: "分享图片链接", exact: true }).tap();
-  await expect(dialog).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "分享图片链接", exact: true })).toHaveCount(0);
+  const link = reader.locator(`a[href="${SHARE_IMAGE_LINK}"]`);
+  await link.dispatchEvent("contextmenu");
+  const linkMenu = page.getByRole("dialog", { name: "链接操作" });
+  await expect(linkMenu.getByRole("button", { name: "复制链接", exact: true })).toBeVisible();
+  await linkMenu.getByRole("button", { name: "取消", exact: true }).tap();
+  await expect(linkMenu).toHaveCount(0);
   const trace = await page.evaluate(() => window.__imageShareTrace);
-  expect(trace.shared).toEqual([{ text: SHARE_IMAGE_SOURCE }, { text: SHARE_IMAGE_SOURCE }]);
+  expect(trace.shared).toEqual([{ text: SHARE_IMAGE_SOURCE }]);
   expect(trace.openedLinks).toEqual([]);
   await expect(reader.locator(".article-title")).toHaveText("双栏文章 4");
 });
