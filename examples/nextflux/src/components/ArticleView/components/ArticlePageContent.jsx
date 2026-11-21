@@ -1,4 +1,4 @@
-import { forwardRef, useCallback, useMemo, useState } from "react";
+import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import { useStore } from "@nanostores/react";
 import { PhotoProvider } from "react-photo-view";
@@ -14,6 +14,43 @@ import { currentThemeMode, themeState } from "@/stores/themeStore.js";
 import { runtimeForeground } from "@/toolbox/foreground.js";
 import { getFontSizeClass, cn } from "@/lib/utils.js";
 import { enclosurePosterSources, isHlsPlaylist } from "@/reading/media-sources.mjs";
+import { ShareIcon } from "@/components/ui/icons.jsx";
+import { imageShareAction } from "@/toolbox/actions.js";
+
+function GalleryShareButton({ image }) {
+  const current = useRef(null);
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState("");
+  useEffect(() => () => current.current?.abort(), []);
+  const share = imageShareAction(image);
+  if (!share) return null;
+
+  async function send(event) {
+    event.stopPropagation();
+    if (current.current) return;
+    const controller = new AbortController();
+    current.current = controller;
+    setPending(true);
+    setError("");
+    try {
+      await share.action(controller.signal, setError);
+    } finally {
+      current.current = null;
+      if (!controller.signal.aborted) setPending(false);
+    }
+  }
+
+  return <div className="nextflux-gallery-share">
+    <button className="nextflux-gallery-share-button" aria-label={share.label} title={share.label}
+      type="button" aria-busy={pending || undefined} disabled={pending} onClick={send}><ShareIcon /></button>
+    {error && <p className="nextflux-gallery-share-error" role="alert">{error}</p>}
+  </div>;
+}
+
+function galleryShareToolbar({ images, index, visible }) {
+  const photo = images[index];
+  return visible && photo ? <GalleryShareButton key={photo.key} image={photo.originRef?.current} /> : null;
+}
 
 const ArticlePageContent = forwardRef(function ArticlePageContent(
   { article, passive = false, readingPaused = false, className },
@@ -85,6 +122,7 @@ const ArticlePageContent = forwardRef(function ArticlePageContent(
 
       <PhotoProvider
         bannerVisible={!passive}
+        toolbarRender={passive ? undefined : galleryShareToolbar}
         onVisibleChange={(visible) => {
           if (!passive) imageGalleryActive.set(visible);
           if (visible) cancelGalleryRelease();

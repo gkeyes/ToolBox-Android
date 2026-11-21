@@ -166,9 +166,19 @@ function showActionDialog({ label, heading, description, address, actions, trigg
     if (!document.querySelector("dialog[open]") && trigger?.isConnected) trigger.focus({ preventScroll: true });
   }, { once: true });
   document.body.append(dialog);
+  if (image) {
+    const positionInReader = () => {
+      const pane = trigger.closest(".article-scroll-area")?.getBoundingClientRect();
+      const fits = pane && pane.width >= 328;
+      dialog.style.setProperty("--nf-image-pane-left", fits ? `${Math.max(0, pane.left)}px` : "0px");
+      dialog.style.setProperty("--nf-image-pane-right", fits ? `${Math.max(0, window.innerWidth - pane.right)}px` : "0px");
+    };
+    positionInReader();
+    window.addEventListener("resize", positionInReader, { signal: lifetime.signal });
+    window.addEventListener("hashchange", dismiss, { signal: lifetime.signal });
+  }
   dialog.showModal();
   footer.firstElementChild.focus({ preventScroll: true });
-  if (image) window.addEventListener("hashchange", dismiss, { signal: lifetime.signal });
 }
 
 export function showLinkActions(value) {
@@ -187,13 +197,49 @@ export function showLinkActions(value) {
   });
 }
 
-function showImageActions(image) {
+export function imageShareAction(image) {
+  if (!image?.isConnected || !image.matches("img[data-nextflux-image-share]")) return null;
   const shown = image.currentSrc || image.src;
   const link = image.dataset.nextfluxImageSource;
   const share = window.ToolBox?.share;
   const canShareFile = typeof share?.image === "function" && Boolean(image.dataset.nextfluxImageShare);
-  if (!canShareFile && (!link || typeof share?.text !== "function")) {
-    toast.error(typeof share?.image === "function" ? "当前图片格式无法分享。" : "请更新 ToolBox 后分享图片文件。");
+  if (!canShareFile && (!link || typeof share?.text !== "function")) return null;
+  return {
+    label: canShareFile ? "分享图片" : "分享图片链接",
+    primary: true,
+    async action(signal, reportFailure) {
+      try {
+        if (signal.aborted) return false;
+        if (!image.isConnected || (image.currentSrc || image.src) !== shown) {
+          reportFailure("图片已经变化，请重新打开分享。");
+          return false;
+        }
+        if (canShareFile) {
+          const { readShareableImage } = await import("./media.js");
+          if (signal.aborted) return false;
+          const blob = await readShareableImage(shown, signal);
+          if (signal.aborted) return false;
+          await share.image(blob, { signal });
+        } else await share.text(link);
+        return true;
+      } catch (error) {
+        if (signal.aborted || error?.code === "CANCELLED" || error?.name === "AbortError") return false;
+        const detail = {
+          INVALID_MIME: "当前图片格式无法分享。",
+          QUOTA_EXCEEDED: "图片超过 32 MB 的分享上限。",
+          UNSUPPORTED: "请更新 ToolBox 后分享图片文件。",
+        };
+        reportFailure(detail[error?.code] || message(error, "分享"));
+        return false;
+      }
+    },
+  };
+}
+
+function showImageActions(image) {
+  const action = imageShareAction(image);
+  if (!action) {
+    toast.error(typeof window.ToolBox?.share?.image === "function" ? "当前图片格式无法分享。" : "请更新 ToolBox 后分享图片文件。");
     return;
   }
   showActionDialog({
@@ -201,33 +247,7 @@ function showImageActions(image) {
     heading: "图片操作",
     image: true,
     trigger: image,
-    actions: [{
-      label: canShareFile ? "分享图片" : "分享图片链接",
-      primary: true,
-      action: canShareFile ? async (signal, reportFailure) => {
-        try {
-          const { readShareableImage } = await import("./media.js");
-          if (signal.aborted) return false;
-          if (!image.isConnected || (image.currentSrc || image.src) !== shown) {
-            reportFailure("图片已经变化，请重新长按。");
-            return false;
-          }
-          const blob = await readShareableImage(shown, signal);
-          if (signal.aborted) return false;
-          await share.image(blob, { signal });
-          return true;
-        } catch (error) {
-          if (signal.aborted || error?.code === "CANCELLED" || error?.name === "AbortError") return false;
-          const detail = {
-            INVALID_MIME: "当前图片格式无法分享。",
-            QUOTA_EXCEEDED: "图片超过 32 MB 的分享上限。",
-            UNSUPPORTED: "请更新 ToolBox 后分享图片文件。",
-          };
-          reportFailure(detail[error?.code] || message(error, "分享"));
-          return false;
-        }
-      } : () => shareText(link),
-    }],
+    actions: [action],
   });
 }
 

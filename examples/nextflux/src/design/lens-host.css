@@ -141,6 +141,52 @@
   --nf-glass-filter: blur(7px) saturate(180%) brightness(1.05);
 }
 
+/* Share surfaces use the same refraction and rim as the reading controls.
+   Keep the backdrop clear of extra blur so the material samples the article. */
+html :is(.toolbox-image-dialog, .nextflux-gallery-share-button) {
+  isolation: isolate;
+  background: transparent;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  box-shadow: var(--nf-glass-drop);
+}
+html :is(.toolbox-image-dialog, .nextflux-gallery-share-button)::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  pointer-events: none;
+  background: var(--nf-glass);
+  box-shadow: var(--nf-glass-inset);
+  -webkit-backdrop-filter: var(--nf-lens, blur(12px)) var(--nf-glass-filter);
+  backdrop-filter: var(--nf-lens, blur(12px)) var(--nf-glass-filter);
+}
+html .toolbox-image-dialog {
+  left: var(--nf-image-pane-left, 0px);
+  right: var(--nf-image-pane-right, 0px);
+  max-block-size: calc(100dvh - max(16px, var(--nf-safe-top)) - max(16px, env(safe-area-inset-bottom, 0px)));
+}
+html .toolbox-image-dialog::before {
+  background: color-mix(in srgb, var(--nf-glass) 64%, var(--overlay) 36%);
+  --nf-glass-filter: blur(7px) saturate(180%) brightness(1.05);
+}
+html .toolbox-image-dialog::backdrop {
+  background: rgb(0 0 0 / 0.18);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+html .toolbox-image-dialog .toolbox-link-primary {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 32%, transparent);
+  color: var(--ds-text-primary, var(--foreground));
+}
+@media (hover: hover) {
+  html .toolbox-image-dialog .toolbox-link-primary:hover {
+    background: color-mix(in srgb, var(--accent) 25%, transparent);
+  }
+}
+
 /* The list's sidebar button and the reader close button paint their glass on
    ::before as well: their press grows the button and brightens the glass,
    never with a filter on the button itself. */
@@ -167,6 +213,11 @@
 }
 
 @media (prefers-reduced-transparency: reduce) {
+  html :is(.toolbox-image-dialog, .nextflux-gallery-share-button)::before {
+    background: var(--surface);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
   /* Held, they keep the solid surface under the sheen. */
   .article-list-header > [data-sidebar="trigger"],
   .action-buttons .reader-topbar-row .nextflux-close-button { --nf-press-base: var(--surface); }
