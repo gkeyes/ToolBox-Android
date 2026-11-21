@@ -176,17 +176,6 @@ html .toolbox-image-dialog::backdrop {
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
 }
-html .toolbox-image-dialog .toolbox-link-primary {
-  background: color-mix(in srgb, var(--accent) 16%, transparent);
-  border-color: color-mix(in srgb, var(--accent) 32%, transparent);
-  color: var(--ds-text-primary, var(--foreground));
-}
-@media (hover: hover) {
-  html .toolbox-image-dialog .toolbox-link-primary:hover {
-    background: color-mix(in srgb, var(--accent) 25%, transparent);
-  }
-}
-
 /* The list's sidebar button and the reader close button paint their glass on
    ::before as well: their press grows the button and brightens the glass,
    never with a filter on the button itself. */
