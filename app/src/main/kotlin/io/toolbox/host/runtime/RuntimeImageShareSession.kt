@@ -210,7 +210,7 @@ internal fun createImageShareChooser(context: Context, file: File, format: Runti
     val send = Intent(Intent.ACTION_SEND)
         .setType(format.mimeType)
         .putExtra(Intent.EXTRA_STREAM, uri)
-        .setClipData(ClipData.newRawUri("图片", uri))
+        .apply { clipData = ClipData.newRawUri("图片", uri) }
         .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
     return Intent.createChooser(send, "分享图片")
 }
