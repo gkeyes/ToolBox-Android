@@ -115,7 +115,7 @@ internal class RuntimePresentationCoordinator(
 
     companion object {
         const val CLOSE_TIMEOUT_MILLIS = 2_000L
-        val CLEANUP_METHODS = setOf("network.closeMedia", "browser.closeEmbedded")
+        val CLEANUP_METHODS = setOf("network.closeMedia", "browser.closeEmbedded", "share.image.cancel")
         val CONTROL_METHODS = setOf("ready", "runtime.getState", "runtime.ackEvents", "runtime.flushComplete") + CLEANUP_METHODS
         private val CLOSE_METHODS = CONTROL_METHODS + setOf(
             "network.cancelStream", "storage.get", "storage.getMany", "storage.apply", "storage.set",

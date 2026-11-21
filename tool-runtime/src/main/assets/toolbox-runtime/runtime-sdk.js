@@ -206,6 +206,40 @@
     return decoded;
   };
   const bytes = value => value instanceof Uint8Array ? { base64: toBase64(value) } : value;
+  const shareImageTypes = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
+  let sharingImage = false;
+  const shareImage = async (blob, { signal } = {}) => {
+    if (!(blob instanceof Blob) || !blob.size) throw runtimeError('INVALID_REQUEST', 'An image Blob is required');
+    if (!shareImageTypes.has(blob.type)) throw runtimeError('INVALID_MIME', 'The image format is unsupported');
+    if (blob.size > 32 * 1024 * 1024) throw runtimeError('QUOTA_EXCEEDED', 'The image exceeds the share size limit');
+    const check = () => {
+      if (signal?.aborted) throw runtimeError('CANCELLED', 'Image sharing was cancelled');
+    };
+    check();
+    if (sharingImage) throw runtimeError('BUSY', 'An image share is already in progress');
+    const transferId = 'image-' + Array.from(crypto.getRandomValues(new Uint8Array(16)), byte => byte.toString(16).padStart(2, '0')).join('');
+    const cancel = () => { call('share.image.cancel', { transferId }).catch(() => undefined); };
+    const chunkSize = 256 * 1024;
+    let launched = false;
+    sharingImage = true;
+    signal?.addEventListener('abort', cancel, { once: true });
+    try {
+      await call('share.image.begin', { transferId, mimeType: blob.type, length: blob.size });
+      for (let offset = 0; offset < blob.size; offset += chunkSize) {
+        check();
+        const chunk = new Uint8Array(await blob.slice(offset, offset + chunkSize).arrayBuffer());
+        check();
+        await call('share.image.write', { transferId, offset, content: bytes(chunk) });
+      }
+      check();
+      await call('share.image.finish', { transferId });
+      launched = true;
+    } finally {
+      signal?.removeEventListener('abort', cancel);
+      if (!launched) cancel();
+      sharingImage = false;
+    }
+  };
   const networkRequest = request => {
     if (request?.maxResponseBytes !== undefined &&
         (!Number.isSafeInteger(request.maxResponseBytes) || request.maxResponseBytes < 1)) {
@@ -589,7 +623,7 @@
       onRestore: listener => subscribe('background.restore', listener),
       onTimer: listener => subscribe('background.timer', listener)
     },
-    share: { text: text => call('share.text', { text }) },
+    share: { text: text => call('share.text', { text }), image: shareImage },
     browser: { open: url => call('browser.open', { url }).then(() => undefined), openEmbedded },
     files: {
       open: mimeTypes => call('files.open', mimeTypes === undefined ? {} : { mimeTypes }),

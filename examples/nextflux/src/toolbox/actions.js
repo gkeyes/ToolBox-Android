@@ -1,4 +1,5 @@
 import { toast } from "sonner";
+import { installImageShareGesture } from "./image-share-gesture.js";
 
 function message(error, permission) {
   return error?.code === "PERMISSION_DENIED"
@@ -63,43 +64,64 @@ function parseLink(value) {
   return url;
 }
 
-export function showLinkActions(value) {
-  const url = parseLink(value);
-  if (!url) return;
-  document.querySelector("dialog.toolbox-link-dialog")?.remove();
-  const trigger = document.activeElement;
+function showActionDialog({ label, heading, description, address, actions, trigger = document.activeElement, image = false }) {
+  const previous = document.querySelector("dialog.toolbox-link-dialog");
+  if (previous?.open) return;
+  previous?.remove();
+  const lifetime = new AbortController();
   const dialog = document.createElement("dialog");
-  dialog.className = "toolbox-link-dialog";
-  dialog.setAttribute("aria-label", "链接操作");
-  dialog.setAttribute("aria-describedby", "toolbox-link-explanation");
+  dialog.className = image ? "toolbox-link-dialog toolbox-image-dialog" : "toolbox-link-dialog";
+  dialog.setAttribute("aria-label", label);
   const title = document.createElement("h2");
-  title.textContent = "打开原文链接";
-  const explanation = document.createElement("p");
-  explanation.id = "toolbox-link-explanation";
-  explanation.textContent = "在 ToolBox 内打开网页，也可以复制或分享链接。";
-  const address = document.createElement("p");
-  address.className = "toolbox-link-address";
-  address.textContent = url.href;
+  title.textContent = heading;
+  dialog.append(title);
+  if (description) {
+    const explanation = document.createElement("p");
+    explanation.id = "toolbox-link-explanation";
+    explanation.textContent = description;
+    dialog.setAttribute("aria-describedby", explanation.id);
+    dialog.append(explanation);
+  }
+  if (address) {
+    const details = document.createElement("p");
+    details.className = "toolbox-link-address";
+    details.textContent = address;
+    dialog.append(details);
+  }
+  const failure = image ? document.createElement("p") : null;
+  if (failure) {
+    failure.hidden = true;
+    failure.setAttribute("role", "alert");
+    dialog.append(failure);
+  }
+  const reportFailure = text => {
+    failure.textContent = text;
+    failure.hidden = false;
+  };
   const footer = document.createElement("div");
   footer.className = "toolbox-link-actions";
   let pending = false;
-  for (const [label, action] of [
-    ["应用内打开", () => openInBrowser(url.href)],
-    ["复制链接", () => copyText(url.href)],
-    ["分享链接", () => shareText(url.href)],
-    ["取消", async () => true],
-  ]) {
+  function dismiss() {
+    lifetime.abort();
+    if (dialog.open) dialog.close();
+  }
+
+  for (const { label, primary, action, cancel } of [...actions, { label: "取消", cancel: true }]) {
     const button = document.createElement("button");
     button.type = "button";
     button.textContent = label;
-    button.className = label === "应用内打开" ? "toolbox-link-primary" : "toolbox-link-secondary";
+    button.className = primary ? "toolbox-link-primary" : "toolbox-link-secondary";
     button.onclick = async () => {
+      if (cancel && (!pending || image)) { dismiss(); return; }
       if (pending) return;
+      if (failure) failure.hidden = true;
       pending = true;
       dialog.setAttribute("aria-busy", "true");
-      for (const control of footer.children) control.disabled = true;
+      for (const control of footer.children) {
+        control.disabled = !(image && control === footer.lastElementChild);
+      }
       try {
-        if (await action()) dialog.close();
+        if (await action(lifetime.signal, reportFailure)) dismiss();
       } finally {
         pending = false;
         dialog.removeAttribute("aria-busy");
@@ -109,7 +131,7 @@ export function showLinkActions(value) {
     };
     footer.append(button);
   }
-  dialog.append(title, explanation, address, footer);
+  dialog.append(footer);
   // Only a gesture starting and ending on the backdrop dismisses the dialog.
   // Dragging from the address or a button must not accidentally cancel it.
   const outside = (event) => {
@@ -129,24 +151,90 @@ export function showLinkActions(value) {
   }, { passive: true });
   dialog.addEventListener("touchcancel", () => { backdropPress = false; });
   dialog.addEventListener("click", (event) => {
-    if (!pending && backdropPress && event.target === dialog && outside(event)) dialog.close();
+    if ((!pending || image) && backdropPress && event.target === dialog && outside(event)) dismiss();
     backdropPress = false;
   });
   dialog.addEventListener("cancel", (event) => {
-    if (pending) event.preventDefault();
+    if (pending && !image) event.preventDefault();
+    else lifetime.abort();
   });
   // Keep native dialog keyboard behavior, but don't also run reader shortcuts.
   dialog.addEventListener("keydown", (event) => event.stopPropagation());
   dialog.addEventListener("close", () => {
+    lifetime.abort();
     dialog.remove();
     if (!document.querySelector("dialog[open]") && trigger?.isConnected) trigger.focus({ preventScroll: true });
   }, { once: true });
   document.body.append(dialog);
   dialog.showModal();
   footer.firstElementChild.focus({ preventScroll: true });
+  if (image) window.addEventListener("hashchange", dismiss, { signal: lifetime.signal });
 }
+
+export function showLinkActions(value) {
+  const url = parseLink(value);
+  if (!url) return;
+  showActionDialog({
+    label: "链接操作",
+    heading: "打开原文链接",
+    description: "在 ToolBox 内打开网页，也可以复制或分享链接。",
+    address: url.href,
+    actions: [
+      { label: "应用内打开", primary: true, action: () => openInBrowser(url.href) },
+      { label: "复制链接", action: () => copyText(url.href) },
+      { label: "分享链接", action: () => shareText(url.href) },
+    ],
+  });
+}
+
+function showImageActions(image) {
+  const shown = image.currentSrc || image.src;
+  const link = image.dataset.nextfluxImageSource;
+  const share = window.ToolBox?.share;
+  const canShareFile = typeof share?.image === "function" && Boolean(image.dataset.nextfluxImageShare);
+  if (!canShareFile && (!link || typeof share?.text !== "function")) {
+    toast.error(typeof share?.image === "function" ? "当前图片格式无法分享。" : "请更新 ToolBox 后分享图片文件。");
+    return;
+  }
+  showActionDialog({
+    label: "图片操作",
+    heading: "图片操作",
+    image: true,
+    trigger: image,
+    actions: [{
+      label: canShareFile ? "分享图片" : "分享图片链接",
+      primary: true,
+      action: canShareFile ? async (signal, reportFailure) => {
+        try {
+          const { readShareableImage } = await import("./media.js");
+          if (signal.aborted) return false;
+          if (!image.isConnected || (image.currentSrc || image.src) !== shown) {
+            reportFailure("图片已经变化，请重新长按。");
+            return false;
+          }
+          const blob = await readShareableImage(shown, signal);
+          if (signal.aborted) return false;
+          await share.image(blob, { signal });
+          return true;
+        } catch (error) {
+          if (signal.aborted || error?.code === "CANCELLED" || error?.name === "AbortError") return false;
+          const detail = {
+            INVALID_MIME: "当前图片格式无法分享。",
+            QUOTA_EXCEEDED: "图片超过 32 MB 的分享上限。",
+            UNSUPPORTED: "请更新 ToolBox 后分享图片文件。",
+          };
+          reportFailure(detail[error?.code] || message(error, "分享"));
+          return false;
+        }
+      } : () => shareText(link),
+    }],
+  });
+}
+
 export function installLinkHandling() {
+  const imageGestures = installImageShareGesture(showImageActions);
   document.addEventListener("click", event => {
+    if (imageGestures.consumedClick(event)) return;
     const anchor = event.target.closest?.("a[href]");
     if (!anchor) return;
     // Only the safe reader renderer sets this marker; article HTML cannot
@@ -159,6 +247,7 @@ export function installLinkHandling() {
     void openInBrowser(target.href);
   }, true);
   document.addEventListener("contextmenu", event => {
+    if (imageGestures.consumedMenu(event)) return;
     const anchor = event.target.closest?.("a[href]");
     if (!anchor) return;
     if (anchor.hasAttribute("data-reading-local-anchor") && anchor.closest("[data-font-reading-root]")) return;

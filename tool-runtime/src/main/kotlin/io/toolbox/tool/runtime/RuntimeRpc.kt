@@ -48,6 +48,7 @@ data class RuntimeRpcRequest(
 enum class RuntimeRpcErrorCode {
     UNSUPPORTED,
     INVALID_REQUEST,
+    INVALID_MIME,
     INVALID_SESSION,
     WRONG_ORIGIN,
     NOT_MAIN_FRAME,
@@ -131,6 +132,7 @@ data class RuntimeServiceHandlers(
 data class RuntimeSystemHandlers(
     val clipboardRead: RuntimeClipboardReadHandler? = null,
     val shareText: RuntimeShareTextHandler? = null,
+    val shareImage: RuntimeImageShareHandler? = null,
     val browserOpen: RuntimeBrowserOpenHandler? = null,
     val browserEmbedded: RuntimeEmbeddedBrowserHandler? = null,
     val files: RuntimeFilesHandler? = null,

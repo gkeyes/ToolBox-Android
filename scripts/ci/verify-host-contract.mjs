@@ -471,4 +471,5 @@ console.log(`Host contract: ${methods.length} methods, ${capabilities.length} ca
 execFileSync(process.execPath, ['--test',
   resolve(root, 'tool-runtime/src/test/js/runtime-media-sdk.test.mjs'),
   resolve(root, 'tool-runtime/src/test/js/runtime-embedded-sdk.test.mjs'),
+  resolve(root, 'tool-runtime/src/test/js/runtime-image-share-sdk.test.mjs'),
 ], { stdio: 'inherit' });

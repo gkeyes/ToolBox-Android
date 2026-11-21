@@ -12,6 +12,47 @@ const images = createImageCache({
     mime: RASTER_MIME, check, signal,
   }),
 });
+const SHARE_IMAGE_BYTES = 32 * 1024 * 1024;
+const SHARE_IMAGE_MIME = /^image\/(?:jpeg|png|gif|webp)$/i;
+const INLINE_IMAGE_HEADER = /^data:(image\/[a-z0-9.+-]+);base64,/i;
+
+export function shareableImageType(url) {
+  const type = images.blobForUrl(url)?.type || INLINE_IMAGE_HEADER.exec(url)?.[1] || "";
+  return SHARE_IMAGE_MIME.test(type) ? type.toLowerCase() : "";
+}
+
+// The actual displayed blob is already retained by the image cache. Using it
+// preserves original bytes, works offline and complies with the host CSP,
+// which permits blob:/data: for images but not as fetch destinations.
+export async function readShareableImage(url, signal) {
+  const type = shareableImageType(url);
+  const failure = (code) => Object.assign(new Error("无法分享此图片。"), { code });
+  if (!type) throw failure("INVALID_MIME");
+  const cached = images.blobForUrl(url);
+  if (cached) {
+    if (cached.size > SHARE_IMAGE_BYTES) throw failure("QUOTA_EXCEEDED");
+    return cached;
+  }
+  const header = INLINE_IMAGE_HEADER.exec(url);
+  if (!header) throw failure("CANCELLED");
+  const maxEncodedLength = 4 * Math.ceil(SHARE_IMAGE_BYTES / 3);
+  if (url.length - header[0].length > maxEncodedLength + 1024 * 1024) throw failure("QUOTA_EXCEEDED");
+  const encoded = url.slice(header[0].length).replace(/\s/g, "");
+  if (encoded.length > maxEncodedLength) throw failure("QUOTA_EXCEEDED");
+  const chunks = [];
+  let total = 0;
+  for (let index = 0; index < encoded.length; index += 32768) {
+    if (index && index % (1024 * 1024) === 0) await new Promise(resolve => setTimeout(resolve, 0));
+    if (signal?.aborted) throw failure("CANCELLED");
+    const binary = atob(encoded.slice(index, index + 32768));
+    const chunk = new Uint8Array(binary.length);
+    for (let offset = 0; offset < chunk.length; offset++) chunk[offset] = binary.charCodeAt(offset);
+    total += chunk.byteLength;
+    if (total > SHARE_IMAGE_BYTES) throw failure("QUOTA_EXCEEDED");
+    chunks.push(chunk);
+  }
+  return new Blob(chunks, { type });
+}
 
 // One IntersectionObserver for every mounted image (a long list can hold
 // hundreds); each element maps to its own visibility callback.

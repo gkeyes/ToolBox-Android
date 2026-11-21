@@ -110,6 +110,7 @@ export function createImageCache({
 
   return {
     hasBlob: (url) => byBlob.has(url),
+    blobForUrl: (url) => byBlob.get(url)?.blob,
     acquire(source) {
       trimIdle();
       let entry = bySource.get(source) || byBlob.get(source);
