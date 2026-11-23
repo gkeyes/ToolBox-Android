@@ -502,7 +502,14 @@
   $('export').addEventListener('click',exportImage);
   $('help-button').addEventListener('click',()=>showDialog($('help-dialog')));$('close-help').addEventListener('click',()=>$('help-dialog').close());
   $('zoom').addEventListener('click',()=>{if(!state.plan)return;const p=state.plan;drawPlan($('zoom-canvas'),Math.min(p.width,Math.floor(p.width*30000/p.height),Math.floor(Math.sqrt(20000000*p.width/p.height))));$('zoom-canvas').style.width='100%';showDialog($('zoom-dialog'));});
-  $('close-zoom').addEventListener('click',()=>{$('zoom-dialog').close();$('zoom-canvas').width=$('zoom-canvas').height=1;});
+  const zoomDialog = $('zoom-dialog');
+  $('close-zoom').addEventListener('click', () => zoomDialog.close());
+  zoomDialog.addEventListener('close', () => {
+    // A queued close event may arrive after the preview has been reopened.
+    if (zoomDialog.open) return;
+    const canvas = $('zoom-canvas');
+    canvas.width = canvas.height = 1;
+  });
   $('fit-zoom').addEventListener('click',()=>{$('zoom-canvas').style.width='100%';});
   $('actual-zoom').addEventListener('click',()=>{$('zoom-canvas').style.width=state.plan.width+'px';});
   document.addEventListener('dragover',e=>{e.preventDefault();if(!state.busy)$('input-section').classList.add('drag-over');});
