@@ -69,7 +69,7 @@ jobs:
         with:
           log-accepted-android-sdk-licenses: false
           packages: platform-tools platforms;android-37.0 build-tools;37.0.0
-      - uses: gradle/actions/setup-gradle@4733eaac7c1b0da527e4206b7671e0061de1ce37
+      - uses: gradle/actions/setup-gradle@c0152e9a6b68fc2b5c1f256331f2e8f82b68ad62
       - name: Compile the selected APK signed only for testing
         run: ./gradlew --no-daemon :app:assemble${{ matrix.task-suffix }} :app:compile${{ matrix.task-suffix }}AndroidTestKotlin ${{ matrix.arguments }}
       - name: Enable accelerated emulator
