@@ -4,7 +4,11 @@ plugins {
 
 android {
     namespace = "io.toolbox.tool.runtime"
-    compileSdk = 37
+    compileSdk {
+        version = release(37) {
+            minorApiLevel = 1
+        }
+    }
     defaultConfig {
         minSdk = 33
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

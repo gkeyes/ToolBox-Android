@@ -4,7 +4,11 @@ plugins {
 
 android {
     namespace = "io.toolbox.tool.packagekit"
-    compileSdk = 37
+    compileSdk {
+        version = release(37) {
+            minorApiLevel = 1
+        }
+    }
     defaultConfig { minSdk = 33 }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_21
