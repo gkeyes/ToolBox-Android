@@ -68,7 +68,7 @@ jobs:
       - uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd
         with:
           log-accepted-android-sdk-licenses: false
-          packages: platform-tools platforms;android-37.0 build-tools;37.0.0
+          packages: platform-tools platforms;android-37.1 build-tools;37.0.0
       - uses: gradle/actions/setup-gradle@c0152e9a6b68fc2b5c1f256331f2e8f82b68ad62
       - name: Compile the selected APK signed only for testing
         run: ./gradlew --no-daemon :app:assemble${{ matrix.task-suffix }} :app:compile${{ matrix.task-suffix }}AndroidTestKotlin ${{ matrix.arguments }}

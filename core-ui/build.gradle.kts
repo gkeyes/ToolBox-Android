@@ -7,7 +7,11 @@ plugins {
 
 android {
     namespace = "io.toolbox.core.ui"
-    compileSdk = 37
+    compileSdk {
+        version = release(37) {
+            minorApiLevel = 1
+        }
+    }
 
     defaultConfig {
         minSdk = 33

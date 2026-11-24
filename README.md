@@ -18,7 +18,7 @@ Gradle 项目包含 `app`、`core-ui`、`core-data`、`tool-package`、`tool-run
 
 ## 本地构建
 
-需要 JDK 21 和 Android SDK 37（`platforms;android-37.0`、`build-tools;37.0.0`）。在 `local.properties` 中写入 `sdk.dir`，或设置 `ANDROID_HOME`，然后使用仓库自带的 Gradle wrapper：
+需要 JDK 21 和 Android SDK 37.1（`platforms;android-37.1`、`build-tools;37.0.0`）。在 `local.properties` 中写入 `sdk.dir`，或设置 `ANDROID_HOME`，然后使用仓库自带的 Gradle wrapper：
 
 ```bash
 ./gradlew :app:assembleDebug                 # 调试版 APK

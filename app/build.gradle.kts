@@ -120,7 +120,11 @@ tasks.withType<Test>().configureEach {
 
 android {
     namespace = "io.toolbox.host"
-    compileSdk = 37
+    compileSdk {
+        version = release(37) {
+            minorApiLevel = 1
+        }
+    }
     if (verifyWebViewDebugging) testBuildType = "verification"
 
     defaultConfig {
